@@ -38,12 +38,23 @@ func ParseLevel(s string) (slog.Level, error) {
 }
 
 // RedactURL removes userinfo and fragment from raw and replaces every
-// query-parameter value with REDACTED. On parse failure it returns
-// "<unparseable URL>" and never the input.
+// query-parameter value with REDACTED. A query item without '=' can itself be
+// a token, so it is replaced by REDACTED as a whole; empty items stay empty.
+// Opaque URLs (for example "user:s3cret@host" or "mailto:a:b@example.com")
+// are reduced to "<scheme>:REDACTED". Input that has neither scheme nor host
+// but contains '@' (for example "s3cret@host/path") is returned as the bare
+// REDACTED constant. On parse failure it returns "<unparseable URL>". In none
+// of these cases is the redacted part of the input ever returned.
 func RedactURL(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return unparseableURL
+	}
+	if u.Opaque != "" {
+		return u.Scheme + ":" + redacted
+	}
+	if u.Host == "" && u.Scheme == "" && strings.Contains(raw, "@") {
+		return redacted
 	}
 	u.User = nil
 	// Fragments are dropped: they can carry tokens (implicit-grant style) and
@@ -53,8 +64,11 @@ func RedactURL(raw string) string {
 	if u.RawQuery != "" {
 		parts := strings.Split(u.RawQuery, "&")
 		for i, p := range parts {
-			if k, _, ok := strings.Cut(p, "="); ok {
+			switch k, _, ok := strings.Cut(p, "="); {
+			case ok:
 				parts[i] = k + "=" + redacted
+			case p != "":
+				parts[i] = redacted
 			}
 		}
 		u.RawQuery = strings.Join(parts, "&")

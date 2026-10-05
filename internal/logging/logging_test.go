@@ -57,6 +57,11 @@ func TestRedactURL(t *testing.T) {
 		{"multiple query params", "https://example.com/a?x=1&y=2", "https://example.com/a?x=REDACTED&y=REDACTED"},
 		{"userinfo and query", "https://u:p@example.com/a?token=zzz", "https://example.com/a?token=REDACTED"},
 		{"fragment dropped", "https://example.com/a#access_token=zzz", "https://example.com/a"},
+		{"canary opaque userinfo", "user:s3cret@your-gitea.example", "user:REDACTED"},
+		{"canary mailto like", "mailto:someone:secret@example.com", "mailto:REDACTED"},
+		{"canary bare at sign", "s3cret@your-gitea.example/path", "REDACTED"},
+		{"canary bare query value", "https://your-gitea.example/api?ghp_S3CRETVALUE", "https://your-gitea.example/api?REDACTED"},
+		{"mixed bare and keyed", "https://example.com/a?a=1&tok3n&b=2", "https://example.com/a?a=REDACTED&REDACTED&b=REDACTED"},
 		{"unparseable", "http://[::1", "<unparseable URL>"},
 		{"control char", "http://exa\x7fmple.com/", "<unparseable URL>"},
 	}
@@ -66,7 +71,7 @@ func TestRedactURL(t *testing.T) {
 			if got != tc.want {
 				t.Errorf("RedactURL(%q) = %q, want %q", tc.in, got, tc.want)
 			}
-			for _, secret := range []string{"s3cret", "tok3n", "abc123", "zzz"} {
+			for _, secret := range []string{"s3cret", "tok3n", "abc123", "zzz", "secret", "someone", "S3CRETVALUE"} {
 				if strings.Contains(got, secret) {
 					t.Errorf("RedactURL(%q) leaked %q: %q", tc.in, secret, got)
 				}

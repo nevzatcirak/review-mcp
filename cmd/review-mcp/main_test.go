@@ -14,8 +14,7 @@ func TestRun(t *testing.T) {
 		wantOut    string // substring of stdout; "" means stdout must be empty
 		wantErrSub string
 	}{
-		{"default is stdio placeholder", nil, 1, "", "stdio server not yet implemented"},
-		{"stdio", []string{"stdio"}, 1, "", "stdio server not yet implemented"},
+		{"stdio bad flag", []string{"stdio", "-bogus"}, 2, "", "flag provided but not defined"},
 		{"version", []string{"version"}, 0, "review-mcp ", ""},
 		{"serve", []string{"serve"}, 2, "", "serve mode is not available in this version"},
 		{"unknown", []string{"bogus"}, 2, "", "usage:"},

@@ -1,0 +1,24 @@
+review-mcp
+Copyright (c) 2026 Nevzat Çırak
+
+This project is licensed under the MIT License (see LICENSE).
+
+Attribution
+-----------
+
+Parts of the design of review-mcp are derived from PR-Agent
+(https://github.com/The-PR-Agent/pr-agent), an open-source, AI-powered code
+review agent, licensed under the MIT License. In particular:
+
+- the pull-request diff compression strategy (file ranking, hunk context
+  expansion, token-budget clipping, large-PR handling),
+- the token budgeting approach,
+- the per-tool prompt design and structured output schemas for review and
+  question-answering tools.
+
+review-mcp is an independent reimplementation in Go. No PR-Agent source code
+is included in this repository; the logic, prompt design, and schemas were
+studied and ported (see docs/research/pr-agent-porting-map.md for the pinned
+upstream revision used during the study).
+
+Many thanks to the PR-Agent authors, maintainers, and community.

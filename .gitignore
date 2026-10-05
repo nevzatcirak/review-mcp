@@ -1,0 +1,31 @@
+# Binaries and build output
+/review-mcp
+/bin/
+/dist/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test and coverage artifacts
+*.test
+*.out
+coverage.*
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Editor / OS cruft
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Local environment files (never commit secrets)
+.env
+.env.*
+
+# Safety net: upstream study clone must never land in this repo
+/.study/

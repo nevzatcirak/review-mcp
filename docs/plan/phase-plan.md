@@ -7,6 +7,17 @@ Every phase ends with a **live acceptance gate**: a real interaction against a r
 Gitea and/or Bitbucket Server instance (or a real MCP client), run by the project
 owner. A phase is not sealed on green tests alone.
 
+**Amendment (2026-10-06, owner decision): consolidated V1 acceptance.** The
+per-phase live gates of P2–P6 are collected into one checklist,
+`docs/plan/v1-acceptance.md`, which the owner runs once against the first
+release candidate (`v1.0.0-rc.1`), installed the way users install it. Until
+then, a phase PR merges on green CI plus architect approval. "Merged" still
+does not mean "sealed": no phase is sealed, and no stable `v1.0.0` tag exists,
+before the consolidated record is posted and every blocker it finds is fixed.
+Known cost: seams that only live runs reveal (auth scopes, API differences
+between server versions, line anchoring, endpoint compatibility) surface late
+and together. Release candidates (`rc.N`) absorb those fixes.
+
 ---
 
 ## P0 — Research: PR-Agent porting map (WP-PR-0)
@@ -115,6 +126,9 @@ per provider (which scopes, where to create).
 **Acceptance gate (live):** fresh machine: `npm install` → configure MCP client
 → `pr_review` works in stdio mode; `serve` mode validated with per-request
 header identity; setup guide walked through end-to-end by the project owner.
+
+Specification: `docs/plan/P6-spec.md`. Its live items are section A and G of
+`docs/plan/v1-acceptance.md`.
 
 ---
 

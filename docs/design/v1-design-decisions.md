@@ -52,6 +52,7 @@ code must not anticipate them beyond the seams named here.
 | X-7 | License compliance for ported text/data | Full PR-Agent MIT notice in NOTICE before first ported text/data lands | Decided |
 | X-8 | Logging | `log/slog` to stderr only; never prompt/response bodies, never secrets | Decided |
 | X-9 | PR conversation tools (added 2026-10-06) | `pr_comments` (read threads) + `pr_comment_reply` (reply in thread, honest fallback) in v1 | Decided |
+| X-10 | `serve` identity (added 2026-10-06) | Credentials per HTTP request in headers; provider tokens in the server env are refused in serve mode; stateless transport | Decided |
 
 ---
 
@@ -258,11 +259,16 @@ implementation must do or must not do).
   - Replying is an explicit write: the tool is not marked read-only, and it never posts without a non-empty body.
   - `pr_ask`'s statelessness (X-5) is unchanged.
 
+#### X-10 — `serve` identity (added 2026-10-06)
+- **Decision:** In `serve` mode every credential arrives with the HTTP request (`X-Review-MCP-Gitea-Token`, `X-Review-MCP-Bitbucket-Server-Token`, `X-Review-MCP-LLM-API-Key`). Provider tokens set in the server's environment are a startup error in serve mode. The LLM key comes either from the request header or, by explicit choice (`serve.llm_key_source = server`), from the server environment, in which case an access token is mandatory. The MCP transport runs stateless, so no session outlives a request.
+- **Rationale:** Keeps the per-user token model of stdio on a shared server: one person's identity is never used for another person's call, and nothing secret persists between requests.
+- **Consequences:** One credential read point (`Config.WithSecrets` per call). Non-loopback binds require TLS or an explicit opt-out for TLS-terminating proxies. Details and canaries: `docs/plan/P6-spec.md` §1.
+
 ---
 
 ## 5. Resulting v1 configuration surface
 
-Secrets are environment-only. All other keys may come from the TOML file or the environment (DQ-23/24). "—" means no default (required or optional-unset).
+Secrets are environment-only (in `serve` mode, credentials come from request headers instead; X-10, P6 spec §1.2 adds the `serve.*` rows). All other keys may come from the TOML file or the environment (DQ-23/24). "—" means no default (required or optional-unset).
 
 | Key (TOML) | Env | Default | Notes |
 |---|---|---|---|

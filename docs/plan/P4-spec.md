@@ -12,7 +12,7 @@
 ## 0. Entry criteria (carried over from earlier phases; each must be closed in this phase)
 
 1. **SDK logging audit (X-8):** with `log.level=debug` and tool arguments that carry PR data, the MCP Go SDK's own log lines must contain neither tool arguments nor results. If they do, wrap the SDK logger with a filter that drops those attributes. **[canary]** in WP-PR-4e.
-2. **`FileLineURL` formats:** use the results of P2 live-acceptance item 7. Fix any wrong format here, before links reach users. If the item was not run, run it during the P4 live acceptance, and until then render findings **without** links rather than with unverified links.
+2. **`FileLineURL` formats** (amended 2026-10-06, consolidated V1 acceptance): render finding links. Their live verification moved to `docs/plan/v1-acceptance.md` (item E5), which runs against the release candidate before any stable release. A wrong format found there is a release blocker and is fixed in the next release candidate.
 3. **Real prompt-token figures:** measure the rendered prompt scaffolding with an empty diff for every field-toggle combination. Report the numbers, and replace the `diag diff --prompt-tokens` default (1500) with the measured maximum.
 
 ## 1. Upstream parity rules
@@ -242,7 +242,7 @@ Use the P2/P3 test PRs and your own OpenAI-compatible endpoint and key. Use a pe
 5. Open one finding link per provider and confirm it lands on the right file and line (entry criterion 2).
 6. Record which repair tactic, if any, fired, using debug logs for at least 3 reviews with the model you actually use. It is fine if none fired.
 
-Post the redacted results on the P4 PR. The merge happens after the record exists.
+**Amended 2026-10-06:** these items run in the consolidated V1 acceptance (`docs/plan/v1-acceptance.md`, section E) against the release candidate. The P4 PR merges on green CI plus architect approval.
 
 ## 9. Planned commits (branch `p4-review`)
 1. `feat(llm): add OpenAI-compatible chat client with classified errors and retries`

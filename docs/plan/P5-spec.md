@@ -126,7 +126,7 @@ Use the earlier test PRs and your own LLM endpoint.
 3. Run `pr_ask` with `output_language` set to `tr-TR`. The answer must be in Turkish.
 4. Run `pr_ask` with `publish=true` on each provider. Check how the comment renders. Confirm that an answer line starting with `/` is published with a leading space and does not trigger a quick action.
 
-Post the redacted record on the P5 PR. The merge happens after the record exists.
+**Amended 2026-10-06:** these items run in the consolidated V1 acceptance (`docs/plan/v1-acceptance.md`, section F) against the release candidate. The P5 PR merges on green CI plus architect approval.
 
 ## 5. Planned commits (branch `p5-ask`)
 1. `feat(ask): add adapted question prompts with grounding instructions`

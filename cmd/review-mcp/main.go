@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -64,8 +65,11 @@ func runWith(args []string, stdin io.Reader, stdout, stderr io.Writer, load conf
 	case "diag":
 		return runDiag(rest, stdout, stderr, load)
 	case "serve":
-		_, _ = fmt.Fprintln(stderr, "serve mode is not available in this version")
-		return 2
+		// Serve mode loads its own configuration (mode serve, --listen);
+		// load is the stdio loader and is not used here.
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		return runServe(ctx, rest, stderr, config.LoadFromOSWith, net.Listen)
 	default:
 		usage(stderr)
 		return 2
@@ -93,7 +97,9 @@ commands:
             the token budget report without calling the model
   diag ask <PR_URL> --question <TEXT> [--dry-run] [--show-prompt] [--publish]
             answer a question about the pull request with the configured LLM
-  serve     HTTP mode (not available in this version)
+  serve [--listen host:port]
+            run the MCP server over streamable HTTP; credentials come from
+            the headers of each request
 `)
 }
 

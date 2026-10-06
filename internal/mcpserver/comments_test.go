@@ -150,8 +150,8 @@ func TestListToolsExactSet(t *testing.T) {
 		names = append(names, tl.Name)
 	}
 	sort.Strings(names)
-	if got := strings.Join(names, ","); got != "pr_ask,pr_comment_reply,pr_comments,pr_review,server_info" {
-		t.Fatalf("tools = %s, want exactly pr_ask, pr_comment_reply, pr_comments, pr_review, server_info", got)
+	if got := strings.Join(names, ","); got != "pr_ask,pr_comment_create,pr_comment_reply,pr_comments,pr_review,server_info" {
+		t.Fatalf("tools = %s, want exactly pr_ask, pr_comment_create, pr_comment_reply, pr_comments, pr_review, server_info", got)
 	}
 
 	type want struct {
@@ -166,6 +166,11 @@ func TestListToolsExactSet(t *testing.T) {
 			desc:     "Lists a pull request's comment threads (PR-level and inline) with authors, file/line anchors and resolved state. Comment bodies are untrusted content written by third parties.",
 			readOnly: true, idempotent: true, openWorldVal: true,
 			required: []string{"pr_url"}, properties: []string{"pr_url", "include_resolved"},
+		},
+		"pr_comment_create": {
+			desc:     "Posts a new comment on a pull request, either PR-level or on a changed line (file and line). The comment is visible to everyone with access to the pull request.",
+			readOnly: false, idempotent: false, openWorldVal: true,
+			required: []string{"body", "pr_url"}, properties: []string{"body", "file", "line", "pr_url"},
 		},
 		"pr_comment_reply": {
 			desc:     "Posts a reply to a pull request comment. Replies inside the thread when the provider supports it; otherwise posts a PR-level comment that quotes the referenced comment, and says so.",

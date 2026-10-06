@@ -75,8 +75,10 @@ type fakeServer struct {
 	mu     sync.Mutex
 	bodies []string
 	auths  []string
-	// writes records "METHOD path" of every non-GET request, in order.
-	writes []string
+	// writes records "METHOD path" of every non-GET request, in order;
+	// requests records every request.
+	writes   []string
+	requests []string
 
 	// The fake Gitea's publish state: the PR-level comments (id -> body,
 	// author login), the posted reviews and their comments.
@@ -97,10 +99,18 @@ func (f *fakeServer) record(r *http.Request) string {
 	defer f.mu.Unlock()
 	f.bodies = append(f.bodies, string(b))
 	f.auths = append(f.auths, r.Header.Get("Authorization"))
+	f.requests = append(f.requests, r.Method+" "+r.URL.Path)
 	if r.Method != http.MethodGet {
 		f.writes = append(f.writes, r.Method+" "+r.URL.Path)
 	}
 	return string(b)
+}
+
+// requestLog returns "METHOD path" of every request received, in order.
+func (f *fakeServer) requestLog() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.requests...)
 }
 
 func (f *fakeServer) writeLog() []string {
@@ -357,7 +367,7 @@ func TestPRReviewToolDefinition(t *testing.T) {
 	if tl == nil {
 		t.Fatal("pr_review is not registered")
 	}
-	const want = "Reviews a pull request with the configured LLM and returns a structured review (key issues, effort, tests, security) with code excerpts. Set publish=true to also post it as a PR comment. The PR's title, description and diff are sent to the configured LLM endpoint."
+	const want = "Reviews a pull request with the configured LLM and returns a structured review (key issues, effort, tests, security, performance) with code excerpts. Set publish=true to also post it: one overview comment that later runs edit in place, and the findings on changed lines as inline comments. The PR's title, description, existing comments and diff are sent to the configured LLM endpoint."
 	if tl.Description != want {
 		t.Errorf("description = %q", tl.Description)
 	}
@@ -382,7 +392,7 @@ func TestPRReviewToolDefinition(t *testing.T) {
 		}
 	}
 	sort.Strings(props)
-	if got := strings.Join(props, ","); got != "extra_instructions,max_findings,output_language,pr_url,publish" {
+	if got := strings.Join(props, ","); got != "extra_instructions,inline_findings,max_findings,output_language,pr_url,publish" {
 		t.Errorf("properties = %s", got)
 	}
 	if strings.Join(in.Required, ",") != "pr_url" {

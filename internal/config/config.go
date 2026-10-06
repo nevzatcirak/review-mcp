@@ -89,6 +89,15 @@ type Review struct {
 	RequirePerformance    bool   `toml:"require_performance" json:"require_performance"`
 	RequireEffortEstimate bool   `toml:"require_effort_estimate" json:"require_effort_estimate"`
 	ExtraInstructions     string `toml:"extra_instructions" json:"extra_instructions"`
+	// InlineFindings posts each anchorable finding as an inline comment when
+	// a review is published (X-11).
+	InlineFindings bool `toml:"inline_findings" json:"inline_findings"`
+	// PersistentOverview edits the overview comment of an earlier run in
+	// place instead of posting a new one (X-12).
+	PersistentOverview bool `toml:"persistent_overview" json:"persistent_overview"`
+	// MaxDiscussionTokens is the token budget of the existing-discussion
+	// block of the prompt (X-13); 0 turns the block off.
+	MaxDiscussionTokens int `toml:"max_discussion_tokens" json:"max_discussion_tokens"`
 }
 
 // Ask configures the pr_ask tool.
@@ -134,6 +143,9 @@ func Defaults() *Config {
 			RequireSecurity:       true,
 			RequirePerformance:    true,
 			RequireEffortEstimate: true,
+			InlineFindings:        true,
+			PersistentOverview:    true,
+			MaxDiscussionTokens:   1500,
 		},
 		Log: Log{Level: "info"},
 		Serve: Serve{

@@ -78,11 +78,27 @@ type fakeGitea struct {
 	// onPR, when set, runs before the PR metadata request of PR n is
 	// answered.
 	onPR atomic.Pointer[func(n int)]
+
+	// The write surface (WP-PR-7f): PR-level comments (id -> comment) and
+	// the review comments posted, all in memory. wmu guards them and
+	// writes, the "METHOD path" of every non-GET request.
+	wmu      sync.Mutex
+	comments map[int]fakeComment
+	nextID   int
+	reviews  []map[string]any
+	writes   []string
+	bodies   []string
+}
+
+// fakeComment is a PR-level comment of the fake Gitea.
+type fakeComment struct {
+	body, login string
+	userID      int
 }
 
 func newFakeGitea(t *testing.T) *fakeGitea {
 	t.Helper()
-	f := &fakeGitea{arrived: make(chan struct{}, 1024)}
+	f := &fakeGitea{arrived: make(chan struct{}, 1024), comments: map[int]fakeComment{}, nextID: 50}
 	f.srv, f.conns = startCounted(http.HandlerFunc(f.serve))
 	t.Cleanup(f.srv.Close)
 	return f
@@ -116,7 +132,13 @@ func (f *fakeGitea) serve(w http.ResponseWriter, r *http.Request) {
 	if h := f.onRequest.Load(); h != nil {
 		(*h)()
 	}
-	_, _ = io.Copy(io.Discard, r.Body)
+	raw, _ := io.ReadAll(r.Body)
+	if r.Method != http.MethodGet {
+		f.wmu.Lock()
+		f.writes = append(f.writes, r.Method+" "+r.URL.Path)
+		f.bodies = append(f.bodies, string(raw))
+		f.wmu.Unlock()
+	}
 	if st := int(f.failStatus.Load()); st != 0 {
 		http.Error(w, f.leakBody, st)
 		return
@@ -155,13 +177,12 @@ func (f *fakeGitea) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if f.serveWrites(w, r, cred, raw) {
+		return
+	}
 	switch {
 	case strings.HasPrefix(p, giteaAPI+"/raw/"):
 		_, _ = io.WriteString(w, "package main\nvar a = 2\nfunc main() {}\n")
-	case strings.HasPrefix(p, giteaAPI+"/issues/") && strings.HasSuffix(p, "/comments"):
-		// pr_comments: no PR-level comments.
-		f.recordIssue(cred, p)
-		_, _ = io.WriteString(w, "[]")
 	case strings.HasPrefix(p, giteaAPI+"/pulls/") && strings.HasSuffix(p, "/reviews"):
 		_, _ = io.WriteString(w, "[]")
 	default:
@@ -169,9 +190,101 @@ func (f *fakeGitea) serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+const fakeWeb = "https://your-gitea.example/octo/demo/pulls/"
+
+// plant adds a PR-level comment written by another account.
+func (f *fakeGitea) plant(login string, userID int, body string) {
+	f.wmu.Lock()
+	defer f.wmu.Unlock()
+	f.nextID++
+	f.comments[f.nextID] = fakeComment{body: body, login: login, userID: userID}
+}
+
+func (f *fakeGitea) written() (writes, bodies []string) {
+	f.wmu.Lock()
+	defer f.wmu.Unlock()
+	return append([]string(nil), f.writes...), append([]string(nil), f.bodies...)
+}
+
+// serveWrites answers the comment, user and review endpoints. It reports
+// whether it handled the request. The token's user is "review-bot" (id 42).
+func (f *fakeGitea) serveWrites(w http.ResponseWriter, r *http.Request, cred string, raw []byte) bool {
+	p := r.URL.Path
+	writeJ := func(v any) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(v)
+	}
+	var body map[string]any
+	_ = json.Unmarshal(raw, &body)
+	asJSON := func(id int, c fakeComment) map[string]any {
+		return map[string]any{"id": id, "type": "comment", "body": c.body,
+			"user":     map[string]any{"id": c.userID, "login": c.login},
+			"html_url": fakeWeb + "7#issuecomment-" + strconv.Itoa(id), "pull_request_url": fakeWeb + "7"}
+	}
+	f.wmu.Lock()
+	defer f.wmu.Unlock()
+	switch {
+	case r.Method == "GET" && p == "/api/v1/user":
+		writeJ(map[string]any{"id": 42, "login": "review-bot"})
+	case strings.HasPrefix(p, giteaAPI+"/issues/comments/"):
+		id, _ := strconv.Atoi(strings.TrimPrefix(p, giteaAPI+"/issues/comments/"))
+		c, ok := f.comments[id]
+		if !ok {
+			http.NotFound(w, r)
+			return true
+		}
+		if r.Method == "PATCH" {
+			c.body, _ = body["body"].(string)
+			f.comments[id] = c
+		}
+		writeJ(asJSON(id, c))
+	case strings.HasPrefix(p, giteaAPI+"/issues/") && strings.HasSuffix(p, "/comments"):
+		f.recordIssueLocked(cred, p)
+		if r.Method == "POST" {
+			text, _ := body["body"].(string)
+			f.nextID++
+			f.comments[f.nextID] = fakeComment{body: text, login: "review-bot", userID: 42}
+			writeJ(asJSON(f.nextID, f.comments[f.nextID]))
+			return true
+		}
+		out := []any{}
+		if r.URL.Query().Get("page") == "1" {
+			for id := 1; id <= f.nextID; id++ {
+				if c, ok := f.comments[id]; ok {
+					out = append(out, asJSON(id, c))
+				}
+			}
+		}
+		writeJ(out)
+	case r.Method == "POST" && strings.HasPrefix(p, giteaAPI+"/pulls/") && strings.HasSuffix(p, "/reviews"):
+		rid := 300 + len(f.reviews)
+		var cs []any
+		comments, _ := body["comments"].([]any)
+		for i, c := range comments {
+			cm, _ := c.(map[string]any)
+			cid := rid*10 + i
+			cs = append(cs, map[string]any{"id": cid, "path": cm["path"], "body": cm["body"], "position": cm["new_position"],
+				"user": map[string]any{"id": 42, "login": "review-bot"}, "html_url": fakeWeb + "7/files#issuecomment-" + strconv.Itoa(cid)})
+		}
+		f.reviews = append(f.reviews, map[string]any{"id": rid, "state": "COMMENT", "comments": cs})
+		writeJ(map[string]any{"id": rid, "state": "COMMENT", "html_url": fakeWeb + "7#pullrequestreview-" + strconv.Itoa(rid)})
+	case r.Method == "GET" && strings.HasPrefix(p, giteaAPI+"/pulls/") && strings.Contains(p, "/reviews/") && strings.HasSuffix(p, "/comments"):
+		out := []any{}
+		for _, rv := range f.reviews {
+			if r.URL.Query().Get("page") == "1" && strings.Contains(p, "/reviews/"+strconv.Itoa(rv["id"].(int))+"/") {
+				out = append(out, rv["comments"].([]any)...)
+			}
+		}
+		writeJ(out)
+	default:
+		return false
+	}
+	return true
+}
+
 var issuePathRE = regexp.MustCompile(`/issues/(\d+)/comments$`)
 
-func (f *fakeGitea) recordIssue(cred, p string) {
+func (f *fakeGitea) recordIssueLocked(cred, p string) {
 	if m := issuePathRE.FindStringSubmatch(p); m != nil {
 		n, _ := strconv.Atoi(m[1])
 		f.mu.Lock()
@@ -195,6 +308,8 @@ type fakeLLM struct {
 	srv   *httptest.Server
 	conns *connCounter
 	hits  atomic.Int64
+	// answer, when set, replaces goodAnswer.
+	answer atomic.Pointer[string]
 
 	mu  sync.Mutex
 	obs []observation
@@ -220,12 +335,19 @@ func newFakeLLM(t *testing.T) *fakeLLM {
 		f.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": goodAnswer}, "finish_reason": "stop"}},
+			"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": f.reply()}, "finish_reason": "stop"}},
 			"usage":   map[string]any{"prompt_tokens": 100, "completion_tokens": 50},
 		})
 	}))
 	t.Cleanup(f.srv.Close)
 	return f
+}
+
+func (f *fakeLLM) reply() string {
+	if a := f.answer.Load(); a != nil {
+		return *a
+	}
+	return goodAnswer
 }
 
 func (f *fakeLLM) observations() []observation {

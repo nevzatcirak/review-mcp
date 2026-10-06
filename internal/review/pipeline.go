@@ -114,6 +114,29 @@ type Args struct {
 	MaxDiscussionTokens *int
 }
 
+// WithConfigDefaults returns a with every option the call left unset (nil)
+// taken from cfg: review.inline_findings, review.persistent_overview and
+// review.max_discussion_tokens. A value the call set wins. Without it, nil
+// keeps the documented defaults (on, on, DefaultMaxDiscussionTokens).
+func (a Args) WithConfigDefaults(cfg *config.Config) Args {
+	if cfg == nil {
+		return a
+	}
+	if a.InlineFindings == nil {
+		v := cfg.Review.InlineFindings
+		a.InlineFindings = &v
+	}
+	if a.PersistentOverview == nil {
+		v := cfg.Review.PersistentOverview
+		a.PersistentOverview = &v
+	}
+	if a.MaxDiscussionTokens == nil {
+		v := cfg.Review.MaxDiscussionTokens
+		a.MaxDiscussionTokens = &v
+	}
+	return a
+}
+
 // errNoWiring reports a caller bug: Run needs a resolver and an LLM.
 var errNoWiring = errors.New("review: resolver or LLM dependency missing")
 

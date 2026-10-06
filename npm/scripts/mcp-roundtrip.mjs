@@ -14,8 +14,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 
-// The five v1 tools the server registers (P6 spec §3.3, acceptance A4).
-const EXPECTED_TOOLS = ['pr_ask', 'pr_comment_reply', 'pr_comments', 'pr_review', 'server_info'];
+// The six tools the server registers (P6 spec §3.3, acceptance A4; X-14 added
+// pr_comment_create).
+const EXPECTED_TOOLS = ['pr_ask', 'pr_comment_create', 'pr_comment_reply', 'pr_comments', 'pr_review', 'server_info'];
 
 const TIMEOUT_MS = 30000;
 

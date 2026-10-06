@@ -176,7 +176,7 @@ func diagReview(ctx context.Context, cfg *config.Config, logger *slog.Logger, pr
 	res, err := review.Run(ctx, review.Deps{
 		Config: cfg, Logger: logger, Resolver: resolver, LLM: rec,
 		RenderProvider: render.Provider, RenderInline: render.Inline,
-	}, review.Args{PRURL: prURL, Publish: publish})
+	}, review.Args{PRURL: prURL, Publish: publish}.WithConfigDefaults(cfg))
 	if err != nil {
 		return reportError(stderr, err)
 	}

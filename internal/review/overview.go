@@ -12,6 +12,27 @@ import (
 // renders as nothing.
 const OverviewMarker = "[//]: # (review-mcp:overview:v1)"
 
+// markerLinePrefix opens every marker line the review writes
+// ("[//]: # (review-mcp:...)").
+const markerLinePrefix = "[//]:"
+
+// ContainsMarkerLine reports whether any line of body looks like a
+// review-mcp marker: after trimming whitespace and lower-casing, it starts
+// with a link reference definition of the "[//]:" form and mentions
+// "review-mcp:". It is a deliberately wider net than HasOverviewMarker and
+// ParseFingerprintMarker, which read only an exact last line: a body the
+// review did not write must never carry anything either lookup might
+// adopt, now or after a marker format change.
+func ContainsMarkerLine(body string) bool {
+	for line := range strings.SplitSeq(body, "\n") {
+		l := strings.ToLower(strings.TrimSpace(line))
+		if strings.HasPrefix(l, markerLinePrefix) && strings.Contains(l, "review-mcp:") {
+			return true
+		}
+	}
+	return false
+}
+
 // Notes of the persistent overview (spec P7 §4.2).
 const (
 	// NoteOverviewReplaced: the overview found on the PR could not be

@@ -7,6 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/tools"
 )
 
@@ -34,17 +35,33 @@ type prCommentReplyInput struct {
 // raw error.
 func toolError(msg string) error { return errors.New(msg) }
 
-// resolverFor returns the resolver for one tool call, or a tool error. While
-// the configuration is invalid no resolver is built and nothing touches the
-// network.
-func resolverFor(deps Deps) (tools.PRResolver, error) {
+// callScope returns the effective configuration (Deps.ConfigFor) and the
+// resolver of one tool call, or a tool error. While the configuration is
+// invalid nothing is built and nothing touches the network.
+//
+// In serve mode the resolver is wrapped by tools.RequireCredentials: once
+// the URL has been matched, a call that lacks the matched provider's token
+// (or, when needLLM is set, the LLM API key) fails with credentials_missing
+// before any provider or LLM request.
+//
+// Both return values are request-scoped: the caller uses them for this call
+// and drops them.
+func callScope(ctx context.Context, deps Deps, req *mcp.CallToolRequest, needLLM bool) (*config.Config, tools.PRResolver, error) {
 	if deps.LoadErr != nil {
-		return nil, toolError(tools.ConfigInvalidMessage)
+		return nil, nil, toolError(tools.ConfigInvalidMessage)
 	}
 	if deps.NewResolver == nil {
-		return nil, toolError("review-mcp has no provider wiring; this is a bug")
+		return nil, nil, toolError("review-mcp has no provider wiring; this is a bug")
 	}
-	return deps.NewResolver(deps.Config, deps.Logger), nil
+	cfg, err := deps.ConfigFor(ctx, req)
+	if err != nil {
+		return nil, nil, toolError(tools.UserMessage(err))
+	}
+	var r tools.PRResolver = deps.NewResolver(cfg, deps.Logger)
+	if deps.Serve {
+		r = tools.RequireCredentials(r, cfg, needLLM)
+	}
+	return cfg, r, nil
 }
 
 func logger(deps Deps) *slog.Logger {
@@ -65,9 +82,9 @@ func registerPRComments(s *mcp.Server, deps Deps) {
 			DestructiveHint: &f,
 			OpenWorldHint:   &tr,
 		},
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in prCommentsInput) (*mcp.CallToolResult, tools.PRCommentsResult, error) {
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in prCommentsInput) (*mcp.CallToolResult, tools.PRCommentsResult, error) {
 		var zero tools.PRCommentsResult
-		resolver, err := resolverFor(deps)
+		_, resolver, err := callScope(ctx, deps, req, false)
 		if err != nil {
 			return nil, zero, err
 		}
@@ -98,9 +115,9 @@ func registerPRCommentReply(s *mcp.Server, deps Deps) {
 			DestructiveHint: &f,
 			OpenWorldHint:   &tr,
 		},
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in prCommentReplyInput) (*mcp.CallToolResult, tools.PRCommentReplyResult, error) {
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in prCommentReplyInput) (*mcp.CallToolResult, tools.PRCommentReplyResult, error) {
 		var zero tools.PRCommentReplyResult
-		resolver, err := resolverFor(deps)
+		_, resolver, err := callScope(ctx, deps, req, false)
 		if err != nil {
 			return nil, zero, err
 		}

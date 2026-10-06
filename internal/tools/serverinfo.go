@@ -44,7 +44,24 @@ type ServerInfoResult struct {
 	Warnings  []string       `json:"warnings" jsonschema:"non-fatal configuration warnings"`
 	Providers []ProviderInfo `json:"providers" jsonschema:"enabled providers"`
 	Config    config.Summary `json:"config" jsonschema:"effective non-secret configuration; secrets appear only as set or unset"`
+	// Serve is present in serve mode only.
+	Serve *ServeInfo `json:"serve,omitempty" jsonschema:"serve-mode transport details; absent in stdio mode"`
 }
+
+// ServeInfo describes the serve transport and the credential headers of the
+// request that called server_info (P6 spec §1.3). Header values are never
+// reported.
+type ServeInfo struct {
+	Transport    string `json:"transport" jsonschema:"always serve"`
+	Listen       string `json:"listen" jsonschema:"the address the server listens on (host:port)"`
+	LLMKeySource string `json:"llm_key_source" jsonschema:"header or server: where the LLM API key comes from"`
+	// RequestHeaders maps each credential header name to set, unset or
+	// malformed.
+	RequestHeaders map[string]string `json:"request_headers" jsonschema:"for this request, each credential header as set, unset or malformed; never its value"`
+}
+
+// TransportServe is the ServeInfo.Transport value.
+const TransportServe = "serve"
 
 // ServerInfo builds the server_info result. cfg and rep may be nil (treated as
 // defaults / no report). loadErr is the error returned by config loading: a
@@ -119,6 +136,17 @@ func RenderServerInfoMarkdown(r ServerInfoResult) string {
 	}
 	for _, p := range r.Providers {
 		b.WriteString("- " + codeSpan(p.Kind) + ": " + codeSpan(p.BaseURL) + "\n")
+	}
+
+	if r.Serve != nil {
+		b.WriteString("\n## Serve\n\n")
+		b.WriteString("- Transport: " + codeSpan(r.Serve.Transport) + "\n")
+		b.WriteString("- Listen: " + codeSpan(r.Serve.Listen) + "\n")
+		b.WriteString("- LLM key source: " + codeSpan(r.Serve.LLMKeySource) + "\n")
+		b.WriteString("\nCredential headers of this request:\n\n")
+		for _, k := range sortedKeys(r.Serve.RequestHeaders) {
+			b.WriteString("- " + codeSpan(k) + ": " + codeSpan(r.Serve.RequestHeaders[k]) + "\n")
+		}
 	}
 
 	b.WriteString("\n## Secrets\n\n")

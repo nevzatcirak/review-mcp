@@ -705,7 +705,7 @@ func TestSDKLogsCarryNoArgumentsOrResults(t *testing.T) {
 func TestSDKLogFilter(t *testing.T) {
 	var logs syncBuffer
 	base := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	sdk := sdkLogger(base)
+	sdk := sdkLogger(base, false)
 	sdk.Error("jsonrpc2 internal error", "error", fmt.Errorf("handler returned a result: %#v", map[string]string{"k": argMarker}))
 	sdk.Debug("a debug record", "arguments", argMarker, "result", bodyMarker, "session_id", "abc")
 	sdk.With("bound", argMarker).Info("bound attr", "request_id", "7")
@@ -722,7 +722,7 @@ func TestSDKLogFilter(t *testing.T) {
 			t.Errorf("filtered log lacks %q:\n%s", want, out)
 		}
 	}
-	if sdkLogger(nil) != nil {
+	if sdkLogger(nil, false) != nil || sdkLogger(nil, true) != nil {
 		t.Error("a nil logger must stay nil")
 	}
 }

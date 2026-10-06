@@ -61,7 +61,7 @@ func registerPRReview(s *mcp.Server, deps Deps) {
 		log := logger(deps)
 		// The degraded configuration check comes first: nothing is built and
 		// nothing touches the network.
-		resolver, err := resolverFor(deps)
+		cfg, resolver, err := callScope(ctx, deps, req, true)
 		if err != nil {
 			return nil, zero, err
 		}
@@ -69,9 +69,9 @@ func registerPRReview(s *mcp.Server, deps Deps) {
 			return nil, zero, toolError("review-mcp has no LLM wiring; this is a bug")
 		}
 		res, text, err := tools.PRReview(ctx, tools.ReviewDeps{
-			Config:   deps.Config,
+			Config:   cfg,
 			Resolver: resolver,
-			NewLLM:   deps.NewLLM,
+			NewLLM:   llmFactory(deps),
 			Logger:   log,
 			Progress: progressFunc(ctx, req, log, "pr_review"),
 		}, tools.PRReviewArgs{

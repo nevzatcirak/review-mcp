@@ -42,6 +42,50 @@ At least one provider must be enabled. Set only the provider you use. Never
 commit tokens or put them in a file that is checked in; keep them in your shell
 profile, a secret manager, or the client's own secret mechanism.
 
+## How the context window shapes the diff budget
+
+review-mcp has no model registry, so it does not know how large your model's
+window is: you tell it with `llm.context_window` (`REVIEW_MCP_LLM_CONTEXT_WINDOW`,
+at least 4096). Optionally, `llm.max_output_tokens`
+(`REVIEW_MCP_LLM_MAX_OUTPUT_TOKENS`) says how many tokens you allow the answer.
+The room left for the pull request's diff is computed from them:
+
+| Value | Formula |
+|---|---|
+| hard reserve | `max(max_output_tokens, 1000)` (1000 when unset) |
+| soft reserve | hard reserve + 500 |
+| soft limit | `context_window` - soft reserve - prompt tokens |
+| hard limit | `context_window` - hard reserve - prompt tokens |
+
+"Prompt tokens" is the size of the instructions, description and commits
+around the diff. The soft limit is what the diff is fitted into (a diff that
+fits is sent whole, with extra context around each change; otherwise files are
+admitted largest-first until it is reached). The hard limit is a ceiling that
+stops further additions. For example, with a 32000-token window, no
+`max_output_tokens` and 1500 prompt tokens, the soft limit is
+32000 - 1500 - 1500 = 29000 tokens.
+
+Token counts come from a built-in estimator that works offline. It is exact
+only for OpenAI-style tokenizers, so every count is multiplied by
+`1 + llm.token_estimate_factor` (default `0.3`, allowed 0 to 2). Raise the
+factor if your model's tokenizer produces more tokens than the estimate;
+lower it if you want to use more of the window.
+
+Choosing the window:
+
+- Use the model's real context window, in tokens, as your server runs it. Some
+  servers are started with a smaller limit than the model supports; use that
+  limit.
+- Set `llm.max_output_tokens` to what you want the answer to be allowed, not
+  to the window. It must be smaller than the window.
+- A small window is not an error until the reserves leave nothing for the diff.
+  Large pull requests then lose files (they are listed as omitted).
+
+Check the result before you rely on it: `review-mcp diag diff <PR_URL>` prints
+the limits, the estimated size and which files made it in. To simulate a
+smaller window, set `REVIEW_MCP_LLM_CONTEXT_WINDOW=8000` for one run. See
+[Troubleshooting](troubleshooting.md) for how to read the output.
+
 ## Register with an MCP client
 
 Most clients accept a JSON `mcpServers` object. The example below passes the

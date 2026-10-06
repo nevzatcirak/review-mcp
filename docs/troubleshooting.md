@@ -72,7 +72,7 @@ A skipped file is not part of `files` and is not reviewed.
 | `file_limit` | More files than `diff.max_files_full_content` (Bitbucket Server cannot build a patch without file contents). |
 | `size_limit` | A side of the file is larger than `diff.max_file_bytes` (Bitbucket Server). |
 | `fetch_failed` | The file's contents could not be fetched or it is listed by only one of Gitea's two sources. |
-| `filtered` | An ignore rule excluded the file (`diag` applies none). |
+| `filtered` | An ignore rule excluded the file (`diag pr` applies none; `diag diff` applies the file filter and says which rule matched). |
 
 In `files`, `base_status` and `head_status` say whether the full content of
 each side was fetched: `full`, `not_fetched_file_limit`,
@@ -119,6 +119,135 @@ body is posted verbatim. On Bitbucket Server the reply lands inside the thread
 a new PR-level comment that starts with a quote line such as
 `> Replying to @alice on src/app.go:10`, and `"in_thread": false` is expected
 there. This needs write access (see the token scopes below).
+
+## Read the prepared diff with `diag diff`
+
+```sh
+review-mcp diag diff https://your-gitea.example/octo/demo/pulls/7
+review-mcp diag diff <PR_URL> --mode numbered --prompt-tokens 2500
+```
+
+`diag diff` runs the same steps a review does before it calls the LLM: fetch
+the pull request, drop the files the file filter excludes, and fit the rest
+into the token budget. It prints a JSON header, then the line
+`--- prepared diff ---`, then the exact diff text, byte for byte, so you can
+see what the model would be given. Everything goes to stdout; the diff text is
+never written to the logs. Exit codes are as for `diag pr` (0, 1, 2).
+
+Flags (they may come before or after the URL):
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--mode plain\|numbered` | `plain` | `plain` is the format for questions; `numbered` is the line-numbered format for reviews (`__new hunk__` / `__old hunk__` blocks). |
+| `--prompt-tokens N` | `1500` | The estimated size of the prompt around the diff (instructions, description, commits). It is an approximation until the real prompts are measured; raise it to see how a longer prompt squeezes the diff. |
+
+```json
+{
+  "budget": { "context_window": 4096, "soft_limit": 1596, "hard_limit": 2096, "prompt_tokens": 1000, "factor": 0.3 },
+  "fast_path": false,
+  "tokens": 1454,
+  "included": ["server/app.go", "server/util.go", "server/fresh.go"],
+  "omitted": { "added": [], "modified": ["server/renamed.go", "web/index.ts"], "deleted": ["server/gone.go"] },
+  "clipped": [],
+  "skipped": [],
+  "filtered": [
+    { "path": "package-lock.json", "reason": "lockfile_or_minified" },
+    { "path": "vendor/lib/dep.go", "reason": "ignore_glob" },
+    { "path": "assets/logo.png", "reason": "bad_extension" }
+  ],
+  "elapsed_ms": 32
+}
+```
+
+### Fast path or compressed path
+
+`fast_path: true` means the whole diff, with extra context lines around each
+hunk (`diff.extra_lines_before` / `diff.extra_lines_after`), fits under
+`budget.soft_limit`. Nothing is omitted and every file is in `included`.
+
+`fast_path: false` means it did not fit. The diff is then rebuilt without extra
+context, deleted files lose their patches, files are grouped by language
+(largest group first) and, within a group, sorted largest first. Files are
+admitted until the soft limit is reached; the rest are listed in `omitted` and,
+when there is room, named in "Additional ... files (insufficient token budget
+to process)" sections at the end of the text.
+
+`budget.soft_limit` and `budget.hard_limit` are the room for diff content:
+the context window minus the reserve for the answer minus `prompt_tokens`. See
+[Getting started](getting-started.md) for how the reserves are derived.
+`tokens` is the estimated size of the printed text, including the safety
+factor.
+
+### What each list means
+
+Every changed file appears in exactly one of these lists:
+
+| List | Meaning |
+|---|---|
+| `included` | The file's full diff is in the text, in output order. |
+| `omitted.added`, `omitted.modified`, `omitted.deleted` | The file's diff is not in the text because of the budget (renamed files count as modified). On the compressed path every deleted file is listed here, because its patch is dropped on purpose. |
+| `clipped` | The file is in the text but cut short with `...(truncated)` (see `large_patch_policy` below). |
+| `skipped` | The file was not processed for a reason other than the budget (table below). |
+| `filtered` | The file filter excluded it before it was fetched. `reason` says which rule matched. |
+
+`filtered` and `skipped` never overlap: `filtered` holds the files the provider
+skipped as `filtered`, with the filter's own reason, and `skipped` holds all
+other skips.
+
+Filter reasons (`filtered`):
+
+| Reason | Meaning |
+|---|---|
+| `lockfile_or_minified` | A known lockfile (`package-lock.json`, `go.sum`, `Cargo.lock` and others) or a minified or source-map file (`.min.js`, `.min.css`, `.js.map`). |
+| `bad_extension` | The extension is on the built-in list of non-source file types (images, archives, fonts and so on). |
+| `generated:<framework>` | The path matches a generated-code pattern of a framework listed in `diff.ignore_generated_frameworks`, for example `generated:protobuf`. |
+| `ignore_glob` | The path matches an `ignore.glob` pattern (the default is `vendor/**`). |
+| `ignore_regex` | The path matches an `ignore.regex` pattern. |
+| `empty_path` | The provider reported a file without a path. |
+
+Skip reasons (`skipped`): the provider reasons from the `diag pr` table above
+(`binary`, `file_limit`, `size_limit`, `fetch_failed`), plus two added when the
+diff is assembled:
+
+| Reason | Meaning |
+|---|---|
+| `empty_diff` | The file renders to nothing, for example a pure rename or a permission change without hunks. |
+| `unparseable_patch` | The file's patch is not a unified diff that review-mcp can read. |
+
+### `ignore.glob` is not Python's `fnmatch`
+
+`ignore.glob` patterns use doublestar semantics and are matched against the
+full slash-separated path. `*` does not cross `/`, so `*.pb.go` matches only a
+file in the repository root; use `**/*.pb.go` to match at any depth, and
+`vendor/**` for everything under a top-level `vendor/`. The upstream tool this
+project is modelled on lets `*` cross `/`; patterns ported from it usually need
+a `**/` prefix. Check the result with `diag diff`: the pattern's files must
+show up under `filtered` with reason `ignore_glob`.
+
+### "The pull request diff does not fit"
+
+```text
+the pull request diff does not fit the configured context window; raise llm.context_window (REVIEW_MCP_LLM_CONTEXT_WINDOW) or narrow the pull request
+```
+
+`diag diff` prints this sentence and exits 1 when the budget has no room for
+diff content (the soft limit is zero or negative: the window is too small for
+the reserve plus `--prompt-tokens`), or when not even one file fits and
+`diff.large_patch_policy` is `skip`. Raise `llm.context_window` to the real
+size of your model's window, lower `llm.max_output_tokens`, or split the pull
+request.
+
+### `diff.large_patch_policy`
+
+It applies only when no file at all fits the budget:
+
+| Value | Result |
+|---|---|
+| `clip` (default) | The largest file of the top language group is cut to fit the soft limit and ends with `...(truncated)`. It is listed in `clipped`. |
+| `skip` | Nothing is included and `diag diff` reports the "does not fit" sentence above. |
+
+If at least one file fits, the policy has no effect: the files that do not fit
+are listed in `omitted`.
 
 ## Error messages
 

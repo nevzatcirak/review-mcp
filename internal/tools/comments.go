@@ -12,6 +12,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/review"
 )
 
 // Caps of pr_comments. They are constants, not configuration keys (X-9).
@@ -379,6 +380,10 @@ func UserMessage(err error) string {
 	var le *llm.Error
 	if errors.As(err, &le) {
 		return le.UserMessage()
+	}
+	var re *review.Error
+	if errors.As(err, &re) {
+		return re.UserMessage()
 	}
 	msg := genericErrorMessage
 	switch {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/review"
 )
 
 // ---- fakes ----
@@ -549,6 +550,14 @@ func TestPRCommentReplyErrors(t *testing.T) {
 func TestUserMessage(t *testing.T) {
 	if le := (&llm.Error{Class: llm.ClassAuth, Status: 401, Hint: "REVIEW_MCP_LLM_API_KEY"}); UserMessage(fmt.Errorf("wrapped: %w", le)) != le.Error() {
 		t.Errorf("llm error not shown as its fixed sentence")
+	}
+	for _, re := range []*review.Error{review.ErrDoesNotFit, review.ErrUnparseable, review.ErrConfigInvalid} {
+		if got := UserMessage(fmt.Errorf("wrapped: %w", re)); got != re.UserMessage() {
+			t.Errorf("review error %s shown as %q", re.Class, got)
+		}
+	}
+	if review.ErrConfigInvalid.UserMessage() != ConfigInvalidMessage {
+		t.Errorf("the review pipeline's config-invalid sentence differs from ConfigInvalidMessage")
 	}
 	pe := &provider.Error{Class: provider.ClassNotFound, Status: 404, Hint: "x"}
 	if got := UserMessage(fmt.Errorf("wrapped: %w", pe)); got != pe.Error() {

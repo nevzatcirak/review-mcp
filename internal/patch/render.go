@@ -98,6 +98,19 @@ func RenderDecoupled(f File, numbered bool) string {
 	return decouple(patchText(f.Hunks), f.Path, numbered)
 }
 
+// FileHeaderLines returns the lines that can open path's entry in a
+// numbered (decoupled or compressed) prepared diff: the file header line,
+// which the unreadable-file notice also starts with, and the deleted-file
+// line. The review pipeline (P4) uses them to find file boundaries when its
+// request-size guard trims a prepared diff.
+func FileHeaderLines(path string) []string {
+	p := pyStrip(path)
+	return []string{
+		strings.Trim(decoupledFileHeaderPrefix, "\n") + p + strings.TrimRight(decoupledFileHeaderSuffix, "\n"),
+		strings.Trim(deletedFilePrefix, "\n") + p + strings.TrimRight(deletedFileSuffix, "\n"),
+	}
+}
+
 // RenderCompressed renders f as one entry of upstream's compressed path
 // (pr_generate_compressed_diff + generate_full_patch). Pass the hunks
 // returned by HandleDeletions. Unlike RenderPlain, the plain form inserts no

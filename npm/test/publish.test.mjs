@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import { test } from 'node:test';
 
 import { distTag, npmVersionExists, publishAll } from '../scripts/publish-packages.mjs';
@@ -30,7 +31,8 @@ test('platform packages are published first, the main package last, with provena
   });
   assert.deepEqual(
     calls.map(([dir]) => dir),
-    ['/build/a-linux-x64', '/build/a-win32-x64', '/build/a'],
+    // publishAll joins with the platform's separator (backslashes on Windows).
+    ['a-linux-x64', 'a-win32-x64', 'a'].map((d) => path.join('/build', d)),
   );
   for (const [, args] of calls) {
     assert.deepEqual(args, ['publish', '--provenance', '--access', 'public', '--tag', 'latest']);
@@ -55,7 +57,7 @@ test('an existing version stops the job before anything further is published', (
       }),
     /scope\/a-win32-x64@1\.2\.3 already exists/,
   );
-  assert.deepEqual(published, ['/b/a-linux-x64'], 'the packages after the existing one are not published');
+  assert.deepEqual(published, [path.join('/b', 'a-linux-x64')], 'the packages after the existing one are not published');
 });
 
 test('a failing publish stops the job without retrying', () => {

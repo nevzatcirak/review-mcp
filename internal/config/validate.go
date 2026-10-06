@@ -15,6 +15,11 @@ import (
 
 var localeRE = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$`)
 
+// ValidLocale reports whether s is a locale code accepted by output.language
+// (such as en-US or tr). The pr_review tool validates its output_language
+// argument with it.
+func ValidLocale(s string) bool { return localeRE.MatchString(s) }
+
 const minContextWindow = 4096
 
 // validate checks the layered configuration, normalizes URLs in place and
@@ -24,7 +29,7 @@ func (l *loader) validate() {
 	l.validateLLM()
 	l.validateProviders()
 
-	if !localeRE.MatchString(c.Output.Language) {
+	if !ValidLocale(c.Output.Language) {
 		l.problem("output.language: %q is not a locale code such as en-US or tr", c.Output.Language)
 	}
 	l.validateDiff()

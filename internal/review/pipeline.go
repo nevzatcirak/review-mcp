@@ -50,6 +50,10 @@ type Deps struct {
 	Clock prompt.Clock
 	// RenderProvider renders the comment published with Args.Publish.
 	RenderProvider ProviderRenderer
+	// Progress, when set, is called with a Stage* word as the pipeline
+	// advances (the pr_review tool turns them into MCP progress
+	// notifications). Nil is ignored. It must not block.
+	Progress func(stage string)
 }
 
 // Args are the per-call arguments (DQ-25, X-1). Zero values fall back to
@@ -75,15 +79,85 @@ type Args struct {
 // errNoWiring reports a caller bug: Run needs a resolver and an LLM.
 var errNoWiring = errors.New("review: resolver or LLM dependency missing")
 
+// Progress stages reported through Deps.Progress (and by the pr_review tool
+// for the last one). They are fixed words, never PR content.
+const (
+	StageFetching      = "fetching"
+	StagePreparingDiff = "preparing diff"
+	StageCallingModel  = "calling model"
+	StageRendering     = "rendering"
+)
+
+// Plan is the outcome of steps 1 to 6 of the pipeline: everything up to the
+// model call. Run continues from it; diag review --dry-run prints it.
+type Plan struct {
+	// Result is the review so far: PR, coverage, notes and the metadata
+	// known before the model call (prompt, diff and request tokens).
+	Result *Result
+	// Budget is the token budget the diff was prepared against.
+	Budget tokens.Budget
+	// Prompts are the final prompts of the first model call. They are zero
+	// when Empty is set. Callers must never log them (X-8).
+	Prompts Prompts
+	// Empty reports that nothing reviewable is left after filtering, so no
+	// model call is made (step 5).
+	Empty bool
+
+	fit         *fitted
+	ref         provider.PRRef
+	p           provider.Provider
+	pr          *provider.PullRequest
+	d           *provider.Diff
+	toggles     Toggles
+	maxFindings int
+	log         *slog.Logger
+}
+
+func progress(deps Deps, stage string) {
+	if deps.Progress != nil {
+		deps.Progress(stage)
+	}
+}
+
 // Run reviews one pull request (spec P4 §4.3). It returns a classified
 // error (*Error, *provider.Error, *llm.Error) or the result; a failed
 // publish is reported in the result, never as an error.
 func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
-	// Step 1: config.
 	if deps.Config == nil || deps.ConfigErr != nil {
 		return nil, ErrConfigInvalid
 	}
 	if deps.Resolver == nil || deps.LLM == nil {
+		return nil, errNoWiring
+	}
+	pl, err := Prepare(ctx, deps, args)
+	if err != nil {
+		return nil, err
+	}
+	res, log := pl.Result, pl.log
+	if pl.Empty {
+		// Nothing to review: no LLM call (P3 review, 3d DESIGN-QUESTION 4).
+		// DESIGN-QUESTION: is this empty review published when publish is
+		// set? — chose yes because step 13 applies to every returned
+		// review and the comment then shows the coverage and the note.
+		res.Review = &Review{KeyIssuesToReview: []KeyIssue{}}
+		res.Notes = append(res.Notes, NoteNoReviewableChanges)
+		publish(ctx, deps, log, args, pl.ref, pl.p, res)
+		return res, nil
+	}
+	progress(deps, StageCallingModel)
+	return pl.finish(ctx, deps, args)
+}
+
+// Prepare runs steps 1 to 6 of the pipeline: configuration, resolution,
+// diff fetch, description, token measurement, diff preparation and the
+// request-size guard. It sends nothing to the model and needs no
+// Deps.LLM.
+func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
+	// Step 1: config.
+	if deps.Config == nil || deps.ConfigErr != nil {
+		return nil, ErrConfigInvalid
+	}
+	if deps.Resolver == nil {
 		return nil, errNoWiring
 	}
 	cfg := deps.Config
@@ -107,6 +181,7 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 	}
 
 	// Step 2: resolve, fetch the PR and its filtered diff.
+	progress(deps, StageFetching)
 	flt, err := filter.New(cfg)
 	if err != nil {
 		return nil, err
@@ -123,6 +198,7 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	progress(deps, StagePreparingDiff)
 
 	// Step 3: description.
 	in := PromptInput{
@@ -178,15 +254,11 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 		"provider_skipped", len(d.Skipped), "included", len(prep.Included), "clipped", len(prep.Clipped),
 		"fast_path", prep.FastPath, "prompt_tokens", promptTokens, "diff_tokens", prep.Tokens)
 
+	pl := &Plan{Result: res, Budget: budget, ref: ref, p: p, pr: pr, d: d, toggles: toggles,
+		maxFindings: maxFindings, log: log}
 	if prep.Text == "" {
-		// Nothing to review: no LLM call (P3 review, 3d DESIGN-QUESTION 4).
-		// DESIGN-QUESTION: is this empty review published when publish is
-		// set? — chose yes because step 13 applies to every returned
-		// review and the comment then shows the coverage and the note.
-		res.Review = &Review{KeyIssuesToReview: []KeyIssue{}}
-		res.Notes = append(res.Notes, NoteNoReviewableChanges)
-		publish(ctx, deps, log, args, ref, p, res)
-		return res, nil
+		pl.Empty = true
+		return pl, nil
 	}
 
 	// Step 6: render the final prompts behind the request-size guard.
@@ -194,6 +266,8 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	pl.fit = fit
+	pl.Prompts = fit.prompts
 	res.Metadata.RequestTokens = fit.requestTokens
 	if fit.keptLines >= 0 {
 		types := map[string]provider.ChangeType{}
@@ -210,6 +284,14 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 	if n := len(res.Coverage.Clipped); n > 0 {
 		res.Notes = append(res.Notes, fmt.Sprintf(noteClippedFormat, countPhrase(n, "file was", "files were")))
 	}
+	return pl, nil
+}
+
+// finish runs steps 7 to 13 of a non-empty plan.
+func (pl *Plan) finish(ctx context.Context, deps Deps, args Args) (*Result, error) {
+	res, log, fit := pl.Result, pl.log, pl.fit
+	ref, p, pr, d := pl.ref, pl.p, pl.pr, pl.d
+	toggles, maxFindings := pl.toggles, pl.maxFindings
 
 	// Steps 7 and 8: call the model, parse, re-ask once on a parse failure.
 	keys := RepairKeys(toggles)

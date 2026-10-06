@@ -359,6 +359,10 @@ func UserMessage(err error) string {
 	if errors.As(err, &pe) {
 		return pe.Error()
 	}
+	var ae *ArgumentError
+	if errors.As(err, &ae) {
+		return ae.Error()
+	}
 	var le *llm.Error
 	if errors.As(err, &le) {
 		return le.UserMessage()

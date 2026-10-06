@@ -1,0 +1,44 @@
+{{- /*
+User prompt of pr_review.
+
+Adapted from PR-Agent (https://github.com/The-PR-Agent/pr-agent),
+pr_agent/settings/pr_reviewer_prompts.toml @ 8e5a929 ([pr_review_prompt]
+user). MIT License; see NOTICE for the copyright and permission notice.
+
+Changes from upstream (spec P4 §4.2): the related-ticket block, the
+omitted-ticket notice, the question/answer block and the duplicated example
+(duplicate_prompt_examples) are removed. Kept verbatim: the --PR Info--
+block (date, title, branch, description fenced with ======), the diff
+fenced with ====== and the final line followed by an open ```yaml fence
+(DQ-7; the YAML loader's sign-off handling depends on it). The pipeline's
+one re-ask inserts its note on its own line before the final line.
+Jinja whitespace control is reproduced with {{- and -}}.
+*/}}
+
+
+--PR Info--
+{{- if .date }}
+
+Today's Date: {{ .date }}
+{{- end }}
+
+Title: '{{ .title }}'
+
+Branch: '{{ .branch }}'
+{{- if .description }}
+
+PR Description:
+======
+{{ trim .description }}
+======
+{{- end }}
+
+
+The PR code diff:
+======
+{{ .diff }}
+======
+
+
+Response (should be a valid YAML, and nothing else):
+```yaml

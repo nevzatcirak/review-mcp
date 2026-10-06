@@ -96,6 +96,7 @@ func TestGetPullRequestUnderContextPath(t *testing.T) {
 		SourceBranch: "feature", TargetBranch: "main", HeadSHA: "headsha", BaseSHA: "mergesha",
 		WebURL: "https://your-gitea.example/octo/demo/pulls/7", State: "open",
 	}
+	want.BaseStrategy = provider.BaseGiteaMergeBase
 	if *pr != want {
 		t.Fatalf("pr = %+v", *pr)
 	}
@@ -122,12 +123,15 @@ func TestBaseStrategy(t *testing.T) {
 		if pr.BaseSHA != tc.wantSHA {
 			t.Errorf("BaseSHA = %q, want %q", pr.BaseSHA, tc.wantSHA)
 		}
+		if pr.BaseStrategy != tc.wantStrategy {
+			t.Errorf("PullRequest.BaseStrategy = %q, want %q", pr.BaseStrategy, tc.wantStrategy)
+		}
 		d, err := p.GetDiff(context.Background(), ref(), pr, provider.DiffOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if d.BaseStrategy != tc.wantStrategy {
-			t.Errorf("BaseStrategy = %q, want %q", d.BaseStrategy, tc.wantStrategy)
+			t.Errorf("Diff.BaseStrategy = %q, want %q", d.BaseStrategy, tc.wantStrategy)
 		}
 		// Base content must have been requested at the chosen base revision.
 		var sawBase bool
@@ -139,10 +143,28 @@ func TestBaseStrategy(t *testing.T) {
 		if !sawBase {
 			t.Errorf("no raw request at ref=%s", tc.wantSHA)
 		}
-		// A PR value that did not come from this provider is re-fetched.
-		d2, err := f.provider(t, nil).GetDiff(context.Background(), ref(), nil, provider.DiffOptions{})
-		if err != nil || d2.BaseStrategy != tc.wantStrategy {
-			t.Errorf("nil pr: strategy %q err %v", d2.BaseStrategy, err)
+	}
+}
+
+// stdPR is a hand-built PR for GetDiff tests that do not exercise GetPullRequest.
+func stdPR() *provider.PullRequest {
+	return &provider.PullRequest{HeadSHA: "headsha", BaseSHA: "basesha", BaseStrategy: provider.BaseGiteaBaseSHA}
+}
+
+func TestGetDiffWithoutBaseSHAMakesNoRequest(t *testing.T) {
+	for name, pr := range map[string]*provider.PullRequest{
+		"empty BaseSHA": {HeadSHA: "h"},
+		"empty HeadSHA": {BaseSHA: "b"},
+		"nil":           nil,
+	} {
+		f := newFake(t, "")
+		f.standard("mergesha")
+		d, err := f.provider(t, nil).GetDiff(context.Background(), ref(), pr, provider.DiffOptions{})
+		if d != nil || !errors.Is(err, provider.ErrProtocol) {
+			t.Errorf("%s: diff = %v, err = %v, want a protocol error", name, d, err)
+		}
+		if n := len(f.requests()); n != 0 {
+			t.Errorf("%s: %d requests were made, want 0", name, n)
 		}
 	}
 }
@@ -224,7 +246,7 @@ func TestGetDiffDeterministicUnderConcurrency(t *testing.T) {
 	p := f.provider(t, nil)
 	var first []fileView
 	for i := 0; i < 3; i++ {
-		d, err := p.GetDiff(context.Background(), ref(), nil, provider.DiffOptions{})
+		d, err := p.GetDiff(context.Background(), ref(), stdPR(), provider.DiffOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -253,7 +275,7 @@ func TestGetDiffConcurrencyBound(t *testing.T) {
 	f.handle("GET", prAPI+".diff", func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, diff.String()) })
 	f.handlePages(prAPI+"/files", metas)
 	f.rawDelay = 15 * time.Millisecond
-	d, err := f.provider(t, nil).GetDiff(context.Background(), ref(), nil, provider.DiffOptions{})
+	d, err := f.provider(t, nil).GetDiff(context.Background(), ref(), stdPR(), provider.DiffOptions{})
 	if err != nil || len(d.Files) != 12 {
 		t.Fatalf("err %v files %d", err, len(d.Files))
 	}
@@ -267,7 +289,7 @@ func TestIncludeFilterFetchesNothingForFiltered(t *testing.T) {
 	f.standard("")
 	p := f.provider(t, nil)
 	opts := provider.DiffOptions{Include: func(path string) bool { return path != "src/app.go" && path != "assets/logo.png" }}
-	d, err := p.GetDiff(context.Background(), ref(), nil, opts)
+	d, err := p.GetDiff(context.Background(), ref(), stdPR(), opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +319,7 @@ func TestFileCountLimit(t *testing.T) {
 	f := newFake(t, "")
 	f.standard("")
 	p := f.provider(t, func(c *config.Config) { c.Diff.MaxFilesFullContent = 2 })
-	d, err := p.GetDiff(context.Background(), ref(), nil, provider.DiffOptions{})
+	d, err := p.GetDiff(context.Background(), ref(), stdPR(), provider.DiffOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -329,7 +351,7 @@ func TestFileSizeLimitBoundary(t *testing.T) {
 	f.setRaw("headsha", "src/app.go", "12345678")  // exactly the cap
 	f.setRaw("basesha", "src/app.go", "123456789") // one byte over
 	p := f.provider(t, func(c *config.Config) { c.Diff.MaxFileBytes = 8 })
-	d, err := p.GetDiff(context.Background(), ref(), nil, provider.DiffOptions{})
+	d, err := p.GetDiff(context.Background(), ref(), stdPR(), provider.DiffOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +375,7 @@ func TestPerFile404KeepsPatch(t *testing.T) {
 	f.raw["headsha:src/app.go"] = rawEntry{status: 404, body: "no such file " + testMarker}
 	f.raw["basesha:src/new.go"] = rawEntry{} // unused
 	p := f.provider(t, nil)
-	d, err := p.GetDiff(context.Background(), ref(), nil, provider.DiffOptions{})
+	d, err := p.GetDiff(context.Background(), ref(), stdPR(), provider.DiffOptions{})
 	if err != nil {
 		t.Fatalf("a per-file 404 must not fail GetDiff: %v", err)
 	}
@@ -395,7 +417,7 @@ func TestFilesOnlyAndDiffOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d, err := p.GetDiff(context.Background(), ref(), nil, provider.DiffOptions{})
+	d, err := p.GetDiff(context.Background(), ref(), stdPR(), provider.DiffOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -442,7 +464,7 @@ func TestFilesPaginationShortPageFollowedByMore(t *testing.T) {
 	})
 	// Page 1 is short (1 item, limit 50) yet page 2 still has items.
 	f.handlePages(prAPI+"/files", metas[:1], metas[1:])
-	d, err := f.provider(t, nil).GetDiff(context.Background(), ref(), nil, provider.DiffOptions{})
+	d, err := f.provider(t, nil).GetDiff(context.Background(), ref(), stdPR(), provider.DiffOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -457,11 +479,11 @@ func TestDiffOverCap(t *testing.T) {
 	f.standard("")
 	exact := len(sampleDiff)
 	p := f.provider(t, func(c *config.Config) { c.Diff.MaxDiffBytes = exact })
-	if _, err := p.GetDiff(context.Background(), ref(), nil, provider.DiffOptions{}); err != nil {
+	if _, err := p.GetDiff(context.Background(), ref(), stdPR(), provider.DiffOptions{}); err != nil {
 		t.Fatalf("a diff of exactly the cap must pass: %v", err)
 	}
 	p = f.provider(t, func(c *config.Config) { c.Diff.MaxDiffBytes = exact - 1 })
-	_, err := p.GetDiff(context.Background(), ref(), nil, provider.DiffOptions{})
+	_, err := p.GetDiff(context.Background(), ref(), stdPR(), provider.DiffOptions{})
 	var perr *provider.Error
 	if !errors.As(err, &perr) || perr.Class != provider.ClassTooLarge || perr.Hint != "diff.max_diff_bytes" {
 		t.Fatalf("err = %v", err)
@@ -477,7 +499,7 @@ func TestDiffParseErrorIsProtocolWithFixedHint(t *testing.T) {
 	f.handle("GET", prAPI+".diff", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, "diff --git a/secret/"+testMarker+".go b/secret/"+testMarker+".go\n--- a/x\n+++ b/x\n@@ -1,5 +1,5 @@\n context\n")
 	})
-	_, err := f.provider(t, nil).GetDiff(context.Background(), ref(), nil, provider.DiffOptions{})
+	_, err := f.provider(t, nil).GetDiff(context.Background(), ref(), stdPR(), provider.DiffOptions{})
 	var perr *provider.Error
 	if !errors.As(err, &perr) || perr.Class != provider.ClassProtocol || perr.Hint != "the diff could not be parsed" {
 		t.Fatalf("err = %v", err)
@@ -527,7 +549,7 @@ func TestRawPathTraversalMakesNoRequest(t *testing.T) {
 	})
 	f.setRaw("headsha", "dir with space/a#b%.go", "h")
 	f.setRaw("basesha", "dir with space/a#b%.go", "b")
-	d, err := f.provider(t, nil).GetDiff(context.Background(), ref(), nil, provider.DiffOptions{})
+	d, err := f.provider(t, nil).GetDiff(context.Background(), ref(), stdPR(), provider.DiffOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -563,7 +585,7 @@ func TestRefQueryEscaped(t *testing.T) {
 	for _, p := range []string{"src/app.go", "old/gone.go", "src/old_name.go"} {
 		f.setRaw("basesha", p, "b")
 	}
-	if _, err := f.provider(t, nil).GetDiff(context.Background(), ref(), nil, provider.DiffOptions{}); err != nil {
+	if _, err := f.provider(t, nil).GetDiff(context.Background(), ref(), &provider.PullRequest{HeadSHA: "a b&c", BaseSHA: "basesha"}, provider.DiffOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, r := range f.rawRequests() {
@@ -651,7 +673,7 @@ func TestContextCancellation(t *testing.T) {
 	defer cancel()
 	f.rawHook = func(*http.Request) { cancel() }
 	f.rawDelay = 2 * time.Second
-	_, err := f.provider(t, nil).GetDiff(ctx, ref(), nil, provider.DiffOptions{})
+	_, err := f.provider(t, nil).GetDiff(ctx, ref(), stdPR(), provider.DiffOptions{})
 	var perr *provider.Error
 	if !errors.As(err, &perr) || perr.Class != provider.ClassTransport || perr.Hint != "canceled" {
 		t.Fatalf("err = %v", err)
@@ -749,7 +771,7 @@ func TestMapStatusViaDiffTypes(t *testing.T) {
 		fileMeta("src/app.go", "", "weird-new-status", 1, 1),
 		fileMeta("src/new.go", "", "copied", 2, 0),
 	})
-	d, err := f.provider(t, nil).GetDiff(context.Background(), ref(), nil, provider.DiffOptions{})
+	d, err := f.provider(t, nil).GetDiff(context.Background(), ref(), stdPR(), provider.DiffOptions{})
 	if err != nil || len(d.Files) < 2 || d.Files[0].Type != provider.ChangeModified {
 		t.Fatalf("err %v files %+v", err, d)
 	}

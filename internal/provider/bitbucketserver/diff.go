@@ -93,6 +93,10 @@ type entry struct {
 
 // GetDiff implements provider.Provider.
 func (p *Provider) GetDiff(ctx context.Context, ref provider.PRRef, pr *provider.PullRequest, opts provider.DiffOptions) (*provider.Diff, error) {
+	if pr == nil || pr.BaseSHA == "" || pr.HeadSHA == "" {
+		return nil, protocolErr("the pull request has no base revision; fetch it with GetPullRequest first")
+	}
+
 	pp, err := prPath(ref)
 	if err != nil {
 		return nil, err
@@ -103,21 +107,6 @@ func (p *Provider) GetDiff(ctx context.Context, ref provider.PRRef, pr *provider
 	}
 	if err := p.ensureSupported(ctx); err != nil {
 		return nil, err
-	}
-
-	strategy := ""
-	if pr != nil {
-		p.mu.Lock()
-		strategy = p.strategies[strategyKey(ref, pr.BaseSHA)]
-		p.mu.Unlock()
-	}
-	if pr == nil || strategy == "" {
-		// The PR was not obtained from this provider (or is stale): refetch
-		// so BaseSHA and BaseStrategy are consistent with each other.
-		var perr error
-		if pr, strategy, perr = p.fetchPR(ctx, ref); perr != nil {
-			return nil, perr
-		}
 	}
 
 	changes, err := httpx.PagesStartLimit[apiChange](ctx, p.client, pp+"/changes", pageLimit)
@@ -147,7 +136,7 @@ func (p *Provider) GetDiff(ctx context.Context, ref provider.PRRef, pr *provider
 		return nil, provider.TransportError(err)
 	}
 
-	out := &provider.Diff{BaseStrategy: strategy}
+	out := &provider.Diff{BaseStrategy: pr.BaseStrategy}
 	for _, e := range entries {
 		if e.skip != nil {
 			out.Skipped = append(out.Skipped, *e.skip)

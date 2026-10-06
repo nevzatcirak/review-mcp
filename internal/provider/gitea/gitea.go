@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
@@ -118,13 +117,12 @@ func (Factory) New(cfg *config.Config, logger *slog.Logger) (provider.Provider, 
 		webURL = cfg.Gitea.BaseURL
 	}
 	return &Provider{
-		client:     c,
-		logger:     logger,
-		webURL:     strings.TrimRight(webURL, "/"),
-		maxFiles:   cfg.Diff.MaxFilesFullContent,
-		maxFile:    int64(cfg.Diff.MaxFileBytes),
-		maxDiff:    int64(cfg.Diff.MaxDiffBytes),
-		strategies: map[string]string{},
+		client:   c,
+		logger:   logger,
+		webURL:   strings.TrimRight(webURL, "/"),
+		maxFiles: cfg.Diff.MaxFilesFullContent,
+		maxFile:  int64(cfg.Diff.MaxFileBytes),
+		maxDiff:  int64(cfg.Diff.MaxDiffBytes),
 	}, nil
 }
 
@@ -136,9 +134,6 @@ type Provider struct {
 	maxFiles int
 	maxFile  int64
 	maxDiff  int64
-
-	mu         sync.Mutex
-	strategies map[string]string // PR + base SHA -> BaseStrategy
 }
 
 var _ provider.Provider = (*Provider)(nil)
@@ -193,27 +188,21 @@ type apiPR struct {
 	} `json:"base"`
 }
 
-func strategyKey(ref provider.PRRef, baseSHA string) string {
-	return ref.Namespace + "/" + ref.Repo + "#" + strconv.FormatInt(ref.Number, 10) + "@" + baseSHA
-}
-
-// fetchPR fetches the PR and derives the base revision and its strategy.
-func (p *Provider) fetchPR(ctx context.Context, ref provider.PRRef) (*provider.PullRequest, string, error) {
+// GetPullRequest implements provider.Provider. It also derives BaseSHA and
+// BaseStrategy.
+func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*provider.PullRequest, error) {
 	path, err := prPath(ref)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	var in apiPR
 	if err := p.client.GetJSON(ctx, path, &in); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	baseSHA, strategy := in.Base.SHA, provider.BaseGiteaBaseSHA
 	if in.MergeBase != "" {
 		baseSHA, strategy = in.MergeBase, provider.BaseGiteaMergeBase
 	}
-	p.mu.Lock()
-	p.strategies[strategyKey(ref, baseSHA)] = strategy
-	p.mu.Unlock()
 	p.logger.Debug("gitea base revision chosen", "strategy", strategy)
 	return &provider.PullRequest{
 		Title:        in.Title,
@@ -223,15 +212,10 @@ func (p *Provider) fetchPR(ctx context.Context, ref provider.PRRef) (*provider.P
 		TargetBranch: in.Base.Ref,
 		HeadSHA:      in.Head.SHA,
 		BaseSHA:      baseSHA,
+		BaseStrategy: strategy,
 		WebURL:       in.HTMLURL,
 		State:        in.State,
-	}, strategy, nil
-}
-
-// GetPullRequest implements provider.Provider.
-func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*provider.PullRequest, error) {
-	pr, _, err := p.fetchPR(ctx, ref)
-	return pr, err
+	}, nil
 }
 
 // GetCommitMessages implements provider.Provider. The commits endpoint is

@@ -136,12 +136,11 @@ func (Factory) New(cfg *config.Config, logger *slog.Logger) (provider.Provider, 
 		return nil, err
 	}
 	return &Provider{
-		client:     c,
-		logger:     logger,
-		baseURL:    strings.TrimRight(cfg.BitbucketServer.BaseURL, "/"),
-		maxFiles:   cfg.Diff.MaxFilesFullContent,
-		maxFile:    int64(cfg.Diff.MaxFileBytes),
-		strategies: map[string]string{},
+		client:   c,
+		logger:   logger,
+		baseURL:  strings.TrimRight(cfg.BitbucketServer.BaseURL, "/"),
+		maxFiles: cfg.Diff.MaxFilesFullContent,
+		maxFile:  int64(cfg.Diff.MaxFileBytes),
 	}, nil
 }
 
@@ -157,9 +156,6 @@ type Provider struct {
 	probeMu  sync.Mutex
 	probed   bool
 	probeErr error
-
-	mu         sync.Mutex
-	strategies map[string]string // PR + base SHA -> BaseStrategy
 }
 
 var _ provider.Provider = (*Provider)(nil)
@@ -196,14 +192,6 @@ func prPath(ref provider.PRRef) (string, error) {
 	return rp + "/pull-requests/" + strconv.FormatInt(ref.Number, 10), nil
 }
 
-func prKey(ref provider.PRRef) string {
-	return ref.Namespace + "/" + ref.Repo + "#" + strconv.FormatInt(ref.Number, 10)
-}
-
-func strategyKey(ref provider.PRRef, baseSHA string) string {
-	return prKey(ref) + "@" + baseSHA
-}
-
 type apiRef struct {
 	DisplayID    string `json:"displayId"`
 	LatestCommit string `json:"latestCommit"`
@@ -236,23 +224,23 @@ type apiCommit struct {
 	} `json:"parents"`
 }
 
-// fetchPR fetches the PR, computes the base revision and records its
-// strategy.
-func (p *Provider) fetchPR(ctx context.Context, ref provider.PRRef) (*provider.PullRequest, string, error) {
+// GetPullRequest implements provider.Provider. It also computes BaseSHA and
+// BaseStrategy.
+func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*provider.PullRequest, error) {
 	path, err := prPath(ref)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	if err := p.ensureSupported(ctx); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	var in apiPR
 	if err := p.client.GetJSON(ctx, path, &in); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	baseSHA, strategy, err := p.computeBase(ctx, ref, in.ToRef.LatestCommit)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	author := in.Author.User.Name
 	if author == "" {
@@ -262,9 +250,6 @@ func (p *Provider) fetchPR(ctx context.Context, ref provider.PRRef) (*provider.P
 	if len(in.Links.Self) > 0 {
 		webURL = in.Links.Self[0].Href
 	}
-	p.mu.Lock()
-	p.strategies[strategyKey(ref, baseSHA)] = strategy
-	p.mu.Unlock()
 	p.logger.Debug("bitbucket server base revision chosen", "strategy", strategy)
 	return &provider.PullRequest{
 		Title:        in.Title,
@@ -274,15 +259,10 @@ func (p *Provider) fetchPR(ctx context.Context, ref provider.PRRef) (*provider.P
 		TargetBranch: in.ToRef.DisplayID,
 		HeadSHA:      in.FromRef.LatestCommit,
 		BaseSHA:      baseSHA,
+		BaseStrategy: strategy,
 		WebURL:       webURL,
 		State:        in.State,
-	}, strategy, nil
-}
-
-// GetPullRequest implements provider.Provider. It also computes BaseSHA.
-func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*provider.PullRequest, error) {
-	pr, _, err := p.fetchPR(ctx, ref)
-	return pr, err
+	}, nil
 }
 
 // GetCommitMessages implements provider.Provider. The commits endpoint is

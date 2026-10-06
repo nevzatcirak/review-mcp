@@ -34,6 +34,10 @@ type PRRef struct {
 type PullRequest struct {
 	Title, Description, Author, SourceBranch, TargetBranch, HeadSHA, BaseSHA, WebURL string
 	State                                                                            string
+	// BaseStrategy says how BaseSHA was chosen. It is one of BaseGiteaMergeBase,
+	// BaseGiteaBaseSHA, BaseBBSMergeBaseEP and BaseBBSAncestorWalk. GetDiff
+	// uses BaseSHA and BaseStrategy as given.
+	BaseStrategy string
 }
 
 // ChangeType is the kind of change applied to a file.
@@ -95,7 +99,7 @@ type SkippedFile struct {
 	Reason string
 }
 
-// Base strategies reported in Diff.BaseStrategy.
+// Base strategies reported in PullRequest.BaseStrategy and Diff.BaseStrategy.
 const (
 	BaseGiteaMergeBase  = "gitea:merge_base"
 	BaseGiteaBaseSHA    = "gitea:base_sha"
@@ -105,8 +109,9 @@ const (
 
 // Diff is the result of Provider.GetDiff.
 type Diff struct {
-	Files        []FilePatch
-	Skipped      []SkippedFile
+	Files   []FilePatch
+	Skipped []SkippedFile
+	// BaseStrategy is copied from PullRequest.BaseStrategy.
 	BaseStrategy string
 }
 

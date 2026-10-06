@@ -103,7 +103,7 @@ func TestGetPullRequestMergeBaseUnderContextPath(t *testing.T) {
 	want := provider.PullRequest{
 		Title: "Add feature", Description: "Description " + testMarker, Author: "jdoe",
 		SourceBranch: "feature", TargetBranch: "main", HeadSHA: "headsha", BaseSHA: "mergesha",
-		WebURL: webPR, State: "OPEN",
+		WebURL: webPR, State: "OPEN", BaseStrategy: provider.BaseBBSMergeBaseEP,
 	}
 	if *pr != want {
 		t.Fatalf("pr = %+v", *pr)
@@ -149,7 +149,7 @@ func TestVersionProbe(t *testing.T) {
 			ops := map[string]func() error{
 				"GetPullRequest":    func() error { _, err := p.GetPullRequest(ctx, ref()); return err },
 				"GetCommitMessages": func() error { _, err := p.GetCommitMessages(ctx, ref()); return err },
-				"GetDiff":           func() error { _, err := p.GetDiff(ctx, ref(), nil, provider.DiffOptions{}); return err },
+				"GetDiff":           func() error { _, err := p.GetDiff(ctx, ref(), stdPR(), provider.DiffOptions{}); return err },
 				"PostComment":       func() error { _, err := p.PostComment(ctx, ref(), "x"); return err },
 			}
 			for name, op := range ops {
@@ -283,7 +283,7 @@ func TestAncestorWalkMergedTargetBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.BaseStrategy != provider.BaseBBSAncestorWalk || len(d.Files) != 1 {
+	if pr.BaseStrategy != provider.BaseBBSAncestorWalk || d.BaseStrategy != provider.BaseBBSAncestorWalk || len(d.Files) != 1 {
 		t.Fatalf("diff = %+v", d)
 	}
 	// Base content must have been requested at the walked base.
@@ -338,10 +338,6 @@ func TestAncestorWalkProtocolErrors(t *testing.T) {
 		p := f.provider(t, nil)
 		for opName, op := range map[string]func() error{
 			"GetPullRequest": func() error { _, err := p.GetPullRequest(context.Background(), ref()); return err },
-			"GetDiff": func() error {
-				_, err := p.GetDiff(context.Background(), ref(), nil, provider.DiffOptions{})
-				return err
-			},
 		} {
 			err := op()
 			var perr *provider.Error
@@ -372,10 +368,6 @@ func TestMergeBaseFailuresFailTheCall(t *testing.T) {
 		_, err := p.GetPullRequest(context.Background(), ref())
 		if !errors.Is(err, tc.want) {
 			t.Errorf("status %d GetPullRequest: err = %v, want %s", tc.status, err, tc.want.Class)
-		}
-		_, err = p.GetDiff(context.Background(), ref(), nil, provider.DiffOptions{})
-		if !errors.Is(err, tc.want) {
-			t.Errorf("status %d GetDiff: err = %v, want %s", tc.status, err, tc.want.Class)
 		}
 		for _, r := range f.requests() {
 			if strings.HasSuffix(r.Path, "/commits") || strings.Contains(r.Path, "/raw/") || strings.HasSuffix(r.Path, "/changes") {
@@ -412,7 +404,36 @@ func view(d *provider.Diff) []fileView {
 	return out
 }
 
+// stdPR is a hand-built PR for GetDiff tests that do not exercise GetPullRequest.
+func stdPR() *provider.PullRequest {
+	return &provider.PullRequest{HeadSHA: "headsha", BaseSHA: "mergesha", BaseStrategy: provider.BaseBBSMergeBaseEP}
+}
+
+func TestGetDiffWithoutBaseSHAMakesNoRequest(t *testing.T) {
+	for name, pr := range map[string]*provider.PullRequest{
+		"empty BaseSHA": {HeadSHA: "h"},
+		"empty HeadSHA": {BaseSHA: "b"},
+		"nil":           nil,
+	} {
+		f := newFake(t, "")
+		f.standard()
+		d, err := f.provider(t, nil).GetDiff(context.Background(), ref(), pr, provider.DiffOptions{})
+		if d != nil || !errors.Is(err, provider.ErrProtocol) {
+			t.Errorf("%s: diff = %v, err = %v, want a protocol error", name, d, err)
+		}
+		if n := len(f.requests()); n != 0 {
+			t.Errorf("%s: %d requests were made (version probe included), want 0", name, n)
+		}
+	}
+}
+
 func getDiff(t *testing.T, f *fakeBBS, mutate func(*config.Config), opts provider.DiffOptions) *provider.Diff {
+	t.Helper()
+	_, d := getPRAndDiff(t, f, mutate, opts)
+	return d
+}
+
+func getPRAndDiff(t *testing.T, f *fakeBBS, mutate func(*config.Config), opts provider.DiffOptions) (*provider.PullRequest, *provider.Diff) {
 	t.Helper()
 	p := f.provider(t, mutate)
 	pr, err := p.GetPullRequest(context.Background(), ref())
@@ -423,7 +444,7 @@ func getDiff(t *testing.T, f *fakeBBS, mutate func(*config.Config), opts provide
 	if err != nil {
 		t.Fatal(err)
 	}
-	return d
+	return pr, d
 }
 
 func TestGetDiffContentsPatchesAndRename(t *testing.T) {
@@ -471,7 +492,7 @@ func TestGetDiffContentsPatchesAndRename(t *testing.T) {
 		t.Fatalf("raw requests = %d, want 6", n)
 	}
 	if n := f.count("GET", mergeBase); n != 1 {
-		t.Fatalf("merge-base requests = %d, want 1 (GetDiff must reuse the PR it was given)", n)
+		t.Fatalf("merge-base requests = %d, want 1 (GetDiff must not compute the base again)", n)
 	}
 }
 
@@ -529,7 +550,7 @@ func TestGetDiffDeterministicUnderConcurrency(t *testing.T) {
 	p := f.provider(t, nil)
 	var first []fileView
 	for i := range 3 {
-		d, err := p.GetDiff(context.Background(), ref(), nil, provider.DiffOptions{})
+		d, err := p.GetDiff(context.Background(), ref(), stdPR(), provider.DiffOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -816,33 +837,19 @@ func TestChangesPagination(t *testing.T) {
 	}
 }
 
-func TestForeignPRIsRefetched(t *testing.T) {
-	f := newFake(t, "")
-	f.standard()
-	p := f.provider(t, nil)
-	for _, pr := range []*provider.PullRequest{nil, {HeadSHA: "headsha", BaseSHA: "othersha"}} {
-		before := f.count("GET", mergeBase)
-		d, err := p.GetDiff(context.Background(), ref(), pr, provider.DiffOptions{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if d.BaseStrategy != provider.BaseBBSMergeBaseEP || f.count("GET", mergeBase) != before+1 {
-			t.Fatalf("pr %+v: strategy %q, merge-base requests %d->%d", pr, d.BaseStrategy, before, f.count("GET", mergeBase))
-		}
-	}
-}
-
 func TestBaseStrategyReported(t *testing.T) {
 	f := newFake(t, "")
 	f.standard()
-	if d := getDiff(t, f, nil, provider.DiffOptions{}); d.BaseStrategy != provider.BaseBBSMergeBaseEP {
-		t.Fatalf("strategy = %q", d.BaseStrategy)
+	pr, d := getPRAndDiff(t, f, nil, provider.DiffOptions{})
+	if pr.BaseStrategy != provider.BaseBBSMergeBaseEP || d.BaseStrategy != provider.BaseBBSMergeBaseEP {
+		t.Fatalf("strategy: PullRequest %q, Diff %q", pr.BaseStrategy, d.BaseStrategy)
 	}
 	f2 := newFake(t, "")
 	f2.ancestorHistory()
 	f2.handlePaged(prAPI+"/changes", nil, []any{})
-	if d := getDiff(t, f2, nil, provider.DiffOptions{}); d.BaseStrategy != provider.BaseBBSAncestorWalk {
-		t.Fatalf("strategy = %q", d.BaseStrategy)
+	pr, d = getPRAndDiff(t, f2, nil, provider.DiffOptions{})
+	if pr.BaseStrategy != provider.BaseBBSAncestorWalk || d.BaseStrategy != provider.BaseBBSAncestorWalk {
+		t.Fatalf("strategy: PullRequest %q, Diff %q", pr.BaseStrategy, d.BaseStrategy)
 	}
 }
 
@@ -967,12 +974,8 @@ func TestErrorClassMapping(t *testing.T) {
 		_, err2 := p.PostComment(ctx, ref(), "x")
 		_, err3 := p.GetCommitMessages(ctx, ref())
 		// GetDiff with a PR value of ours reaches the changes endpoint.
-		_, err4 := p.GetDiff(ctx, ref(), &provider.PullRequest{HeadSHA: "headsha", BaseSHA: "mergesha"}, provider.DiffOptions{})
+		_, err4 := p.GetDiff(ctx, ref(), stdPR(), provider.DiffOptions{})
 		for i, e := range []error{err1, err2, err3, err4} {
-			if i == 3 {
-				// The PR is refetched first (strategy unknown), which fails the same way.
-				_ = e
-			}
 			if !errors.Is(e, c.want) {
 				t.Errorf("status %d op %d: err = %v, want class %s", c.status, i, e, c.want.Class)
 				continue
@@ -1003,7 +1006,7 @@ func TestContextCancellation(t *testing.T) {
 	defer cancel()
 	f.rawHook = func(*http.Request) { cancel() }
 	f.rawDelay = 2 * time.Second
-	_, err := f.provider(t, nil).GetDiff(ctx, ref(), nil, provider.DiffOptions{})
+	_, err := f.provider(t, nil).GetDiff(ctx, ref(), stdPR(), provider.DiffOptions{})
 	var perr *provider.Error
 	if !errors.As(err, &perr) || perr.Class != provider.ClassTransport || perr.Hint != "canceled" {
 		t.Fatalf("err = %v", err)

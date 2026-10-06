@@ -88,6 +88,9 @@ commands:
             reply to a pull request comment
   diag diff <PR_URL> [--mode plain|numbered] [--prompt-tokens N]
             print the prepared (filtered, budgeted) diff and how it was built
+  diag review <PR_URL> [--dry-run] [--show-prompt] [--publish]
+            review the pull request with the configured LLM; --dry-run prints
+            the token budget report without calling the model
   serve     HTTP mode (not available in this version)
 `)
 }

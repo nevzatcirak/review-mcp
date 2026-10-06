@@ -26,6 +26,7 @@ const diagUsageText = `usage:
   review-mcp diag comments <PR_URL> [--include-resolved]
   review-mcp diag reply <PR_URL> --comment-id <ID> --body <TEXT>
   review-mcp diag diff <PR_URL> [--mode plain|numbered] [--prompt-tokens N]
+  review-mcp diag review <PR_URL> [--dry-run] [--show-prompt] [--publish]
 
 diag pr       fetch a pull request and print a JSON connectivity report;
               --show-patch prints the hunk-only patch of one changed file
@@ -40,8 +41,16 @@ diag diff     run the diff pipeline (provider, file filter, token budget) and
               print a JSON header, the line "--- prepared diff ---" and the
               exact diff text a review would embed; --mode picks the render
               format (default plain); --prompt-tokens N is the estimated size
-              of the prompt scaffolding in tokens (default 1500, an
-              approximation until the prompts are measured)
+              of the prompt scaffolding in tokens (default 2056, the measured
+              maximum of the review prompts)
+diag review   review the pull request with the configured LLM and print the
+              client markdown; --publish also posts it as a PR comment.
+              --dry-run runs everything up to the model call, prints a JSON
+              report (prompt, diff and request tokens, budget, coverage) and
+              sends nothing to the model; it cannot be combined with
+              --publish. --show-prompt prints the rendered system and user
+              prompts to stdout after the output, under separator lines
+              (they are never logged)
 `
 
 func diagUsage(w io.Writer) { _, _ = fmt.Fprint(w, diagUsageText) }
@@ -142,6 +151,8 @@ func runDiag(args []string, stdout, stderr io.Writer, load configLoader) int {
 		return diagReply(ctx, cfg, logger, prURL, *commentID, *body, stdout, stderr)
 	case "diff":
 		return runDiagDiff(rest, stdout, stderr, load)
+	case "review":
+		return runDiagReview(rest, stdout, stderr, load)
 	default:
 		diagUsage(stderr)
 		return 2

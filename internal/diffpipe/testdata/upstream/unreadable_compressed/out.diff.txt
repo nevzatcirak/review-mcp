@@ -98,24 +98,57 @@ __new hunk__
 92 +    beta_91 = gamma(981)
 
 
-## File: 'src/app/response_2.py'
-
-> **This file could not be read.** PR-Agent failed to fetch its contents, so no diff is available and nothing in it was reviewed. Do not assume this file is correct, unchanged, or free of issues: flag it for manual review.
-
-
-## File: 'scripts/alpha_1.py'
-
-> **This file could not be read.** PR-Agent failed to fetch its contents, so no diff is available and nothing in it was reviewed. Do not assume this file is correct, unchanged, or free of issues: flag it for manual review.
-
-
 ## File: 'pkg/util/state_3.py'
 
-> **This file could not be read.** PR-Agent failed to fetch its contents, so no diff is available and nothing in it was reviewed. Do not assume this file is correct, unchanged, or free of issues: flag it for manual review.
+@@ -11,8 +11,8 @@ block_value_0:
+__new hunk__
+11      delta_10 = config(420)
+12      request_11 = count(837)
+13  block_value_12:
+14 +    buffer_new = alpha(737)
+15 +    state_new = count(573)
+16      handler_15 = item(933)
+17      result_16 = handler(294)
+18      gamma_17 = request(248)
+__old hunk__
+     delta_10 = config(420)
+     request_11 = count(837)
+ block_value_12:
+-    cache_13 = handler(818)
+-    alpha_14 = handler(808)
+     handler_15 = item(933)
+     result_16 = handler(294)
+     gamma_17 = request(248)
 
-
-## File: 'lib/core/state_4.rb'
-
-> **This file could not be read.** PR-Agent failed to fetch its contents, so no diff is available and nothing in it was reviewed. Do not assume this file is correct, unchanged, or free of issues: flag it for manual review.
+@@ -29,15 +29,11 @@ block_count_24:
+__new hunk__
+29      node_28 = count(757)
+30      state_29 = handler(868)
+31      cache_30 = total(450)
+32      handler_33 = handler(227)
+33      count_34 = response(900)
+34      result_35 = count(39)
+35  block_beta_36:
+36 +    response_new = value(432)
+37      state_40 = gamma(504)
+38      config_41 = response(643)
+39      state_42 = gamma(958)
+__old hunk__
+     node_28 = count(757)
+     state_29 = handler(868)
+     cache_30 = total(450)
+-    count_31 = result(772)
+-    response_32 = handler(58)
+     handler_33 = handler(227)
+     count_34 = response(900)
+     result_35 = count(39)
+ block_beta_36:
+-    alpha_37 = state(537)
+-    cache_38 = handler(411)
+-    option_39 = value(886)
+     state_40 = gamma(504)
+     config_41 = response(643)
+     state_42 = gamma(958)
 
 Additional added files (insufficient token budget to process):
 
@@ -123,5 +156,8 @@ pkg/util/total_0.java
 
 Additional modified files (insufficient token budget to process):
 
+scripts/alpha_1.py
+src/app/response_2.py
+lib/core/state_4.rb
 src/app/state_6.rs
 internal/store/delta_7.c

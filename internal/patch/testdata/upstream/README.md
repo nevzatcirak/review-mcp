@@ -7,11 +7,13 @@ the upstream functions on the synthetic inputs next to them. They are MIT
 data from PR-Agent and are attributed through the repository's `NOTICE`
 (X-7, spec P3 §0.3). No upstream code is part of this repository.
 
-Every golden is **oracle-generated**. None is hand-derived. (The only test
-expectation not produced by the oracle is the unnumbered decoupled view,
-which upstream does not have at this commit; `TestRenderDecoupledUnnumbered`
-derives it from the oracle's numbered golden by removing the line-number
-prefixes.)
+Every golden in this directory is **oracle-generated**. None is
+hand-derived. (The only test expectation not produced by the oracle is the
+unnumbered decoupled view, which upstream does not have at this commit;
+`TestRenderDecoupledUnnumbered` derives it from the oracle's numbered golden
+by removing the line-number prefixes.) Cases where review-mcp deliberately
+differs from upstream live in `../deviations/` instead (see
+[Deviations](#deviations)).
 
 ## Layout
 
@@ -35,12 +37,15 @@ Expected outputs (written by the oracle):
 | `out.deleted` | present when `handle_patch_deletions` returned `None` (deleted file) |
 | `out.compressed-plain.txt`, `out.compressed-numbered.txt` | the per-file entry `generate_full_patch` builds on the compressed path |
 
-For `unreadable` (head fetch failed) upstream renders `_unreadable_file_notice`
-on both paths; the case maps to an upstream `FilePatchInfo` with an empty
-patch and `content_fetch_failed=True`.
+For `unreadable` (head fetch failed, empty patch) upstream renders
+`_unreadable_file_notice` on both paths; the case maps to an upstream
+`FilePatchInfo` with an empty patch and `content_fetch_failed=True`, which is
+upstream's own trigger for the notice.
 
-`TestUpstreamGoldens` (`golden_test.go`) runs every case through `ParseHunks`,
-`ExtendFile`, `HandleDeletions` and every renderer and compares byte for byte.
+`TestUpstreamGoldens` (`golden_test.go`) runs every case in this directory
+through `ParseHunks`, `ExtendFile`, `HandleDeletions` and every renderer and
+compares byte for byte. It fails if a case here names a deviation.
+`TestDeviationGoldens` runs the cases in `../deviations/` the same way.
 
 ## Cases
 
@@ -59,7 +64,7 @@ patch and `content_fetch_failed=True`.
 | `multi_hunk` | three hunks, one deletion-only (dropped on the compressed path) |
 | `malformed_header` | a combined-diff `@@@` pseudo-hunk between two hunks (skip rules) |
 | `renamed` | a renamed file |
-| `unreadable` | the unreadable-head notice |
+| `unreadable` | the unreadable-head notice: head fetch failed and the patch is empty |
 | `deletion_only` | every hunk deletion-only: upstream keeps the original patch |
 | `omitted_counts` | difflib-style headers with omitted counts, no context |
 | `added` | an added file (no base: not extended) |
@@ -72,6 +77,91 @@ patch and `content_fetch_failed=True`.
 | `max_context` | `before = after = 10` near both ends of a short file |
 | `context_only_hunk` | a hand-crafted hunk with only context lines |
 | `python_line_breaks` | `\f` inside lines and inside the section text (upstream splits there) |
+
+## Deviations
+
+Cases where review-mcp deliberately differs from upstream are **not** oracle
+output. They live in `internal/patch/testdata/deviations/`, outside this
+directory, so regenerating the oracle goldens never touches them. Each one
+names its decision in `case.json` (`"deviation": "<id>"`) and has a `NOTE`
+file. `TestDeviationGoldens` requires both.
+
+| Case | Decision | Covers |
+|---|---|---|
+| `deviation_head_fetch_failed_with_patch` | **D3** (architect, PR #4) | Gitea case: the head-content fetch failed (`head_status: fetch_failed`, no `head.txt`) but the patch from the PR's `.diff` is present. review-mcp renders that patch normally in every view (plain, numbered, compressed), unextended because the head content is nil (spec §3.2). It never shows the notice, which would claim that no diff is available. |
+
+**D3, intentional deviation.** Upstream shows the notice only for
+`content_fetch_failed` with an empty patch (the oracle case `unreadable`
+above), and review-mcp now uses that same trigger. For a fetch-failed file
+that has a patch, upstream renders the patch but extends it against an empty
+head string (`new_file_str=""`), which skips the pre-context check.
+review-mcp does not extend without head content, so upstream cannot produce
+this case's outputs.
+
+How the expected outputs were derived: by the oracle, on a twin case. The
+twin has the same path, type, patch and settings, `head_status: "full"`, and
+no `base.txt` or `head.txt`. Upstream then has no original file, so
+`extend_patch` returns the patch unchanged and every view renders it
+normally. `handle_patch_deletions` does not read the base, so the compressed
+outputs are unaffected. Every `out.*` file of the twin was copied unchanged
+into the deviation case, whose `base.txt` is present but plays no part,
+since review-mcp skips extension when the head is nil. The script that
+writes both directories reuses `gitdiff`, `code` and `edit` from
+`make_cases.py`:
+
+```sh
+python3.12 make_deviation.py internal/patch/testdata/deviations <twin dir>
+PYTHONPATH=... python3.12 gen_goldens.py /home/user/pr-agent-upstream <twin dir>
+cp <twin dir>/deviation_head_fetch_failed_with_patch/out.* \
+   internal/patch/testdata/deviations/deviation_head_fetch_failed_with_patch/
+```
+
+```python
+"""Write the D3 deviation case and an oracle twin used to derive its outputs.
+
+Usage: python3.12 make_deviation.py <deviations dir> <oracle twin dir>
+"""
+import json
+import os
+import sys
+
+DEV, TWIN = sys.argv[1], sys.argv[2]
+
+# Reuse gitdiff / code / edit from make_cases.py without running it.
+src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "make_cases.py")).read()
+ns = {"__name__": "make_cases_lib"}
+exec(src[:src.index("\nbase = ")], ns)
+gitdiff, code, edit = ns["gitdiff"], ns["code"], ns["edit"]
+
+base = "def run():\n" + code(29)
+# a modification hunk and a deletion-only hunk (dropped on the compressed path)
+head = edit(base, {8: ["    value_7 = compute(77)\n"], 22: []})
+patch = gitdiff(base, head)
+name = "deviation_head_fetch_failed_with_patch"
+
+
+def write(root, meta, with_base):
+    d = os.path.join(root, name)
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "case.json"), "w") as fh:
+        fh.write(json.dumps(meta, indent=2) + "\n")
+    with open(os.path.join(d, "patch.diff"), "w", newline="") as fh:
+        fh.write(patch)
+    if with_base:
+        with open(os.path.join(d, "base.txt"), "w", newline="") as fh:
+            fh.write(base)
+
+
+common = {"path": "src/gitea_app.py", "old_path": "", "type": "modified"}
+extra = {"before": 5, "after": 1, "skip_extend_extensions": [".md", ".txt"]}
+write(DEV, {**common, "head_status": "fetch_failed", **extra, "deviation": "D3"}, True)
+write(TWIN, {**common, "head_status": "full", **extra}, False)
+```
+
+Canary: restoring the earlier status-only trigger
+(`HeadStatus == fetch_failed`) makes
+`TestDeviationGoldens/deviation_head_fetch_failed_with_patch` fail (and the
+unit test `TestFetchFailedWithPatchRendersPatch`).
 
 ## Regenerating
 
@@ -245,8 +335,9 @@ head = edit(base, {8: ["    value_7 = compute(77)\n"]})
 write("renamed", "src/new_name.py", "renamed", gitdiff(base, head), base, head,
       old_path="src/old_name.py")
 
-# head content could not be read
-write("unreadable", "src/unreadable.py", "modified", gitdiff(base, head), base, None,
+# head content could not be read and no patch is available (upstream's
+# trigger for the notice: content_fetch_failed and an empty patch)
+write("unreadable", "src/unreadable.py", "modified", "", base, None,
       head_status="fetch_failed")
 
 # every hunk is deletion-only

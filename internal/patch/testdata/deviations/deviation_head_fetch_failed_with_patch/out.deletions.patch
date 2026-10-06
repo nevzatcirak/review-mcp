@@ -1,0 +1,9 @@
+@@ -5,7 +5,7 @@ def run():
+     value_4 = compute(4)
+     value_5 = compute(5)
+     value_6 = compute(6)
+-    value_7 = compute(7)
++    value_7 = compute(77)
+     value_8 = compute(8)
+     value_9 = compute(9)
+     value_10 = compute(10)

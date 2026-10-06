@@ -27,34 +27,37 @@
 
 ## File: 'scripts/entry_0.py'
 
-> **This file could not be read.** PR-Agent failed to fetch its contents, so no diff is available and nothing in it was reviewed. Do not assume this file is correct, unchanged, or free of issues: flag it for manual review.
-
-
-
-## File: 'docs/item_3.md'
-
-> **This file could not be read.** PR-Agent failed to fetch its contents, so no diff is available and nothing in it was reviewed. Do not assume this file is correct, unchanged, or free of issues: flag it for manual review.
-
-
-
-## File: 'docs/item_1.c'
-
-> **This file could not be read.** PR-Agent failed to fetch its contents, so no diff is available and nothing in it was reviewed. Do not assume this file is correct, unchanged, or free of issues: flag it for manual review.
-
-
-
-## File: 'internal/store/value_4.rb'
-
-> **This file could not be read.** PR-Agent failed to fetch its contents, so no diff is available and nothing in it was reviewed. Do not assume this file is correct, unchanged, or free of issues: flag it for manual review.
-
-
-
-## File: 'pkg/util/total_2.java'
-
-> **This file could not be read.** PR-Agent failed to fetch its contents, so no diff is available and nothing in it was reviewed. Do not assume this file is correct, unchanged, or free of issues: flag it for manual review.
+@@ -30,8 +30,7 @@ block_gamma_24:
+     result_29 = config(997)
+     total_30 = request(395)
+     state_31 = record(496)
+-    state_32 = result(427)
+-    cache_33 = delta(262)
++    cache_new = item(298)
+     config_34 = handler(241)
+     state_35 = cache(961)
+ block_config_36:
+@@ -45,9 +44,10 @@ block_config_36:
+     beta_44 = entry(573)
+     config_45 = buffer(97)
+     handler_46 = delta(35)
+-    count_47 = record(25)
+-block_alpha_48:
+-    response_49 = option(289)
++    total_new = option(660)
++    count_new = node(502)
++    handler_new = index(983)
++    index_new = entry(956)
+     option_50 = node(257)
+     delta_51 = beta(979)
+     value_52 = count(1)
 
 
 Additional modified files (insufficient token budget to process):
 
+docs/item_3.md
+docs/item_1.c
+internal/store/value_4.rb
+pkg/util/total_2.java
 pkg/util/gamma_5.zzz
 docs/gamma_6.zzz

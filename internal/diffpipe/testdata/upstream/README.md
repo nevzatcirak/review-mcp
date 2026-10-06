@@ -8,7 +8,10 @@ synthetic pull requests next to them. They are MIT data from PR-Agent and are
 attributed through the repository's `NOTICE` (X-7, spec P3 §0.3). No upstream
 code is part of this repository.
 
-Every golden is **oracle-generated**. None is hand-derived.
+Every golden is **oracle-generated**. None is hand-derived. Two cases,
+`unreadable_compressed` and `unreadable_compressed_plain`, are produced by the
+oracle under a D3 input mapping and pin an **intentional deviation** from
+upstream (see [Deviations](#deviations)).
 
 ## Layout
 
@@ -54,7 +57,7 @@ because v1 deliberately deviates there:
 | `many_omitted_sections_clipped`, `many_omitted_numbered` | long omitted lists: sections clipped with `...(truncated)`, later sections squeezed out |
 | `deleted_list_plain`, `only_deleted_plain` | `handle_patch_deletions` names under `Deleted files:`; a PR of deleted files only |
 | `deletion_only_hunks` | `omit_deletion_hunks` on the compressed path |
-| `unreadable_compressed`, `unreadable_compressed_plain` | the unreadable-file notice on the compressed path |
+| `unreadable_compressed`, `unreadable_compressed_plain` | **D3 deviation.** Fetch-failed files that have a patch render that patch on the compressed path, with deletion handling and no notice (see [Deviations](#deviations)) |
 | `pure_rename_compressed`, `pure_rename_fast` | renames without hunks (upstream drops them silently; here `empty_diff`) and renamed files listed as modified |
 | `single_language`, `other_only` | one group; only the `Other` group |
 | `ties_stable` | equal token counts keep the provider order (stable sort) |
@@ -122,13 +125,63 @@ Everything on `get_pr_diff`'s path is upstream's own code, including
    `prompt_tokens`. With `max_output_tokens = m`, the `output_token_reserve`
    hook returns `m + (default − 1000)`, so upstream's soft/hard reserves are
    `max(m, 1000) + 500` / `max(m, 1000)` (DQ-4).
-6. **Fetch failures.** A `fetch_failed` file is given to upstream with an
-   empty patch and `content_fetch_failed = True` (upstream's trigger for the
-   unreadable notice; review-mcp keys it on `HeadStatus`, spec §3.4).
+6. **Fetch failures (D3 mapping).** A `fetch_failed` file is given to
+   upstream with `content_fetch_failed = True` and its patch. When the patch
+   is empty, upstream renders the unreadable notice, and review-mcp uses the
+   same trigger (spec §3.4, architect decision D3). When the patch is
+   present, the file's `base_file` is also set to `""`, so `extend_patch`
+   leaves it unextended, as review-mcp does without head content (§3.2).
+   See [Deviations](#deviations).
 7. **Recording wrappers.** `pr_generate_compressed_diff`,
    `_append_metadata_section` and `clip_tokens` are wrapped: the original
    functions run unchanged, and their arguments and results are recorded to
    produce `out.json`.
+
+## Deviations
+
+**D3 (architect, PR #4), intentional deviation:** a trustworthy patch is
+never replaced by a notice that claims no diff is available. review-mcp
+shows the unreadable notice only for `head_status == fetch_failed` with an
+empty patch. Any other fetch-failed file is rendered normally: unextended
+(no head content) on the fast path, and with `handle_patch_deletions` on the
+compressed path.
+
+Affected cases: `unreadable_compressed` and `unreadable_compressed_plain`.
+Each contains fetch-failed files with a patch (written by `make_cases.py`
+with `kind = "fetch_failed"`). Before D3 those files rendered as the notice.
+Now they render their patches, which changes `out.diff.txt`, `tokens`,
+`included` and `omitted.modified` (the patches are larger than the notice,
+so fewer files are admitted).
+
+Upstream would render such a file's patch too, since its trigger is
+`content_fetch_failed` with an empty patch. But it would extend the patch
+against an empty head string, which review-mcp does not. So `to_info` in
+`gen_goldens.py` passes the patch with `base_file = ""`. Upstream then has no
+original file and leaves the patch unextended, exactly like review-mcp. Under
+this mapping the oracle's output for every other case is unchanged
+(regenerated and compared). Before D3 the mapping passed an empty patch for
+every fetch-failed file:
+
+```diff
+-    fetch_failed = f["head_status"] == "fetch_failed"
+-    return FilePatchInfo(
+-        base_file=f["base"] or "", head_file=f["head"] or "",
+-        # Upstream renders the unreadable notice for a fetch-failed file with
+-        # an empty patch; review-mcp keys it on HeadStatus (spec §3.4).
+-        patch="" if fetch_failed else f["patch"],
++    fetch_failed = f["head_status"] == "fetch_failed"
++    # D3 twin: ...
++    d3 = fetch_failed and bool(f["patch"])
++    return FilePatchInfo(
++        base_file="" if d3 else (f["base"] or ""), head_file=f["head"] or "",
++        patch=f["patch"],
+```
+
+The unit test `TestCompressedFetchFailed` (`diffpipe_test.go`) pins the
+compressed-path rule directly. A fetch-failed file's deletion-only hunk is
+dropped, and only a fetch-failed file with an empty patch shows the notice.
+The two golden cases cannot pin this, because none of their fetch-failed
+files has a deletion-only hunk.
 
 ## `make_cases.py`
 
@@ -516,11 +569,14 @@ class FakeProvider:
 
 def to_info(f):
     fetch_failed = f["head_status"] == "fetch_failed"
+    # D3 twin: a fetch-failed file with a patch is rendered normally and
+    # unextended (no head content), which upstream does when it has no
+    # original file. Only a fetch-failed file with an empty patch gets the
+    # unreadable notice (upstream's own trigger).
+    d3 = fetch_failed and bool(f["patch"])
     return FilePatchInfo(
-        base_file=f["base"] or "", head_file=f["head"] or "",
-        # Upstream renders the unreadable notice for a fetch-failed file with
-        # an empty patch; review-mcp keys it on HeadStatus (spec §3.4).
-        patch="" if fetch_failed else f["patch"],
+        base_file="" if d3 else (f["base"] or ""), head_file=f["head"] or "",
+        patch=f["patch"],
         filename=f["path"], edit_type=EDIT[f["type"]],
         old_filename=f["old_path"] or None, content_fetch_failed=fetch_failed)
 

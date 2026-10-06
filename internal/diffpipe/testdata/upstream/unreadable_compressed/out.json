@@ -7,22 +7,22 @@
   "Rust",
   "C"
  ],
- "tokens": 1690,
+ "tokens": 1982,
  "clip_overshoot_offset": null,
  "upstream_dropped": [],
  "fast_path": false,
  "included": [
   "docs/result_5.go",
-  "src/app/response_2.py",
-  "scripts/alpha_1.py",
-  "pkg/util/state_3.py",
-  "lib/core/state_4.rb"
+  "pkg/util/state_3.py"
  ],
  "omitted": {
   "added": [
    "pkg/util/total_0.java"
   ],
   "modified": [
+   "scripts/alpha_1.py",
+   "src/app/response_2.py",
+   "lib/core/state_4.rb",
    "src/app/state_6.rs",
    "internal/store/delta_7.c"
   ],
@@ -30,9 +30,9 @@
  },
  "file_dict_order": [
   "docs/result_5.go",
-  "src/app/response_2.py",
-  "scripts/alpha_1.py",
   "pkg/util/state_3.py",
+  "scripts/alpha_1.py",
+  "src/app/response_2.py",
   "pkg/util/total_0.java",
   "lib/core/state_4.rb",
   "src/app/state_6.rs",

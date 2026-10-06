@@ -7,21 +7,21 @@
   "Java",
   "Other"
  ],
- "tokens": 695,
+ "tokens": 634,
  "clip_overshoot_offset": null,
  "upstream_dropped": [],
  "fast_path": false,
  "included": [
   "src/app/record_7.py",
-  "scripts/entry_0.py",
-  "docs/item_3.md",
-  "docs/item_1.c",
-  "internal/store/value_4.rb",
-  "pkg/util/total_2.java"
+  "scripts/entry_0.py"
  ],
  "omitted": {
   "added": [],
   "modified": [
+   "docs/item_3.md",
+   "docs/item_1.c",
+   "internal/store/value_4.rb",
+   "pkg/util/total_2.java",
    "pkg/util/gamma_5.zzz",
    "docs/gamma_6.zzz"
   ],

@@ -122,7 +122,7 @@ func TestParseHunks(t *testing.T) {
 
 func loadCase(t *testing.T, name string) (provider.FilePatch, config.Diff, []Hunk) {
 	t.Helper()
-	fp, d := loadGolden(t, filepath.Join("testdata/upstream", name))
+	_, fp, d := loadGolden(t, filepath.Join("testdata/upstream", name))
 	hunks, err := ParseHunks(fp.Patch)
 	if err != nil {
 		t.Fatal(err)
@@ -286,5 +286,34 @@ func TestRenderEmptyAndUnreadable(t *testing.T) {
 	f.HeadStatus = provider.ContentFetchFailed
 	if got := RenderPlain(f); !strings.Contains(got, "flag it for manual review") || !strings.HasPrefix(got, "\n\n## File: 'a.go'\n\n") {
 		t.Errorf("unreadable notice missing: %q", got)
+	}
+	if got := RenderDecoupled(f, true); !strings.Contains(got, "flag it for manual review") {
+		t.Errorf("unreadable notice missing (decoupled): %q", got)
+	}
+	if got := RenderCompressed(f, true); !strings.Contains(got, "flag it for manual review") {
+		t.Errorf("unreadable notice missing (compressed): %q", got)
+	}
+}
+
+// TestFetchFailedWithPatchRendersPatch: architect decision D3 (PR #4). A
+// fetch-failed file that has a patch renders the patch in every view, never
+// the notice. [canary] for the notice trigger.
+func TestFetchFailedWithPatchRendersPatch(t *testing.T) {
+	hunks, err := ParseHunks("@@ -1,2 +1,2 @@\n a\n-b\n+c\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := File{Path: "a.go", Type: provider.ChangeModified, HeadStatus: provider.ContentFetchFailed, Hunks: hunks}
+	views := map[string]string{
+		"plain":                RenderPlain(f),
+		"decoupled":            RenderDecoupled(f, true),
+		"decoupled-unnumbered": RenderDecoupled(f, false),
+		"compressed-plain":     RenderCompressed(f, false),
+		"compressed-numbered":  RenderCompressed(f, true),
+	}
+	for name, got := range views {
+		if strings.Contains(got, "could not be read") || !strings.Contains(got, "+c") {
+			t.Errorf("%s: want the patch, got %q", name, got)
+		}
 	}
 }

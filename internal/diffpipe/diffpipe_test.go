@@ -242,6 +242,38 @@ func TestCompressedOnlyDeletedFiles(t *testing.T) {
 	}
 }
 
+// TestCompressedFetchFailed: architect decision D3 (PR #4). On the
+// compressed path a fetch-failed file with a patch is rendered normally,
+// deletion handling included (its deletion-only hunk is dropped), and only a
+// fetch-failed file with an empty patch renders the unreadable notice.
+func TestCompressedFetchFailed(t *testing.T) {
+	gitea := provider.FilePatch{Path: "gitea.go", Type: provider.ChangeModified,
+		Patch:       "@@ -1 +1 @@\n-old_line\n+new_line\n@@ -10 +9,0 @@\n-dropped_line\n",
+		BaseContent: ptr("base\n"), BaseStatus: provider.ContentFull, HeadStatus: provider.ContentFetchFailed}
+	empty := provider.FilePatch{Path: "empty.go", Type: provider.ChangeModified,
+		BaseStatus: provider.ContentFull, HeadStatus: provider.ContentFetchFailed}
+	for _, mode := range []Mode{ModePlain, ModeNumbered} {
+		t.Run(fmt.Sprint(mode), func(t *testing.T) {
+			in := Input{Files: []provider.FilePatch{added("big.py", 400), gitea, empty},
+				Mode: mode, Budget: budget(600), Diff: diffCfg("clip")}
+			p := mustPrepare(t, in)
+			if p.FastPath {
+				t.Fatal("FastPath = true")
+			}
+			if !slices.Contains(p.Included, "gitea.go") || !slices.Contains(p.Included, "empty.go") {
+				t.Fatalf("Included = %q", p.Included)
+			}
+			if !strings.Contains(p.Text, "new_line") || strings.Contains(p.Text, "dropped_line") {
+				t.Errorf("gitea.go: want the patch without its deletion-only hunk:\n%s", p.Text)
+			}
+			if n := strings.Count(p.Text, "could not be read"); n != 1 ||
+				!strings.Contains(p.Text, "## File: 'empty.go'\n\n> **This file could not be read.**") {
+				t.Errorf("want exactly one notice, for empty.go (got %d):\n%s", n, p.Text)
+			}
+		})
+	}
+}
+
 func TestCompressedStableTiesKeepProviderOrder(t *testing.T) {
 	var fps []provider.FilePatch
 	for _, n := range []string{"c", "a", "d", "b"} {

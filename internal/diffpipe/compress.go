@@ -65,7 +65,11 @@ func compress(in Input, c *counter, groups []group) (*Prepared, error) {
 			continue
 		}
 		hunks := f.hunks
-		if f.fp.HeadStatus != provider.ContentFetchFailed {
+		// Architect decision D3 (PR #4): only a fetch-failed file with an
+		// empty patch renders the unreadable notice (upstream renders it
+		// before handle_patch_deletions). A fetch-failed file with a patch
+		// is rendered normally, deletion handling included.
+		if f.fp.HeadStatus != provider.ContentFetchFailed || len(f.hunks) > 0 {
 			kept, deleted := patch.HandleDeletions(f.fp.Type, f.fp.HeadContent, f.hunks)
 			if deleted {
 				deletedNames = append(deletedNames, f.fp.Path)

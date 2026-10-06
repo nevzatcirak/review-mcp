@@ -14,7 +14,7 @@ type File struct {
 	Path string
 	Type provider.ChangeType
 	// HeadStatus selects the unreadable-file notice when it is
-	// provider.ContentFetchFailed.
+	// provider.ContentFetchFailed and Hunks is empty.
 	HeadStatus provider.ContentStatus
 	Hunks      []Hunk
 }
@@ -25,16 +25,21 @@ func NewFile(fp provider.FilePatch, hunks []Hunk) File {
 	return File{Path: fp.Path, Type: fp.Type, HeadStatus: fp.HeadStatus, Hunks: hunks}
 }
 
-// unreadable selects the notice (spec §3.4). Upstream renders it for a file
-// with content_fetch_failed and no patch; here the trigger is
-// HeadStatus == fetch_failed, also when a patch exists.
+// unreadable selects the notice (spec §3.4): HeadStatus == fetch_failed and
+// no hunks, that is an empty patch. This is upstream's own trigger
+// (content_fetch_failed and an empty patch).
 //
-// Parity decision (lead; architect may override on PR #4): a Gitea patch comes from the PR's .diff and stays
-// trustworthy when only the head-content fetch failed; the spec replaces it
-// with the notice, whose text says no diff is available. Should such a file
-// render its unextended patch instead? — chose the spec's rule (the notice)
-// because §3 is binding; a failed base fetch only disables the extension.
-func (f File) unreadable() bool { return f.HeadStatus == provider.ContentFetchFailed }
+// Decision, architect decision D3 (PR #4), an intentional deviation from
+// upstream and from the earlier status-only rule: a trustworthy patch is
+// never replaced by a notice that claims no diff is available. A Gitea patch comes from the PR's .diff and stays
+// trustworthy when only the head-content fetch failed, so a fetch-failed
+// file that has a patch renders it normally in every view (plain, decoupled,
+// compressed). It stays unextended because its head content is nil (§3.2).
+// Upstream would extend such a patch against an empty head; this deviation
+// is pinned by testdata/deviations/deviation_head_fetch_failed_with_patch.
+func (f File) unreadable() bool {
+	return f.HeadStatus == provider.ContentFetchFailed && len(f.Hunks) == 0
+}
 
 // UnreadableNotice is upstream's _unreadable_file_notice for path: the file
 // stays visible to the model, flagged for manual review, instead of being
@@ -51,8 +56,9 @@ func UnreadableNotice(path string) string {
 // before each hunk header, so extended hunks end up two blank lines apart.
 //
 // A file whose head content could not be read (HeadStatus fetch_failed)
-// renders as UnreadableNotice. A file without hunks renders as "" (upstream
-// skips it).
+// and that has no hunks renders as UnreadableNotice; with hunks it renders
+// normally (D3). Any other file without hunks renders as "" (upstream skips
+// it).
 func RenderPlain(f File) string {
 	if f.unreadable() {
 		return UnreadableNotice(f.Path)
@@ -77,8 +83,8 @@ func RenderPlain(f File) string {
 // the line-number prefixes; upstream has no such renderer at the pinned
 // commit, so this variant has no oracle golden.
 //
-// Fetch-failed files render as UnreadableNotice; a file without hunks
-// renders as "".
+// A fetch-failed file without hunks renders as UnreadableNotice (with hunks
+// it renders normally, D3); any other file without hunks renders as "".
 func RenderDecoupled(f File, numbered bool) string {
 	if f.unreadable() {
 		return UnreadableNotice(f.Path)
@@ -98,9 +104,10 @@ func RenderDecoupled(f File, numbered bool) string {
 // blank lines between hunks, and the numbered form is the decoupled render
 // with surrounding newlines trimmed (so it has no trailing newline).
 //
-// Fetch-failed files render the notice as upstream does on this path (the
-// numbered form loses the notice's final newline). An empty result means
-// upstream would skip the file.
+// A fetch-failed file without hunks renders the notice as upstream does on
+// this path (the numbered form loses the notice's final newline); with hunks
+// it renders normally (D3). An empty result means upstream would skip the
+// file.
 func RenderCompressed(f File, numbered bool) string {
 	if f.unreadable() {
 		note := UnreadableNotice(f.Path)

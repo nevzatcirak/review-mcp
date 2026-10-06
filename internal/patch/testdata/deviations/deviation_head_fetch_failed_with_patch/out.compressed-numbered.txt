@@ -1,0 +1,21 @@
+
+
+## File: 'src/gitea_app.py'
+
+@@ -5,7 +5,7 @@ def run():
+__new hunk__
+5      value_4 = compute(4)
+6      value_5 = compute(5)
+7      value_6 = compute(6)
+8 +    value_7 = compute(77)
+9      value_8 = compute(8)
+10      value_9 = compute(9)
+11      value_10 = compute(10)
+__old hunk__
+     value_4 = compute(4)
+     value_5 = compute(5)
+     value_6 = compute(6)
+-    value_7 = compute(7)
+     value_8 = compute(8)
+     value_9 = compute(9)
+     value_10 = compute(10)

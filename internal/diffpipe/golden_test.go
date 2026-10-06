@@ -144,6 +144,11 @@ func TestUpstreamGoldens(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Prepare: %v", err)
 			}
+			// Architect decision D4 (PR #4): the diff never names the
+			// upstream product (the unreadable notice says review-mcp).
+			if strings.Contains(got.Text, "PR-Agent") {
+				t.Errorf("text contains %q", "PR-Agent")
+			}
 			if off := want.ClipOvershootOffset; off != nil {
 				checkClipOvershoot(t, in, got, wantText, *off)
 			} else {

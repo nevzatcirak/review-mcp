@@ -7,8 +7,9 @@ the PR's .diff, is present and trustworthy.
 review-mcp renders the patch normally in every view, unextended because the
 head content is nil (spec section 3.2). It never shows the unreadable notice,
 which would claim that no diff is available. The notice is reserved for
-head_status fetch_failed with an empty patch (oracle case
-testdata/upstream/unreadable).
+head_status fetch_failed with an empty patch (case
+testdata/deviations/deviation_unreadable_notice, formerly the oracle case
+testdata/upstream/unreadable; it moved there under D4).
 
 Upstream PR-Agent at 8e5a929 would extend this patch against an empty head
 string, so it cannot produce these outputs. They were derived by running the

@@ -1,0 +1,5 @@
+
+
+## File: 'src/unreadable.py'
+
+> **This file could not be read.** review-mcp failed to fetch its contents, so no diff is available and nothing in it was reviewed. Do not assume this file is correct, unchanged, or free of issues: flag it for manual review.

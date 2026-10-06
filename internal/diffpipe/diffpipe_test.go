@@ -267,7 +267,8 @@ func TestCompressedFetchFailed(t *testing.T) {
 				t.Errorf("gitea.go: want the patch without its deletion-only hunk:\n%s", p.Text)
 			}
 			if n := strings.Count(p.Text, "could not be read"); n != 1 ||
-				!strings.Contains(p.Text, "## File: 'empty.go'\n\n> **This file could not be read.**") {
+				!strings.Contains(p.Text, "## File: 'empty.go'\n\n> **This file could not be read.** review-mcp failed") ||
+				strings.Contains(p.Text, "PR-Agent") {
 				t.Errorf("want exactly one notice, for empty.go (got %d):\n%s", n, p.Text)
 			}
 		})

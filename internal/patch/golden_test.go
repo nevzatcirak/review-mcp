@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
@@ -40,6 +41,10 @@ const goldenDirEnv = "REVIEW_MCP_PATCH_GOLDEN_DIR"
 
 // deviationDir holds the intentional-deviation cases (README "Deviations").
 const deviationDir = "testdata/deviations"
+
+// upstreamProductName must not appear in any render (architect decision D4,
+// PR #4): the model and the users see the name of the tool they run.
+const upstreamProductName = "PR-Agent"
 
 func goldenDir() string {
 	if d := os.Getenv(goldenDirEnv); d != "" {
@@ -129,7 +134,9 @@ func TestUpstreamGoldens(t *testing.T) {
 // case. Its expected outputs are not upstream's (see each case's NOTE and the
 // README section "Deviations"). [canary] for architect decision D3 (PR #4):
 // deviation_head_fetch_failed_with_patch fails if a fetch-failed file with a
-// patch renders the unreadable notice again.
+// patch renders the unreadable notice again. [canary] for architect decision
+// D4 (PR #4): deviation_unreadable_notice fails if the notice names
+// upstream's product instead of review-mcp.
 func TestDeviationGoldens(t *testing.T) {
 	names := caseNames(t, deviationDir)
 	if len(names) == 0 {
@@ -161,6 +168,11 @@ func runGolden(t *testing.T, dir string, fp provider.FilePatch, d config.Diff) {
 	checked := 0
 	check := func(out, got string) {
 		t.Helper()
+		// Architect decision D4 (PR #4): no render names the upstream
+		// product; only provenance comments may mention it.
+		if strings.Contains(got, upstreamProductName) {
+			t.Errorf("%s: render contains %q:\n%q", out, upstreamProductName, got)
+		}
 		want, ok := readOptional(t, filepath.Join(dir, out))
 		if !ok {
 			return
@@ -196,5 +208,29 @@ func runGolden(t *testing.T, dir string, fp provider.FilePatch, d config.Diff) {
 	}
 	if checked < 3 {
 		t.Fatalf("only %d golden outputs checked", checked)
+	}
+}
+
+// TestNoUpstreamProductNameInGoldens: architect decision D4 (PR #4). No
+// expected output, oracle or deviation, names the upstream product. Only
+// provenance text (READMEs, NOTE files, comments) may mention it.
+func TestNoUpstreamProductNameInGoldens(t *testing.T) {
+	for _, root := range []string{"testdata/upstream", deviationDir} {
+		outs, err := filepath.Glob(filepath.Join(root, "*", "out.*"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(outs) == 0 {
+			t.Fatalf("no out.* files under %s", root)
+		}
+		for _, out := range outs {
+			b, err := os.ReadFile(out) //nolint:gosec // test fixture path
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(b), upstreamProductName) {
+				t.Errorf("%s contains %q", out, upstreamProductName)
+			}
+		}
 	}
 }

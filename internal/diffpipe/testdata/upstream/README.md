@@ -183,6 +183,14 @@ dropped, and only a fetch-failed file with an empty patch shows the notice.
 The two golden cases cannot pin this, because none of their fetch-failed
 files has a deletion-only hunk.
 
+**D4 (architect, PR #4), intentional deviation:** review-mcp's
+unreadable notice says "review-mcp failed to fetch its contents" where
+upstream says "PR-Agent". No golden here contains the notice, so none is
+affected (checked). `TestUpstreamGoldens` also fails if any `Prepare` text
+contains "PR-Agent". A future case that renders the notice would need the
+substitution described in `internal/patch/testdata/upstream/README.md`
+(Deviations, D4) and a D4 mark here.
+
 ## `make_cases.py`
 
 ```python

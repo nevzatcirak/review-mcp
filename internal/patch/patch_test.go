@@ -287,6 +287,10 @@ func TestRenderEmptyAndUnreadable(t *testing.T) {
 	if got := RenderPlain(f); !strings.Contains(got, "flag it for manual review") || !strings.HasPrefix(got, "\n\n## File: 'a.go'\n\n") {
 		t.Errorf("unreadable notice missing: %q", got)
 	}
+	// Architect decision D4 (PR #4): the notice names review-mcp.
+	if got := UnreadableNotice("a.go"); !strings.Contains(got, "** review-mcp failed to fetch") || strings.Contains(got, upstreamProductName) {
+		t.Errorf("notice must name review-mcp, not %s: %q", upstreamProductName, got)
+	}
 	if got := RenderDecoupled(f, true); !strings.Contains(got, "flag it for manual review") {
 		t.Errorf("unreadable notice missing (decoupled): %q", got)
 	}

@@ -45,8 +45,9 @@ func withOverviewMarker(body string) string {
 	return strings.TrimRight(body, " \t\r\n") + "\n\n" + OverviewMarker
 }
 
-// listThreads returns the PR's comment threads, reading them once per run
-// (WP-PR-7e reads them in step 2 through the same method).
+// listThreads returns the PR's comment threads, reading them once per run:
+// step 2 (the discussion and the duplicate check) and step 13 (the overview
+// lookup) share the one read.
 func (pl *Plan) listThreads(ctx context.Context) ([]provider.Thread, error) {
 	if !pl.threadsRead {
 		pl.threads, pl.threadsErr = pl.p.ListThreads(ctx, pl.ref)
@@ -132,4 +133,34 @@ func idLess(a, b string) bool {
 		return len(a) < len(b)
 	}
 	return a < b
+}
+
+// readDiscussion reads the PR's threads for the prompt and the duplicate
+// check (spec P7 §5): it fills pl.postedFingerprints when wantFingerprints
+// is set and renders the discussion block within maxTokens (0 or less: no
+// block). It reads nothing when neither is wanted. Any read error returns
+// an empty discussion and NoteDiscussionUnreadable: the discussion is
+// context, never a reason to fail the review. Without the token's own user
+// the review's comments cannot be told from other people's, so a failed
+// CurrentUser is treated as a failed read.
+func (pl *Plan) readDiscussion(ctx context.Context, maxTokens int, wantFingerprints bool, factor float64) (discussion, []string) {
+	if maxTokens <= 0 && !wantFingerprints {
+		return discussion{}, nil
+	}
+	threads, err := pl.listThreads(ctx)
+	var me provider.User
+	if err == nil {
+		me, err = pl.currentUser(ctx)
+	}
+	if err != nil {
+		pl.log.Debug("review: discussion not read", "error", fixedError(err))
+		return discussion{}, []string{NoteDiscussionUnreadable}
+	}
+	if wantFingerprints {
+		pl.postedFingerprints = fingerprintsOf(threads, me)
+	}
+	d := renderDiscussion(humanThreads(threads, me), maxTokens, factor)
+	pl.log.Debug("review: discussion read", "threads", len(threads), "shown", d.Included, "omitted", d.Omitted,
+		"posted_fingerprints", len(pl.postedFingerprints))
+	return d, nil
 }

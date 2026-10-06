@@ -30,8 +30,9 @@ import (
 //	go test ./internal/review -run TestScaffoldingTokens -v
 //
 // (the last row of the table: request tokens 2205). A review of a real PR
-// adds its title, branch and description on top; diag review --dry-run
-// reports the exact figure for one PR.
+// adds its title, branch, description and existing-discussion block (X-13,
+// at most 1500 tokens by default) on top; diag review --dry-run reports the
+// exact figure for one PR.
 const defaultPromptTokens = 2205
 
 // diffSeparator is the line between the JSON header and the prepared diff.

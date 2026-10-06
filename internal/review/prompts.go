@@ -45,6 +45,10 @@ type PromptInput struct {
 	// Description is the PR description, already clipped
 	// (tokens.ClipDescription); the template trims it.
 	Description string
+	// Discussion is the rendered existing-discussion block (DiscussionHeader
+	// and the fenced threads, see renderDiscussion); empty omits it. It is
+	// third-party text, and part of the scaffolding the diff budget reserves.
+	Discussion string
 	// Date is the prompt date (prompt.Date).
 	Date string
 	// Diff is the prepared diff; empty for the scaffolding measurement.
@@ -68,6 +72,7 @@ func (in *PromptInput) vars() map[string]any {
 		"title":              in.Title,
 		"branch":             in.Branch,
 		"description":        in.Description,
+		"discussion":         in.Discussion,
 		"diff":               in.Diff,
 	}
 }

@@ -64,7 +64,7 @@ func ResultSchema() map[string]any {
 			"truncated":         boolean("whether the answer was cut off by the output limit"),
 			"diff_trimmed":      boolean("whether the request-size guard shortened the diff"),
 			"reviewed_at":       str("run time, RFC 3339 in UTC"),
-			"already_discussed": integer("points already raised in the pull request discussion (X-13); absent when 0"),
+			"already_discussed": integer("comment threads of the existing pull request discussion that were shown to the model (X-13); absent when 0"),
 		}, "model", "context_window", "prompt_tokens", "diff_tokens", "request_tokens", "fast_path", "llm_calls",
 			"repair_tactic", "reasked", "truncated", "diff_trimmed", "reviewed_at"),
 		"publish": object("publishing outcome; present when publish was requested", map[string]any{

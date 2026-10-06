@@ -13,6 +13,12 @@ fenced with ====== and the final line followed by an open ```yaml fence
 (DQ-7; the YAML loader's sign-off handling depends on it). The pipeline's
 one re-ask inserts its note on its own line before the final line.
 Jinja whitespace control is reproduced with {{- and -}}.
+
+Intentional deviation (spec P7 §5.2, X-13): upstream has no existing-
+discussion block. When the pipeline supplies one (.discussion, already
+rendered: the fixed header and the threads inside an adaptive code fence),
+it follows the description and precedes the diff; without one nothing is
+rendered, so the prompt is byte-identical to the one without the feature.
 */}}
 
 
@@ -31,6 +37,10 @@ PR Description:
 ======
 {{ trim .description }}
 ======
+{{- end }}
+{{- if .discussion }}
+
+{{ .discussion }}
 {{- end }}
 
 

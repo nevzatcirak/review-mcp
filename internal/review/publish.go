@@ -44,6 +44,12 @@ type inlineFinding struct {
 	item  provider.InlineComment
 }
 
+// inlineEnabled reports whether a publish posts inline comments: there is a
+// renderer and Args.InlineFindings is not false.
+func inlineEnabled(deps Deps, args Args) bool {
+	return deps.RenderInline != nil && (args.InlineFindings == nil || *args.InlineFindings)
+}
+
 // publish runs step 13 when publishing was requested and records the
 // outcome in pl.Result. It never fails the review.
 //
@@ -80,7 +86,7 @@ func publish(ctx context.Context, deps Deps, args Args, pl *Plan) {
 		}
 	}
 
-	inlineOn := deps.RenderInline != nil && (args.InlineFindings == nil || *args.InlineFindings)
+	inlineOn := inlineEnabled(deps, args)
 	var items []inlineFinding
 	var sum *InlineSummary
 	notesBefore := len(res.Notes)

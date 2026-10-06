@@ -76,8 +76,10 @@ measured with the real templates. With every field enabled, a non-English
 language and extra instructions it is **2205 tokens** (estimate, including the
 safety factor and framing). The other combinations range from 1589 to 2205.
 That maximum is the default of `diag diff --prompt-tokens`. On top of it come
-the title, branch and description of the actual PR; `diag review --dry-run`
-(below) reports the exact figure for a given PR.
+the title, branch and description of the actual PR and, when the PR has
+comments, the existing-discussion block (at most 1500 tokens by default, header
+and fence included); `diag review --dry-run` (below) reports the exact figure
+for a given PR.
 
 Reproduce the table with
 `go test ./internal/review -run TestScaffoldingTokens -v`.

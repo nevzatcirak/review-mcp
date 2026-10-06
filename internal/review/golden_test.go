@@ -32,6 +32,9 @@ type promptCase struct {
 	Description       string `json:"description"`
 	Date              string `json:"date"`
 	Diff              string `json:"diff"`
+	// Discussion is the rendered existing-discussion block (ours, X-13;
+	// the oracle ignores it).
+	Discussion string `json:"discussion"`
 }
 
 func (c *promptCase) input() PromptInput {
@@ -44,6 +47,7 @@ func (c *promptCase) input() PromptInput {
 		Title:             c.Title,
 		Branch:            c.Branch,
 		Description:       c.Description,
+		Discussion:        c.Discussion,
 		Date:              c.Date,
 		Diff:              c.Diff,
 	}
@@ -121,6 +125,14 @@ func TestPromptGoldens(t *testing.T) {
 				"upstream.user.txt", "user.txt"))
 			checkGolden(t, filepath.Join(dir, "upstream.diff"), d.String())
 		})
+	}
+	// The with_discussion case embeds the block of the discussion golden.
+	var c promptCase
+	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(promptCasesDir, "with_discussion", "case.json"))), &c); err != nil {
+		t.Fatal(err)
+	}
+	if want := strings.TrimSuffix(readFile(t, "testdata/discussion/sample.txt"), "\n"); c.Discussion != want {
+		t.Errorf("with_discussion/case.json holds a different block than testdata/discussion/sample.txt (regenerate the cases)")
 	}
 	if n < 6 {
 		t.Fatalf("found %d prompt cases, want at least 6", n)

@@ -148,6 +148,9 @@ func fakeBitbucket(t *testing.T) (*httptest.Server, *wire) {
 	// overviews are the PR-level comments posted (id -> text), served back
 	// by the activities listing and edited through GET and PUT.
 	overviews := map[int]string{}
+	// inlines are the anchored comments posted (id -> the posted body),
+	// served back by the activities listing like the overviews.
+	inlines := map[int]map[string]any{}
 	version := map[int]int{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body := wr.add(r)
@@ -161,6 +164,11 @@ func fakeBitbucket(t *testing.T) (*httptest.Server, *wire) {
 				if text, ok := overviews[id]; ok {
 					acts = append(acts, map[string]any{"action": "COMMENTED", "commentAction": "ADDED",
 						"comment": map[string]any{"id": id, "text": text, "createdDate": id,
+							"author": map[string]any{"id": 42, "name": "review-bot", "displayName": "Review Bot"}}})
+				}
+				if in, ok := inlines[id]; ok {
+					acts = append(acts, map[string]any{"action": "COMMENTED", "commentAction": "ADDED",
+						"comment": map[string]any{"id": id, "text": in["text"], "createdDate": id, "anchor": in["anchor"],
 							"author": map[string]any{"id": 42, "name": "review-bot", "displayName": "Review Bot"}}})
 				}
 			}
@@ -182,6 +190,8 @@ func fakeBitbucket(t *testing.T) (*httptest.Server, *wire) {
 			next++
 			if body["anchor"] == nil {
 				overviews[next], _ = body["text"].(string)
+			} else {
+				inlines[next] = map[string]any{"text": body["text"], "anchor": body["anchor"]}
 			}
 			writeJSON(w, map[string]any{"id": next, "version": 0})
 		case r.Method == "GET" && overviews[commentID] != "":
@@ -256,7 +266,7 @@ func fakeGitea(t *testing.T) (*httptest.Server, *wire) {
 			for i, c := range comments {
 				cm, _ := c.(map[string]any)
 				id := 1000 + i
-				reviewComments = append(reviewComments, map[string]any{"id": id, "path": cm["path"], "body": cm["body"],
+				reviewComments = append(reviewComments, map[string]any{"id": id, "path": cm["path"], "body": cm["body"], "user": bot,
 					"position": cm["new_position"], "html_url": web + "/files#issuecomment-" + strconv.Itoa(id)})
 			}
 			reviewed = true
@@ -437,9 +447,10 @@ func checkWire(t *testing.T, name string, reqs []wireReq, kis []review.KeyIssue)
 // fake server with the real providers: the second run finds the first
 // run's overview through ListThreads and CurrentUser, and the provider's
 // own EditComment ownership check accepts it (the lookup and the edit agree
-// on who "we" are). The second run's writes are its inline comments and
-// one edit; no second overview is posted. Inline deduplication is WP-PR-7e,
-// so the second run posts its inline comments again.
+// on who "we" are). The second run's only write is that edit: no second
+// overview is posted, and its inline findings are found again through their
+// fingerprints (the providers list the first run's inline comments with
+// their authors) and skipped as duplicates.
 func TestPersistentOverviewRealProviders(t *testing.T) {
 	for name, mk := range canarySetups() {
 		t.Run(name, func(t *testing.T) {
@@ -476,14 +487,15 @@ func TestPersistentOverviewRealProviders(t *testing.T) {
 					kinds = append(kinds, "overview")
 				}
 			}
-			want := []string{"inline", "edit"}
-			if name == "bitbucket_server" {
-				want = []string{"inline", "inline", "edit"}
-			}
-			if !slices.Equal(kinds, want) {
+			// Both anchorable findings are on the PR already, with their
+			// fingerprints (WP-PR-7e): the second run only edits the overview.
+			if want := []string{"edit"}; !slices.Equal(kinds, want) {
 				t.Errorf("second run writes %v, want %v", kinds, want)
 			}
-			if !review.HasOverviewMarker(edited) || !strings.Contains(edited, res.Review.KeyIssuesToReview[0].InlineURL) ||
+			if in := res.Publish.Inline; in == nil || *in != (review.InlineSummary{SkippedDuplicate: 2, Unanchorable: 1}) {
+				t.Errorf("second inline = %+v", res.Publish.Inline)
+			}
+			if !review.HasOverviewMarker(edited) ||
 				slices.Contains(res.Notes, review.NoteOverviewReplaced) || slices.Contains(res.Notes, review.NoteOverviewLookupFailed) {
 				t.Errorf("edited overview:\n%s\nnotes %q", edited, res.Notes)
 			}

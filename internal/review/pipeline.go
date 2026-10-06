@@ -101,6 +101,17 @@ type Args struct {
 	// Like InlineFindings, it is a per-call option until WP-PR-7f adds
 	// review.persistent_overview as its nil fallback and the tool argument.
 	PersistentOverview *bool
+	// MaxDiscussionTokens is the token budget of the existing-discussion
+	// block of the prompt (spec P7 §5.2): nil means
+	// DefaultMaxDiscussionTokens, 0 or less turns the block off.
+	//
+	// DESIGN-QUESTION: where does review.max_discussion_tokens live before
+	// WP-PR-7f adds its config row (spec P7 §6.2 lists it there)? — chose a
+	// per-call option, as for InlineFindings and PersistentOverview: its nil
+	// value is the compiled default, and 7f adds the row and the
+	// REVIEW_MCP_REVIEW_MAX_DISCUSSION_TOKENS variable as the value mapped
+	// here, in the one package that owns the config table.
+	MaxDiscussionTokens *int
 }
 
 // errNoWiring reports a caller bug: Run needs a resolver and an LLM.
@@ -140,8 +151,8 @@ type Plan struct {
 	log         *slog.Logger
 	// postedFingerprints are the fingerprints of the review's inline
 	// comments already on the PR (spec P7 §5.3); a finding with one of them
-	// is not posted again. WP-PR-7e fills it from the PR's threads; until
-	// then it is empty.
+	// is not posted again. Prepare fills it from the PR's threads when the
+	// run will publish inline comments.
 	postedFingerprints map[string]bool
 
 	// The PR's threads and the token's user, each read at most once per
@@ -250,6 +261,15 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 	progress(deps, StagePreparingDiff)
 
+	// The PR's discussion, for the prompt and for the duplicate check; a
+	// failure never fails the review.
+	pl := &Plan{ref: ref, p: p, pr: pr, d: d, toggles: toggles, maxFindings: maxFindings, log: log}
+	maxDisc := DefaultMaxDiscussionTokens
+	if args.MaxDiscussionTokens != nil {
+		maxDisc = *args.MaxDiscussionTokens
+	}
+	disc, discNotes := pl.readDiscussion(ctx, maxDisc, args.Publish && inlineEnabled(deps, args), factor)
+
 	// Step 3: description.
 	in := PromptInput{
 		Toggles:           toggles,
@@ -259,6 +279,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		Title:             pr.Title,
 		Branch:            pr.SourceBranch,
 		Description:       tokens.ClipDescription(pr.Description, cfg.Diff.MaxDescriptionTokens, factor),
+		Discussion:        disc.Block,
 		Date:              prompt.Date(deps.Clock),
 	}
 
@@ -272,6 +293,16 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		MaxOutputTokens: cfg.LLM.MaxOutputTokens,
 		PromptTokens:    promptTokens,
 		Factor:          factor,
+	}
+	if budget.RequireCapacity() != nil && in.Discussion != "" {
+		// The discussion is optional: a context window too small for it
+		// still reviews the diff, without it.
+		disc = discussion{Omitted: disc.Included + disc.Omitted}
+		in.Discussion = ""
+		if promptTokens, err = ScaffoldingTokens(in, factor); err != nil {
+			return nil, err
+		}
+		budget.PromptTokens = promptTokens
 	}
 	if err := budget.RequireCapacity(); err != nil {
 		return nil, doesNotFit(err)
@@ -296,17 +327,24 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		Metadata: Metadata{
 			Model: cfg.LLM.Model, ContextWindow: cfg.LLM.ContextWindow, PromptTokens: promptTokens,
 			DiffTokens: prep.Tokens, FastPath: prep.FastPath, ReviewedAt: reviewedAt(deps.Clock),
+			// The threads shown to the model: the review cannot know which
+			// of its findings the discussion made it drop.
+			AlreadyDiscussed: disc.Included,
 		},
+	}
+	res.Notes = append(res.Notes, discNotes...)
+	if disc.Omitted > 0 {
+		res.Notes = append(res.Notes, noteDiscussionLeftOut(disc.Omitted))
 	}
 	for _, f := range enabledFields(toggles) {
 		res.EnabledFields = append(res.EnabledFields, f.key)
 	}
 	log.Debug("review: diff prepared", "url", logging.RedactURL(ref.URL), "files", len(d.Files),
 		"provider_skipped", len(d.Skipped), "included", len(prep.Included), "clipped", len(prep.Clipped),
-		"fast_path", prep.FastPath, "prompt_tokens", promptTokens, "diff_tokens", prep.Tokens)
+		"fast_path", prep.FastPath, "prompt_tokens", promptTokens, "diff_tokens", prep.Tokens,
+		"discussion_threads", disc.Included, "discussion_omitted", disc.Omitted)
 
-	pl := &Plan{Result: res, Budget: budget, ref: ref, p: p, pr: pr, d: d, toggles: toggles,
-		maxFindings: maxFindings, log: log}
+	pl.Result, pl.Budget = res, budget
 	if prep.Text == "" {
 		pl.Empty = true
 		return pl, nil

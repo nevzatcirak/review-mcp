@@ -62,6 +62,12 @@ type fakeProvider struct {
 	lists    int
 	me       provider.User
 	meErr    error
+	// threads are further threads a test plants (inline ones, replies,
+	// resolved ones); ListThreads lists them after the general comments, and
+	// then the inline comments PostInlineComments recorded as the token's own
+	// (inlineThreads), like a real server does.
+	threads       []provider.Thread
+	inlineThreads []provider.Thread
 }
 
 type edit struct{ id, body string }
@@ -93,7 +99,8 @@ func (f *fakeProvider) ListThreads(context.Context, provider.PRRef) ([]provider.
 			AuthorID: c.author.ID, AuthorLogin: c.author.Name, URL: "https://your-gitea.example/octo/demo/pulls/7#issuecomment-" + c.id,
 		}}})
 	}
-	return out, nil
+	out = append(out, f.threads...)
+	return append(out, f.inlineThreads...), nil
 }
 
 func (f *fakeProvider) CurrentUser(context.Context) (provider.User, error) {
@@ -120,7 +127,11 @@ func (f *fakeProvider) PostInlineComments(_ context.Context, _ provider.PRRef, p
 			out[i] = f.inlineResult(i, it)
 			continue
 		}
-		id := strconv.Itoa(900 + i)
+		id := strconv.Itoa(900 + len(f.inlineThreads))
+		f.inlineThreads = append(f.inlineThreads, provider.Thread{ID: id, Kind: provider.ThreadInline, Path: it.Path,
+			Line: it.Line, Resolved: new(bool), Comments: []provider.CommentItem{{ID: id, Author: f.me.Name, Body: it.Body,
+				CreatedAt: time.Date(2026, 10, 2, 0, len(f.inlineThreads), 0, 0, time.UTC),
+				AuthorID:  f.me.ID, AuthorLogin: f.me.Name}}})
 		out[i] = provider.InlineResult{Posted: true, ID: id, URL: "https://your-gitea.example/octo/demo/pulls/7/files#issuecomment-" + id}
 	}
 	return out, nil

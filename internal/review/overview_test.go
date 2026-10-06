@@ -43,11 +43,11 @@ func (f *fakeProvider) overviews() []fakeComment {
 
 // TestPersistentOverviewTwoRuns [canary] persistent edit (spec P7 §4.3):
 // two publish runs against the same PR leave one overview comment, edited
-// by the second run, plus the inline comments of both runs.
-//
-// Inline deduplication is WP-PR-7e: until then the second run posts its
-// inline comments again, so the PR ends with two batches of the same
-// findings. This test states that explicitly rather than hiding it.
+// by the second run, plus the inline comments of the second run that were
+// not duplicates. The model gives the same findings twice, so with the
+// fingerprint dedup of WP-PR-7e the second run posts none: its anchorable
+// finding is counted as skipped_duplicate. That holds with the overview
+// lookup off too, since the duplicate check does not depend on it.
 //
 // Disabling the lookup (PersistentOverview false) must leave two overview
 // comments; that is the canary's control.
@@ -77,20 +77,20 @@ func TestPersistentOverviewTwoRuns(t *testing.T) {
 			}
 			got := h.prov.overviews()
 			if persistent == nil {
-				// One overview, edited once more in place; the second run's
-				// inline comments come before its single edit.
+				// One overview, edited once more in place; the second run has
+				// no inline comment to post, so its only write is that edit.
 				if len(got) != 1 {
 					t.Fatalf("overview comments = %d, want 1", len(got))
 				}
-				if !slices.Equal(h.prov.seq, []string{"inline", "edit"}) {
-					t.Errorf("second run: write calls %v, want inline then one edit", h.prov.seq)
+				if !slices.Equal(h.prov.seq, []string{"edit"}) {
+					t.Errorf("second run: write calls %v, want one edit", h.prov.seq)
 				}
 				p := second.Publish
 				if !p.Published || !p.Updated || p.CommentID != "42" || p.URL == "" || p.CommentID != first.Publish.CommentID {
 					t.Errorf("second publish = %+v", p)
 				}
 				if e := h.prov.edits[len(h.prov.edits)-1]; e.id != "42" ||
-					!strings.Contains(e.body, "Off by one -> "+second.Review.KeyIssuesToReview[0].InlineURL) ||
+					!strings.Contains(e.body, "note: 1 finding was already posted on this PR and was not repeated.") ||
 					!HasOverviewMarker(e.body) {
 					t.Errorf("last edit %s:\n%s", e.id, e.body)
 				}
@@ -98,15 +98,22 @@ func TestPersistentOverviewTwoRuns(t *testing.T) {
 				if len(got) != 2 {
 					t.Fatalf("overview comments = %d, want 2 with the lookup off", len(got))
 				}
-				if h.prov.lists != 0 {
-					t.Errorf("the lookup ran %d times while off", h.prov.lists)
+				if !slices.Equal(h.prov.seq, []string{"post"}) {
+					t.Errorf("second run: write calls %v, want one new overview", h.prov.seq)
 				}
 			}
-			// No inline dedup before WP-PR-7e: both runs posted the finding.
-			if len(h.prov.inline) != 2 || len(h.prov.inline[1]) != 1 || h.prov.inline[0][0] != h.prov.inline[1][0] {
-				t.Errorf("inline batches = %+v", h.prov.inline)
+			// The threads are read once per run (the discussion, the
+			// duplicate check and the overview lookup share the read), with
+			// the lookup on or off.
+			if h.prov.lists != 2 {
+				t.Errorf("ListThreads ran %d times in two runs, want 2", h.prov.lists)
 			}
-			if in := second.Publish.Inline; in == nil || *in != (InlineSummary{Posted: 1, Unanchorable: 1}) {
+			// The first run's inline comment is on the PR with its
+			// fingerprint; the second run does not post it again.
+			if len(h.prov.inline) != 1 || len(h.prov.inline[0]) != 1 {
+				t.Errorf("inline batches = %+v, want only the first run's", h.prov.inline)
+			}
+			if in := second.Publish.Inline; in == nil || *in != (InlineSummary{SkippedDuplicate: 1, Unanchorable: 1}) {
 				t.Errorf("second inline = %+v", second.Publish.Inline)
 			}
 		})

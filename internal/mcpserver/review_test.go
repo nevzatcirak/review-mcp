@@ -495,10 +495,12 @@ func TestPRReviewPublish(t *testing.T) {
 
 	second := call()
 	if p := second.Publish; p == nil || !p.Published || !p.Updated || p.CommentID != "56" ||
-		p.Inline == nil || *p.Inline != (review.InlineSummary{Posted: 1}) {
+		p.Inline == nil || *p.Inline != (review.InlineSummary{SkippedDuplicate: 1}) {
 		t.Errorf("second publish = %+v", second.Publish)
 	}
-	wantSecond := append(wantFirst, "POST "+api+"/pulls/7/reviews", "PATCH "+api+"/issues/comments/56")
+	// The finding is already on the PR with its fingerprint (WP-PR-7e): the
+	// second run posts no review, only the in-place overview edit.
+	wantSecond := append(wantFirst, "PATCH "+api+"/issues/comments/56")
 	if got := g.writeLog(); !slices.Equal(got, wantSecond) {
 		t.Errorf("writes %v, want %v", got, wantSecond)
 	}

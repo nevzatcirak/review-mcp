@@ -95,6 +95,7 @@
   - GFM with collapsible sections on Gitea;
   - no raw HTML on Bitbucket.
 - **E5** Open one finding link per provider. It lands on the right file and line. A wrong link is a blocker. (This includes the former P2 item 7.)
+  Also open one finding on a **renamed** file and, if the model produces one, a finding on a **deleted** file. A wrong link on a modified or renamed file is a blocker; a broken link on a deleted file (the Gitea link points at the head commit) is recorded as a v1.0.x item.
 - **E6** In the debug logs of at least 3 reviews with the model you actually use, record which repair tactic fired, if any. "None fired" is a valid result.
 
 ## F. `pr_ask` (P5 §4, items 1–4)
@@ -119,7 +120,7 @@
 ## H. Cross-cutting
 - **H1** Run one full session (E1, F1 and C2) at `REVIEW_MCP_LOG_LEVEL=debug`, then search the captured stderr for each token value and for a distinctive phrase from the PR description. Zero hits.
 - **H2** Force each error you can (bad token, wrong host, unreachable LLM, tiny context window). Each message is a fixed sentence with no raw server text.
-- **H3** Record any friction from the whole run (see §0).
+- **H3** Record any friction from the whole run (see §0). Watch in particular how model-authored inline code (backticks) reads in the client profile, where it is escaped (P4 review, point 4).
 
 ## Exit
 `v1.0.0` is tagged when every item is pass, or not run with an accepted reason, and no blocker is open. The record issue is then closed with a link to the tag.

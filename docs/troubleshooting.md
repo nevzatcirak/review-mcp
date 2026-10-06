@@ -407,9 +407,12 @@ is the short version and the place to look when a call fails with
 `authentication failed`. All scopes are unconfirmed until V1 acceptance (item
 A3) has verified them.
 
-- **Gitea:** read access to the repository (`read:repository`) and to issues
-  (`read:issue`, for PR-level comments), plus write access to issues
-  (`write:issue`). The write part is needed only for publishing (`publish`),
+- **Gitea:** read access to the repository (`read:repository`), to issues
+  (`read:issue`, for PR-level comments) and to your user (`read:user`, to
+  identify the token's own comments), plus write access to issues
+  (`write:issue`, for posting and editing PR comments) and to the repository
+  (`write:repository`, for inline comments, which are posted as a review).
+  The write part is needed only for publishing (`publish`),
   `pr_comment_reply` and `diag comment`; reading a PR needs only read access.
 - **Bitbucket Server / Data Center:** an HTTP access token with repository
   read permission, plus write permission only for comments. The token is sent

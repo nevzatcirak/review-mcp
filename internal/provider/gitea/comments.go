@@ -34,6 +34,7 @@ func (t *lenientTime) UnmarshalJSON(b []byte) error {
 }
 
 type apiUser struct {
+	ID    int64  `json:"id"`
 	Login string `json:"login"`
 }
 
@@ -66,6 +67,7 @@ type apiReviewComment struct {
 	OriginalPosition int         `json:"original_position"`
 	Line             int         `json:"line"`
 	OriginalLine     int         `json:"original_line"`
+	HTMLURL          string      `json:"html_url"`
 	CreatedAt        lenientTime `json:"created_at"`
 	UpdatedAt        lenientTime `json:"updated_at"`
 	Resolver         *struct {

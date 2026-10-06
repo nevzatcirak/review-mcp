@@ -61,6 +61,11 @@ func (fakeProvider) ListThreads(_ ctxT, _ PRRef) ([]Thread, error)           { r
 func (fakeProvider) ReplyToComment(_ ctxT, _ PRRef, _, _ string) (*ReplyResult, error) {
 	return nil, nil
 }
+func (fakeProvider) CurrentUser(ctxT) (User, error)                 { return User{}, nil }
+func (fakeProvider) EditComment(_ ctxT, _ PRRef, _, _ string) error { return nil }
+func (fakeProvider) PostInlineComments(_ ctxT, _ PRRef, _ *PullRequest, _ []InlineComment) ([]InlineResult, error) {
+	return nil, nil
+}
 func (fakeProvider) FileLineURL(PRRef, *PullRequest, string, int) string { return "" }
 
 func cfgFor(gitea, web, bbs string) *config.Config {

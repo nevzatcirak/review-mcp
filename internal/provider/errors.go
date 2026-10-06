@@ -24,6 +24,12 @@ const (
 	ClassUnsupportedVersion ErrorClass = "unsupported_version"
 	ClassTransport          ErrorClass = "transport"
 	ClassProtocol           ErrorClass = "protocol"
+	// ClassNotOwner refuses an edit of a comment the token's user did not
+	// write. No request that changes the comment has been sent.
+	ClassNotOwner ErrorClass = "not_owner"
+	// ClassConflict reports a request that conflicts with the current state
+	// of the pull request or comment, after any retry.
+	ClassConflict ErrorClass = "conflict"
 )
 
 // Class sentinels for errors.Is.
@@ -38,6 +44,8 @@ var (
 	ErrUnsupportedVersion = &Error{Class: ClassUnsupportedVersion}
 	ErrTransport          = &Error{Class: ClassTransport}
 	ErrProtocol           = &Error{Class: ClassProtocol}
+	ErrNotOwner           = &Error{Class: ClassNotOwner}
+	ErrConflict           = &Error{Class: ClassConflict}
 )
 
 // Error is a sanitized provider error. It never carries response bodies,
@@ -60,6 +68,8 @@ var sentences = map[ErrorClass]string{
 	ClassUnsupportedVersion: "the server version is not supported",
 	ClassTransport:          "could not complete the request to the server",
 	ClassProtocol:           "the server sent an unexpected response",
+	ClassNotOwner:           "the comment was not written by the token's user, so it was not changed",
+	ClassConflict:           "the request conflicts with the current state on the server",
 }
 
 // Error returns the fixed sentence for the class, then " (HTTP n)" when

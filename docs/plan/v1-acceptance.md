@@ -46,6 +46,8 @@
   - Read-only tokens work for the read tools.
   - Publishing and replying need the scopes the guide says they need, and fail with the auth sentence without them.
 
+  - P7: on Gitea, inline comments need `write:repository`, editing the overview needs `write:issue`, and identifying the token's user needs `read:user`. On Bitbucket, record whether a Repository read token can post inline comments and edit its own comment.
+
   Record every scope that was wrong in the guide.
 - **A4** Register the server in Claude Code and in opencode using the guide's snippets. Both list the six v1 tools (`server_info`, `pr_comments`, `pr_comment_reply`, `pr_comment_create`, `pr_review`, `pr_ask`). `server_info` shows the secrets as set or unset only.
 - **A5** Download one release archive, verify it against `checksums.txt`, and check that the archive contains `LICENSE`, `NOTICE` and `THIRD_PARTY_LICENSES`.
@@ -125,6 +127,8 @@
 ## I. Conversation-aware review (P7)
 Run on a **personal** Bitbucket Data Center trial instance and, if available, a personal Gitea.
 - **I1** `server_info` and a `pr_review` publish identify the token's user correctly. Record which Bitbucket identity mechanism was used.
+  - Bitbucket: review-mcp reads the `X-AUSERNAME` and `X-AUSERID` response headers of `GET /rest/api/1.0/application-properties`. With a personal token **and** with a project or repository token, confirm that both headers are present, and that they equal the `name` and `id` of the `author` of a comment posted with that token (`GET .../pull-requests/{id}/comments/{commentId}`). If a user name with non-ASCII characters is available, record whether `X-AUSERNAME` carries it unencoded.
+  - Gitea: `GET /api/v1/user` returns the `login` and `id` of the author of a comment posted with the token.
 - **I2** On a PR with an added line, a context line and an out-of-hunk finding:
   - the inline comments land on the right lines;
   - the Bitbucket context-line anchor is accepted;

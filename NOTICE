@@ -22,3 +22,39 @@ studied and ported (see docs/research/pr-agent-porting-map.md for the pinned
 upstream revision used during the study).
 
 Many thanks to the PR-Agent authors, maintainers, and community.
+
+PR-Agent license
+----------------
+
+Material adapted from PR-Agent is included in this repository (see the list
+below). PR-Agent's license notice follows, verbatim:
+
+MIT License
+
+Copyright (c) 2026 The PR Agent
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Files containing material adapted from PR-Agent
+-----------------------------------------------
+
+Pinned upstream: https://github.com/The-PR-Agent/pr-agent at commit
+8e5a9295973b24af4b70cafd0b660a230811ef9e (tag v0.47.0). Add one line per file
+as new adapted material lands.
+

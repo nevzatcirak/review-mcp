@@ -47,7 +47,7 @@
   - Publishing and replying need the scopes the guide says they need, and fail with the auth sentence without them.
 
   Record every scope that was wrong in the guide.
-- **A4** Register the server in Claude Code and in opencode using the guide's snippets. Both list the six v1 tools. `server_info` shows the secrets as set or unset only.
+- **A4** Register the server in Claude Code and in opencode using the guide's snippets. Both list the five v1 tools (`server_info`, `pr_comments`, `pr_comment_reply`, `pr_review`, `pr_ask`). `server_info` shows the secrets as set or unset only.
 - **A5** Download one release archive, verify it against `checksums.txt`, and check that the archive contains `LICENSE`, `NOTICE` and `THIRD_PARTY_LICENSES`.
 
 ## B. Providers (P2 §6, items 1–7)

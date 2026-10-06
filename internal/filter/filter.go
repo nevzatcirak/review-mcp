@@ -131,14 +131,28 @@ func (f *Filter) Explain(p string) (included bool, reason string) {
 	return true, ""
 }
 
-// matchAny matches p against each glob. doublestar treats a leading "**/" as
-// zero or more directories, so "**/x.pb.go" already covers a root-level
-// "x.pb.go" (upstream strips the prefix explicitly; see TestGlobRootVariant).
+// matchAny reports whether p matches any of the globs.
 func matchAny(globs []string, p string) bool {
 	for _, g := range globs {
-		if ok, err := doublestar.Match(g, p); err == nil && ok {
+		if matchGlob(g, p) {
 			return true
 		}
 	}
 	return false
+}
+
+// matchGlob applies the one glob semantics used for ignore.glob and the
+// generated-code table. A pattern without "/" matches the basename at any
+// depth, which is the same as an implicit "**/" prefix, so PR-Agent patterns
+// such as "*.min.js" also reach nested files. A pattern containing "/" keeps
+// doublestar semantics against the full path, anchored at the repository root
+// ("*" stays within one segment, "**" spans directories). doublestar treats a
+// leading "**/" as zero or more directories, so "**/x.pb.go" covers a
+// root-level "x.pb.go" too.
+func matchGlob(g, p string) bool {
+	if !strings.Contains(g, "/") {
+		p = path.Base(p)
+	}
+	ok, err := doublestar.Match(g, p)
+	return err == nil && ok
 }

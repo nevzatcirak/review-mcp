@@ -216,12 +216,18 @@ diff is assembled:
 
 ### `ignore.glob` is not Python's `fnmatch`
 
-`ignore.glob` patterns use doublestar semantics and are matched against the
-full slash-separated path. `*` does not cross `/`, so `*.pb.go` matches only a
-file in the repository root; use `**/*.pb.go` to match at any depth, and
-`vendor/**` for everything under a top-level `vendor/`. The upstream tool this
-project is modelled on lets `*` cross `/`; patterns ported from it usually need
-a `**/` prefix. Check the result with `diag diff`: the pattern's files must
+Patterns are doublestar globs with one rule that depends on whether the
+pattern contains a `/`:
+
+- A pattern **without `/`** matches file names at any depth, as if it had an
+  implicit `**/` prefix. `*.golden` excludes `x.golden` and `a/b/x.golden`, so
+  patterns copied from the upstream tool, such as `*.min.js`, work as expected.
+- A pattern **with `/`** is matched against the full path from the repository
+  root. `*` stays within one path segment and `**` spans directories.
+  `docs/*.md` excludes `docs/a.md` but not `x/docs/a.md` or `docs/sub/a.md`;
+  `vendor/**` excludes everything under a top-level `vendor/`.
+
+Check the result with `diag diff`: the pattern's files must
 show up under `filtered` with reason `ignore_glob`.
 
 ### "The pull request diff does not fit"

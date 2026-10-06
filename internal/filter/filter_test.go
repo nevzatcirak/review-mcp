@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/filter/data"
 )
 
 func cfgWith(globs, regexes, frameworks []string) *config.Config {
@@ -53,6 +54,7 @@ func TestExplain(t *testing.T) {
 		{"vendor/lib/a.go", false, ReasonIgnoreGlob},
 		{"src/vendor/a.go", true, ""}, // vendor/** is anchored at the root
 		{"src/deep/a.approved", false, ReasonIgnoreGlob},
+		{"a.approved", false, ReasonIgnoreGlob},
 		{"docs/old/readme.txt", false, ReasonIgnoreRegex},
 		{"docs/older.txt", false, ReasonIgnoreRegex}, // match, not full match
 		{"src/docs/old/readme.txt", true, ""},        // anchored at the start
@@ -96,19 +98,53 @@ func TestGlobRootVariant(t *testing.T) {
 	}
 }
 
-func TestGlobIsPathSeparatorAware(t *testing.T) {
-	f, err := New(cfgWith([]string{"*.foo", "src/*.tmp"}, nil, nil))
+func TestGlobWithoutSlashMatchesAnyDepth(t *testing.T) {
+	f, err := New(cfgWith([]string{"*.golden", "*.foo"}, nil, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f.Include("a.foo") {
-		t.Error("a.foo should be excluded")
+	for _, p := range []string{"x.golden", "a/x.golden", "a/b/x.golden", "a/b/c.foo"} {
+		ok, reason := f.Explain(p)
+		if ok || reason != ReasonIgnoreGlob {
+			t.Errorf("Explain(%q) = %v, %q; want excluded with %q", p, ok, reason, ReasonIgnoreGlob)
+		}
 	}
-	if !f.Include("dir/a.foo") {
-		t.Error("* must not cross a path separator")
+	for _, p := range []string{"x.golden.bak", "golden/x.txt", "a.golden/x.go"} {
+		if !f.Include(p) {
+			t.Errorf("%q should be included", p)
+		}
 	}
-	if !f.Include("src/deep/a.tmp") {
-		t.Error("src/*.tmp must not match nested paths")
+}
+
+func TestGlobWithSlashIsRootAnchored(t *testing.T) {
+	f, err := New(cfgWith([]string{"docs/*.md", "vendor/**", "**/gen/*.go", "src/*.tmp"}, nil, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	excluded := []string{"docs/a.md", "vendor/a/b.go", "gen/a.go", "x/y/gen/a.go", "src/a.tmp"}
+	for _, p := range excluded {
+		if f.Include(p) {
+			t.Errorf("%q should be excluded", p)
+		}
+	}
+	included := []string{"x/docs/a.md", "docs/sub/a.md", "src/vendor/a.go", "gen/sub/a.go", "src/deep/a.tmp"}
+	for _, p := range included {
+		if !f.Include(p) {
+			t.Errorf("%q should be included", p)
+		}
+	}
+}
+
+// TestGeneratedGlobsContainSlash pins the precondition for one glob
+// semantics: every generated-code glob contains "/", so the slash-free
+// basename rule never changes that table.
+func TestGeneratedGlobsContainSlash(t *testing.T) {
+	for name, globs := range data.GeneratedCode {
+		for _, g := range globs {
+			if !strings.Contains(g, "/") {
+				t.Errorf("framework %q: glob %q has no '/'", name, g)
+			}
+		}
 	}
 }
 

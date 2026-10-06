@@ -10,7 +10,7 @@
 # Test and coverage artifacts
 *.test
 *.out
-coverage.*
+/coverage.*
 
 # Go workspace files
 go.work

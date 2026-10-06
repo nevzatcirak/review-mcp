@@ -6,12 +6,14 @@
 // github.com/tiktoken-go/tokenizer, so nothing here ever touches the network
 // (leak-first stance, X-8).
 //
-// Tokenizer module version: v0.7.0 is used instead of the
-// latest v0.8.1 because v0.8.0+ declares "go 1.26", which raises this module's
-// go directive above 1.25 and makes golangci-lint v2.5.0 (built with Go 1.25,
-// pinned in CI) refuse to run; v0.7.0 has the same embedded o200k_base data,
-// declares go 1.23. Revisit when the lint pin moves to a
-// Go 1.26 build.
+// Tokenizer module version: v0.8.1 (architect decision D1). It requires
+// go 1.26, which this module now declares, and golangci-lint v2.14.0 (built
+// with Go 1.27) lints it. v0.8.1 keeps o200k_base embedded in the binary and
+// has no network path, and counts are identical to v0.7.0 and to the Python
+// tiktoken oracle. Its regexp2/v2 splitter with generated matching code is
+// about 2.6x faster than v0.7.0. One shared codec is used on purpose: a
+// codec per worker (sync.Pool) was benchmarked and was slower, since the
+// codec is read-only after construction and regexp2 pools its runners.
 package tokens
 
 import (

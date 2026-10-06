@@ -6,7 +6,7 @@ registers it with a client.
 
 ## Build from source
 
-Requires Go 1.25 or newer.
+Requires Go 1.26 or newer.
 
 ```sh
 go install github.com/nevzatcirak/review-mcp/cmd/review-mcp@<ref>

@@ -1,6 +1,6 @@
 module github.com/nevzatcirak/review-mcp
 
-go 1.25.0
+go 1.26.0
 
 require github.com/BurntSushi/toml v1.6.0
 
@@ -8,10 +8,10 @@ require github.com/pmezard/go-difflib v1.0.0
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.2
-	github.com/tiktoken-go/tokenizer v0.7.0
+	github.com/tiktoken-go/tokenizer v0.8.1
 )
 
-require github.com/dlclark/regexp2 v1.11.5 // indirect
+require github.com/dlclark/regexp2/v2 v2.5.1 // indirect
 
 require (
 	github.com/google/jsonschema-go v0.4.3 // indirect

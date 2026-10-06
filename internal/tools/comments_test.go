@@ -53,7 +53,7 @@ func (r *fakeResolver) Resolve(u string) (provider.PRRef, provider.Provider, err
 	return provider.PRRef{Kind: provider.KindGitea, Namespace: "octo", Repo: "demo", Number: 7, URL: u}, r.p, nil
 }
 
-const testPRURL = "https://user:FAKE-pw@your-gitea.example/octo/demo/pulls/7?token=FAKE-q"
+const testPRURL = "https://user:FAKE-pw@your-gitea.example/octo/demo/pulls/7?token=FAKE-q" //nolint:gosec // synthetic fake credentials used to test redaction
 
 var t0 = time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 

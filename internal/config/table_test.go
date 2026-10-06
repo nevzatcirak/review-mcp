@@ -154,7 +154,7 @@ func TestEveryEnvVariableParses(t *testing.T) {
 }
 
 func TestSecretEnvVariablesLoad(t *testing.T) {
-	cfg, rep := mustLoad(t, MemSource{Env: envWith(map[string]string{"REVIEW_MCP_BITBUCKET_SERVER_TOKEN": fakeBitbkt, "REVIEW_MCP_BITBUCKET_SERVER_BASE_URL": "https://bitbucket.example.com/stash"})})
+	cfg, rep := mustLoad(t, MemSource{Env: envWith(map[string]string{"REVIEW_MCP_BITBUCKET_SERVER_TOKEN": fakeBitbkt, "REVIEW_MCP_BITBUCKET_SERVER_BASE_URL": "https://bitbucket.example.com/stash", "REVIEW_MCP_SERVE_ACCESS_TOKEN": fakeAccess})})
 	for _, s := range secretTable {
 		if !s.ptr(cfg).IsSet() {
 			t.Errorf("%s not loaded", s.env)

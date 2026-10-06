@@ -54,9 +54,15 @@ func (s Secret) MarshalJSON() ([]byte, error) { return json.Marshal(s.String()) 
 // MarshalText implements encoding.TextMarshaler.
 func (s Secret) MarshalText() ([]byte, error) { return []byte(s.String()), nil }
 
-// Secrets holds every credential. They come from the environment only.
+// Secrets holds every credential. In stdio mode they come from the
+// environment only. In serve mode the provider tokens (and, with
+// serve.llm_key_source = header, the LLM API key) come from the headers of
+// each HTTP request instead, through Config.WithSecrets (X-10).
 type Secrets struct {
 	LLMAPIKey            Secret `json:"llm_api_key"`
 	GiteaToken           Secret `json:"gitea_token"`
 	BitbucketServerToken Secret `json:"bitbucket_server_token"`
+	// ServeAccessToken is the serve-mode access token
+	// (REVIEW_MCP_SERVE_ACCESS_TOKEN). Only the HTTP middleware reads it.
+	ServeAccessToken Secret `json:"serve_access_token"`
 }

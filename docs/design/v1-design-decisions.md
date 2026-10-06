@@ -313,6 +313,14 @@ Secrets are environment-only (in `serve` mode, credentials come from request hea
 | `review.extra_instructions` | `REVIEW_MCP_REVIEW_EXTRA_INSTRUCTIONS` | (empty) | Per-call override |
 | `ask.extra_instructions` | `REVIEW_MCP_ASK_EXTRA_INSTRUCTIONS` | (empty) | Per-call override |
 | `log.level` | `REVIEW_MCP_LOG_LEVEL` | `info` | stderr only (X-8) |
+| `serve.listen` | `REVIEW_MCP_SERVE_LISTEN` | `127.0.0.1:8787` | serve only (X-10); `host:port`; `--listen` overrides |
+| `serve.tls_cert` | `REVIEW_MCP_SERVE_TLS_CERT` | — | serve only; PEM path, set together with `tls_key` |
+| `serve.tls_key` | `REVIEW_MCP_SERVE_TLS_KEY` | — | serve only; PEM path |
+| `serve.allow_insecure_http` | `REVIEW_MCP_SERVE_ALLOW_INSECURE_HTTP` | false | serve only; non-loopback bind without TLS; startup warning when true |
+| `serve.llm_key_source` | `REVIEW_MCP_SERVE_LLM_KEY_SOURCE` | `header` | serve only; `header` \| `server` |
+| `serve.allowed_origins` | `REVIEW_MCP_SERVE_ALLOWED_ORIGINS` | (empty) | serve only; exact origins |
+| `serve.max_concurrent_calls` | `REVIEW_MCP_SERVE_MAX_CONCURRENT_CALLS` | 4 | serve only; 1–64 |
+| — | `REVIEW_MCP_SERVE_ACCESS_TOKEN` | — | **Secret**, serve only; required when `llm_key_source = server`, enforced whenever set |
 
 Validation rules: at least one provider enabled; every enabled provider has its
 token; URLs parse as `http(s)`; numeric ranges sane; enum values exact. All

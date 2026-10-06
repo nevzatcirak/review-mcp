@@ -22,6 +22,7 @@ type Config struct {
 	Review          Review          `toml:"review" json:"review"`
 	Ask             Ask             `toml:"ask" json:"ask"`
 	Log             Log             `toml:"log" json:"log"`
+	Serve           Serve           `toml:"serve" json:"serve"`
 	Secrets         Secrets         `toml:"-" json:"secrets"`
 }
 
@@ -133,5 +134,11 @@ func Defaults() *Config {
 			RequireEffortEstimate: true,
 		},
 		Log: Log{Level: "info"},
+		Serve: Serve{
+			Listen:             DefaultServeListen,
+			LLMKeySource:       LLMKeySourceHeader,
+			AllowedOrigins:     []string{},
+			MaxConcurrentCalls: 4,
+		},
 	}
 }

@@ -3,7 +3,7 @@ package review
 import (
 	"github.com/nevzatcirak/review-mcp/internal/diffpipe"
 	"github.com/nevzatcirak/review-mcp/internal/filter"
-	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 )
 
 // Notes the pipeline adds (§4.3). Conversion adds the dropped-finding
@@ -11,16 +11,16 @@ import (
 const (
 	// NoteNoReviewableChanges: every file was filtered, skipped or empty,
 	// so the model was not called (step 5).
-	NoteNoReviewableChanges = "No reviewable changes after filtering."
+	NoteNoReviewableChanges = llmrun.NoteNoReviewableChanges
 	// NoteTruncated: the model stopped at its output limit (step 7).
 	NoteTruncated = "The model's answer was cut off by its output limit; the review may be incomplete."
 	// NoteReasked: the first answer was unparseable and the review comes
 	// from the one re-ask (step 8).
 	NoteReasked = "The model's first answer could not be parsed as YAML; this review comes from a second attempt."
 	// NoteDiffTrimmed: the request-size guard shortened the diff (step 6).
-	NoteDiffTrimmed = "The diff was shortened to fit the context window; the coverage section lists the files that are incomplete or left out."
+	NoteDiffTrimmed = llmrun.NoteDiffTrimmed
 	// noteClippedFormat: files included only in part (step 12).
-	noteClippedFormat = "%s included only in part (clipped) to fit the context window."
+	noteClippedFormat = llmrun.NoteClippedFormat
 )
 
 // Result is the outcome of one review (§4.3 step 12). It is the MCP
@@ -48,31 +48,13 @@ type PRInfo struct {
 	Title  string `json:"title"`
 }
 
-// Coverage accounts for every changed file (X-3): the files whose diff the
-// model saw (Included, Clipped), the files left out for budget (Omitted),
-// the files skipped for other reasons (Skipped) and the filtered files
-// (Filtered, with the filter's reason).
-type Coverage struct {
-	Included []string      `json:"included"`
-	Clipped  []string      `json:"clipped"`
-	Omitted  OmittedFiles  `json:"omitted"`
-	Skipped  []SkippedFile `json:"skipped"`
-	Filtered []SkippedFile `json:"filtered"`
-}
-
-// OmittedFiles are the files left out of the diff for budget, by change
-// type (renamed files count as modified).
-type OmittedFiles struct {
-	Added    []string `json:"added"`
-	Modified []string `json:"modified"`
-	Deleted  []string `json:"deleted"`
-}
-
-// SkippedFile is a file left out for a reason other than budget.
-type SkippedFile struct {
-	Path   string `json:"path"`
-	Reason string `json:"reason"`
-}
+// Coverage accounts for every changed file (X-3). The types live in
+// internal/llmrun, shared with pr_ask; the JSON field names are unchanged.
+type (
+	Coverage     = llmrun.Coverage
+	OmittedFiles = llmrun.OmittedFiles
+	SkippedFile  = llmrun.SkippedFile
+)
 
 // Metadata describes the run. It holds names and numbers only.
 type Metadata struct {
@@ -99,47 +81,12 @@ type Metadata struct {
 
 // PublishResult is the outcome of publishing (step 13): the posted comment,
 // or the classified error. A failed publish never discards the review.
-type PublishResult struct {
-	Published bool   `json:"published"`
-	CommentID string `json:"comment_id,omitempty"`
-	URL       string `json:"url,omitempty"`
-	Error     string `json:"error,omitempty"`
-}
+type PublishResult = llmrun.PublishResult
 
-func nonNil[T any](s []T) []T {
-	if s == nil {
-		return []T{}
-	}
-	return s
-}
+func nonNil[T any](s []T) []T { return llmrun.NonNil(s) }
 
 // buildCoverage combines the prepared diff's accounting with the
-// provider's skips; filtered files get the filter's reason (as diag diff
-// reports them).
+// provider's skips (llmrun.BuildCoverage).
 func buildCoverage(p *diffpipe.Prepared, f *filter.Filter) Coverage {
-	c := Coverage{
-		Included: nonNil(append([]string(nil), p.Included...)),
-		Clipped:  nonNil(append([]string(nil), p.Clipped...)),
-		Omitted: OmittedFiles{
-			Added:    nonNil(append([]string(nil), p.Omitted.Added...)),
-			Modified: nonNil(append([]string(nil), p.Omitted.Modified...)),
-			Deleted:  nonNil(append([]string(nil), p.Omitted.Deleted...)),
-		},
-		Skipped:  []SkippedFile{},
-		Filtered: []SkippedFile{},
-	}
-	for _, s := range p.Skipped {
-		if s.Reason != provider.SkipFiltered {
-			c.Skipped = append(c.Skipped, SkippedFile{Path: s.Path, Reason: s.Reason})
-			continue
-		}
-		reason := provider.SkipFiltered
-		if f != nil {
-			if included, why := f.Explain(s.Path); !included && why != "" {
-				reason = why
-			}
-		}
-		c.Filtered = append(c.Filtered, SkippedFile{Path: s.Path, Reason: reason})
-	}
-	return c
+	return llmrun.BuildCoverage(p, f)
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/diffpipe"
 	"github.com/nevzatcirak/review-mcp/internal/filter"
 	"github.com/nevzatcirak/review-mcp/internal/llm"
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/prompt"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
@@ -322,7 +323,7 @@ func (pl *Plan) finish(ctx context.Context, deps Deps, args Args) (*Result, erro
 			break
 		}
 		if attempt == 1 {
-			return nil, &Error{Class: ClassUnparseable, cause: err}
+			return nil, ErrUnparseable.WithCause(err)
 		}
 	}
 	for _, w := range conv.Warnings {
@@ -382,23 +383,9 @@ func publish(ctx context.Context, deps Deps, log *slog.Logger, args Args, ref pr
 		return
 	}
 	res.Publish = &PublishResult{}
-	if deps.RenderProvider == nil {
-		res.Publish.Error = publishFailedMessage
-		log.Debug("review: publish skipped, no provider renderer")
-		return
+	var render func(provider.Capabilities) string
+	if deps.RenderProvider != nil {
+		render = func(caps provider.Capabilities) string { return deps.RenderProvider(res, caps) }
 	}
-	c, err := p.PostComment(ctx, ref, deps.RenderProvider(res, p.Capabilities()))
-	if err != nil || c == nil {
-		msg := publishFailedMessage
-		var pe *provider.Error
-		if errors.As(err, &pe) {
-			msg = pe.Error()
-		}
-		res.Publish.Error = msg
-		log.Debug("review: publish failed", "error", msg)
-		return
-	}
-	res.Publish.Published = true
-	res.Publish.CommentID = c.ID
-	res.Publish.URL = c.URL
+	llmrun.PostResult(ctx, log, ref, p, res.Publish, publishFailedMessage, render)
 }

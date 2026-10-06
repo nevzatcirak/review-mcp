@@ -127,6 +127,7 @@ If `command` is not found, use the absolute path to the binary.
 | `pr_comments` | Lists a pull request's comment threads. |
 | `pr_comment_reply` | Replies to a pull request comment. |
 | `pr_review` | Reviews a pull request with your LLM; see [Reviewing pull requests](review.md). The PR's title, description and diff are sent to `llm.base_url`. |
+| `pr_ask` | Answers a question about a pull request with your LLM, grounded in its title, description and diff; see [Asking questions](ask.md). The PR content and the question are sent to `llm.base_url`. |
 
 For reviews, the recommended sampling setting is `REVIEW_MCP_LLM_TEMPERATURE=0.2`
 (it is not sent unless you set it).
@@ -142,4 +143,4 @@ can see what to fix: `server_info` returns `status: "config_invalid"` with the
 full list of problems, and the same list is logged to stderr. Correct the
 environment and restart the server (usually by reloading the MCP client).
 
-If something does not work, see the [troubleshooting guide](troubleshooting.md); `review-mcp diag pr <PR_URL>` checks that your provider and token can reach a pull request, and `review-mcp diag review <PR_URL> --dry-run` checks the review budget without calling the LLM.
+If something does not work, see the [troubleshooting guide](troubleshooting.md); `review-mcp diag pr <PR_URL>` checks that your provider and token can reach a pull request, and `review-mcp diag review <PR_URL> --dry-run` and `review-mcp diag ask <PR_URL> --question <TEXT> --dry-run` check the review and question budgets without calling the LLM.

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	llmrender "github.com/nevzatcirak/review-mcp/internal/llmrun/render"
 	"github.com/nevzatcirak/review-mcp/internal/mdutil"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/review"
@@ -50,8 +51,8 @@ func Provider(res *review.Result, caps provider.Capabilities) string {
 	trimmed := strings.TrimRight(b.String(), "\n") + "\n"
 	b.Reset()
 	b.WriteString(trimmed)
-	writeCoverage(&b, "### "+emojiCoverage+" "+textCoverage, &res.Coverage)
-	writeNotes(&b, "### "+emojiNotes+" "+textNotes, res.Notes)
+	llmrender.Coverage(&b, "### "+emojiCoverage+" "+textCoverage, &res.Coverage)
+	llmrender.Notes(&b, "### "+emojiNotes+" "+textNotes, res.Notes)
 	return b.String()
 }
 

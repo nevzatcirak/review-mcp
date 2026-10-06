@@ -11,7 +11,6 @@
 package review
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -19,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/prompt"
 	"github.com/nevzatcirak/review-mcp/internal/yamlrepair"
 )
@@ -52,13 +52,6 @@ const (
 	MinEffort = 1
 	MaxEffort = 5
 )
-
-// ErrFallbackEligible marks the failures DQ-9 lets a later fallback-model
-// chain retry: the diff does not fit, nothing is left after budgeting, or
-// the answer has no non-empty review mapping. v1 has no fallback chain; the
-// pipeline uses it for the one same-model re-ask (step 8) and its classified
-// errors match it with errors.Is.
-var ErrFallbackEligible = errors.New("review: fallback eligible")
 
 // errNoReview is the validation gate's failure (§4.1).
 var errNoReview = fmt.Errorf("review: the answer has no non-empty %q mapping: %w", RootKey, ErrFallbackEligible)
@@ -592,9 +585,4 @@ func wasWere(n int) string {
 }
 
 // countPhrase returns "1 <one>" or "n <many>".
-func countPhrase(n int, one, many string) string {
-	if n == 1 {
-		return "1 " + one
-	}
-	return strconv.Itoa(n) + " " + many
-}
+func countPhrase(n int, one, many string) string { return llmrun.CountPhrase(n, one, many) }

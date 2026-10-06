@@ -21,13 +21,13 @@ type prReviewInput struct {
 	Publish           bool   `json:"publish,omitempty" jsonschema:"also post the review as a PR comment (default false)"`
 }
 
-// progressTotal is the number of stages of a review.
+// progressTotal is the number of stages of a review or an answer.
 const progressTotal = 4
 
 // progressFunc returns the stage callback of one call, or nil when the client
 // sent no progress token (MCP progress notifications need the token from the
 // request's _meta). A failed notification is ignored: progress is a courtesy.
-func progressFunc(ctx context.Context, req *mcp.CallToolRequest, log *slog.Logger) func(string) {
+func progressFunc(ctx context.Context, req *mcp.CallToolRequest, log *slog.Logger, tool string) func(string) {
 	token := req.Params.GetProgressToken()
 	if token == nil || req.Session == nil {
 		return nil
@@ -39,7 +39,7 @@ func progressFunc(ctx context.Context, req *mcp.CallToolRequest, log *slog.Logge
 			ProgressToken: token, Message: stage, Progress: float64(step), Total: progressTotal,
 		})
 		if err != nil {
-			log.Debug("pr_review: progress notification not sent", "stage", stage)
+			log.Debug(tool+": progress notification not sent", "stage", stage)
 		}
 	}
 }
@@ -73,7 +73,7 @@ func registerPRReview(s *mcp.Server, deps Deps) {
 			Resolver: resolver,
 			NewLLM:   deps.NewLLM,
 			Logger:   log,
-			Progress: progressFunc(ctx, req, log),
+			Progress: progressFunc(ctx, req, log, "pr_review"),
 		}, tools.PRReviewArgs{
 			PRURL: in.PRURL, ExtraInstructions: in.ExtraInstructions, OutputLanguage: in.OutputLanguage,
 			MaxFindings: in.MaxFindings, Publish: in.Publish,

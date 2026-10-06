@@ -4,7 +4,24 @@ import (
 	"slices"
 
 	"github.com/nevzatcirak/review-mcp/internal/filter"
+	"github.com/nevzatcirak/review-mcp/internal/provider"
 )
+
+// MainLanguage returns the language of the first group of the DQ-2 ranking
+// of files (filter.OtherLanguage when that is all there is), or "" when
+// files is empty. pr_ask names it in its prompt (spec P5 §1.1); it is the
+// same ranking Prepare orders the diff by.
+func MainLanguage(files []provider.FilePatch) string {
+	fs := make([]*file, len(files))
+	for i := range files {
+		fs[i] = &file{fp: &files[i]}
+	}
+	groups := rank(fs)
+	if len(groups) == 0 {
+		return ""
+	}
+	return groups[0].lang
+}
 
 // group is one language group of the ranking, its files in provider order.
 type group struct {

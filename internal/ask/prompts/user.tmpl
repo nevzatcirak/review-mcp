@@ -1,0 +1,45 @@
+{{- /*
+User prompt of pr_ask.
+
+Adapted from PR-Agent (https://github.com/The-PR-Agent/pr-agent),
+pr_agent/settings/pr_questions_prompts.toml @ 8e5a929 ([pr_questions_prompt]
+user). MIT License; see NOTICE for the copyright and permission notice.
+
+Changes from upstream (spec P5 §1.1): the conversation_history block is
+removed (X-5: pr_ask is stateless). Kept verbatim: the PR info (title,
+branch, description fenced with ======), the main-language line (omitted
+when the first diffpipe language group is Other), the plain diff with the
+one-line explanation of its prefixes, the question fenced with ====== and
+the closing line. Jinja whitespace control is reproduced with {{- and -}}.
+*/ -}}
+PR Info:
+
+Title: '{{ .title }}'
+
+Branch: '{{ .branch }}'
+{{- if .description }}
+
+Description:
+======
+{{ trim .description }}
+======
+{{- end }}
+{{- if .language }}
+
+Main PR language: '{{ .language }}'
+{{- end }}
+
+
+The PR Git Diff:
+======
+{{ .diff }}
+======
+Note that lines in the diff body are prefixed with a symbol that represents the type of change: '-' for deletions, '+' for additions, and ' ' (a space) for unchanged lines
+
+
+The PR Questions:
+======
+{{ trim .questions }}
+======
+
+Response to the PR Questions:

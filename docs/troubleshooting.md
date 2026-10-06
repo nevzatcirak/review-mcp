@@ -287,13 +287,43 @@ setting to check may follow.
 | the LLM request timed out | `llm_timeout` | Raise `llm.timeout_seconds`; large reviews on slow models take minutes. |
 | could not complete the request to the LLM endpoint | `llm_transport` | Network, DNS, TLS or proxy problem between you and the endpoint. |
 | the LLM endpoint sent an unexpected response | `llm_protocol` | The endpoint is not OpenAI-compatible at `llm.base_url`, or it answered with an empty message. |
-| the pull request diff does not fit the configured context window | `review_does_not_fit` | Raise `llm.context_window`, or narrow the PR. Nothing was sent to the model. |
+| the pull request diff does not fit the configured context window | `diff_does_not_fit` | Raise `llm.context_window`, or narrow the PR. Nothing was sent to the model. Applies to `pr_review` and `pr_ask`. |
 | the model's answer could not be parsed as a review, also after one retry | `review_unparseable` | Try again, or use a model that follows YAML output instructions. |
 | output_language must be a locale code such as en-US or tr-TR / max_findings must be an integer from 1 to 20 | (argument) | Fix the argument; nothing was sent anywhere. |
 
 If the configuration is invalid, `pr_review` returns "review-mcp configuration
 is invalid; call server_info for the list of problems" and sends nothing to
 the provider or the LLM.
+
+## Ask a question with `diag ask`
+
+```sh
+review-mcp diag ask <PR_URL> --question "Which files change the request validation?" --dry-run
+review-mcp diag ask <PR_URL> --question "Could this break existing callers?"
+```
+
+`--question` is required (at most 8000 characters). `--dry-run` runs
+everything up to the LLM call and prints a JSON report with the prompt, diff
+and request token estimates, the budget and the coverage; the model is not
+called. Without `--dry-run` it prints the markdown the `pr_ask` tool returns;
+`--publish` also posts the question and answer as a PR comment, and
+`--show-prompt` prints the rendered prompts after the output (never to the
+log). A missing, empty or over-long question, and `--dry-run` with
+`--publish`, are usage errors: exit 2, nothing is sent. See
+[Asking questions](ask.md).
+
+The LLM errors above apply to `pr_ask` too. Its own argument errors are:
+
+| Sentence | What to check |
+|---|---|
+| question must not be empty | Pass a non-blank `question` (`--question`). Nothing was sent anywhere. |
+| question is too long: at most 8000 characters are allowed | Shorten the question; it is never truncated for you. Nothing was sent anywhere. |
+| output_language must be a locale code such as en-US or tr-TR | Fix `output_language`. Nothing was sent anywhere. |
+
+If the configuration is invalid, `pr_ask` returns the same "review-mcp
+configuration is invalid" sentence as `pr_review` and sends nothing. The
+"the pull request diff does not fit" sentence also applies; a long question
+leaves less room for the diff.
 
 ## Error messages
 

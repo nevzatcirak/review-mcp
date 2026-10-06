@@ -91,6 +91,8 @@ commands:
   diag review <PR_URL> [--dry-run] [--show-prompt] [--publish]
             review the pull request with the configured LLM; --dry-run prints
             the token budget report without calling the model
+  diag ask <PR_URL> --question <TEXT> [--dry-run] [--show-prompt] [--publish]
+            answer a question about the pull request with the configured LLM
   serve     HTTP mode (not available in this version)
 `)
 }

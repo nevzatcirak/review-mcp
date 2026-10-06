@@ -1,0 +1,8 @@
+{
+review:
+  estimated_effort_to_review: 1
+  relevant_tests: Yes
+  key_issues_to_review: []
+  security_concerns: |
+    No
+}

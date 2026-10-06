@@ -1,0 +1,20 @@
+{
+  "upstream": {
+    "review": {
+      "estimated_effort_to_review": 3,
+      "key_issues_to_review": [
+        {
+          "end_line": 44,
+          "issue_content": "The handler reads cfg.Name before checking cfg: a nil config panics.\n",
+          "issue_header": "Possible nil dereference\n",
+          "relevant_file": "internal/app/server.go\n",
+          "start_line": 41
+        }
+      ],
+      "relevant_tests": false,
+      "security_concerns": "No\n"
+    }
+  },
+  "upstream_tactic": "4",
+  "upstream_type": "dict"
+}

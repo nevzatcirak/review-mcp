@@ -1,0 +1,2 @@
+- relevant file: src/app.py:
+  suggestion content: The print statement is outside inside the if __name__ ==: 

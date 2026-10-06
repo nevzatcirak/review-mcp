@@ -1,0 +1,9 @@
+{
+  "upstream": {
+    "yml_config": {
+      "a": 1
+    }
+  },
+  "upstream_tactic": "direct",
+  "upstream_type": "dict"
+}

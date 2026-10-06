@@ -1,0 +1,12 @@
+{
+  "upstream": {
+    "code_suggestions": [
+      {
+        "improved_code": "return shared_helper(x)\n",
+        "relevant_file": "example.py\n"
+      }
+    ]
+  },
+  "upstream_tactic": "3",
+  "upstream_type": "dict"
+}

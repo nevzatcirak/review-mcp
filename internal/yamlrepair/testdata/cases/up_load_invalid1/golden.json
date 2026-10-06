@@ -1,0 +1,23 @@
+{
+  "upstream": {
+    "PR Analysis": {
+      "Focused PR": "Yes, the PR is focused on enhancing the `/describe` command prompt.",
+      "Main theme": "Enhancing the `/describe` command prompt by adding title and description",
+      "Relevant tests": false,
+      "Type of PR": "Enhancement"
+    },
+    "PR Feedback": {
+      "Code feedback": [
+        {
+          "relevant file": "pr_agent/settings/pr_description_prompts.toml\n",
+          "relevant line": "user=\"\"\"PR Info: aaa\n",
+          "suggestion": "Consider using a more descriptive variable name than 'user' for the command prompt. A more descriptive name would make the code more readable and maintainable. [medium]"
+        }
+      ],
+      "General suggestions": "The PR seems to be well-structured and focused on a specific enhancement. However, it would be beneficial to add tests to ensure the new feature works as expected.",
+      "Security concerns": false
+    }
+  },
+  "upstream_tactic": "1",
+  "upstream_type": "dict"
+}

@@ -1,0 +1,10 @@
+{
+  "upstream": {
+    "review": {
+      "estimated_effort_to_review": 2,
+      "security_concerns": "G\u00fcvenlik a\u00e7\u0131\u011f\u0131: kullan\u0131c\u0131 girdisi do\u011frulanm\u0131yor."
+    }
+  },
+  "upstream_tactic": "12",
+  "upstream_type": "dict"
+}

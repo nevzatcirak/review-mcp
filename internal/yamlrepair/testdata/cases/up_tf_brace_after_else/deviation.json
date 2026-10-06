@@ -1,0 +1,12 @@
+{
+  "reason": "Hand-derived. Upstream repairs this with tactic 3 (brace re-indent), which is not ported (DQ-8). Tactic 5 (strip_braces) removes the trailing \"}\" instead, so the value loses its closing brace line.",
+  "tactic": "strip_braces",
+  "want": {
+    "code_suggestions": [
+      {
+        "existing_code": "} else {\n  fallback()\n",
+        "relevant_file": "example.js\n"
+      }
+    ]
+  }
+}

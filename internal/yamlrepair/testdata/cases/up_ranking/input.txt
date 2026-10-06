@@ -1,0 +1,4 @@
+which_response_was_better: 1
+why: "It is clearer."
+score_response1: 9
+score_response2: 7

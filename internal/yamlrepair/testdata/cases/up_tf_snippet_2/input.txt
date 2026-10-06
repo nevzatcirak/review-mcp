@@ -1,0 +1,6 @@
+Here is the answer in YAML format:
+
+```yml
+name: John Smith
+age: 35
+```

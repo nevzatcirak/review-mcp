@@ -1,0 +1,18 @@
+{
+  "upstream": {
+    "review": {
+      "key_issues_to_review": [
+        {
+          "end_line": 32,
+          "issue_content": "The error check was removed:\nif err != nil {\n  return err\n}\n",
+          "issue_header": "Removed check\n",
+          "relevant_file": "internal/app/server.go\n",
+          "start_line": 30
+        }
+      ],
+      "security_concerns": "No"
+    }
+  },
+  "upstream_tactic": "8",
+  "upstream_type": "dict"
+}

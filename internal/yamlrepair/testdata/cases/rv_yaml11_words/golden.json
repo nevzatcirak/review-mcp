@@ -1,0 +1,14 @@
+{
+  "upstream": {
+    "review": {
+      "end_line": "1e3",
+      "issue_content": "2024-01-01",
+      "issue_header": true,
+      "relevant_tests": true,
+      "security_concerns": false,
+      "start_line": 493
+    }
+  },
+  "upstream_tactic": "direct",
+  "upstream_type": "dict"
+}

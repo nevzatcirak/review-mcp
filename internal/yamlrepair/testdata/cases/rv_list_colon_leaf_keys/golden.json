@@ -1,0 +1,19 @@
+{
+  "upstream": {
+    "review": {
+      "estimated_effort_to_review": "2\n",
+      "key_issues_to_review": [
+        {
+          "end_line": "44\n",
+          "issue_content": "The handler reads cfg.Name: a nil config panics.\n",
+          "issue_header": "Nil dereference\n",
+          "relevant_file": "internal/app/server.go\n",
+          "start_line": "41\n"
+        }
+      ],
+      "security_concerns": "No"
+    }
+  },
+  "upstream_tactic": "1",
+  "upstream_type": "dict"
+}

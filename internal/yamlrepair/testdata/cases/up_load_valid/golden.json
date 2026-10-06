@@ -1,0 +1,8 @@
+{
+  "upstream": {
+    "age": 35,
+    "name": "John Smith"
+  },
+  "upstream_tactic": "direct",
+  "upstream_type": "dict"
+}

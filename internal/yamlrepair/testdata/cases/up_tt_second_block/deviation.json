@@ -1,0 +1,5 @@
+{
+  "reason": "Hand-derived. Upstream repairs this with tactic 10 (code-section re-indent for the improve and describe tools), which is not ported (DQ-8). No kept tactic repairs the fence that ends the block scalar; the caller re-asks (DQ-9). (Upstream's tactic 10 result is itself mangled: the value absorbs both fences.)",
+  "tactic": "none",
+  "want": {}
+}

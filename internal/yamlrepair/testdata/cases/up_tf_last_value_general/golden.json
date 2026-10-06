@@ -1,0 +1,10 @@
+{
+  "upstream": {
+    "label": "general",
+    "review": {
+      "summary": "example"
+    }
+  },
+  "upstream_tactic": "6",
+  "upstream_type": "dict"
+}

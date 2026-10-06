@@ -1,0 +1,16 @@
+{
+  "upstream": {
+    "code_suggestions": [
+      {
+        "existing_code": "puts 'hello'\nputs 'world'\n",
+        "relevant_file": "example.rb\n"
+      },
+      {
+        "existing_code": "print('hello')\nprint('world')",
+        "relevant_file": "example.py\n"
+      }
+    ]
+  },
+  "upstream_tactic": "8",
+  "upstream_type": "dict"
+}

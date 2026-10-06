@@ -1,0 +1,16 @@
+```yaml
+review:
+  estimated_effort_to_review: 3
+  relevant_tests: No
+  key_issues_to_review:
+    - relevant_file: |
+        internal/app/server.go
+      issue_header: |
+        Possible nil dereference
+      issue_content: |
+        The handler reads cfg.Name before checking cfg: a nil config panics.
+      start_line: 41
+      end_line: 44
+  security_concerns: |
+    No
+```

@@ -1,0 +1,12 @@
+{
+  "upstream": {
+    "code_suggestions": [
+      {
+        "existing_code": "} else {\n  fallback()\n}",
+        "relevant_file": "example.js\n"
+      }
+    ]
+  },
+  "upstream_tactic": "3",
+  "upstream_type": "dict"
+}

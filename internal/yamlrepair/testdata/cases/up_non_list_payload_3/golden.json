@@ -1,0 +1,9 @@
+{
+  "upstream": {
+    "code_suggestions": {
+      "a": 1
+    }
+  },
+  "upstream_tactic": "direct",
+  "upstream_type": "dict"
+}

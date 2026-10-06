@@ -1,0 +1,15 @@
+{
+  "names": [
+    "relevant line",
+    "suggestion content",
+    "relevant file",
+    "existing code",
+    "improved code",
+    "label",
+    "why",
+    "suggestion_summary"
+  ],
+  "first": "code_suggestions",
+  "last": "label",
+  "source": "upstream tests/unittest/test_load_yaml_trailing_text.py::test_a_wrapped_mapping_survives_a_sign_off"
+}

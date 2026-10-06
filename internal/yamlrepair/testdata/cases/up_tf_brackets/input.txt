@@ -1,0 +1,12 @@
+{
+code_suggestions:
+- relevant_file: |
+    src/index.ts
+  label: |
+    best practice
+
+- relevant_file: |
+    src/index2.ts
+  label: |
+    enhancement
+}

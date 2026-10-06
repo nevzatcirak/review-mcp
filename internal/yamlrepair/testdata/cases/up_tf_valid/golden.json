@@ -1,0 +1,7 @@
+{
+  "upstream": {
+    "key": "value"
+  },
+  "upstream_tactic": "direct",
+  "upstream_type": "dict"
+}

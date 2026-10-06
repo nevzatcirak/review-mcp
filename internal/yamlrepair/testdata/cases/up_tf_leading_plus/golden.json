@@ -1,0 +1,14 @@
+{
+  "upstream": {
+    "code_suggestions": [
+      {
+        "existing_code": "var router = createBrowserRouter([\n",
+        "improved_code": "const router = createBrowserRouter([",
+        "label": "best practice\n",
+        "relevant_file": "src/index.ts\n"
+      }
+    ]
+  },
+  "upstream_tactic": "7",
+  "upstream_type": "dict"
+}

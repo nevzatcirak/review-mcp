@@ -1,0 +1,11 @@
+code_suggestions:
+- relevant_file: |
+    example.rb
+  existing_code: |
++    puts 'hello'
++    puts 'world'
+- relevant_file: |
+-    example.py
+-  existing_code: |
+-+    print('hello')
+-+    print('world')

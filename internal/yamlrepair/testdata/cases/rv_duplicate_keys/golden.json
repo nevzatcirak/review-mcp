@@ -1,0 +1,10 @@
+{
+  "upstream": {
+    "review": {
+      "estimated_effort_to_review": 4,
+      "security_concerns": false
+    }
+  },
+  "upstream_tactic": "direct",
+  "upstream_type": "dict"
+}

@@ -1,0 +1,10 @@
+{
+  "upstream": [
+    {
+      "relevant file": "src/app.py:\n",
+      "suggestion content": "The print statement is outside inside the if __name__ ==:"
+    }
+  ],
+  "upstream_tactic": "1",
+  "upstream_type": "list"
+}

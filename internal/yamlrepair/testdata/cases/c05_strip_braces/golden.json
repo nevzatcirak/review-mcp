@@ -1,0 +1,12 @@
+{
+  "upstream": {
+    "review": {
+      "estimated_effort_to_review": 1,
+      "key_issues_to_review": [],
+      "relevant_tests": true,
+      "security_concerns": "No"
+    }
+  },
+  "upstream_tactic": "5",
+  "upstream_type": "dict"
+}

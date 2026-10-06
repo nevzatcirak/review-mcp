@@ -1,0 +1,7 @@
+review:
+  relevant_tests: Yes
+  security_concerns: No
+  issue_header: on
+  start_line: 0755
+  end_line: 1e3
+  issue_content: 2024-01-01

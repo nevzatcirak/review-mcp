@@ -1,0 +1,3 @@
+review:
+  estimated_effort_to_review: 2
+  security_concerns: 'GÃ¼venlik aÃ§Ä±ÄÄ±: kullanÄ±cÄ± girdisi doÄrulanmÄ±yor.'

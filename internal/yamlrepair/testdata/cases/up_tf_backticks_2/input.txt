@@ -1,0 +1,8 @@
+{
+Some garbage: [unclosed
+
+review:
+  summary: example
+issue:
+  id: 1
+``

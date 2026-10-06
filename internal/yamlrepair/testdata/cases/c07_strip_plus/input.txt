@@ -1,0 +1,13 @@
+review:
+  key_issues_to_review:
+    - relevant_file: |
+        internal/app/server.go
+      issue_header: |
+        Ignored error
+      issue_content: |
+        The new call drops its error:
++       f()
+      start_line: 20
+      end_line: 20
+  security_concerns: |
+    No

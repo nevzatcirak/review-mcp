@@ -1,0 +1,10 @@
+{
+  "upstream": {
+    "score_response1": 9,
+    "score_response2": 7,
+    "which_response_was_better": 1,
+    "why": "It is clearer."
+  },
+  "upstream_tactic": "direct",
+  "upstream_type": "dict"
+}

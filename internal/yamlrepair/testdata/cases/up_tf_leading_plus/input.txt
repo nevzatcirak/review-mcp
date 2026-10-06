@@ -1,0 +1,9 @@
+code_suggestions:
+- relevant_file: |
+    src/index.ts
+  label: |
+    best practice
+  existing_code: |
++   var router = createBrowserRouter([
+  improved_code: |
++   const router = createBrowserRouter([

@@ -16,6 +16,7 @@ import (
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/review"
 	"github.com/nevzatcirak/review-mcp/internal/tools"
 	"github.com/nevzatcirak/review-mcp/internal/version"
 )
@@ -28,13 +29,18 @@ type Deps struct {
 	Report *config.Report
 	// LoadErr is the error returned by config.Load, if any.
 	LoadErr error
-	// Logger receives the SDK's own diagnostics and the tools' debug lines
-	// (counts and redacted URLs only). Nil discards them.
+	// Logger receives the SDK's own diagnostics (through a filter that keeps
+	// only identifiers, see sdklog.go) and the tools' debug lines (counts and
+	// redacted URLs only). Nil discards them.
 	Logger *slog.Logger
 	// NewResolver builds the PR-URL resolver the PR conversation tools use.
 	// Production passes wiring.NewResolver; tests inject fakes. It is called
 	// once per tool call and never while LoadErr is non-nil.
 	NewResolver func(cfg *config.Config, logger *slog.Logger) *provider.Resolver
+	// NewLLM builds the chat client of one pr_review call from the effective
+	// configuration (wiring.NewLLM). It is called once per call, never while
+	// LoadErr is non-nil, and nothing it returns is kept.
+	NewLLM func(cfg *config.Config, logger *slog.Logger) (review.Completer, error)
 }
 
 // serverInfoDescription is the one-sentence tool description.
@@ -45,11 +51,12 @@ const serverInfoDescription = "Reports the review-mcp version, enabled providers
 func New(deps Deps) *mcp.Server {
 	s := mcp.NewServer(
 		&mcp.Implementation{Name: tools.ServerName, Version: version.Info().Version},
-		&mcp.ServerOptions{Logger: deps.Logger},
+		&mcp.ServerOptions{Logger: sdkLogger(deps.Logger)},
 	)
 	registerServerInfo(s, deps)
 	registerPRComments(s, deps)
 	registerPRCommentReply(s, deps)
+	registerPRReview(s, deps)
 	return s
 }
 

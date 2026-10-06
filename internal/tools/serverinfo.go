@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/mdutil"
 	"github.com/nevzatcirak/review-mcp/internal/version"
 )
 
@@ -153,25 +154,4 @@ func sortedKeys[V any](m map[string]V) []string {
 // codeSpan wraps s in a markdown code span. The delimiter is one backtick
 // longer than the longest backtick run in s, and line breaks become spaces so
 // the span cannot be terminated early or break the surrounding list item.
-func codeSpan(s string) string {
-	s = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(s)
-	longest, run := 0, 0
-	for _, c := range s {
-		if c == '`' {
-			run++
-			if run > longest {
-				longest = run
-			}
-		} else {
-			run = 0
-		}
-	}
-	fence := strings.Repeat("`", longest+1)
-	if s == "" {
-		return fence + " " + fence
-	}
-	if strings.HasPrefix(s, "`") || strings.HasSuffix(s, "`") {
-		return fence + " " + s + " " + fence
-	}
-	return fence + s + fence
-}
+func codeSpan(s string) string { return mdutil.CodeSpan(s) }

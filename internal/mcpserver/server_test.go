@@ -154,8 +154,8 @@ func TestInitializeAndListTools(t *testing.T) {
 		}
 	}
 	sort.Strings(names)
-	if got := strings.Join(names, ","); got != "pr_comment_reply,pr_comments,server_info" || tool == nil {
-		t.Fatalf("tools = %v, want exactly pr_comment_reply, pr_comments, server_info", names)
+	if got := strings.Join(names, ","); got != "pr_comment_reply,pr_comments,pr_review,server_info" || tool == nil {
+		t.Fatalf("tools = %v, want exactly pr_comment_reply, pr_comments, pr_review, server_info", names)
 	}
 	if !strings.HasSuffix(tool.Description, ".") || strings.Count(tool.Description, ". ") != 0 {
 		t.Errorf("description should be one sentence: %q", tool.Description)

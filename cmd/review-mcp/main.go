@@ -88,6 +88,9 @@ commands:
             reply to a pull request comment
   diag diff <PR_URL> [--mode plain|numbered] [--prompt-tokens N]
             print the prepared (filtered, budgeted) diff and how it was built
+  diag review <PR_URL> [--dry-run] [--show-prompt] [--publish]
+            review the pull request with the configured LLM; --dry-run prints
+            the token budget report without calling the model
   serve     HTTP mode (not available in this version)
 `)
 }
@@ -121,7 +124,7 @@ func runStdio(stdin io.Reader, stdout, stderr io.Writer, load configLoader) int 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	srv := mcpserver.New(mcpserver.Deps{Config: cfg, Report: rep, LoadErr: loadErr, Logger: logger, NewResolver: wiring.NewResolver})
+	srv := mcpserver.New(mcpserver.Deps{Config: cfg, Report: rep, LoadErr: loadErr, Logger: logger, NewResolver: wiring.NewResolver, NewLLM: wiring.NewLLM})
 	err := mcpserver.RunIO(ctx, srv, io.NopCloser(stdin), nopWriteCloser{stdout})
 	switch {
 	case err == nil:

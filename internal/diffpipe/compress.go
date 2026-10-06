@@ -229,6 +229,11 @@ func admit(c *counter, entries []entry, soft, hard int) []int {
 	return admitted[:verifiedPrefix(len(admitted)-1, fits)]
 }
 
+// VerifiedPrefix exposes verifiedPrefix for the review pipeline's
+// request-size guard (spec P4 §4.3 step 6), so the guard trims through the
+// same verified-prefix search instead of a second implementation.
+func VerifiedPrefix(maxLen int, fits func(n int) bool) int { return verifiedPrefix(maxLen, fits) }
+
 // verifiedPrefix is upstream's _find_verified_fitting_prefix_length: a
 // binary search over prefix lengths 0..maxLen in which every accepted length
 // was verified by fits directly. Fits is not assumed monotone, so a longer

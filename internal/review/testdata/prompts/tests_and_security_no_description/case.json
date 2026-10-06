@@ -1,0 +1,15 @@
+{
+  "toggles": {
+    "effort": false,
+    "tests": true,
+    "security": true
+  },
+  "max_findings": 3,
+  "extra_instructions": "",
+  "language": "en-US",
+  "title": "Retry failed HTTP requests",
+  "branch": "feature/http-retry",
+  "description": "",
+  "date": "2026-10-06",
+  "diff": "\n\n## File: 'internal/httpx/retry.go'\n\n@@ -10,6 +10,12 @@ func Do(c *Client, req *Request) error {\n__new hunk__\n10  \tvar lastErr error\n11 +\tfor attempt := 0; attempt < c.maxRetries; attempt++ {\n12 +\t\tresp, err := c.send(req)\n13 +\t\tif err == nil {\n14 +\t\t\treturn resp.Body.Close()\n15 +\t\t}\n16 +\t\tlastErr = err\n17 +\t}\n18  \treturn lastErr\n__old hunk__\n \tvar lastErr error\n-\tresp, err := c.send(req)\n-\t_ = resp\n \treturn lastErr"
+}

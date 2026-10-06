@@ -1,0 +1,9 @@
+{
+  "upstream": {
+    "review": {
+      "score": 8
+    }
+  },
+  "upstream_tactic": "direct",
+  "upstream_type": "dict"
+}

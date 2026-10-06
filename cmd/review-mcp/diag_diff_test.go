@@ -104,7 +104,7 @@ func TestDiagDiffFastPath(t *testing.T) {
 	if len(d.Included) != len(wantNonFiltered) || len(d.Skipped) != 0 {
 		t.Errorf("included %v skipped %v", d.Included, d.Skipped)
 	}
-	if d.Budget.ContextWindow != 32000 || d.Budget.PromptTokens != 1500 || d.Budget.SoftLimit != 32000-1500-1500 || d.Budget.HardLimit != 32000-1000-1500 {
+	if d.Budget.ContextWindow != 32000 || d.Budget.PromptTokens != 2056 || d.Budget.SoftLimit != 32000-1500-2056 || d.Budget.HardLimit != 32000-1000-2056 {
 		t.Errorf("budget = %+v", d.Budget)
 	}
 	if d.Tokens <= 0 || d.Tokens >= d.Budget.SoftLimit {

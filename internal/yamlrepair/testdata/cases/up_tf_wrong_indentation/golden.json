@@ -1,0 +1,12 @@
+{
+  "upstream": {
+    "code_suggestions": [
+      {
+        "existing_code": "  int sum(int a, int b) {\n    return a + b;\n  }\n\n  int sub(int a, int b) {\n    return a - b;\n  }",
+        "relevant_file": "a.c\n"
+      }
+    ]
+  },
+  "upstream_tactic": "10",
+  "upstream_type": "dict"
+}

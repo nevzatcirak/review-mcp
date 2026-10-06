@@ -1,0 +1,6 @@
+```yaml
+response: |
+  hello
+```
+
+I reviewed the diff and found nothing else worth flagging.

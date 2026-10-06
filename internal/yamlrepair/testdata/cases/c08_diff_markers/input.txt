@@ -1,0 +1,15 @@
+review:
+  key_issues_to_review:
+    - relevant_file: |
+        internal/app/server.go
+      issue_header: |
+        Removed check
+      issue_content: |
+        The error check was removed:
+-        if err != nil {
+-          return err
+-        }
+      start_line: 30
+      end_line: 32
+  security_concerns: |
+    No

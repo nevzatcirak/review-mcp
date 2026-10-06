@@ -21,10 +21,17 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/wiring"
 )
 
-// defaultPromptTokens is the default of --prompt-tokens: an approximation of
-// the prompt scaffolding (system prompt, instructions, empty diff) until the
-// prompt layer (P4) measures the real prompts.
-const defaultPromptTokens = 1500
+// defaultPromptTokens is the default of --prompt-tokens: the measured maximum
+// of the review prompt scaffolding (system and user prompt around an empty
+// diff, with the framing allowance). It was measured in WP-PR-4c with every
+// field on, tr-TR and extra instructions; reproduce it with
+//
+//	go test ./internal/review -run TestScaffoldingTokens -v
+//
+// (the last row of the table: request tokens 2056). A review of a real PR
+// adds its title, branch and description on top; diag review --dry-run
+// reports the exact figure for one PR.
+const defaultPromptTokens = 2056
 
 // diffSeparator is the line between the JSON header and the prepared diff.
 const diffSeparator = "--- prepared diff ---"
@@ -50,7 +57,7 @@ func runDiagDiff(rest []string, stdout, stderr io.Writer, load configLoader) int
 	fs.SetOutput(stderr)
 	fs.Usage = func() { diagUsage(stderr) }
 	modeStr := fs.String("mode", "plain", "render `mode`: plain or numbered")
-	promptStr := fs.String("prompt-tokens", strconv.Itoa(defaultPromptTokens), "estimated prompt scaffolding `N` in tokens (an approximation until P4)")
+	promptStr := fs.String("prompt-tokens", strconv.Itoa(defaultPromptTokens), "estimated prompt scaffolding `N` in tokens (default: the measured maximum of the review prompts)")
 	prURL, ok := parseDiagArgs(fs, rest, stderr)
 	if !ok {
 		return 2

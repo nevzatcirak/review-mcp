@@ -1,0 +1,15 @@
+{
+  "names": [
+    "relevant line",
+    "suggestion content",
+    "relevant file",
+    "existing code",
+    "improved code",
+    "label",
+    "why",
+    "suggestion_summary"
+  ],
+  "first": "",
+  "last": "",
+  "source": "upstream tests/unittest/test_output_models.py::test_ranking_example_is_a_valid_numeric_payload"
+}

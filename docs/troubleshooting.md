@@ -139,7 +139,7 @@ Flags (they may come before or after the URL):
 | Flag | Default | Meaning |
 |---|---|---|
 | `--mode plain\|numbered` | `plain` | `plain` is the format for questions; `numbered` is the line-numbered format for reviews (`__new hunk__` / `__old hunk__` blocks). |
-| `--prompt-tokens N` | `1500` | The estimated size of the prompt around the diff (instructions, description, commits). It is an approximation until the real prompts are measured; raise it to see how a longer prompt squeezes the diff. |
+| `--prompt-tokens N` | `2056` | The estimated size of the prompt around the diff. The default is the measured maximum of the review prompts (all fields on, a non-English language, extra instructions; see [Reviewing pull requests](review.md#prompt-tokens)), without the PR's own title and description. Raise it to see how a longer prompt squeezes the diff; `diag review --dry-run` reports the exact figure for a PR. |
 
 ```json
 {
@@ -255,6 +255,46 @@ It applies only when no file at all fits the budget:
 If at least one file fits, the policy has no effect: the files that do not fit
 are listed in `omitted`.
 
+## Review a pull request with `diag review`
+
+```sh
+review-mcp diag review <PR_URL> --dry-run
+review-mcp diag review <PR_URL>
+```
+
+`--dry-run` runs everything a review does up to the LLM call and prints a JSON
+report with the prompt, diff and request token estimates, the budget and the
+coverage; the model is not called. Use it to tune `llm.context_window` and the
+`ignore.*` rules. Without `--dry-run` it runs the full review and prints the
+markdown the `pr_review` tool returns; `--publish` also posts it, and
+`--show-prompt` prints the rendered prompts after the output (never to the
+log). See [Reviewing pull requests](review.md) for how to read the result.
+
+### LLM and review errors
+
+A failed review reports one of these fixed sentences. The text never contains
+a response body, a prompt or the key. A status code and a hint naming the
+setting to check may follow.
+
+| Sentence | Class | What to check |
+|---|---|---|
+| the LLM endpoint rejected the credentials | `llm_auth` (HTTP 401/403) | `REVIEW_MCP_LLM_API_KEY`. |
+| the LLM endpoint or model was not found | `llm_not_found` (HTTP 404) | `llm.base_url` (it must end where `/chat/completions` is appended) and `llm.model`. |
+| the LLM endpoint rate-limited the request | `llm_rate_limited` (HTTP 429) | Retried up to `llm.max_retries` times; wait, or raise it. |
+| the request is too long for the model's context window | `llm_context_too_long` | `llm.context_window` is larger than the model really accepts; lower it. |
+| the LLM endpoint rejected the request | `llm_bad_request` | Often an unsupported sampling setting; the hint names the keys you set (`llm.temperature`, `llm.seed`, `llm.reasoning_effort`, `llm.max_output_tokens`). Unset them. |
+| the LLM endpoint reported an internal error | `llm_upstream` (HTTP 5xx) | The endpoint failed; see its logs. Retried like 429. |
+| the LLM request timed out | `llm_timeout` | Raise `llm.timeout_seconds`; large reviews on slow models take minutes. |
+| could not complete the request to the LLM endpoint | `llm_transport` | Network, DNS, TLS or proxy problem between you and the endpoint. |
+| the LLM endpoint sent an unexpected response | `llm_protocol` | The endpoint is not OpenAI-compatible at `llm.base_url`, or it answered with an empty message. |
+| the pull request diff does not fit the configured context window | `review_does_not_fit` | Raise `llm.context_window`, or narrow the PR. Nothing was sent to the model. |
+| the model's answer could not be parsed as a review, also after one retry | `review_unparseable` | Try again, or use a model that follows YAML output instructions. |
+| output_language must be a locale code such as en-US or tr-TR / max_findings must be an integer from 1 to 20 | (argument) | Fix the argument; nothing was sent anywhere. |
+
+If the configuration is invalid, `pr_review` returns "review-mcp configuration
+is invalid; call server_info for the list of problems" and sends nothing to
+the provider or the LLM.
+
 ## Error messages
 
 Every failure from a provider is reported as one of these fixed sentences.
@@ -334,6 +374,7 @@ with query values replaced by `REDACTED`, the status and the duration, and the
 provider notes things such as a failed version probe or a file present in only
 one source.
 
-Never logged, at any level: tokens and other secrets, `Authorization`
-headers, request and response bodies, diff content, and prompts or model
+Never logged, at any level: tokens and other secrets (including the LLM API
+key), `Authorization` headers, request and response bodies, tool arguments and
+results, diff content, PR titles and descriptions, and prompts or model
 responses. Still, skim a log before pasting it into a public issue.

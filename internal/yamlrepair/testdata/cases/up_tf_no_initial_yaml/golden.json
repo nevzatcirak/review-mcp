@@ -1,0 +1,17 @@
+{
+  "upstream": {
+    "I suggest the following": null,
+    "code_suggestions": [
+      {
+        "label": "best practice\n",
+        "relevant_file": "src/index.ts\n"
+      },
+      {
+        "label": "enhancement",
+        "relevant_file": "src/index2.ts\n"
+      }
+    ]
+  },
+  "upstream_tactic": "direct",
+  "upstream_type": "dict"
+}

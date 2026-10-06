@@ -57,13 +57,14 @@ The room left for the pull request's diff is computed from them:
 | soft limit | `context_window` - soft reserve - prompt tokens |
 | hard limit | `context_window` - hard reserve - prompt tokens |
 
-"Prompt tokens" is the size of the instructions, description and commits
-around the diff. The soft limit is what the diff is fitted into (a diff that
+"Prompt tokens" is the size of the review instructions, title and
+description around the diff (about 1600 to 2100 tokens for the instructions
+alone; see [Reviewing pull requests](review.md#prompt-tokens)). The soft limit is what the diff is fitted into (a diff that
 fits is sent whole, with extra context around each change; otherwise files are
 admitted largest-first until it is reached). The hard limit is a ceiling that
 stops further additions. For example, with a 32000-token window, no
-`max_output_tokens` and 1500 prompt tokens, the soft limit is
-32000 - 1500 - 1500 = 29000 tokens.
+`max_output_tokens` and 2056 prompt tokens, the soft limit is
+32000 - 1500 - 2056 = 28444 tokens.
 
 Token counts come from a built-in estimator that works offline. It is exact
 only for OpenAI-style tokenizers, so every count is multiplied by
@@ -118,6 +119,18 @@ client's documentation and adapt the example; if it does not expand
 references, export the variables in the environment the client is started from.
 If `command` is not found, use the absolute path to the binary.
 
+## Tools
+
+| Tool | What it does |
+|---|---|
+| `server_info` | Version, enabled providers and the effective non-secret configuration. |
+| `pr_comments` | Lists a pull request's comment threads. |
+| `pr_comment_reply` | Replies to a pull request comment. |
+| `pr_review` | Reviews a pull request with your LLM; see [Reviewing pull requests](review.md). The PR's title, description and diff are sent to `llm.base_url`. |
+
+For reviews, the recommended sampling setting is `REVIEW_MCP_LLM_TEMPERATURE=0.2`
+(it is not sent unless you set it).
+
 ## Verify
 
 Ask your client to call the `server_info` tool. It reports the version, the
@@ -129,4 +142,4 @@ can see what to fix: `server_info` returns `status: "config_invalid"` with the
 full list of problems, and the same list is logged to stderr. Correct the
 environment and restart the server (usually by reloading the MCP client).
 
-If something does not work, see the [troubleshooting guide](troubleshooting.md); `review-mcp diag pr <PR_URL>` checks that your provider and token can reach a pull request.
+If something does not work, see the [troubleshooting guide](troubleshooting.md); `review-mcp diag pr <PR_URL>` checks that your provider and token can reach a pull request, and `review-mcp diag review <PR_URL> --dry-run` checks the review budget without calling the LLM.

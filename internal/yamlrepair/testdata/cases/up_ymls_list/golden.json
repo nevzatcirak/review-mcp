@@ -1,0 +1,9 @@
+{
+  "upstream": {
+    "ymls": [
+      "a"
+    ]
+  },
+  "upstream_tactic": "direct",
+  "upstream_type": "dict"
+}

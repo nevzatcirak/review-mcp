@@ -1,0 +1,7 @@
+{
+  "upstream": {
+    "response": "Use this:\n```python\nprint(1)\n```"
+  },
+  "upstream_tactic": "direct",
+  "upstream_type": "dict"
+}

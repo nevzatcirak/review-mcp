@@ -1,0 +1,7 @@
+{
+  "upstream": {
+    "name": "John"
+  },
+  "upstream_tactic": "4",
+  "upstream_type": "dict"
+}

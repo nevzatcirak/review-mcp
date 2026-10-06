@@ -1,0 +1,6 @@
+{
+Some garbage: [unclosed
+
+review:
+  summary: example
+label: maintainability

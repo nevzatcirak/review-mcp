@@ -1,0 +1,18 @@
+{
+  "upstream": {
+    "review": {
+      "key_issues_to_review": [
+        {
+          "end_line": 20,
+          "issue_content": "The new call drops its error:\nf()\n",
+          "issue_header": "Ignored error\n",
+          "relevant_file": "internal/app/server.go\n",
+          "start_line": 20
+        }
+      ],
+      "security_concerns": "No"
+    }
+  },
+  "upstream_tactic": "7",
+  "upstream_type": "dict"
+}

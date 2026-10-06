@@ -1,0 +1,11 @@
+code_suggestions:
+- relevant_file: |
+    a.c
+  existing_code: |
+  int sum(int a, int b) {
+    return a + b;
+  }
+
+  int sub(int a, int b) {
+    return a - b;
+  }

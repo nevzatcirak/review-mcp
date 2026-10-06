@@ -1,0 +1,14 @@
+review:
+  key_issues_to_review:
+    - relevant_file: |
+        internal/app/server.go
+      issue_header: |
+        Unchecked error
+      issue_content: |
+            if err := f(); err != nil {
+        return
+            }
+      start_line: 12
+      end_line: 14
+  security_concerns: |
+    No

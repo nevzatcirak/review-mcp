@@ -1,0 +1,12 @@
+{
+  "upstream": {
+    "issue": {
+      "id": 1
+    },
+    "review": {
+      "summary": "example"
+    }
+  },
+  "upstream_tactic": "6",
+  "upstream_type": "dict"
+}

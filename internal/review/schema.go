@@ -1,0 +1,74 @@
+package review
+
+// ResultSchema is the JSON schema (draft 2020-12) of Result, for the
+// pr_review tool's MCP output schema (DQ-6; WP-PR-4e attaches it). The
+// review part comes from the descriptor table (ReviewSchema).
+//
+// It is a plain map rather than a github.com/google/jsonschema-go value:
+// the MCP SDK's Tool.OutputSchema accepts any value that marshals to a JSON
+// schema, and that module is only an indirect dependency of this one.
+func ResultSchema() map[string]any {
+	str := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
+	integer := func(desc string) map[string]any { return map[string]any{"type": "integer", "description": desc} }
+	boolean := func(desc string) map[string]any { return map[string]any{"type": "boolean", "description": desc} }
+	strList := func(desc string) map[string]any {
+		return map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": desc}
+	}
+	object := func(desc string, props map[string]any, required ...string) map[string]any {
+		req := []any{}
+		for _, r := range required {
+			req = append(req, r)
+		}
+		return map[string]any{"type": "object", "description": desc, "properties": props,
+			"required": req, "additionalProperties": false}
+	}
+	skipped := func(desc string) map[string]any {
+		return map[string]any{"type": "array", "description": desc, "items": object("a file and the reason",
+			map[string]any{"path": str("file path"), "reason": str("reason code or filter rule")}, "path", "reason")}
+	}
+	review := ReviewSchema()
+	review["description"] = "the validated review; the optional fields appear only when enabled and usable"
+
+	return object("pr_review result", map[string]any{
+		"pr": object("the reviewed pull request", map[string]any{
+			"kind":   str("provider kind: gitea or bitbucket_server"),
+			"url":    str("pull request URL with credentials and query values removed"),
+			"number": integer("pull request number"),
+			"title":  str("pull request title"),
+		}, "kind", "url", "number", "title"),
+		"enabled_fields": strList("the review fields asked for, in order"),
+		"review":         review,
+		"coverage": object("what the model saw (X-3)", map[string]any{
+			"included": strList("files whose diff was sent in full"),
+			"clipped":  strList("files whose diff was sent in part"),
+			"omitted": object("files left out for the token budget, by change type", map[string]any{
+				"added":    strList("added files"),
+				"modified": strList("modified and renamed files"),
+				"deleted":  strList("deleted files"),
+			}, "added", "modified", "deleted"),
+			"skipped":  skipped("files skipped for other reasons (binary, limits, fetch failures, empty or unparseable diffs)"),
+			"filtered": skipped("files excluded by the ignore rules, with the matching rule"),
+		}, "included", "clipped", "omitted", "skipped", "filtered"),
+		"notes": strList("notes about truncation, dropped findings, clipped or trimmed files and the re-ask"),
+		"metadata": object("run metadata", map[string]any{
+			"model":          str("llm.model"),
+			"context_window": integer("llm.context_window"),
+			"prompt_tokens":  integer("estimated tokens of the prompt scaffolding"),
+			"diff_tokens":    integer("estimated tokens of the diff sent"),
+			"request_tokens": integer("estimated tokens of the request; 0 without a model call"),
+			"fast_path":      boolean("whether the whole extended diff fit"),
+			"llm_calls":      integer("number of model calls (0 to 2)"),
+			"repair_tactic":  str("how the answer was parsed: direct or a YAML repair tactic; empty without a model call"),
+			"reasked":        boolean("whether the model was asked a second time after an unparseable answer"),
+			"truncated":      boolean("whether the answer was cut off by the output limit"),
+			"diff_trimmed":   boolean("whether the request-size guard shortened the diff"),
+		}, "model", "context_window", "prompt_tokens", "diff_tokens", "request_tokens", "fast_path", "llm_calls",
+			"repair_tactic", "reasked", "truncated", "diff_trimmed"),
+		"publish": object("publishing outcome; present when publish was requested", map[string]any{
+			"published":  boolean("whether the comment was posted"),
+			"comment_id": str("id of the posted comment"),
+			"url":        str("URL of the posted comment"),
+			"error":      str("why publishing failed; the review is still returned"),
+		}, "published"),
+	}, "pr", "enabled_fields", "review", "coverage", "notes", "metadata")
+}

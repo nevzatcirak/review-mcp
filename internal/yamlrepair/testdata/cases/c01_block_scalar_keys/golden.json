@@ -1,0 +1,11 @@
+{
+  "upstream": {
+    "review": {
+      "estimated_effort_to_review": "2\n",
+      "relevant_tests": "No\n",
+      "security_concerns": "Possible token leak: the API key is written to the debug log."
+    }
+  },
+  "upstream_tactic": "1",
+  "upstream_type": "dict"
+}

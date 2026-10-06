@@ -1,0 +1,18 @@
+{
+  "upstream": {
+    "review": {
+      "key_issues_to_review": [
+        {
+          "end_line": 14,
+          "issue_content": "    if err := f(); err != nil {\nreturn\n    }\n",
+          "issue_header": "Unchecked error\n",
+          "relevant_file": "internal/app/server.go\n",
+          "start_line": 12
+        }
+      ],
+      "security_concerns": "No"
+    }
+  },
+  "upstream_tactic": "2",
+  "upstream_type": "dict"
+}

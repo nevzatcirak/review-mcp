@@ -1,0 +1,7 @@
+{
+  "upstream": {
+    "response": "hello"
+  },
+  "upstream_tactic": "direct",
+  "upstream_type": "dict"
+}

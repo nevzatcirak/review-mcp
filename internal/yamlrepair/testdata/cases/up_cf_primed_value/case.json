@@ -1,0 +1,15 @@
+{
+  "names": [
+    "relevant line",
+    "suggestion content",
+    "relevant file",
+    "existing code",
+    "improved code",
+    "label",
+    "why",
+    "suggestion_summary"
+  ],
+  "first": "",
+  "last": "",
+  "source": "upstream tests/unittest/test_load_yaml_closing_fence.py::test_a_primed_answer_keeps_its_value_intact"
+}

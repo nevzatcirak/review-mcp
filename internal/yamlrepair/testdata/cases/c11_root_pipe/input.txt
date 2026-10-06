@@ -1,0 +1,7 @@
+|
+review:
+  estimated_effort_to_review: 2
+  relevant_tests: No
+  security_concerns: "Possible token leak.
+
+    The API key is written to the debug log."

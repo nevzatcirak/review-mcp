@@ -1,0 +1,12 @@
+{
+  "upstream": {
+    "code_suggestions": [
+      {
+        "existing_code": " {\n    \"key1\": \"value1\",\n    \"key2\": {\n      \"subkey\": \"value\"\n     }\n}",
+        "relevant_file": "tsconfig.json\n"
+      }
+    ]
+  },
+  "upstream_tactic": "2",
+  "upstream_type": "dict"
+}

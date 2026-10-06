@@ -1,0 +1,39 @@
+
+
+
+--PR Info--
+
+Today's Date: 2026-10-06
+
+Title: 'Retry failed HTTP requests'
+
+Branch: 'feature/http-retry'
+
+
+The PR code diff:
+======
+
+
+## File: 'internal/httpx/retry.go'
+
+@@ -10,6 +10,12 @@ func Do(c *Client, req *Request) error {
+__new hunk__
+10  	var lastErr error
+11 +	for attempt := 0; attempt < c.maxRetries; attempt++ {
+12 +		resp, err := c.send(req)
+13 +		if err == nil {
+14 +			return resp.Body.Close()
+15 +		}
+16 +		lastErr = err
+17 +	}
+18  	return lastErr
+__old hunk__
+ 	var lastErr error
+-	resp, err := c.send(req)
+-	_ = resp
+ 	return lastErr
+======
+
+
+Response (should be a valid YAML, and nothing else):
+```yaml

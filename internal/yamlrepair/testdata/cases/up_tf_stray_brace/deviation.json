@@ -1,0 +1,12 @@
+{
+  "reason": "Hand-derived. Upstream repairs this with tactic 3 (brace re-indent), which is not ported (DQ-8). Tactic 5 (strip_braces) removes the stray trailing \"}\", which gives upstream's value.",
+  "tactic": "strip_braces",
+  "want": {
+    "code_suggestions": [
+      {
+        "improved_code": "return shared_helper(x)\n",
+        "relevant_file": "example.py\n"
+      }
+    ]
+  }
+}

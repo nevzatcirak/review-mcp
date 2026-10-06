@@ -1,0 +1,5 @@
+{
+  "reason": "Hand-derived. Upstream repairs this with tactic 3 (brace re-indent), which is not ported (DQ-8). The stray \"}\" is not at the end, so no kept tactic removes it; the caller re-asks (DQ-9).",
+  "tactic": "none",
+  "want": {}
+}

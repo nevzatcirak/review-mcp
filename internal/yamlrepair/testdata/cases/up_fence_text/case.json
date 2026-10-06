@@ -1,0 +1,15 @@
+{
+  "names": [
+    "relevant line",
+    "suggestion content",
+    "relevant file",
+    "existing code",
+    "improved code",
+    "label",
+    "why",
+    "suggestion_summary"
+  ],
+  "first": "",
+  "last": "",
+  "source": "upstream tests/unittest/test_load_yaml.py::test_non_yaml_info_string_not_parsed_as_yaml_snippet"
+}

@@ -1,0 +1,10 @@
+{
+Some garbage: [unclosed
+
+analysis:
+  details:
+    summary: example
+issue:
+  id: 1
+
+Trailing: ???

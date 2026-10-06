@@ -1,0 +1,15 @@
+{
+  "names": [
+    "relevant line",
+    "suggestion content",
+    "relevant file",
+    "existing code",
+    "improved code",
+    "label",
+    "why",
+    "suggestion_summary"
+  ],
+  "first": "code_suggestions",
+  "last": "existing_code",
+  "source": "upstream tests/unittest/test_try_fix_yaml.py::test_closing_brace_after_brace_in_string_stays_in_block_scalar"
+}

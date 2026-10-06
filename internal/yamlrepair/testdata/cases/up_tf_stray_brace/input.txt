@@ -1,0 +1,6 @@
+code_suggestions:
+- relevant_file: |
+    example.py
+  improved_code: |
+    return shared_helper(x)
+  }

@@ -1,0 +1,12 @@
+--- upstream.system.txt
++++ system.txt
+@@ -86,4 +86,2 @@
+ review:
+-  relevant_tests: |
+-    No
+   key_issues_to_review:
+@@ -98,4 +96,2 @@
+     - ...
+-  security_concerns: |
+-    No
+ ```

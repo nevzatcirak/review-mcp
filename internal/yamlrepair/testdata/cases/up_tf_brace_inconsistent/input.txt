@@ -1,0 +1,10 @@
+code_suggestions:
+- relevant_file: |
+    tsconfig.json
+  existing_code: |
+     {
+        "key1": "value1",
+        "key2": {
+          "subkey": "value"
+         }
+    }

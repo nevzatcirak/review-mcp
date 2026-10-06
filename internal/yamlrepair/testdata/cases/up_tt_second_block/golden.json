@@ -1,0 +1,7 @@
+{
+  "upstream": {
+    "response": "    hello\n  ```\n  \n  ```\n  print(1)\n  "
+  },
+  "upstream_tactic": "10",
+  "upstream_type": "dict"
+}

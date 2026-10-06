@@ -1,0 +1,5 @@
+{
+  "reason": "Hand-derived. Upstream's tactic 1 returns a list and upstream stops there; a tactic wins here only with a non-empty mapping (spec P4 section 3), and no later tactic yields one.",
+  "tactic": "none",
+  "want": {}
+}

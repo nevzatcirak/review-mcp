@@ -1,0 +1,7 @@
+code_suggestions:
+- relevant_file: |
+    example.js
+  existing_code: |
+    } else {
+      fallback()
+  }

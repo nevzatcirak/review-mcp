@@ -32,6 +32,8 @@ type fakeHost struct {
 	srv        *httptest.Server
 	hits       atomic.Int64
 	failStatus atomic.Int32
+	// failPost makes the Gitea comment POST answer 500.
+	failPost atomic.Bool
 
 	mu     sync.Mutex
 	posted []string
@@ -165,6 +167,10 @@ func newFakeGitea(t *testing.T) *fakeHost {
 				giteaReviewComment(301, "src/done.go", 3, 110, "bob"),
 			})
 		case r.Method == "POST" && p == api+"/issues/7/comments":
+			if f.failPost.Load() {
+				http.Error(w, "boom", http.StatusInternalServerError)
+				return
+			}
 			f.mu.Lock()
 			f.posted = append(f.posted, string(body))
 			f.mu.Unlock()

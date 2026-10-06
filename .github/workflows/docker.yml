@@ -1,0 +1,23 @@
+name: docker
+
+# Builds the serve-mode image to prove the Dockerfile still builds. The image
+# is not published and not pushed anywhere.
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - .github/workflows/docker.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Build the image
+        run: docker build --build-arg VERSION=0.0.0-ci --build-arg COMMIT="${GITHUB_SHA}" -t review-mcp:ci .
+      - name: Run the binary in the image
+        run: docker run --rm review-mcp:ci version

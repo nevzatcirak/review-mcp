@@ -495,6 +495,38 @@ func TestRunTruncatedNote(t *testing.T) {
 	}
 }
 
+// TestRunTruncationDescribesTheConvertedAnswer: the truncation flag and note
+// follow the answer that was converted, not any earlier attempt (architect
+// review C2).
+func TestRunTruncationDescribesTheConvertedAnswer(t *testing.T) {
+	cases := []struct {
+		name      string
+		truncated []bool
+		want      bool
+	}{
+		{"cut-off first answer, complete re-ask", []bool{true, false}, false},
+		{"complete first answer, cut-off re-ask", []bool{false, true}, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			// A cut-off answer that no repair tactic rescues.
+			h := newHarness("not yaml: [", goodAnswer)
+			h.llm.truncated = c.truncated
+			res, err := Run(context.Background(), h.deps, Args{PRURL: testPRURL})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !res.Metadata.Reasked || !slices.Contains(res.Notes, NoteReasked) {
+				t.Fatalf("no re-ask: metadata %+v notes %v", res.Metadata, res.Notes)
+			}
+			if res.Metadata.Truncated != c.want || slices.Contains(res.Notes, NoteTruncated) != c.want {
+				t.Errorf("truncated = %v, note present = %v, want %v", res.Metadata.Truncated,
+					slices.Contains(res.Notes, NoteTruncated), c.want)
+			}
+		})
+	}
+}
+
 func TestRunPublish(t *testing.T) {
 	h := newHarness(goodAnswer)
 	res, err := Run(context.Background(), h.deps, Args{PRURL: testPRURL, Publish: true})

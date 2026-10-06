@@ -308,9 +308,9 @@ func (pl *Plan) finish(ctx context.Context, deps Deps, args Args) (*Result, erro
 		if err != nil {
 			return nil, err
 		}
-		if resp.Truncated {
-			res.Metadata.Truncated = true
-		}
+		// Truncated describes the answer that is converted: a cut-off first
+		// answer followed by a complete re-ask is not truncated.
+		res.Metadata.Truncated = resp.Truncated
 		data, trace := yamlrepair.Load(strings.TrimSpace(resp.Content), keys)
 		res.Metadata.RepairTactic = trace.Tactic
 		log.Debug("review: answer loaded", "attempt", attempt+1, "repair_tactic", trace.Tactic,

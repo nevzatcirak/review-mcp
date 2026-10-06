@@ -352,20 +352,77 @@ contain URLs with query strings.
 If the configuration itself is invalid, `diag` prints every problem, one per
 line, exits 1 and makes no network request.
 
+## Every error sentence
+
+Every error review-mcp returns to a client is one of these fixed sentences
+(X-6). None contains a token, a response body, a prompt or PR content. Find the
+exact sentence you received, read its cause and check the key. The detailed
+tables above (providers, LLM, review, ask) say more about each class; this
+table also covers the configuration, argument and serve-mode errors.
+
+| Sentence | Class | Cause and what to check |
+|---|---|---|
+| review-mcp configuration is invalid; call server_info for the list of problems | `config_invalid` | The server started in degraded mode. Call `server_info`: `problems` lists every invalid key. Fix the environment or file and restart the server. Nothing was sent. |
+| the pull request URL does not match any configured provider | `url_not_configured` | The URL matches no provider's base URL (or Gitea `web_url`). Check `REVIEW_MCP_GITEA_BASE_URL` / `REVIEW_MCP_BITBUCKET_SERVER_BASE_URL`: scheme, host, port, context path. |
+| the URL matches a configured provider but is not a pull request URL | `url_malformed` | Use the PR page URL; no credentials in the URL. |
+| authentication failed: check the token and its scopes | `auth` | Wrong, expired or under-privileged provider token. Check `REVIEW_MCP_GITEA_TOKEN` / `REVIEW_MCP_BITBUCKET_SERVER_TOKEN` (stdio) or the `X-Review-MCP-...-Token` header (serve), and [Token scopes](#token-scopes). |
+| the requested resource was not found | `not_found` | Wrong repository or PR, a token that cannot see it, or a wrong Bitbucket context path. |
+| the server rate-limited the request | `rate_limited` | Provider or proxy rate limit; wait and retry. |
+| the server reported an internal error | `upstream` | Provider (or its proxy) failed; see its logs. |
+| a response exceeded its size limit | `too_large` | Check `diff.max_diff_bytes` / `diff.max_file_bytes` (named in the hint). |
+| the server version is not supported | `unsupported_version` | Bitbucket Server / Data Center 7.0 or later is required. |
+| could not complete the request to the server | `transport` | DNS, timeout, TLS or connection problem; see the hint and [Base URL notes](#base-url-notes). |
+| the server sent an unexpected response | `protocol` | Base URL points at something that is not the provider API; a hint such as `empty body` or `invalid comment id` means `pr_comment_reply` got a blank `body` or a `comment_id` that is not a positive integer. |
+| the LLM endpoint rejected the credentials | `llm_auth` | `REVIEW_MCP_LLM_API_KEY` (stdio, or serve with `llm_key_source = server`) or the `X-Review-MCP-LLM-API-Key` header. |
+| the LLM endpoint or model was not found | `llm_not_found` | `llm.base_url` and `llm.model`. |
+| the LLM endpoint rate-limited the request | `llm_rate_limited` | Wait; `llm.max_retries`. |
+| the request is too long for the model's context window | `llm_context_too_long` | `llm.context_window` is larger than the endpoint really accepts. |
+| the LLM endpoint rejected the request | `llm_bad_request` | Unset the sampling keys named in the hint (`llm.temperature`, `llm.seed`, `llm.reasoning_effort`, `llm.max_output_tokens`). |
+| the LLM endpoint reported an internal error | `llm_upstream` | The endpoint failed; see its logs. |
+| the LLM request timed out | `llm_timeout` | Raise `llm.timeout_seconds`. |
+| could not complete the request to the LLM endpoint | `llm_transport` | Network, DNS, TLS or proxy between you and `llm.base_url`. |
+| the LLM endpoint sent an unexpected response | `llm_protocol` | `llm.base_url` is not an OpenAI-compatible endpoint, or the answer was empty. |
+| the pull request diff does not fit the configured context window; raise llm.context_window (REVIEW_MCP_LLM_CONTEXT_WINDOW) or narrow the pull request | `diff_does_not_fit` | `llm.context_window`, `llm.max_output_tokens`, `diff.large_patch_policy`; or narrow the PR. Nothing was sent to the model. |
+| the model's answer could not be parsed as a review, also after one retry | `review_unparseable` | Retry, or use a model that follows YAML output instructions. |
+| output_language must be a locale code such as en-US or tr-TR | argument | Fix `output_language` (`pr_review`, `pr_ask`). |
+| max_findings must be an integer from 1 to 20 | argument | Fix `max_findings` (`pr_review`). |
+| question must not be empty | argument | Pass a non-blank `question` (`pr_ask`). |
+| question is too long: at most 8000 characters are allowed | argument | Shorten the question. |
+| no Gitea token in this request: set the X-Review-MCP-Gitea-Token header in your MCP client configuration | `credentials_missing` | Serve mode: the request carried no Gitea token. Add the header to the client configuration ([Serve mode](serve.md#client-configuration-for-a-remote-server)); `server_info` shows which headers arrived. No outbound request was made. |
+| no Bitbucket Server token in this request: set the X-Review-MCP-Bitbucket-Server-Token header in your MCP client configuration | `credentials_missing` | Same, for a Bitbucket Server URL. |
+| no LLM API key in this request: set the X-Review-MCP-LLM-API-Key header in your MCP client configuration | `credentials_missing` | Same, for the LLM key. Only when `serve.llm_key_source = header`; with `server` the server's own key is used. |
+| malformed credential header: <header name> | (HTTP 400) | A credential header is longer than 4096 bytes, contains anything but visible ASCII (a stray newline or a space inside the value) or was sent twice. Fix the value in the client configuration. The value is never echoed. |
+| the server is busy: retry shortly | `server_busy` | All `serve.max_concurrent_calls` slots are in use. Retry, or raise the key (1 to 64). |
+| unauthorized (HTTP 401, `WWW-Authenticate: Bearer`) | (HTTP) | The server has an access token and the request lacks `Authorization: Bearer <token>` or carries the wrong one: `REVIEW_MCP_SERVE_ACCESS_TOKEN`. |
+| forbidden: invalid Host header / forbidden: origin not allowed (HTTP 403) | (HTTP) | Serve mode: a loopback listener got a `Host` that is not a loopback name with the configured port, or a request with an `Origin` that is not in `serve.allowed_origins` (exact, lower case). |
+| request body too large (HTTP 413) | (HTTP) | The request body is over 1 MiB. |
+| unexpected error; rerun with REVIEW_MCP_LOG_LEVEL=debug for details | (generic) | Anything not classified; debug logs say more. A `(class: timeout)` or `(class: canceled)` suffix means the call ran out of time or was canceled. |
+
 ## Token scopes
 
-Scopes are named differently across versions; grant the least that works.
+Scopes are named differently across versions; grant the least that works. The
+[Setup guide](setup.md#2-create-tokens) says where to create each token and
+lists every API endpoint review-mcp calls with the scope it needs; this section
+is the short version and the place to look when a call fails with
+`authentication failed`. All scopes are unconfirmed until V1 acceptance (item
+A3) has verified them.
 
-- **Gitea:** read access to the repository, plus write access to issues and
-  pull requests. The write part is needed only for publishing (`publish`) and
-  `diag comment`; reading a PR needs only read access.
+- **Gitea:** read access to the repository (`read:repository`) and to issues
+  (`read:issue`, for PR-level comments), plus write access to issues
+  (`write:issue`). The write part is needed only for publishing (`publish`),
+  `pr_comment_reply` and `diag comment`; reading a PR needs only read access.
 - **Bitbucket Server / Data Center:** an HTTP access token with repository
   read permission, plus write permission only for comments. The token is sent
   as `Authorization: Bearer ...`; basic authentication is not supported.
 
-Pass tokens only through the environment (`REVIEW_MCP_GITEA_TOKEN`,
-`REVIEW_MCP_BITBUCKET_SERVER_TOKEN`); never put them in a URL or a config file
-that is checked in.
+Which call fails tells you which scope is missing: if `diag pr` works but
+`diag comment` fails with `authentication failed`, the token is valid but
+lacks the write scope; if `diag pr` itself fails, the token is wrong or
+cannot read the repository (a hidden repository may also answer 404). Pass
+tokens only through the environment (`REVIEW_MCP_GITEA_TOKEN`,
+`REVIEW_MCP_BITBUCKET_SERVER_TOKEN`) or, in serve mode, the request headers
+([Serve mode](serve.md)); never put them in a URL or a config file that is
+checked in.
 
 ## Base URL notes
 

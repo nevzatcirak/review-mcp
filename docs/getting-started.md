@@ -2,7 +2,10 @@
 
 review-mcp is an MCP server that runs as a local process and talks to your MCP
 client over stdio. This guide builds it, sets the minimal configuration, and
-registers it with a client.
+registers it with a client. For the full path from nothing to a first review
+(install options, token checklist, client snippets), start with the
+[Setup guide](setup.md); to share one server across a team, see
+[Serve mode](serve.md).
 
 ## Build from source
 

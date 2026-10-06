@@ -35,7 +35,7 @@ type configLoader func() (*config.Config, *config.Report, error)
 // runWith dispatches on the first argument and returns the process exit code.
 // stdin, stdout and load are injectable for tests. stdout carries the MCP
 // protocol in stdio mode and is otherwise written only for the "version"
-// subcommand; all diagnostics go to stderr.
+// and "diag" subcommands; all diagnostics go to stderr.
 func runWith(args []string, stdin io.Reader, stdout, stderr io.Writer, load configLoader) int {
 	cmd := "stdio"
 	rest := args
@@ -60,6 +60,8 @@ func runWith(args []string, stdin io.Reader, stdout, stderr io.Writer, load conf
 		bi := version.Info()
 		_, _ = fmt.Fprintf(stdout, "review-mcp %s (%s) %s\n", bi.Version, bi.Commit, bi.GoVersion)
 		return 0
+	case "diag":
+		return runDiag(rest, stdout, stderr, load)
 	case "serve":
 		_, _ = fmt.Fprintln(stderr, "serve mode is not available in this version")
 		return 2
@@ -75,6 +77,10 @@ func usage(w io.Writer) {
 commands:
   stdio     run the MCP server over stdio (default)
   version   print version information
+  diag pr <PR_URL> [--show-patch <path>]
+            fetch a pull request and print a JSON connectivity report
+  diag comment <PR_URL> --body <TEXT>
+            post one PR-level comment
   serve     HTTP mode (not available in this version)
 `)
 }

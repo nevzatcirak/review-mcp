@@ -84,3 +84,5 @@ If the configuration is invalid, the server still starts (degraded mode) so you
 can see what to fix: `server_info` returns `status: "config_invalid"` with the
 full list of problems, and the same list is logged to stderr. Correct the
 environment and restart the server (usually by reloading the MCP client).
+
+If something does not work, see the [troubleshooting guide](troubleshooting.md); `review-mcp diag pr <PR_URL>` checks that your provider and token can reach a pull request.

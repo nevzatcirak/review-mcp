@@ -1,0 +1,331 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"os/signal"
+	"strings"
+	"time"
+
+	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/logging"
+	"github.com/nevzatcirak/review-mcp/internal/provider"
+)
+
+const diagUsageText = `usage:
+  review-mcp diag pr <PR_URL> [--show-patch <path>]
+  review-mcp diag comment <PR_URL> --body <TEXT>
+
+diag pr       fetch a pull request and print a JSON connectivity report;
+              --show-patch prints the hunk-only patch of one changed file
+              (matched by its "path" in the report) after the JSON
+diag comment  post one PR-level comment and print {"id": ..., "url": ...}
+`
+
+func diagUsage(w io.Writer) { _, _ = fmt.Fprint(w, diagUsageText) }
+
+// runDiag implements "review-mcp diag ...". Unlike the MCP modes it writes
+// its result to stdout, like "version"; logs and errors go to stderr.
+func runDiag(args []string, stdout, stderr io.Writer, load configLoader) int {
+	if len(args) == 0 {
+		diagUsage(stderr)
+		return 2
+	}
+	sub, rest := args[0], args[1:]
+	switch sub {
+	case "pr":
+		fs := flag.NewFlagSet("diag pr", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		fs.Usage = func() { diagUsage(stderr) }
+		showPatch := fs.String("show-patch", "", "print the hunk-only patch of this changed `path` after the JSON")
+		prURL, ok := parseDiagArgs(fs, rest, stderr)
+		if !ok {
+			return 2
+		}
+		if showPatchSet(fs) && *showPatch == "" {
+			_, _ = fmt.Fprintln(stderr, "diag pr: --show-patch needs a non-empty path")
+			diagUsage(stderr)
+			return 2
+		}
+		cfg, logger, code := diagSetup(load, stderr)
+		if cfg == nil {
+			return code
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		return diagPR(ctx, cfg, logger, prURL, *showPatch, stdout, stderr)
+	case "comment":
+		fs := flag.NewFlagSet("diag comment", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		fs.Usage = func() { diagUsage(stderr) }
+		body := fs.String("body", "", "comment `text` (required, posted verbatim)")
+		prURL, ok := parseDiagArgs(fs, rest, stderr)
+		if !ok {
+			return 2
+		}
+		if *body == "" {
+			_, _ = fmt.Fprintln(stderr, "diag comment: --body is required and must not be empty")
+			diagUsage(stderr)
+			return 2
+		}
+		cfg, logger, code := diagSetup(load, stderr)
+		if cfg == nil {
+			return code
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		return diagComment(ctx, cfg, logger, prURL, *body, stdout, stderr)
+	default:
+		diagUsage(stderr)
+		return 2
+	}
+}
+
+// parseDiagArgs parses flags that may appear before or after the single
+// positional PR URL (the stdlib flag package stops at the first non-flag).
+func parseDiagArgs(fs *flag.FlagSet, args []string, stderr io.Writer) (prURL string, ok bool) {
+	var pos []string
+	for {
+		if err := fs.Parse(args); err != nil {
+			return "", false
+		}
+		args = fs.Args()
+		if len(args) == 0 {
+			break
+		}
+		pos = append(pos, args[0])
+		args = args[1:]
+	}
+	if len(pos) != 1 || pos[0] == "" {
+		_, _ = fmt.Fprintf(stderr, "%s: exactly one PR URL is required\n", fs.Name())
+		diagUsage(stderr)
+		return "", false
+	}
+	return pos[0], true
+}
+
+func showPatchSet(fs *flag.FlagSet) bool {
+	set := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "show-patch" {
+			set = true
+		}
+	})
+	return set
+}
+
+// diagSetup loads the configuration and builds the stderr logger. When the
+// configuration is invalid it prints every problem (one per line) and returns
+// a nil config with exit code 1; nothing touches the network before this
+// point.
+func diagSetup(load configLoader, stderr io.Writer) (*config.Config, *slog.Logger, int) {
+	cfg, rep, err := load()
+	if err != nil {
+		var ve *config.ValidationError
+		if errors.As(err, &ve) {
+			for _, p := range ve.Problems {
+				_, _ = fmt.Fprintln(stderr, logging.RedactText(p))
+			}
+		} else {
+			_, _ = fmt.Fprintln(stderr, logging.RedactText(err.Error()))
+		}
+		return nil, nil, 1
+	}
+	logger := logging.New(stderr, logLevel(cfg, nil))
+	if rep != nil {
+		for _, w := range rep.Warnings {
+			logger.Warn(logging.RedactText(w))
+		}
+	}
+	return cfg, logger, 0
+}
+
+// reportError prints a failure to stderr and returns exit code 1. A
+// *provider.Error carries a fixed, leak-free sentence (X-6) and is printed
+// as is. Anything else may embed URLs with query strings, so only a generic
+// sentence and, when known, a coarse class are printed.
+func reportError(stderr io.Writer, err error) int {
+	var pe *provider.Error
+	if errors.As(err, &pe) {
+		_, _ = fmt.Fprintln(stderr, pe.Error())
+		return 1
+	}
+	msg := "unexpected error; rerun with REVIEW_MCP_LOG_LEVEL=debug for details"
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		msg += " (class: timeout)"
+	case errors.Is(err, context.Canceled):
+		msg += " (class: canceled)"
+	}
+	_, _ = fmt.Fprintln(stderr, msg)
+	return 1
+}
+
+// ---- diag pr ----
+
+type refJSON struct {
+	Namespace string `json:"namespace"`
+	Repo      string `json:"repo"`
+	Number    int64  `json:"number"`
+	URL       string `json:"url"`
+}
+
+type fileJSON struct {
+	Path       string `json:"path"`
+	OldPath    string `json:"old_path"`
+	Type       string `json:"type"`
+	Additions  int    `json:"additions"`
+	Deletions  int    `json:"deletions"`
+	PatchBytes int    `json:"patch_bytes"`
+	BaseStatus string `json:"base_status"`
+	HeadStatus string `json:"head_status"`
+	Binary     bool   `json:"binary"`
+}
+
+type skippedJSON struct {
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
+}
+
+type totalsJSON struct {
+	Files      int `json:"files"`
+	Skipped    int `json:"skipped"`
+	Additions  int `json:"additions"`
+	Deletions  int `json:"deletions"`
+	PatchBytes int `json:"patch_bytes"`
+}
+
+// prReport is the diag pr JSON document. It deliberately has no field for the
+// PR description or commit bodies.
+type prReport struct {
+	Kind         string        `json:"kind"`
+	Ref          refJSON       `json:"ref"`
+	Title        string        `json:"title"`
+	SourceBranch string        `json:"source_branch"`
+	TargetBranch string        `json:"target_branch"`
+	HeadSHA      string        `json:"head_sha"`
+	BaseSHA      string        `json:"base_sha"`
+	BaseStrategy string        `json:"base_strategy"`
+	CommitCount  int           `json:"commit_count"`
+	Commits      []string      `json:"commits"`
+	Files        []fileJSON    `json:"files"`
+	Skipped      []skippedJSON `json:"skipped"`
+	Totals       totalsJSON    `json:"totals"`
+	ElapsedMS    int64         `json:"elapsed_ms"`
+}
+
+func buildPRReport(ref provider.PRRef, pr *provider.PullRequest, commits []string, d *provider.Diff, elapsed time.Duration) prReport {
+	r := prReport{
+		Kind: string(ref.Kind),
+		Ref: refJSON{
+			Namespace: ref.Namespace, Repo: ref.Repo, Number: ref.Number,
+			URL: logging.RedactURL(ref.URL),
+		},
+		Title:        pr.Title,
+		SourceBranch: pr.SourceBranch,
+		TargetBranch: pr.TargetBranch,
+		HeadSHA:      pr.HeadSHA,
+		BaseSHA:      pr.BaseSHA,
+		BaseStrategy: d.BaseStrategy,
+		CommitCount:  len(commits),
+		Commits:      []string{},
+		Files:        []fileJSON{},
+		Skipped:      []skippedJSON{},
+		ElapsedMS:    elapsed.Milliseconds(),
+	}
+	for _, c := range commits {
+		first, _, _ := strings.Cut(c, "\n")
+		r.Commits = append(r.Commits, strings.TrimRight(first, "\r"))
+	}
+	for _, f := range d.Files {
+		r.Files = append(r.Files, fileJSON{
+			Path: f.Path, OldPath: f.OldPath, Type: string(f.Type),
+			Additions: f.Additions, Deletions: f.Deletions, PatchBytes: len(f.Patch),
+			BaseStatus: string(f.BaseStatus), HeadStatus: string(f.HeadStatus), Binary: f.Binary,
+		})
+		r.Totals.Additions += f.Additions
+		r.Totals.Deletions += f.Deletions
+		r.Totals.PatchBytes += len(f.Patch)
+	}
+	for _, s := range d.Skipped {
+		r.Skipped = append(r.Skipped, skippedJSON{Path: s.Path, Reason: s.Reason})
+	}
+	r.Totals.Files = len(r.Files)
+	r.Totals.Skipped = len(r.Skipped)
+	return r
+}
+
+// writeJSON pretty-prints v with a 2-space indent and one trailing newline.
+func writeJSON(w io.Writer, v any) error {
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
+}
+
+func diagPR(ctx context.Context, cfg *config.Config, logger *slog.Logger, prURL, showPatch string, stdout, stderr io.Writer) int {
+	start := time.Now()
+	ref, p, err := newResolver(cfg, logger).Resolve(prURL)
+	if err != nil {
+		return reportError(stderr, err)
+	}
+	pr, err := p.GetPullRequest(ctx, ref)
+	if err != nil {
+		return reportError(stderr, err)
+	}
+	commits, err := p.GetCommitMessages(ctx, ref)
+	if err != nil {
+		return reportError(stderr, err)
+	}
+	d, err := p.GetDiff(ctx, ref, pr, provider.DiffOptions{})
+	if err != nil {
+		return reportError(stderr, err)
+	}
+	if err := writeJSON(stdout, buildPRReport(ref, pr, commits, d, time.Since(start))); err != nil {
+		_, _ = fmt.Fprintln(stderr, "could not write the report to stdout")
+		return 1
+	}
+	if showPatch == "" {
+		return 0
+	}
+	for _, f := range d.Files {
+		if f.Path == showPatch {
+			_, _ = fmt.Fprintf(stdout, "--- patch: %s ---\n%s", f.Path, f.Patch)
+			return 0
+		}
+	}
+	_, _ = fmt.Fprintln(stderr, "--show-patch: no changed file has that path (see \"files\" in the report)")
+	return 1
+}
+
+// ---- diag comment ----
+
+func diagComment(ctx context.Context, cfg *config.Config, logger *slog.Logger, prURL, body string, stdout, stderr io.Writer) int {
+	ref, p, err := newResolver(cfg, logger).Resolve(prURL)
+	if err != nil {
+		return reportError(stderr, err)
+	}
+	c, err := p.PostComment(ctx, ref, body)
+	if err != nil {
+		return reportError(stderr, err)
+	}
+	// Decision: the printed comment URL goes through logging.RedactURL, which
+	// drops the fragment and redacts query values (so deep links such as
+	// #issuecomment-55 are lost). Every printed URL passes through the
+	// redactor, and the comment itself is verified on the PR page.
+	out := struct {
+		ID  string `json:"id"`
+		URL string `json:"url"`
+	}{c.ID, logging.RedactURL(c.URL)}
+	if err := writeJSON(stdout, out); err != nil {
+		_, _ = fmt.Fprintln(stderr, "could not write the result to stdout")
+		return 1
+	}
+	return 0
+}

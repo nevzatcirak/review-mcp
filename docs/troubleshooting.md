@@ -295,6 +295,36 @@ If the configuration is invalid, `pr_review` returns "review-mcp configuration
 is invalid; call server_info for the list of problems" and sends nothing to
 the provider or the LLM.
 
+## Ask a question with `diag ask`
+
+```sh
+review-mcp diag ask <PR_URL> --question "Which files change the request validation?" --dry-run
+review-mcp diag ask <PR_URL> --question "Could this break existing callers?"
+```
+
+`--question` is required (at most 8000 characters). `--dry-run` runs
+everything up to the LLM call and prints a JSON report with the prompt, diff
+and request token estimates, the budget and the coverage; the model is not
+called. Without `--dry-run` it prints the markdown the `pr_ask` tool returns;
+`--publish` also posts the question and answer as a PR comment, and
+`--show-prompt` prints the rendered prompts after the output (never to the
+log). A missing, empty or over-long question, and `--dry-run` with
+`--publish`, are usage errors: exit 2, nothing is sent. See
+[Asking questions](ask.md).
+
+The LLM errors above apply to `pr_ask` too. Its own argument errors are:
+
+| Sentence | What to check |
+|---|---|
+| question must not be empty | Pass a non-blank `question` (`--question`). Nothing was sent anywhere. |
+| question is too long: at most 8000 characters are allowed | Shorten the question; it is never truncated for you. Nothing was sent anywhere. |
+| output_language must be a locale code such as en-US or tr-TR | Fix `output_language`. Nothing was sent anywhere. |
+
+If the configuration is invalid, `pr_ask` returns the same "review-mcp
+configuration is invalid" sentence as `pr_review` and sends nothing. The
+"the pull request diff does not fit" sentence also applies; a long question
+leaves less room for the diff.
+
 ## Error messages
 
 Every failure from a provider is reported as one of these fixed sentences.

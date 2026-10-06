@@ -6,8 +6,10 @@
 // 8e5a9295973b24af4b70cafd0b660a230811ef9e byte for byte; the goldens under
 // testdata/upstream are produced by running the upstream functions (see the
 // README there). The upstream algorithms work on Python strings, so this
-// package reproduces Python's splitlines/strip/slice semantics where the
-// output depends on them (pystr.go).
+// package reproduces Python's strip/slice semantics where the output depends
+// on them (pystr.go). Intentional deviations are pinned by the goldens under
+// testdata/deviations; among them, lines are split at "\n" only, not with
+// Python's str.splitlines (architect decision D5, PR #4; see pystr.go).
 //
 // Typical use by the assembly step (WP-PR-3d):
 //
@@ -57,11 +59,8 @@ type Hunk struct {
 	header    string
 	malformed bool
 	form      form
-	// tail and nDelta are used by extended hunks only. tail holds the
-	// Python lines that followed the first one in the original header line
-	// (a header whose section text contains \f, \v, ...); upstream emits
-	// them after the added pre-context, which is Lines[:nDelta].
-	tail   []string
+	// nDelta is used by extended hunks only: the added pre-context is
+	// Lines[:nDelta].
 	nDelta int
 }
 
@@ -122,15 +121,13 @@ func splitAfterNewline(s string) []string {
 	return lines
 }
 
-// parseHeader parses one "@@" line. Validity is decided on the line as
-// upstream sees it: the first Python line of it, matched by RE_HUNK_HEADER.
+// parseHeader parses one "@@" line. Validity is decided on the line without
+// its ending, matched by RE_HUNK_HEADER. Upstream matches only the part up to
+// the first Python line break, so a section text containing \f, \v, ... is
+// cut there; here the whole line counts (architect decision D5, PR #4).
 func parseHeader(raw string) Hunk {
 	h := Hunk{header: raw, form: formRaw}
-	first := ""
-	if pieces := pySplitLines(raw); len(pieces) > 0 {
-		first = pieces[0]
-	}
-	m := hunkHeaderRE.FindStringSubmatch(first)
+	m := hunkHeaderRE.FindStringSubmatch(headerText(h))
 	if m == nil {
 		h.malformed = true
 		return h
@@ -194,7 +191,7 @@ func patchText(hunks []Hunk) string {
 	var lines []string
 	pieces := func(ls []Line) {
 		for _, l := range ls {
-			lines = append(lines, linePieces(l)...)
+			lines = append(lines, lineText(l))
 		}
 	}
 	for _, h := range hunks {
@@ -204,52 +201,35 @@ func patchText(hunks []Hunk) string {
 			n := min(max(h.nDelta, 0), len(h.Lines))
 			lines = append(lines, "", h.header)
 			pieces(h.Lines[:n])
-			lines = append(lines, h.tail...)
 			body = h.Lines[n:]
 		case h.form == formCompact && h.malformed:
-			// omit_deletion_hunks drops a malformed "@@" line (its first
-			// Python line only).
-			lines = append(lines, headerPieces(h)[1:]...)
+			// omit_deletion_hunks drops a malformed "@@" line.
 		default:
-			lines = append(lines, headerPieces(h)...)
+			lines = append(lines, headerText(h))
 		}
 		pieces(body)
 	}
 	return strings.Join(lines, "\n")
 }
 
-// linePieces returns the Python lines of one patch line.
-func linePieces(l Line) []string {
-	return pySplitLines(string(l.Op) + l.Text)
+// lineText returns one patch line (op and text) without its line ending.
+// The patch was split at "\n" only, so it is exactly one line (D5).
+func lineText(l Line) string {
+	return firstLine(string(l.Op) + l.Text)
 }
 
-// headerPieces returns the Python lines of a hunk's header line; the first
-// one is the header upstream matches, any others are ordinary lines.
-func headerPieces(h Hunk) []string {
-	return pySplitLines(h.rawHeader())
+// headerText returns a hunk's header line without its line ending.
+func headerText(h Hunk) string {
+	return firstLine(h.rawHeader())
 }
 
-// pyLineSafe reports whether the hunks can be processed structurally with
-// the same result as upstream's line-based processing: no Python line other
-// than the first line of a header line starts with "@@". Such a line (after
-// a \v, \f, a lone \r, ... inside a patch line) would be taken for a hunk
-// header by upstream.
-func pyLineSafe(hunks []Hunk) bool {
-	for _, h := range hunks {
-		for _, p := range headerPieces(h)[1:] {
-			if strings.HasPrefix(p, "@@") {
-				return false
-			}
-		}
-		for _, l := range h.Lines {
-			for _, p := range linePieces(l)[1:] {
-				if strings.HasPrefix(p, "@@") {
-					return false
-				}
-			}
-		}
+// firstLine returns the first line of s as splitLines splits it ("" for an
+// empty s).
+func firstLine(s string) string {
+	if lines := splitLines(s); len(lines) > 0 {
+		return lines[0]
 	}
-	return true
+	return ""
 }
 
 // cloneHunks returns a deep copy, so results never alias the input.
@@ -261,7 +241,6 @@ func cloneHunks(hunks []Hunk) []Hunk {
 	for i, h := range hunks {
 		out[i] = h
 		out[i].Lines = append([]Line(nil), h.Lines...)
-		out[i].tail = append([]string(nil), h.tail...)
 	}
 	return out
 }

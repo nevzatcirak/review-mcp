@@ -31,14 +31,10 @@ func HandleDeletions(t provider.ChangeType, head *string, hunks []Hunk) (kept []
 // after it count as part of the preceding valid hunk (or of the first valid
 // hunk, when no valid hunk precedes it); with no valid hunk at all the
 // result is empty.
+//
+// A patch line containing \f, \v, ... is one line here (D5); upstream
+// re-splits it, so a piece such as "a\f@@ -1 +1 @@" was a header there.
 func OmitDeletionHunks(hunks []Hunk) []Hunk {
-	if !pyLineSafe(hunks) {
-		// Parity decision (lead; architect may override on PR #4): same ambiguity as in Extend (a Python line
-		// inside a patch line that starts with "@@") — chose to omit
-		// nothing: the result serializes like the input, so
-		// HandleDeletions keeps the patch.
-		return cloneHunks(hunks)
-	}
 	var out, group []Hunk
 	hasAdd, inside := false, false
 	for _, h := range hunks {
@@ -54,14 +50,10 @@ func OmitDeletionHunks(hunks []Hunk) []Hunk {
 			inside = true
 		}
 		group = append(group, c)
-		// The first Python line of the header is the "@@" line itself; any
-		// further Python lines of it count like content lines.
-		pieces := headerPieces(h)[1:]
+		// Lines are split at "\n" only (architect decision D5, PR #4), so
+		// a patch line is one line and only its op can mark an addition.
 		for _, l := range h.Lines {
-			pieces = append(pieces, linePieces(l)...)
-		}
-		for _, p := range pieces {
-			if p != "" && p[0] == '+' {
+			if l.Op == '+' {
 				hasAdd = true
 			}
 		}

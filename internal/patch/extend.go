@@ -42,9 +42,11 @@ func ExtendFile(fp provider.FilePatch, hunks []Hunk, d config.Diff) []Hunk {
 //
 // The result is never an alias of hunks. The hunks come back unchanged when:
 // before and after are both 0; base is nil or empty (upstream: no original
-// file); head is nil (not fetched, so the pre-context check cannot run —
-// spec §3.2); or a Python line inside a patch line starts with "@@" (see
-// pyLineSafe; upstream would take it for a header and still extend).
+// file); or head is nil (not fetched, so the pre-context check cannot run —
+// spec §3.2).
+//
+// Lines are split at "\n" only (architect decision D5, PR #4; see pystr.go):
+// a line containing \f, \v, \x85, U+2028, ... is one line, as in the file.
 //
 // A non-nil empty head extends without the pre-context check, as upstream
 // does for an empty head file. before and after are clamped to 0..10.
@@ -68,20 +70,16 @@ func Extend(hunks []Hunk, base, head *string, before, after int) []Hunk {
 	if len(hunks) == 0 || (before == 0 && after == 0) || base == nil || *base == "" || head == nil {
 		return cloneHunks(hunks)
 	}
-	if !pyLineSafe(hunks) {
-		// Parity decision (lead; architect may override on PR #4): upstream re-splits patch lines at every Python
-		// line break (\v, \f, a lone \r, ...), so a piece such as
-		// "a\f@@ -1 +1 @@" becomes a hunk header there. Should we model
-		// that? — chose to return such a patch unextended because that
-		// header cannot be mapped onto the hunk model, and spec §3.2 says
-		// "on any doubt, return the unextended hunk".
-		return cloneHunks(hunks)
-	}
-
-	orig, origKeep := pySplitLinesKeep(*base)
+	// Base and head are split at "\n" only (architect decision D5, PR #4;
+	// see pystr.go), so a base line number is the file's real line number.
+	// Upstream splits with str.splitlines, which also breaks at \f, \v, ...
+	// and so re-splits such patch lines too; a piece such as "a\f@@ -1 +1 @@"
+	// then became a hunk header upstream. With "\n"-only splitting that line
+	// is plain content and the patch is extended normally.
+	orig, origKeep := splitLinesKeep(*base)
 	var newLines []string
 	if *head != "" {
-		newLines = pySplitLines(*head)
+		newLines = splitLines(*head)
 	}
 	x := extender{orig: orig, origKeep: origKeep, newLines: newLines, before: before, after: after}
 	return x.run(hunks)
@@ -171,7 +169,6 @@ func (x *extender) run(hunks []Hunk) []Hunk {
 		}
 		nh.Lines = append(delta, h.Lines...)
 		nh.nDelta = len(delta)
-		nh.tail = append([]string(nil), headerPieces(h)[1:]...)
 		out = append(out, nh)
 	}
 	if start1 != -1 && x.after > 0 && valid {
@@ -227,17 +224,15 @@ func (x *extender) startMatches(next *string, start1 int) bool {
 	return pyStrip(*next) == pyStrip(x.orig[idx])
 }
 
-// nextLine returns the Python line that follows hunk k's header in the
-// serialized patch, or nil at the end of the patch.
+// nextLine returns the line that follows hunk k's header in the serialized
+// patch, or nil at the end of the patch.
 func nextLine(hunks []Hunk, k int) *string {
 	var s string
-	switch hp := headerPieces(hunks[k]); {
-	case len(hp) > 1:
-		s = hp[1]
+	switch {
 	case len(hunks[k].Lines) > 0:
-		s = linePieces(hunks[k].Lines[0])[0]
+		s = lineText(hunks[k].Lines[0])
 	case k+1 < len(hunks):
-		s = headerPieces(hunks[k+1])[0]
+		s = headerText(hunks[k+1])
 	default:
 		return nil
 	}

@@ -1,0 +1,24 @@
+INTENTIONAL DEVIATION FROM UPSTREAM: architect decision D5 (PR #4).
+
+Formerly the oracle case testdata/upstream/python_line_breaks; the inputs are
+unchanged. A form feed (\f) appears inside a line, and inside the function
+line that git copies into the hunk section text.
+
+Upstream splits lines with Python's str.splitlines, which also breaks at \f,
+\v, \x1c-\x1e, \x85, U+2028, U+2029 and a lone \r. Every later number in the
+numbered views then drifts from the file's real line numbers, an upstream
+bug. review-mcp splits at "\n" only, so numbered line numbers equal the real
+"\n"-based line numbers, which the DQ-12 snippets and links (P4) and the v2
+anchoring depend on. Per the lead decision on the D5 implementation, "\r\n"
+is one line ending and is dropped as before, so CRLF files render unchanged;
+a lone "\r" is ordinary content, as in git.
+
+How the outputs were derived: by the upstream oracle (gen_goldens.py) on a
+placeholder twin, not by hand. The twin has these inputs with every \f
+replaced by U+E000. U+E000 is neither a Python line break nor whitespace, and
+it does not occur otherwise, so upstream treats it as an ordinary character,
+just as review-mcp treats \f. Every U+E000 in the twin's out.* files was then
+replaced back by \f. The \f in the base line "\f" is whitespace to Python's
+strip, but the pre-context check strips both sides of the comparison, so the
+substitution does not change any comparison. See testdata/upstream/README.md,
+section "Deviations".

@@ -133,15 +133,19 @@ func RenderCompressed(f File, numbered bool) string {
 // decouple mirrors the body of decouple_and_convert_to_hunks_with_lines_
 // numbers on the serialized patch text.
 //
-// Parity decision (lead; architect may override on PR #4): upstream splits the patch with str.splitlines, so a line
-// that contains \f, \v, U+2028, ... becomes several numbered lines and every
-// later number drifts from the file's real line numbers (see the
-// python_line_breaks golden). This looks like an upstream bug; fix it here?
-// — chose to reproduce it for now, because byte parity is the acceptance
-// criterion and a fix belongs to a deliberate, documented deviation.
+// Decision, architect decision D5 (PR #4), an intentional deviation from
+// upstream: the patch text is split at "\n" only, not with str.splitlines.
+// Upstream turns a line that contains \f, \v, U+2028, ... into several
+// numbered lines, so every later number drifts from the file's real line
+// numbers, an upstream bug. Numbered line numbers must equal real
+// "\n"-based file line numbers: the DQ-12 snippets and links (P4) and the
+// v2 anchoring depend on it. CRLF handling per lead decision on the D5
+// implementation: "\r\n" is one line ending, dropped as before, so CRLF
+// files render unchanged; a lone "\r" is content. Pinned by
+// testdata/deviations/deviation_python_line_breaks.
 func decouple(text, path string, numbered bool) string {
 	d := decoupler{numbered: numbered, cur: decoupledFileHeaderPrefix + pyStrip(path) + decoupledFileHeaderSuffix}
-	lines := pySplitLines(text)
+	lines := splitLines(text)
 	matched, skip := false, false
 	header, prevHeader := "", ""
 	for i, line := range lines {

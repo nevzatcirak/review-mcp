@@ -77,7 +77,6 @@ compares byte for byte. It fails if a case here names a deviation.
 | `after_only` | `before = 0`, `after = 3` |
 | `max_context` | `before = after = 10` near both ends of a short file |
 | `context_only_hunk` | a hand-crafted hunk with only context lines |
-| `python_line_breaks` | `\f` inside lines and inside the section text (upstream splits there) |
 
 ## Deviations
 
@@ -89,8 +88,41 @@ file. `TestDeviationGoldens` requires both.
 
 | Case | Decision | Covers |
 |---|---|---|
+| `deviation_python_line_breaks` | **D5** (architect, PR #4) | `\f` inside lines and inside the section text. review-mcp splits at `\n` only, so the numbered views carry the real file line numbers; upstream's `str.splitlines` splits there too and drifts. Formerly the oracle case `python_line_breaks`, with unchanged inputs. |
 | `deviation_unreadable_notice` | **D4** (architect, PR #4) | The unreadable-file notice: the head-content fetch failed and the patch is empty, so every view renders the notice. The notice names review-mcp instead of PR-Agent. Formerly the oracle case `unreadable`, with unchanged inputs. |
 | `deviation_head_fetch_failed_with_patch` | **D3** (architect, PR #4) | Gitea case: the head-content fetch failed (`head_status: fetch_failed`, no `head.txt`) but the patch from the PR's `.diff` is present. review-mcp renders that patch normally in every view (plain, numbered, compressed), unextended because the head content is nil (spec §3.2). It never shows the notice, which would claim that no diff is available. |
+
+**D5, intentional deviation.** Upstream splits lines with `str.splitlines`,
+which also breaks at `\f`, `\v`, `\x1c`–`\x1e`, `\x85`, U+2028, U+2029 and a
+lone `\r`. A line containing one of them becomes several numbered lines, and
+every later number drifts from the file's real line numbers. That is an
+upstream bug, and numbered line numbers must equal real file line numbers:
+the DQ-12 snippets and links (P4) and the v2 anchoring depend on it. So
+review-mcp splits at `\n` only (`splitLines`, `pystr.go`). Per the lead
+decision on the D5 implementation, `\r\n` is one line ending, dropped wherever
+upstream drops it, so CRLF files (the `crlf` oracle case) render byte for
+byte as upstream does. A lone `\r` is ordinary content, as in git.
+
+Side effect: a patch line such as `" a\f@@ -1 +1 @@"` used to contain a Python
+sub-line starting with `@@`, which upstream takes for a hunk header. It was a
+documented parity gap: `Extend` and `OmitDeletionHunks` returned such a patch
+unchanged. With `\n`-only splitting it is one ordinary line, and the patch is
+extended and compacted normally (`TestExtendSubLineHeaderIsContent`).
+
+The expected outputs come from the oracle, run on a **placeholder twin**.
+The twin has the case's inputs with every `\f` replaced by U+E000, which is
+neither a Python line break nor whitespace and does not occur otherwise, so
+upstream treats it as review-mcp treats `\f`: as an ordinary character. Every
+U+E000 in the twin's outputs is then replaced back by `\f`. The pre-context
+check strips both sides of its comparison, so the substitution cannot change
+it. `TestNumberedLineNumbersAreRealLineNumbers` checks the same property
+independently, without the oracle. It uses a file whose lines contain `\f`,
+`\v`, U+2028, `\x85` and a lone `\r`, and computes each expected number by
+counting `\n`.
+
+Running `random_cases.py` with `exotic` or `atpiece` now produces cases that
+differ from upstream by design (D5). A local differential run is only
+meaningful without those modes.
 
 **D4, intentional deviation.** The model and the users should see the name
 of the tool they are actually running. So the notice adapted from upstream's
@@ -137,6 +169,11 @@ cp <twin dir>/deviation_head_fetch_failed_with_patch/out.* \
 for f in <twin dir>/deviation_unreadable_notice/out.*; do
   sed 's/\*\* PR-Agent failed/** review-mcp failed/' "$f" \
     > internal/patch/testdata/deviations/deviation_unreadable_notice/"$(basename "$f")"
+done
+# D5: copy with the placeholder replaced back by \f
+for f in <twin dir>/deviation_python_line_breaks/out.*; do
+  python3 -c 'import sys; d = open(sys.argv[1], encoding="utf-8", newline="").read(); open(sys.argv[2], "w", encoding="utf-8", newline="").write(d.replace("\ue000", "\f"))' \
+    "$f" internal/patch/testdata/deviations/deviation_python_line_breaks/"$(basename "$f")"
 done
 ```
 
@@ -194,6 +231,37 @@ common = {"path": "src/unreadable.py", "old_path": "", "type": "modified",
           "head_status": "fetch_failed"}
 write(DEV, name, {**common, **extra, "deviation": "D4"}, "", True)
 write(TWIN, name, {**common, **extra}, "", True)
+
+# D5: Python line breaks inside lines (a form feed page break, and a function
+# line, which git copies into the section text, containing a form feed); the
+# inputs are those of the former oracle case python_line_breaks. Twin: the
+# same inputs with every \f replaced by PLACEHOLDER, a character that is
+# neither a Python line break nor whitespace and does not occur otherwise;
+# the twin's outputs with PLACEHOLDER replaced back by \f are the expected
+# outputs.
+PLACEHOLDER = "\ue000"
+pbase = ("def page\fone():\n" + "".join(f"    a_{i} = {i}\n" for i in range(1, 6)) + "\f\n"
+         + "".join(f"    b_{i} = {i}\n" for i in range(1, 12)))
+phead = edit(pbase, {14: ["    b_7 = 70\n"]})
+ppatch = gitdiff(pbase, phead)
+assert PLACEHOLDER not in pbase + phead + ppatch
+
+
+def twin(text):
+    return text.replace("\f", PLACEHOLDER)
+
+
+name = "deviation_python_line_breaks"
+meta = {"path": "src/pages.py", "old_path": "", "type": "modified", "head_status": "full",
+        "before": 8, "after": 2, "skip_extend_extensions": [".md", ".txt"]}
+for root, conv, extra_meta in ((DEV, str, {"deviation": "D5"}), (TWIN, twin, {})):
+    d = os.path.join(root, name)
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "case.json"), "w") as fh:
+        fh.write(json.dumps({**meta, **extra_meta}, indent=2) + "\n")
+    for fn, val in (("patch.diff", ppatch), ("base.txt", pbase), ("head.txt", phead)):
+        with open(os.path.join(d, fn), "w", newline="") as fh:
+            fh.write(conv(val))
 ```
 
 Canaries:
@@ -205,6 +273,10 @@ Canaries:
 - D4: restoring "PR-Agent" in the notice literal makes
   `TestDeviationGoldens/deviation_unreadable_notice` fail, and the unit test
   `TestRenderEmptyAndUnreadable`.
+- D5: restoring `str.splitlines` semantics in `splitLines` makes
+  `TestDeviationGoldens/deviation_python_line_breaks` fail, along with the
+  unit tests `TestNumberedLineNumbersAreRealLineNumbers`,
+  `TestExtendSubLineHeaderIsContent` and `TestSplitLines`.
 
 ## Regenerating
 
@@ -238,7 +310,8 @@ render statements it needs verbatim from the parsed upstream source (`ast`)
 and executes them.
 
 For a wider local differential run, generate random cases with
-`random_cases.py <dir> <count> <seed> [exotic]`, run `gen_goldens.py` on that
+`random_cases.py <dir> <count> <seed>` (not `exotic` or `atpiece`, which now
+differ from upstream by design, see D5), run `gen_goldens.py` on that
 directory and point the test at it with
 `REVIEW_MCP_PATCH_GOLDEN_DIR=<dir> go test -run TestUpstreamGoldens ./internal/patch/`.
 
@@ -430,13 +503,9 @@ shorth = edit(short, {6: ["row 6 changed\n"]})
 write("max_context", "src/short.txt.go", "modified", gitdiff(short, shorth), short, shorth,
       before=10, after=10)
 
-# Python line breaks inside lines: a form feed page break, and a function
-# line (which git copies into the section text) containing a form feed.
-pbase = ("def page\fone():\n" + "".join(f"    a_{i} = {i}\n" for i in range(1, 6)) + "\f\n"
-         + "".join(f"    b_{i} = {i}\n" for i in range(1, 12)))
-phead = edit(pbase, {14: ["    b_7 = 70\n"]})
-write("python_line_breaks", "src/pages.py", "modified", gitdiff(pbase, phead), pbase, phead,
-      before=8, after=2)
+# The Python-line-breaks case (\f inside lines and inside the section text)
+# is written by make_deviation.py: it is the D5 deviation
+# deviation_python_line_breaks.
 
 # hand-crafted context-only hunk after a normal hunk
 head = edit(base, {6: ["    value_5 = compute(50)\n"]})

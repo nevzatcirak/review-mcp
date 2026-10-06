@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -13,31 +14,34 @@ import (
 
 func ptr(s string) *string { return &s }
 
-// Expected values recorded from CPython 3.12 str.splitlines().
-func TestPySplitLines(t *testing.T) {
+// TestSplitLines: lines are split at "\n" only (architect decision D5, PR
+// #4); "\r\n" is one ending (lead decision on the D5 implementation); \f,
+// \v, \x1c-\x1e, \x85, U+2028, U+2029 and a lone "\r" are content.
+func TestSplitLines(t *testing.T) {
 	cases := []struct {
 		in   string
 		want []string
 	}{
 		{"", nil},
 		{"\n", []string{""}},
-		{"a\r\nb\r", []string{"a", "b"}},
-		{"a\f\n", []string{"a", ""}},
-		{"a\rb\nc", []string{"a", "b", "c"}},
-		{"a\x0bb\x1cc\x1dd\x1ee", []string{"a", "b", "c", "d", "e"}},
-		{"a\u0085b\u2028c\u2029d", []string{"a", "b", "c", "d"}},
+		{"a\r\nb\r", []string{"a", "b\r"}},
+		{"a\f\n", []string{"a\f"}},
+		{"a\rb\nc", []string{"a\rb", "c"}},
+		{"a\x0bb\x1cc\x1dd\x1ee", []string{"a\x0bb\x1cc\x1dd\x1ee"}},
+		{"a\u0085b\u2028c\u2029d", []string{"a\u0085b\u2028c\u2029d"}},
 		{"a\x1fb\tc", []string{"a\x1fb\tc"}},
 		{"a\xffb\n", []string{"a\xffb"}},
 		{"\r\n\r\n", []string{"", ""}},
+		{"a\r\r\n", []string{"a\r"}},
 	}
 	for _, c := range cases {
-		if got := pySplitLines(c.in); !slices.Equal(got, c.want) {
-			t.Errorf("pySplitLines(%q) = %q, want %q", c.in, got, c.want)
+		if got := splitLines(c.in); !slices.Equal(got, c.want) {
+			t.Errorf("splitLines(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
-	_, keep := pySplitLinesKeep("a\r\nb\fc")
-	if want := []string{"a\r\n", "b\f", "c"}; !slices.Equal(keep, want) {
-		t.Errorf("pySplitLinesKeep ends = %q, want %q", keep, want)
+	_, keep := splitLinesKeep("a\r\nb\fc\nd")
+	if want := []string{"a\r\n", "b\fc\n", "d"}; !slices.Equal(keep, want) {
+		t.Errorf("splitLinesKeep ends = %q, want %q", keep, want)
 	}
 }
 
@@ -163,7 +167,7 @@ func TestExtendNeverReadsPastEOF(t *testing.T) {
 	for _, name := range []string{"eof", "max_context", "no_newline_eof", "ordinary", "multi_hunk", "crlf"} {
 		t.Run(name, func(t *testing.T) {
 			fp, _, hunks := loadCase(t, name)
-			n := len(pySplitLines(*fp.BaseContent))
+			n := len(splitLines(*fp.BaseContent))
 			for _, after := range []int{1, 3, 10} {
 				ext := Extend(hunks, fp.BaseContent, fp.HeadContent, 10, after)
 				for i, h := range ext {
@@ -221,20 +225,90 @@ func TestExtendClampsToMaxExtraLines(t *testing.T) {
 	}
 }
 
-// A Python line inside a patch line that starts with "@@" would be a hunk
-// header upstream; such a patch is returned unextended (documented parity gap).
-func TestExtendLeavesAmbiguousPatchUnextended(t *testing.T) {
-	base := "a\nb\nc\nd\ne\n"
+// TestExtendSubLineHeaderIsContent: architect decision D5 (PR #4). A patch
+// line such as " c\f@@ -1 +1 @@" was a hunk header after upstream's
+// splitlines, and the patch was returned unextended (a documented parity
+// gap). With "\n"-only splitting it is one ordinary context line: the patch
+// is extended and compacted normally.
+func TestExtendSubLineHeaderIsContent(t *testing.T) {
+	base := "a\nb\nc\f@@ -1 +1 @@\nd\ne\n"
+	head := "a\nb\nc\f@@ -1 +1 @@\nD\ne\n"
 	p := "@@ -3,2 +3,2 @@\n c\f@@ -1 +1 @@\n-d\n+D\n"
 	hunks, err := ParseHunks(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := patchText(Extend(hunks, &base, &base, 5, 1)); got != p {
-		t.Errorf("ambiguous patch was extended: %q", got)
+	if len(hunks) != 1 || hunks[0].Malformed() || len(hunks[0].Lines) != 3 {
+		t.Fatalf("ParseHunks: %+v", hunks)
 	}
-	if got := patchText(OmitDeletionHunks(hunks)); got != p {
-		t.Errorf("ambiguous patch was compacted: %q", got)
+	want := "\n@@ -1,5 +1,5 @@ \n a\n b\n c\f@@ -1 +1 @@\n-d\n+D\n e"
+	if got := patchText(Extend(hunks, &base, &head, 5, 1)); got != want {
+		t.Errorf("Extend:\n got %q\nwant %q", got, want)
+	}
+	if got := patchText(OmitDeletionHunks(hunks)); got != strings.TrimSuffix(p, "\n") {
+		t.Errorf("OmitDeletionHunks: %q", got)
+	}
+	// The line keeps its real line number (3) in the numbered view.
+	got := RenderDecoupled(File{Path: "x", Type: provider.ChangeModified, HeadStatus: provider.ContentFull, Hunks: hunks}, true)
+	if !strings.Contains(got, "\n3  c\f@@ -1 +1 @@\n4 +D\n") {
+		t.Errorf("numbered view: %q", got)
+	}
+}
+
+// TestNumberedLineNumbersAreRealLineNumbers: [canary] for architect decision
+// D5 (PR #4). Lines containing \f, \v, U+2028, \x85 and a lone \r are one
+// line each, so every number in the numbered views equals the real line
+// number of that line in the head file, counted by "\n".
+func TestNumberedLineNumbersAreRealLineNumbers(t *testing.T) {
+	headLines := []string{
+		"def page\fone():", "    a = 1\v2", "    b = '\u2028'", "    c = '\u0085'",
+		"    d = 'lone\rcr'", "    e = 5", "    f = 6", "    g = 7", "    h = 8", "    i = 9",
+	}
+	head := strings.Join(headLines, "\n") + "\n"
+	base := strings.Replace(head, "    g = 7\n", "    g = 0\n", 1)
+	// Hand-written patch (git -U3): line 8 changed.
+	p := "@@ -5,6 +5,6 @@ def page\fone():\n" +
+		"     d = 'lone\rcr'\n     e = 5\n     f = 6\n-    g = 0\n+    g = 7\n     h = 8\n     i = 9\n"
+	hunks, err := ParseHunks(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// realLine returns the 1-based line number of text in head, counting
+	// "\n" independently of the package's splitting.
+	realLine := func(text string) int {
+		idx := strings.Index(head, text+"\n")
+		if idx < 0 || (idx > 0 && head[idx-1] != '\n') {
+			t.Fatalf("line %q not in head", text)
+		}
+		return strings.Count(head[:idx], "\n") + 1
+	}
+	if n := realLine("    g = 7"); n != 8 {
+		t.Fatalf("self-check: changed line is %d, want 8", n)
+	}
+	numbered := regexp.MustCompile(`^(\d+) ([ +].*)$`)
+	views := map[string]string{
+		"raw":        RenderDecoupled(File{Path: "x", Type: provider.ChangeModified, HeadStatus: provider.ContentFull, Hunks: hunks}, true),
+		"extended":   RenderDecoupled(File{Path: "x", Type: provider.ChangeModified, HeadStatus: provider.ContentFull, Hunks: Extend(hunks, &base, &head, 10, 1)}, true),
+		"compressed": RenderCompressed(File{Path: "x", Type: provider.ChangeModified, HeadStatus: provider.ContentFull, Hunks: hunks}, true),
+	}
+	for name, out := range views {
+		seen := 0
+		for _, line := range strings.Split(out, "\n") {
+			m := numbered.FindStringSubmatch(line)
+			if m == nil {
+				continue
+			}
+			seen++
+			if want := strconv.Itoa(realLine(m[2][1:])); m[1] != want {
+				t.Errorf("%s: %q numbered %s, real line %s", name, m[2], m[1], want)
+			}
+		}
+		if min := map[string]int{"raw": 6, "extended": 10, "compressed": 6}[name]; seen < min {
+			t.Errorf("%s: only %d numbered lines (want >= %d):\n%s", name, seen, min, out)
+		}
+		if !strings.Contains(out, "\n8 +    g = 7\n") {
+			t.Errorf("%s: changed line not numbered 8:\n%q", name, out)
+		}
 	}
 }
 

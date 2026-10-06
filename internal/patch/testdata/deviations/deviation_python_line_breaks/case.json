@@ -8,5 +8,6 @@
   "skip_extend_extensions": [
     ".md",
     ".txt"
-  ]
+  ],
+  "deviation": "D5"
 }

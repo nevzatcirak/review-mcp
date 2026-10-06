@@ -3,60 +3,47 @@ package patch
 import (
 	"strings"
 	"unicode"
-	"unicode/utf8"
 )
 
 // The upstream algorithms this package mirrors work on Python strings. The
-// helpers below reproduce the exact Python string semantics they rely on, so
-// that the rendered bytes match the upstream output (spec §0.1, DQ-10).
+// helpers below reproduce the Python string semantics the rendered bytes
+// still depend on (strip, slicing and indexing; spec §0.1, DQ-10).
 //
-// Go strings are treated as UTF-8. Invalid bytes never count as line breaks
-// or whitespace.
+// Line splitting is the exception. Upstream splits with str.splitlines, which
+// also breaks lines at \f, \v, \x1c-\x1e, \x85, U+2028, U+2029 and a lone \r,
+// so every later line number drifts from the file's real line numbers. Per
+// architect decision D5 (PR #4), an intentional deviation from upstream,
+// lines are split at "\n" only (splitLines): numbered line numbers must equal
+// real "\n"-based file line numbers, which the DQ-12 snippets and links (P4)
+// and the v2 anchoring depend on. CRLF handling follows the lead decision on
+// the D5 implementation: a "\r" directly before the "\n" belongs to the line
+// ending and is dropped wherever upstream drops "\r\n", so CRLF files render
+// exactly as before; a lone "\r" is ordinary content, as in git.
+//
+// Go strings are treated as UTF-8. Invalid bytes never count as whitespace.
 
-// isPyLineBreak reports whether r is a line boundary for Python's
-// str.splitlines: \n, \r, \v, \f, \x1c, \x1d, \x1e, \x85, U+2028 and U+2029.
-func isPyLineBreak(r rune) bool {
-	switch r {
-	case '\n', '\r', '\v', '\f', 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029:
-		return true
-	}
-	return false
-}
-
-// pySplitLines mirrors Python's str.splitlines(): the text is split at every
-// Python line boundary ("\r\n" counts as one) and the boundaries are dropped.
-// An empty string yields no lines; a trailing boundary does not produce a
-// trailing empty line.
-func pySplitLines(s string) []string {
-	lines, _ := pySplitLinesKeep(s)
+// splitLines splits s into lines at "\n" only and drops the line endings
+// ("\n", or "\r\n" as one ending). An empty string yields no lines; a
+// trailing ending does not produce a trailing empty line. Every other
+// character, including \f, \v, \x85, U+2028 and a lone "\r", is content.
+func splitLines(s string) []string {
+	lines, _ := splitLinesKeep(s)
 	return lines
 }
 
-// pySplitLinesKeep is pySplitLines that also returns every line with its
-// original boundary attached (str.splitlines(keepends=True)).
-func pySplitLinesKeep(s string) (lines, withEnds []string) {
-	start := 0
-	for i := 0; i < len(s); {
-		r, size := utf8.DecodeRuneInString(s[i:])
-		if r == utf8.RuneError && size == 1 {
-			i++
-			continue
+// splitLinesKeep is splitLines that also returns every line with its
+// original ending attached.
+func splitLinesKeep(s string) (lines, withEnds []string) {
+	for s != "" {
+		i := strings.IndexByte(s, '\n')
+		if i < 0 {
+			lines = append(lines, s)
+			withEnds = append(withEnds, s)
+			break
 		}
-		if !isPyLineBreak(r) {
-			i += size
-			continue
-		}
-		next := i + size
-		if r == '\r' && next < len(s) && s[next] == '\n' {
-			next++
-		}
-		lines = append(lines, s[start:i])
-		withEnds = append(withEnds, s[start:next])
-		i, start = next, next
-	}
-	if start < len(s) {
-		lines = append(lines, s[start:])
-		withEnds = append(withEnds, s[start:])
+		lines = append(lines, strings.TrimSuffix(s[:i], "\r"))
+		withEnds = append(withEnds, s[:i+1])
+		s = s[i+1:]
 	}
 	return lines, withEnds
 }

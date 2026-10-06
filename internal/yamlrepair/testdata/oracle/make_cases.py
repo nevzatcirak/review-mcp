@@ -92,8 +92,11 @@ case("up_empty", "", builtin(), src + "::test_load_yaml_genuinely_empty_input_un
 case("up_fence_flush", "```yaml\nname: John\n```", builtin(), src + "::test_space_before_yaml_info_string")
 case("up_fence_space_yaml", "``` yaml\nname: John\n```", builtin(), src + "::test_space_before_yaml_info_string")
 case("up_fence_space_yml", "``` yml\nname: John\n```", builtin(), src + "::test_space_before_yaml_info_string")
-for label in ["YAML", "YML", "Yaml", "yMl"]:
-    case("up_fence_label_" + label, f"```\t{label}\t\nname: John\n```", builtin(),
+# Directory names must stay unique on case-insensitive filesystems, so the
+# label casing is spelled out in the suffix instead of used verbatim.
+for label, suffix in [("YAML", "yaml_upper"), ("Yaml", "yaml_title"),
+                      ("YML", "yml_upper"), ("yMl", "yml_mixed")]:
+    case("up_fence_label_" + suffix, f"```\t{label}\t\nname: John\n```", builtin(),
          src + "::test_yaml_info_string_is_case_insensitive")
 case("up_fence_text", "```text\nhello world\n```", builtin(),
      src + "::test_non_yaml_info_string_not_parsed_as_yaml_snippet")
@@ -188,8 +191,9 @@ for value in ["general", "security", "maintainability"]:
 for n in [1, 2, 3, 4, 6]:
     case(f"up_tf_backticks_{n}", GARBAGE + "review:\n  summary: example\nissue:\n  id: 1\n" + "`" * n + "\n",
          builtin("review", "issue"), src + "::test_key_extraction_accepts_trailing_backtick_runs")
-for closing in ["```yaml", "```yml", "```YAML", "```YML"]:
-    case("up_tf_closing_" + closing.strip("`"),
+for closing, suffix in [("```yaml", "yaml_lower"), ("```yml", "yml_lower"),
+                        ("```YAML", "yaml_upper"), ("```YML", "yml_upper")]:
+    case("up_tf_closing_" + suffix,
          GARBAGE + "review:\n  summary: example\nissue:\n  id: 1\n" + closing + "\n",
          builtin("review", "issue"), src + "::test_key_extraction_accepts_labeled_closing_fence")
 SUGGESTIONS = (

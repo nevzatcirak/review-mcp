@@ -14,11 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 
-// DESIGN-QUESTION: the spec (P6 section 3.3) expects "the six v1 tools", but the
-// server registers five (internal/mcpserver/server.go: server_info, pr_comments,
-// pr_comment_reply, pr_review, pr_ask) and P6 adds no tool — chose to expect
-// exactly what the server registers because inventing a sixth name would make
-// the smoke test fail forever or hide a missing tool.
+// The five v1 tools the server registers (P6 spec §3.3, acceptance A4).
 const EXPECTED_TOOLS = ['pr_ask', 'pr_comment_reply', 'pr_comments', 'pr_review', 'server_info'];
 
 const TIMEOUT_MS = 30000;

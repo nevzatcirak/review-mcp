@@ -79,9 +79,36 @@ type Metadata struct {
 	DiffTrimmed  bool   `json:"diff_trimmed"`
 }
 
-// PublishResult is the outcome of publishing (step 13): the posted comment,
-// or the classified error. A failed publish never discards the review.
-type PublishResult = llmrun.PublishResult
+// PublishResult is the outcome of publishing (step 13): the posted overview
+// comment, or the classified error, and the inline comments. A failed
+// publish never discards the review. The first four fields are those of
+// llmrun.PublishResult, which pr_ask shares.
+type PublishResult struct {
+	Published bool   `json:"published"`
+	CommentID string `json:"comment_id,omitempty"`
+	URL       string `json:"url,omitempty"`
+	Error     string `json:"error,omitempty"`
+	// Inline is set when the findings were considered for inline comments:
+	// inline findings are on and the overview was posted.
+	Inline *InlineSummary `json:"inline,omitempty"`
+}
+
+// InlineSummary counts the findings of an inline publish (spec P7 §3.3).
+// Every finding is in exactly one of the counts.
+type InlineSummary struct {
+	// Posted findings have an inline comment; KeyIssue.InlineURL links it
+	// when the server reported a URL.
+	Posted int `json:"posted"`
+	// SkippedDuplicate findings were already on the PR (their fingerprint
+	// was found) and were not posted again.
+	SkippedDuplicate int `json:"skipped_duplicate"`
+	// Unanchorable findings have no line in the PR's diff; they are in the
+	// overview only.
+	Unanchorable int `json:"unanchorable"`
+	// Failed findings were anchorable but their inline comment could not be
+	// posted; they are in the overview only.
+	Failed int `json:"failed"`
+}
 
 func nonNil[T any](s []T) []T { return llmrun.NonNil(s) }
 

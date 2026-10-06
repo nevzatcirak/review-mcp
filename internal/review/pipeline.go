@@ -11,7 +11,6 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/diffpipe"
 	"github.com/nevzatcirak/review-mcp/internal/filter"
 	"github.com/nevzatcirak/review-mcp/internal/llm"
-	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/prompt"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
@@ -36,6 +35,11 @@ type Completer interface {
 // provider's capabilities (DQ-16 provider profile; WP-PR-4d).
 type ProviderRenderer func(res *Result, caps provider.Capabilities) string
 
+// InlineRenderer renders the body of a finding's inline comment for a
+// provider's capabilities (spec P7 §3.2), without the fingerprint marker:
+// the pipeline appends the marker as the body's last line.
+type InlineRenderer func(ki *KeyIssue, caps provider.Capabilities) string
+
 // Deps are the injectable dependencies of Run.
 type Deps struct {
 	// Config is the effective configuration and ConfigErr its load error;
@@ -49,8 +53,12 @@ type Deps struct {
 	LLM      Completer
 	// Clock supplies the prompt date; nil is the wall clock.
 	Clock prompt.Clock
-	// RenderProvider renders the comment published with Args.Publish.
+	// RenderProvider renders the overview comment published with
+	// Args.Publish.
 	RenderProvider ProviderRenderer
+	// RenderInline renders the inline comment of an anchorable finding
+	// published with Args.Publish. Nil posts no inline comments.
+	RenderInline InlineRenderer
 	// Progress, when set, is called with a Stage* word as the pipeline
 	// advances (the pr_review tool turns them into MCP progress
 	// notifications). Nil is ignored. It must not block.
@@ -73,8 +81,19 @@ type Args struct {
 	OutputLanguage string
 	// MaxFindings replaces review.max_findings when positive.
 	MaxFindings int
-	// Publish also posts the review as a PR comment.
+	// Publish also posts the review as a PR comment, and its anchorable
+	// findings as inline comments (X-11).
 	Publish bool
+	// InlineFindings turns the inline comments of a publish on or off; nil
+	// means on.
+	//
+	// DESIGN-QUESTION: where does review.inline_findings live before
+	// WP-PR-7f adds the config row and the pr_review argument (spec P7
+	// §6.2)? — chose a per-call option whose nil value is the documented
+	// default (true), so that 7f only adds the row as the nil fallback and
+	// maps the tool argument here; adding the row now would split one
+	// config change over two packages.
+	InlineFindings *bool
 }
 
 // errNoWiring reports a caller bug: Run needs a resolver and an LLM.
@@ -112,6 +131,11 @@ type Plan struct {
 	toggles     Toggles
 	maxFindings int
 	log         *slog.Logger
+	// postedFingerprints are the fingerprints of the review's inline
+	// comments already on the PR (spec P7 §5.3); a finding with one of them
+	// is not posted again. WP-PR-7e fills it from the PR's threads; until
+	// then it is empty.
+	postedFingerprints map[string]bool
 }
 
 func progress(deps Deps, stage string) {
@@ -134,7 +158,7 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	res, log := pl.Result, pl.log
+	res := pl.Result
 	if pl.Empty {
 		// Nothing to review: no LLM call (P3 review, 3d DESIGN-QUESTION 4).
 		// DESIGN-QUESTION: is this empty review published when publish is
@@ -142,7 +166,7 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 		// review and the comment then shows the coverage and the note.
 		res.Review = &Review{KeyIssuesToReview: []KeyIssue{}}
 		res.Notes = append(res.Notes, NoteNoReviewableChanges)
-		publish(ctx, deps, log, args, pl.ref, pl.p, res)
+		publish(ctx, deps, args, pl)
 		return res, nil
 	}
 	progress(deps, StageCallingModel)
@@ -368,24 +392,6 @@ func (pl *Plan) finish(ctx context.Context, deps Deps, args Args) (*Result, erro
 		"llm_calls", res.Metadata.LLMCalls, "reasked", res.Metadata.Reasked)
 
 	// Step 13: publish.
-	publish(ctx, deps, log, args, ref, p, res)
+	publish(ctx, deps, args, pl)
 	return res, nil
-}
-
-// publishFailedMessage is shown for a publish error that is not a
-// classified provider error.
-const publishFailedMessage = "the review could not be posted as a PR comment"
-
-// publish posts the provider-profile rendering when requested (step 13) and
-// records the outcome in res. It never fails the review.
-func publish(ctx context.Context, deps Deps, log *slog.Logger, args Args, ref provider.PRRef, p provider.Provider, res *Result) {
-	if !args.Publish {
-		return
-	}
-	res.Publish = &PublishResult{}
-	var render func(provider.Capabilities) string
-	if deps.RenderProvider != nil {
-		render = func(caps provider.Capabilities) string { return deps.RenderProvider(res, caps) }
-	}
-	llmrun.PostResult(ctx, log, ref, p, res.Publish, publishFailedMessage, render)
 }

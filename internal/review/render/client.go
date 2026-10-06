@@ -127,7 +127,7 @@ func clientLocation(i *review.KeyIssue) string {
 	if lr := lineRange(i); lr != "" {
 		text += " " + lr
 	}
-	if l := safeLink(i.Link); l != "" {
+	if l := findingLink(i); l != "" {
 		return "[" + text + "](" + l + ")"
 	}
 	return text

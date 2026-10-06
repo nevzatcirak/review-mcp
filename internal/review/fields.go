@@ -102,6 +102,9 @@ type KeyIssue struct {
 	SnippetNote string `json:"snippet_note,omitempty"`
 	// Link is the provider URL of the file at StartLine, when available.
 	Link string `json:"link,omitempty"`
+	// InlineURL is the URL of the finding's inline comment, when one was
+	// posted and the server reported its URL.
+	InlineURL string `json:"inline_url,omitempty"`
 }
 
 // field describes one review field (X-4). Its prompt text reproduces
@@ -179,6 +182,7 @@ var keyIssueExtraSchema = map[string]map[string]any{
 	"snippet":      {"type": "string", "description": "the verified code lines start_line to end_line (at most 30), joined by newlines"},
 	"snippet_note": {"type": "string", "description": "why the snippet is missing or shortened"},
 	"link":         {"type": "string", "description": "provider URL of the file at start_line"},
+	"inline_url":   {"type": "string", "description": "URL of the inline comment posted for this finding"},
 }
 
 // fields is the review descriptor table, in upstream order (X-4).

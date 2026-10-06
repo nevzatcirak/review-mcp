@@ -127,6 +127,15 @@ func lineRange(i *review.KeyIssue) string {
 	return "L" + strconv.Itoa(i.StartLine) + "-" + strconv.Itoa(i.EndLine)
 }
 
+// findingLink is where a finding links to: its inline comment when one was
+// posted (spec P7 §3.3), else its file line.
+func findingLink(i *review.KeyIssue) string {
+	if l := safeLink(i.InlineURL); l != "" {
+		return l
+	}
+	return safeLink(i.Link)
+}
+
 var linkEscaper = strings.NewReplacer(
 	"(", "%28", ")", "%29", "<", "%3C", ">", "%3E", "'", "%27", `"`, "%22", "`", "%60", `\`, "%5C", "|", "%7C",
 )

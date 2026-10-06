@@ -89,6 +89,7 @@ func PRReview(ctx context.Context, deps ReviewDeps, a PRReviewArgs) (*review.Res
 		Resolver:       deps.Resolver,
 		LLM:            client,
 		RenderProvider: render.Provider,
+		RenderInline:   render.Inline,
 		Progress:       deps.Progress,
 	}, args)
 	if err != nil {

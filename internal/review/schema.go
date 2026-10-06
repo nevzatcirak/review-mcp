@@ -69,6 +69,12 @@ func ResultSchema() map[string]any {
 			"comment_id": str("id of the posted comment"),
 			"url":        str("URL of the posted comment"),
 			"error":      str("why publishing failed; the review is still returned"),
+			"inline": object("inline comments; present when inline findings were on and the overview was posted", map[string]any{
+				"posted":            integer("findings posted as inline comments"),
+				"skipped_duplicate": integer("findings already posted on the pull request, not repeated"),
+				"unanchorable":      integer("findings not on a line of the diff, listed in the overview only"),
+				"failed":            integer("findings whose inline comment could not be posted, listed in the overview only"),
+			}, "posted", "skipped_duplicate", "unanchorable", "failed"),
 		}, "published"),
 	}, "pr", "enabled_fields", "review", "coverage", "notes", "metadata")
 }

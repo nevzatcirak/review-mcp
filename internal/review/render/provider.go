@@ -107,7 +107,7 @@ func gfmRow(b *strings.Builder, emoji, label, value string) {
 // is one, a plain block otherwise.
 func gfmIssue(i *review.KeyIssue) string {
 	head := "<strong>" + html.EscapeString(issueHeader(i.IssueHeader)) + "</strong>"
-	if l := safeLink(i.Link); l != "" {
+	if l := findingLink(i); l != "" {
 		head = "<a href='" + html.EscapeString(l) + "'>" + head + "</a>"
 	}
 	if file := strings.TrimSpace(i.RelevantFile); file != "" {

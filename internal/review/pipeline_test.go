@@ -41,6 +41,51 @@ type fakeProvider struct {
 	calls    int
 	posted   []string
 	postedTo []provider.PRRef
+
+	// seq records the write calls in order: "post", "inline", "edit".
+	seq []string
+	// inline holds the items of each PostInlineComments call; inlineErr
+	// fails the call and inlineResult, when set, decides each item.
+	inline       [][]provider.InlineComment
+	inlineErr    error
+	inlineResult func(i int, it provider.InlineComment) provider.InlineResult
+	// edits holds each EditComment call; editErr fails it.
+	edits   []edit
+	editErr error
+}
+
+type edit struct{ id, body string }
+
+func (f *fakeProvider) PostInlineComments(_ context.Context, _ provider.PRRef, pr *provider.PullRequest, items []provider.InlineComment) ([]provider.InlineResult, error) {
+	f.calls++
+	f.seq = append(f.seq, "inline")
+	f.inline = append(f.inline, items)
+	if pr == nil || pr.HeadSHA == "" {
+		return nil, &provider.Error{Class: provider.ClassProtocol, Hint: "no head"}
+	}
+	if err := provider.ValidateInlineComments(items); err != nil {
+		return nil, err
+	}
+	if f.inlineErr != nil {
+		return nil, f.inlineErr
+	}
+	out := make([]provider.InlineResult, len(items))
+	for i, it := range items {
+		if f.inlineResult != nil {
+			out[i] = f.inlineResult(i, it)
+			continue
+		}
+		id := strconv.Itoa(900 + i)
+		out[i] = provider.InlineResult{Posted: true, ID: id, URL: "https://your-gitea.example/octo/demo/pulls/7/files#issuecomment-" + id}
+	}
+	return out, nil
+}
+
+func (f *fakeProvider) EditComment(_ context.Context, _ provider.PRRef, id, body string) error {
+	f.calls++
+	f.seq = append(f.seq, "edit")
+	f.edits = append(f.edits, edit{id, body})
+	return f.editErr
 }
 
 func (f *fakeProvider) Capabilities() provider.Capabilities { return provider.Capabilities{GFM: true} }
@@ -66,6 +111,7 @@ func (f *fakeProvider) GetDiff(_ context.Context, _ provider.PRRef, _ *provider.
 
 func (f *fakeProvider) PostComment(_ context.Context, ref provider.PRRef, body string) (*provider.Comment, error) {
 	f.calls++
+	f.seq = append(f.seq, "post")
 	f.posted = append(f.posted, body)
 	f.postedTo = append(f.postedTo, ref)
 	if f.postErr != nil {
@@ -209,6 +255,9 @@ func newHarness(answers ...string) *harness {
 		RenderProvider: func(r *Result, caps provider.Capabilities) string {
 			h.rendered = append(h.rendered, r)
 			return fmt.Sprintf("rendered %d findings gfm=%v", len(r.Review.KeyIssuesToReview), caps.GFM)
+		},
+		RenderInline: func(ki *KeyIssue, caps provider.Capabilities) string {
+			return fmt.Sprintf("inline %s gfm=%v\n", ki.IssueHeader, caps.GFM)
 		},
 	}
 	return h
@@ -536,9 +585,15 @@ func TestRunPublish(t *testing.T) {
 	if res.Publish == nil || !res.Publish.Published || res.Publish.CommentID != "42" || res.Publish.Error != "" {
 		t.Errorf("publish = %+v", res.Publish)
 	}
-	if len(h.prov.posted) != 1 || h.prov.posted[0] != "rendered 2 findings gfm=true" || len(h.rendered) != 1 ||
-		h.rendered[0] != res {
+	if len(h.prov.posted) != 1 || h.prov.posted[0] != "rendered 2 findings gfm=true" || len(h.rendered) != 2 ||
+		h.rendered[0] != res || h.rendered[1] != res {
 		t.Errorf("posted %q", h.prov.posted)
+	}
+	if !slices.Equal(h.prov.seq, []string{"post", "inline", "edit"}) || len(h.prov.edits) != 1 || h.prov.edits[0].id != "42" {
+		t.Errorf("write calls %v, edits %+v", h.prov.seq, h.prov.edits)
+	}
+	if in := res.Publish.Inline; in == nil || *in != (InlineSummary{Posted: 2}) {
+		t.Errorf("inline = %+v", res.Publish.Inline)
 	}
 }
 

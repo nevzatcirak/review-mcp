@@ -1,0 +1,22 @@
+# Third-party modules linked into ./cmd/review-mcp and their license ids.
+# Format: "module SPDX" per line. The SPDX id was determined by reading the
+# module's license file (not from metadata). A module covered by several
+# licenses lists them joined by " AND ".
+# Permitted ids: MIT, BSD-2-Clause, BSD-3-Clause, Apache-2.0, ISC.
+# Anything else needs an architect decision. An entry for a module that is not
+# linked is an error, so remove entries when a dependency goes away.
+github.com/BurntSushi/toml MIT
+github.com/bmatcuk/doublestar/v4 MIT
+github.com/dlclark/regexp2/v2 MIT
+github.com/google/jsonschema-go MIT
+github.com/modelcontextprotocol/go-sdk Apache-2.0 AND MIT
+github.com/pmezard/go-difflib BSD-3-Clause
+github.com/segmentio/asm MIT
+github.com/segmentio/encoding MIT
+github.com/tiktoken-go/tokenizer MIT
+github.com/yosida95/uritemplate/v3 BSD-3-Clause
+golang.org/x/oauth2 BSD-3-Clause
+golang.org/x/sync BSD-3-Clause
+golang.org/x/sys BSD-3-Clause
+golang.org/x/time BSD-3-Clause
+gopkg.in/yaml.v3 MIT AND Apache-2.0

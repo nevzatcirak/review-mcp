@@ -52,9 +52,54 @@ type fakeProvider struct {
 	// edits holds each EditComment call; editErr fails it.
 	edits   []edit
 	editErr error
+
+	// comments are the PR's general comments: those PostComment added and
+	// any a test plants. ListThreads lists them (listErr fails it, lists
+	// counts the calls); EditComment edits them after the ownership check
+	// the real providers make. me is CurrentUser (meErr fails it).
+	comments []fakeComment
+	listErr  error
+	lists    int
+	me       provider.User
+	meErr    error
 }
 
 type edit struct{ id, body string }
+
+// fakeComment is a general comment of the fake PR.
+type fakeComment struct {
+	id, body string
+	author   provider.User
+	created  time.Time
+}
+
+func (f *fakeProvider) addComment(author provider.User, body string) string {
+	id := strconv.Itoa(42 + len(f.comments))
+	f.comments = append(f.comments, fakeComment{id: id, body: body, author: author,
+		created: time.Date(2026, 10, 1, 0, len(f.comments), 0, 0, time.UTC)})
+	return id
+}
+
+func (f *fakeProvider) ListThreads(context.Context, provider.PRRef) ([]provider.Thread, error) {
+	f.calls++
+	f.lists++
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	out := []provider.Thread{}
+	for _, c := range f.comments {
+		out = append(out, provider.Thread{ID: c.id, Kind: provider.ThreadGeneral, Comments: []provider.CommentItem{{
+			ID: c.id, Author: c.author.Name, Body: c.body, CreatedAt: c.created, UpdatedAt: c.created,
+			AuthorID: c.author.ID, AuthorLogin: c.author.Name, URL: "https://your-gitea.example/octo/demo/pulls/7#issuecomment-" + c.id,
+		}}})
+	}
+	return out, nil
+}
+
+func (f *fakeProvider) CurrentUser(context.Context) (provider.User, error) {
+	f.calls++
+	return f.me, f.meErr
+}
 
 func (f *fakeProvider) PostInlineComments(_ context.Context, _ provider.PRRef, pr *provider.PullRequest, items []provider.InlineComment) ([]provider.InlineResult, error) {
 	f.calls++
@@ -85,7 +130,21 @@ func (f *fakeProvider) EditComment(_ context.Context, _ provider.PRRef, id, body
 	f.calls++
 	f.seq = append(f.seq, "edit")
 	f.edits = append(f.edits, edit{id, body})
-	return f.editErr
+	if f.editErr != nil {
+		return f.editErr
+	}
+	for i := range f.comments {
+		c := &f.comments[i]
+		if c.id != id {
+			continue
+		}
+		if !provider.IsUser(f.me, c.author.ID, c.author.Name) {
+			return &provider.Error{Class: provider.ClassNotOwner}
+		}
+		c.body = body
+		return nil
+	}
+	return &provider.Error{Class: provider.ClassNotFound, Status: 404}
 }
 
 func (f *fakeProvider) Capabilities() provider.Capabilities { return provider.Capabilities{GFM: true} }
@@ -117,7 +176,8 @@ func (f *fakeProvider) PostComment(_ context.Context, ref provider.PRRef, body s
 	if f.postErr != nil {
 		return nil, f.postErr
 	}
-	return &provider.Comment{ID: "42", URL: "https://your-gitea.example/octo/demo/pulls/7#issuecomment-42"}, nil
+	id := f.addComment(f.me, body)
+	return &provider.Comment{ID: id, URL: "https://your-gitea.example/octo/demo/pulls/7#issuecomment-" + id}, nil
 }
 
 func (f *fakeProvider) FileLineURL(_ provider.PRRef, _ *provider.PullRequest, path string, line int) string {
@@ -244,6 +304,7 @@ func newHarness(answers ...string) *harness {
 		pr: provider.PullRequest{Title: "Retry " + titleMarker, Description: "Adds a retry. " + descMarker,
 			SourceBranch: "feature/retry", HeadSHA: "abc"},
 		files: sampleFiles(),
+		me:    provider.User{ID: "5", Name: "review-bot"},
 	}
 	h.resolver = &fakeResolver{p: h.prov}
 	h.llm = &fakeLLM{answers: answers}
@@ -586,7 +647,7 @@ func TestRunPublish(t *testing.T) {
 	if res.Publish == nil || !res.Publish.Published || res.Publish.CommentID != "42" || res.Publish.Error != "" {
 		t.Errorf("publish = %+v", res.Publish)
 	}
-	if len(h.prov.posted) != 1 || h.prov.posted[0] != "rendered 2 findings gfm=true" || len(h.rendered) != 2 ||
+	if len(h.prov.posted) != 1 || h.prov.posted[0] != "rendered 2 findings gfm=true\n\n"+OverviewMarker || len(h.rendered) != 2 ||
 		h.rendered[0] != res || h.rendered[1] != res {
 		t.Errorf("posted %q", h.prov.posted)
 	}

@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -73,6 +75,19 @@ type fakeServer struct {
 	mu     sync.Mutex
 	bodies []string
 	auths  []string
+	// writes records "METHOD path" of every non-GET request, in order.
+	writes []string
+
+	// The fake Gitea's publish state: the PR-level comments (id -> body,
+	// author login), the posted reviews and their comments.
+	comments    map[int64]giteaComment
+	nextComment int64
+	reviews     []map[string]any
+}
+
+type giteaComment struct {
+	body, login string
+	userID      int64
 }
 
 func (f *fakeServer) record(r *http.Request) string {
@@ -82,7 +97,39 @@ func (f *fakeServer) record(r *http.Request) string {
 	defer f.mu.Unlock()
 	f.bodies = append(f.bodies, string(b))
 	f.auths = append(f.auths, r.Header.Get("Authorization"))
+	if r.Method != http.MethodGet {
+		f.writes = append(f.writes, r.Method+" "+r.URL.Path)
+	}
 	return string(b)
+}
+
+func (f *fakeServer) writeLog() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.writes...)
+}
+
+// overviewBodies returns the bodies of the PR-level comments that carry
+// the overview marker, by id order.
+func (f *fakeServer) overviewBodies() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []string
+	for id := int64(1); id <= f.nextComment; id++ {
+		if c, ok := f.comments[id]; ok && review.HasOverviewMarker(c.body) {
+			out = append(out, c.body)
+		}
+	}
+	return out
+}
+
+// plantComment adds a PR-level comment by another account.
+func (f *fakeServer) plantComment(login string, userID int64, body string) int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nextComment++
+	f.comments[f.nextComment] = giteaComment{body: body, login: login, userID: userID}
+	return f.nextComment
 }
 
 func (f *fakeServer) recorded() []string {
@@ -97,13 +144,20 @@ func (f *fakeServer) authHeaders() []string {
 	return append([]string(nil), f.auths...)
 }
 
-// newFakeGiteaHost serves octo/demo#7 with the description marker.
+// newFakeGiteaHost serves octo/demo#7 with the description marker. It
+// covers the whole publish flow (spec P7 §3.3, §4.2): the token's user
+// (/api/v1/user, "review-bot", id 42), the PR-level comments (listing,
+// posting, reading and editing, kept in memory), and the reviews that carry
+// the inline comments.
 func newFakeGiteaHost(t *testing.T) *fakeServer {
 	t.Helper()
-	f := &fakeServer{}
+	f := &fakeServer{comments: map[int64]giteaComment{}, nextComment: 54}
 	const api = "/api/v1/repos/octo/demo"
+	const web = "https://your-gitea.example/octo/demo/pulls/7"
 	f.srv, f.conns = startCounted(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		f.record(r)
+		raw := f.record(r)
+		var body map[string]any
+		_ = json.Unmarshal([]byte(raw), &body)
 		if r.Header.Get("Authorization") != "token "+fakeGitea {
 			http.Error(w, "bad auth", http.StatusUnauthorized)
 			return
@@ -136,14 +190,93 @@ func newFakeGiteaHost(t *testing.T) *fakeServer {
 			} else {
 				_, _ = io.WriteString(w, "package main\nvar a = 1\nfunc main() {}\n")
 			}
+		case r.Method == "GET" && p == "/api/v1/user":
+			writeJ(map[string]any{"id": 42, "login": "review-bot"})
 		case r.Method == "POST" && p == api+"/issues/7/comments":
-			writeJ(map[string]any{"id": 55, "html_url": "https://your-gitea.example/octo/demo/pulls/7#issuecomment-55"})
+			text, _ := body["body"].(string)
+			f.mu.Lock()
+			f.nextComment++
+			id := f.nextComment
+			f.comments[id] = giteaComment{body: text, login: "review-bot", userID: 42}
+			f.mu.Unlock()
+			writeJ(map[string]any{"id": id, "html_url": web + "#issuecomment-" + strconv.FormatInt(id, 10)})
+		case r.Method == "GET" && p == api+"/issues/7/comments":
+			out := []any{}
+			f.mu.Lock()
+			if r.URL.Query().Get("page") == "1" {
+				for id := int64(1); id <= f.nextComment; id++ {
+					if c, ok := f.comments[id]; ok {
+						out = append(out, f.issueComment(id, c))
+					}
+				}
+			}
+			f.mu.Unlock()
+			writeJ(out)
+		case strings.HasPrefix(p, api+"/issues/comments/"):
+			id, _ := strconv.ParseInt(strings.TrimPrefix(p, api+"/issues/comments/"), 10, 64)
+			f.mu.Lock()
+			c, ok := f.comments[id]
+			if ok && r.Method == "PATCH" {
+				c.body, _ = body["body"].(string)
+				f.comments[id] = c
+			}
+			f.mu.Unlock()
+			switch {
+			case !ok:
+				http.NotFound(w, r)
+			case r.Method == "GET":
+				writeJ(f.issueComment(id, c))
+			default:
+				writeJ(map[string]any{"id": id})
+			}
+		case r.Method == "POST" && p == api+"/pulls/7/reviews":
+			f.mu.Lock()
+			rid := 300 + len(f.reviews)
+			var cs []any
+			comments, _ := body["comments"].([]any)
+			for i, c := range comments {
+				cm, _ := c.(map[string]any)
+				cid := rid*10 + i
+				cs = append(cs, map[string]any{"id": cid, "path": cm["path"], "body": cm["body"], "position": cm["new_position"],
+					"user": map[string]any{"id": 42, "login": "review-bot"}, "html_url": web + "/files#issuecomment-" + strconv.Itoa(cid)})
+			}
+			f.reviews = append(f.reviews, map[string]any{"id": rid, "state": "COMMENT", "comments": cs})
+			f.mu.Unlock()
+			writeJ(map[string]any{"id": rid, "state": "COMMENT", "html_url": web + "#pullrequestreview-" + strconv.Itoa(rid)})
+		case r.Method == "GET" && p == api+"/pulls/7/reviews":
+			out := []any{}
+			f.mu.Lock()
+			if r.URL.Query().Get("page") == "1" {
+				for _, rv := range f.reviews {
+					out = append(out, map[string]any{"id": rv["id"], "state": rv["state"]})
+				}
+			}
+			f.mu.Unlock()
+			writeJ(out)
+		case r.Method == "GET" && strings.HasPrefix(p, api+"/pulls/7/reviews/") && strings.HasSuffix(p, "/comments"):
+			out := []any{}
+			f.mu.Lock()
+			for _, rv := range f.reviews {
+				if r.URL.Query().Get("page") == "1" && p == api+"/pulls/7/reviews/"+strconv.Itoa(rv["id"].(int))+"/comments" {
+					out = append(out, rv["comments"].([]any)...)
+				}
+			}
+			f.mu.Unlock()
+			writeJ(out)
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	t.Cleanup(f.srv.Close)
 	return f
+}
+
+// issueComment is the API form of a PR-level comment of the fake Gitea.
+func (f *fakeServer) issueComment(id int64, c giteaComment) map[string]any {
+	const web = "https://your-gitea.example/octo/demo/pulls/7"
+	return map[string]any{"id": id, "type": "comment", "body": c.body,
+		"user":     map[string]any{"id": c.userID, "login": c.login},
+		"html_url": web + "#issuecomment-" + strconv.FormatInt(id, 10), "pull_request_url": web}
 }
 
 // fakeLLMHost answers every chat completion with the given status and body.
@@ -315,26 +448,62 @@ func TestPRReviewCall(t *testing.T) {
 	}
 }
 
+// TestPRReviewPublish runs the whole publish flow end to end with the real
+// Gitea provider: the first call looks up an earlier overview (none),
+// posts the overview with the marker, posts the finding on the changed line
+// as an inline comment and edits the overview with its link; the second
+// call finds that overview by marker and author, posts its inline comment
+// and edits the same overview once. A foreign comment carrying the marker
+// is never touched. Inline deduplication is WP-PR-7e, so the second call
+// posts its inline comment again.
 func TestPRReviewPublish(t *testing.T) {
 	g, l := newFakeGiteaHost(t), newFakeLLMHost(t, 200, goodAnswer)
+	foreignBody := "Not ours.\n\n" + review.OverviewMarker
+	foreign := g.plantComment("mallory", 77, foreignBody)
 	cs := connect(t, realDeps(reviewEnv(g, l), nil))
-	res := callTool(t, cs, "pr_review", map[string]any{"pr_url": reviewPRURL(g), "publish": true})
-	if res.IsError {
-		t.Fatalf("tool error: %s", textOf(t, res))
-	}
-	var got review.Result
-	decodeStructured(t, res, &got)
-	if got.Publish == nil || !got.Publish.Published || got.Publish.CommentID != "55" {
-		t.Errorf("publish = %+v", got.Publish)
-	}
-	posted := 0
-	for _, b := range g.recorded() {
-		if strings.Contains(b, "Constant changed") {
-			posted++
+	call := func() review.Result {
+		t.Helper()
+		res := callTool(t, cs, "pr_review", map[string]any{"pr_url": reviewPRURL(g), "publish": true})
+		if res.IsError {
+			t.Fatalf("tool error: %s", textOf(t, res))
 		}
+		var got review.Result
+		decodeStructured(t, res, &got)
+		if !strings.Contains(textOf(t, res), "### Publishing") {
+			t.Errorf("the client text has no publish summary")
+		}
+		return got
 	}
-	if posted != 1 {
-		t.Errorf("comment posted %d times, want 1", posted)
+	const api = "/api/v1/repos/octo/demo"
+	first := call()
+	if p := first.Publish; p == nil || !p.Published || p.Updated || p.CommentID != "56" || p.Error != "" ||
+		p.Inline == nil || *p.Inline != (review.InlineSummary{Posted: 1}) {
+		t.Fatalf("first publish = %+v (inline %+v)", first.Publish, first.Publish.Inline)
+	}
+	if ki := first.Review.KeyIssuesToReview[0]; ki.InlineStatus != review.InlinePosted || ki.InlineURL == "" {
+		t.Errorf("finding = %+v", ki)
+	}
+	wantFirst := []string{"POST " + api + "/issues/7/comments", "POST " + api + "/pulls/7/reviews", "PATCH " + api + "/issues/comments/56"}
+	if got := g.writeLog(); !slices.Equal(got, wantFirst) {
+		t.Errorf("first writes %v, want %v", got, wantFirst)
+	}
+	ov := g.overviewBodies()
+	if len(ov) != 2 || ov[0] != foreignBody || !review.HasOverviewMarker(ov[1]) ||
+		!strings.Contains(ov[1], first.Review.KeyIssuesToReview[0].InlineURL) || !strings.Contains(ov[1], "Constant changed") {
+		t.Fatalf("overviews after the first call: %q", ov)
+	}
+
+	second := call()
+	if p := second.Publish; p == nil || !p.Published || !p.Updated || p.CommentID != "56" ||
+		p.Inline == nil || *p.Inline != (review.InlineSummary{Posted: 1}) {
+		t.Errorf("second publish = %+v", second.Publish)
+	}
+	wantSecond := append(wantFirst, "POST "+api+"/pulls/7/reviews", "PATCH "+api+"/issues/comments/56")
+	if got := g.writeLog(); !slices.Equal(got, wantSecond) {
+		t.Errorf("writes %v, want %v", got, wantSecond)
+	}
+	if ov := g.overviewBodies(); len(ov) != 2 || ov[0] != foreignBody {
+		t.Errorf("overviews after the second call: %d (the foreign comment %d must stay as it is)", len(ov), foreign)
 	}
 }
 
@@ -429,18 +598,21 @@ func TestPRReviewLinksOnlyFilesOfThePR(t *testing.T) {
 		}
 	}
 	const linkPart = "/src/commit/headsha/"
+	const inlinePart = "/files#issuecomment-"
 	var published string
 	for _, b := range g.recorded() {
-		if strings.Contains(b, "Escaping") {
-			published = b
+		if strings.Contains(b, "Escaping") && strings.Contains(b, review.OverviewMarker) {
+			published = b // the last overview body: the edit with the inline link
 		}
 	}
 	if published == "" {
 		t.Fatal("the review was not published")
 	}
 	for name, out := range map[string]string{"client markdown": textOf(t, res), "published comment": published} {
-		if n := strings.Count(out, linkPart); n != 1 {
-			t.Errorf("%s has %d file links, want exactly 1 (src/app.go)", name, n)
+		// The finding on src/app.go is on a changed line, so it links its
+		// inline comment instead of its file line (spec P7 §3.3).
+		if n := strings.Count(out, linkPart) + strings.Count(out, inlinePart); n != 1 {
+			t.Errorf("%s has %d finding links, want exactly 1 (src/app.go)", name, n)
 		}
 		for _, bad := range []string{linkPart + "..", "evil/x.go#L", "not/in/pr.go#L"} {
 			if strings.Contains(out, bad) {

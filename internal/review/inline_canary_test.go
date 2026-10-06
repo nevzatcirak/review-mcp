@@ -145,11 +145,26 @@ func fakeBitbucket(t *testing.T) (*httptest.Server, *wire) {
 	const pr = "/rest/api/1.0/projects/PRJ/repos/demo/pull-requests/7"
 	next := 100
 	var mu sync.Mutex
+	// overviews are the PR-level comments posted (id -> text), served back
+	// by the activities listing and edited through GET and PUT.
+	overviews := map[int]string{}
+	version := map[int]int{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body := wr.add(r)
 		mu.Lock()
 		defer mu.Unlock()
+		commentID, _ := strconv.Atoi(strings.TrimPrefix(r.URL.Path, pr+"/comments/"))
 		switch {
+		case r.Method == "GET" && r.URL.Path == pr+"/activities":
+			acts := []any{}
+			for id := 101; id <= next; id++ {
+				if text, ok := overviews[id]; ok {
+					acts = append(acts, map[string]any{"action": "COMMENTED", "commentAction": "ADDED",
+						"comment": map[string]any{"id": id, "text": text, "createdDate": id,
+							"author": map[string]any{"id": 42, "name": "review-bot", "displayName": "Review Bot"}}})
+				}
+			}
+			writeJSON(w, map[string]any{"values": acts, "isLastPage": true})
 		case r.Method == "GET" && r.URL.Path == "/rest/api/1.0/application-properties":
 			w.Header().Set("X-AUSERNAME", "review-bot")
 			w.Header().Set("X-AUSERID", "42")
@@ -165,11 +180,17 @@ func fakeBitbucket(t *testing.T) (*httptest.Server, *wire) {
 				}
 			}
 			next++
+			if body["anchor"] == nil {
+				overviews[next], _ = body["text"].(string)
+			}
 			writeJSON(w, map[string]any{"id": next, "version": 0})
-		case r.Method == "GET" && r.URL.Path == pr+"/comments/101":
-			writeJSON(w, map[string]any{"id": 101, "version": 0, "author": map[string]any{"id": 42, "name": "review-bot"}})
-		case r.Method == "PUT" && r.URL.Path == pr+"/comments/101":
-			writeJSON(w, map[string]any{"id": 101, "version": 1})
+		case r.Method == "GET" && overviews[commentID] != "":
+			writeJSON(w, map[string]any{"id": commentID, "version": version[commentID],
+				"author": map[string]any{"id": 42, "name": "review-bot"}})
+		case r.Method == "PUT" && overviews[commentID] != "":
+			overviews[commentID], _ = body["text"].(string)
+			version[commentID]++
+			writeJSON(w, map[string]any{"id": commentID, "version": version[commentID]})
 		default:
 			http.NotFound(w, r)
 		}
@@ -188,6 +209,10 @@ func fakeGitea(t *testing.T) (*httptest.Server, *wire) {
 	var mu sync.Mutex
 	var reviewComments []any
 	reviewed := false
+	// overview is the PR-level comment 55 once posted ("" before), served
+	// back by the issue-comment listing and edited through PATCH.
+	overview := ""
+	bot := map[string]any{"id": 42, "login": "review-bot"}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body := wr.add(r)
 		mu.Lock()
@@ -197,11 +222,20 @@ func fakeGitea(t *testing.T) (*httptest.Server, *wire) {
 		case r.Method == "GET" && r.URL.Path == "/api/v1/user":
 			writeJSON(w, map[string]any{"id": 42, "login": "review-bot"})
 		case r.Method == "POST" && r.URL.Path == api+"/issues/7/comments":
+			overview, _ = body["body"].(string)
 			writeJSON(w, map[string]any{"id": 55, "html_url": web + "#issuecomment-55"})
+		case r.Method == "GET" && r.URL.Path == api+"/issues/7/comments":
+			out := []any{}
+			if page1 && overview != "" {
+				out = append(out, map[string]any{"id": 55, "user": bot, "body": overview, "type": "comment",
+					"html_url": web + "#issuecomment-55", "pull_request_url": web})
+			}
+			writeJSON(w, out)
 		case r.Method == "GET" && r.URL.Path == api+"/issues/comments/55":
-			writeJSON(w, map[string]any{"id": 55, "user": map[string]any{"id": 42, "login": "review-bot"},
+			writeJSON(w, map[string]any{"id": 55, "user": bot,
 				"html_url": web + "#issuecomment-55", "pull_request_url": web})
 		case r.Method == "PATCH" && r.URL.Path == api+"/issues/comments/55":
+			overview, _ = body["body"].(string)
 			writeJSON(w, map[string]any{"id": 55})
 		case r.Method == "GET" && r.URL.Path == api+"/pulls/7/reviews":
 			out := []any{}
@@ -241,13 +275,15 @@ func fakeGitea(t *testing.T) (*httptest.Server, *wire) {
 	return srv, wr
 }
 
-func TestInlineCanaryBothProviders(t *testing.T) {
-	type setup struct {
-		ref provider.PRRef
-		p   provider.Provider
-		wr  *wire
-	}
-	cases := map[string]func(t *testing.T) setup{
+type canarySetup struct {
+	ref provider.PRRef
+	p   provider.Provider
+	wr  *wire
+}
+
+func canarySetups() map[string]func(t *testing.T) canarySetup {
+	type setup = canarySetup
+	return map[string]func(t *testing.T) setup{
 		"gitea": func(t *testing.T) setup {
 			srv, wr := fakeGitea(t)
 			cfg := canaryConfig()
@@ -273,7 +309,10 @@ func TestInlineCanaryBothProviders(t *testing.T) {
 				URL: srv.URL + "/projects/PRJ/repos/demo/pull-requests/7"}, p, wr}
 		},
 	}
-	for name, mk := range cases {
+}
+
+func TestInlineCanaryBothProviders(t *testing.T) {
+	for name, mk := range canarySetups() {
 		t.Run(name, func(t *testing.T) {
 			s := mk(t)
 			cp := &canaryProvider{Provider: s.p}
@@ -305,7 +344,7 @@ func TestInlineCanaryBothProviders(t *testing.T) {
 			if len(kis) != 3 || kis[0].InlineURL == "" || kis[1].InlineURL == "" || kis[2].InlineURL != "" {
 				t.Fatalf("findings = %+v", kis)
 			}
-			if !slices.Contains(res.Notes, unanchorableNote) {
+			if !slices.Contains(res.Notes, unanchorableNote) || slices.Contains(res.Notes, review.NoteOverviewLookupFailed) {
 				t.Errorf("notes = %q", res.Notes)
 			}
 			checkWire(t, name, s.wr.list(), kis)
@@ -391,5 +430,63 @@ func checkWire(t *testing.T, name string, reqs []wireReq, kis []review.KeyIssue)
 	if !strings.Contains(edited, unanchorableNote) || !strings.Contains(edited, kis[0].InlineURL) ||
 		!strings.Contains(edited, kis[1].InlineURL) {
 		t.Errorf("edited overview:\n%s", edited)
+	}
+}
+
+// TestPersistentOverviewRealProviders runs two publishes against the same
+// fake server with the real providers: the second run finds the first
+// run's overview through ListThreads and CurrentUser, and the provider's
+// own EditComment ownership check accepts it (the lookup and the edit agree
+// on who "we" are). The second run's writes are its inline comments and
+// one edit; no second overview is posted. Inline deduplication is WP-PR-7e,
+// so the second run posts its inline comments again.
+func TestPersistentOverviewRealProviders(t *testing.T) {
+	for name, mk := range canarySetups() {
+		t.Run(name, func(t *testing.T) {
+			s := mk(t)
+			cp := &canaryProvider{Provider: s.p}
+			deps := review.Deps{
+				Config: canaryConfig(), Resolver: canaryResolver{s.ref, cp}, LLM: answerLLM{},
+				RenderProvider: render.Provider, RenderInline: render.Inline,
+			}
+			if _, err := review.Run(context.Background(), deps, review.Args{PRURL: s.ref.URL, Publish: true}); err != nil {
+				t.Fatal(err)
+			}
+			first := len(s.wr.list())
+			res, err := review.Run(context.Background(), deps, review.Args{PRURL: s.ref.URL, Publish: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p := res.Publish; p == nil || !p.Published || !p.Updated || p.URL == "" {
+				t.Fatalf("second publish = %+v", res.Publish)
+			}
+			var kinds []string
+			var edited string
+			for _, r := range s.wr.list()[first:] {
+				switch {
+				case r.method == "PUT" || r.method == "PATCH":
+					kinds = append(kinds, "edit")
+					edited, _ = r.body["text"].(string)
+					if edited == "" {
+						edited, _ = r.body["body"].(string)
+					}
+				case strings.HasSuffix(r.path, "/reviews") || r.body["anchor"] != nil:
+					kinds = append(kinds, "inline")
+				default:
+					kinds = append(kinds, "overview")
+				}
+			}
+			want := []string{"inline", "edit"}
+			if name == "bitbucket_server" {
+				want = []string{"inline", "inline", "edit"}
+			}
+			if !slices.Equal(kinds, want) {
+				t.Errorf("second run writes %v, want %v", kinds, want)
+			}
+			if !review.HasOverviewMarker(edited) || !strings.Contains(edited, res.Review.KeyIssuesToReview[0].InlineURL) ||
+				slices.Contains(res.Notes, review.NoteOverviewReplaced) || slices.Contains(res.Notes, review.NoteOverviewLookupFailed) {
+				t.Errorf("edited overview:\n%s\nnotes %q", edited, res.Notes)
+			}
+		})
 	}
 }

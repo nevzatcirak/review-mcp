@@ -1,15 +1,18 @@
 ## PR Review 🔍
 
 Pull request: Gitea #12 — Add retry to the fetcher (`https://your-gitea.example/org/repo/pulls/12`)
+Reviewed on 2026-10-06 09:30 UTC at commit `abc123d`.
 
 <table>
 <tr><td>⚡&nbsp;<strong>Recommended focus areas for review</strong><br><br>
 
-<strong>Missing check</strong> <code>cmd/app/main.go L7-9</code><br>
+<details><summary>1. <strong>Missing check</strong> <code>cmd/app/main.go L7-9</code></summary>
 
 The error from Close is ignored.
 
 Snippet note: lines could not be verified against the diff
+
+</details>
 
 </td></tr>
 </table>

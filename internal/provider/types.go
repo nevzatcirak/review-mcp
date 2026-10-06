@@ -154,6 +154,18 @@ type CommentItem struct {
 	Body      string    `json:"body"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+
+	// AuthorID and AuthorLogin identify the author exactly as the ownership
+	// check of EditComment does, for IsUser(CurrentUser(), AuthorID,
+	// AuthorLogin): the numeric user id in decimal ("" when the server sent
+	// none) and the login or user name, without the display-name fallback
+	// that Author may use. A comment that passes IsUser here therefore
+	// passes EditComment's check too.
+	AuthorID    string `json:"-"`
+	AuthorLogin string `json:"-"`
+	// URL is the comment's web URL when the provider knows it; set for the
+	// comments a PR-level comment can be edited through (general threads).
+	URL string `json:"-"`
 }
 
 // Thread is a comment thread of a pull request.

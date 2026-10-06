@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/diffpipe"
@@ -51,7 +52,8 @@ type Deps struct {
 	Logger   *slog.Logger
 	Resolver Resolver
 	LLM      Completer
-	// Clock supplies the prompt date; nil is the wall clock.
+	// Clock supplies the prompt date and the run time shown in the
+	// published overview (Metadata.ReviewedAt); nil is the wall clock.
 	Clock prompt.Clock
 	// RenderProvider renders the overview comment published with
 	// Args.Publish.
@@ -94,6 +96,11 @@ type Args struct {
 	// maps the tool argument here; adding the row now would split one
 	// config change over two packages.
 	InlineFindings *bool
+	// PersistentOverview looks up the overview of an earlier run and edits
+	// it in place instead of posting a new one (X-12); nil means on.
+	// Like InlineFindings, it is a per-call option until WP-PR-7f adds
+	// review.persistent_overview as its nil fallback and the tool argument.
+	PersistentOverview *bool
 }
 
 // errNoWiring reports a caller bug: Run needs a resolver and an LLM.
@@ -136,6 +143,24 @@ type Plan struct {
 	// is not posted again. WP-PR-7e fills it from the PR's threads; until
 	// then it is empty.
 	postedFingerprints map[string]bool
+
+	// The PR's threads and the token's user, each read at most once per
+	// run (listThreads, currentUser).
+	threadsRead bool
+	threads     []provider.Thread
+	threadsErr  error
+	meRead      bool
+	me          provider.User
+	meErr       error
+}
+
+// reviewedAt is the run time for Metadata.ReviewedAt: RFC 3339 in UTC, to
+// the second.
+func reviewedAt(c prompt.Clock) string {
+	if c == nil {
+		c = prompt.SystemClock{}
+	}
+	return c.Now().UTC().Truncate(time.Second).Format(time.RFC3339)
 }
 
 func progress(deps Deps, stage string) {
@@ -263,13 +288,14 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		return nil, err
 	}
 	res := &Result{
-		PR:            PRInfo{Kind: string(ref.Kind), URL: logging.RedactURL(ref.URL), Number: ref.Number, Title: pr.Title},
+		PR: PRInfo{Kind: string(ref.Kind), URL: logging.RedactURL(ref.URL), Number: ref.Number, Title: pr.Title,
+			HeadSHA: pr.HeadSHA},
 		Coverage:      buildCoverage(prep, flt),
 		Notes:         []string{},
 		EnabledFields: []string{},
 		Metadata: Metadata{
 			Model: cfg.LLM.Model, ContextWindow: cfg.LLM.ContextWindow, PromptTokens: promptTokens,
-			DiffTokens: prep.Tokens, FastPath: prep.FastPath,
+			DiffTokens: prep.Tokens, FastPath: prep.FastPath, ReviewedAt: reviewedAt(deps.Clock),
 		},
 	}
 	for _, f := range enabledFields(toggles) {

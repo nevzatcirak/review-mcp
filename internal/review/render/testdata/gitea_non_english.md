@@ -1,6 +1,7 @@
 ## PR Review 🔍
 
 Pull request: Bitbucket Server #5 — Yeniden deneme ekle (`https://bitbucket.example.com/projects/P/repos/r/pull-requests/5`)
+Reviewed on 2026-10-06 09:30 UTC.
 
 <table>
 <tr><td>⏱️&nbsp;<strong>Estimated effort to review</strong>: 4/5 🔵🔵🔵🔵⚪</td></tr>
@@ -15,10 +16,9 @@ src/main.py: her istekte dosya yeniden okunuyor.
 </td></tr>
 <tr><td>⚡&nbsp;<strong>Recommended focus areas for review</strong><br><br>
 
-<details><summary><strong>Olası hata 🐞</strong> <code>src/main.py L3-4</code>
+<details><summary>1. <strong>Olası hata 🐞</strong> <code>src/main.py L3-4</code></summary>
 
 Döngü, \`sınır\` sıfır olduğunda sonsuza kadar sürer. 日本語のテスト。
-</summary>
 
 ```python
 while True:

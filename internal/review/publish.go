@@ -47,19 +47,26 @@ type inlineFinding struct {
 // publish runs step 13 when publishing was requested and records the
 // outcome in pl.Result. It never fails the review.
 //
-// Order (spec P7 §3.3): the anchors are resolved first, so that the
-// overview carries the inline notes; the overview is posted before any
-// inline comment, so that a failed inline post never leaves the PR without
-// it; when inline comments were attempted, the overview is then edited once
-// so that each finding links to its inline comment.
+// Order (spec P7 §3.3, §4.2): the anchors are resolved first, so that the
+// overview carries the inline notes; then the overview of an earlier run is
+// looked up (persistent overview, on unless Args.PersistentOverview is
+// false).
 //
-// DESIGN-QUESTION: how can the overview link to inline comments that are
-// posted after it? — chose to post the overview, then the inline comments,
-// then to edit the overview in place (EditComment, with its ownership
-// check), because that meets §3.3 item 4 in this package; until the edit
-// succeeds the overview links each finding to its file line, so a failed
-// edit only costs the direct links (and adds a note to the result). WP-PR-7d
-// replaces postOverview and updateOverview with the persistent overview.
+//   - None found: the overview is posted before any inline comment, so that
+//     a failed inline post never leaves the PR without it; when inline
+//     comments were attempted, the overview is then edited once so that
+//     each finding links to its inline comment (WP-PR-7c).
+//   - One found: the inline comments are posted, then the found overview is
+//     edited once, with the links (editOverview).
+//
+// DESIGN-QUESTION: the spec's order for a found overview is "edit it, post
+// the inline comments, edit it again with the links"; may the two edits be
+// folded into one? — chose to fold them, because the PR already has an
+// overview while the inline comments are posted (the reason the first
+// write must be the overview does not apply), one edit is one request and
+// one ownership check fewer, and the single edit already carries every
+// inline link and note. When that edit fails, the replacement overview is
+// posted after the inline comments and also carries the links.
 func publish(ctx context.Context, deps Deps, args Args, pl *Plan) {
 	if !args.Publish {
 		return
@@ -68,7 +75,9 @@ func publish(ctx context.Context, deps Deps, args Args, pl *Plan) {
 	res.Publish = &PublishResult{}
 	var render func(provider.Capabilities) string
 	if deps.RenderProvider != nil {
-		render = func(caps provider.Capabilities) string { return deps.RenderProvider(res, caps) }
+		render = func(caps provider.Capabilities) string {
+			return withOverviewMarker(deps.RenderProvider(res, caps))
+		}
 	}
 
 	inlineOn := deps.RenderInline != nil && (args.InlineFindings == nil || *args.InlineFindings)
@@ -82,6 +91,21 @@ func publish(ctx context.Context, deps Deps, args Args, pl *Plan) {
 		}
 		if sum.SkippedDuplicate > 0 {
 			res.Notes = append(res.Notes, noteDuplicates(sum.SkippedDuplicate))
+		}
+	}
+
+	if args.PersistentOverview == nil || *args.PersistentOverview {
+		found, err := pl.findOverview(ctx)
+		switch {
+		case err != nil:
+			res.Notes = append(res.Notes, NoteOverviewLookupFailed)
+			log.Debug("review: overview lookup failed", "error", fixedError(err))
+		case found != nil:
+			if found.older > 0 {
+				res.Notes = append(res.Notes, noteOlderOverviews(found.older))
+			}
+			editOverview(ctx, log, pl, found, items, sum, render)
+			return
 		}
 	}
 
@@ -104,9 +128,54 @@ func publish(ctx context.Context, deps Deps, args Args, pl *Plan) {
 		}
 		updateOverview(ctx, log, pl.ref, pl.p, res, render)
 	}
+	logInline(log, sum)
+}
+
+func logInline(log *slog.Logger, sum *InlineSummary) {
 	log.Debug("review: inline findings", "posted", sum.Posted, "failed", sum.Failed,
 		"unanchorable", sum.Unanchorable, "skipped_duplicate", sum.SkippedDuplicate)
 }
+
+// editOverview publishes over the overview found on the PR: the inline
+// comments first (sum is nil when inline findings are off), then one edit
+// of the found comment with the links and notes. Any edit error (not_owner,
+// a vanished comment, a conflict, any other provider error) posts a new
+// overview instead, with NoteOverviewReplaced; the review never fails.
+func editOverview(ctx context.Context, log *slog.Logger, pl *Plan, found *foundOverview,
+	items []inlineFinding, sum *InlineSummary, render func(provider.Capabilities) string) {
+	res := pl.Result
+	pub := res.Publish
+	if sum != nil {
+		pub.Inline = sum
+		if len(items) > 0 {
+			postInline(ctx, log, pl, items, sum)
+			if sum.Failed > 0 {
+				res.Notes = append(res.Notes, noteInlineFailed(sum.Failed))
+			}
+		}
+		logInline(log, sum)
+	}
+	err := errNoRenderer
+	if render != nil {
+		err = pl.p.EditComment(ctx, pl.ref, found.id, render(pl.p.Capabilities()))
+	}
+	if err == nil {
+		pub.Published, pub.Updated, pub.CommentID, pub.URL = true, true, found.id, found.url
+		log.Debug("review: overview updated in place", "older_overviews", found.older)
+		return
+	}
+	log.Debug("review: overview update failed, posting a new one", "error", fixedError(err))
+	res.Notes = append(res.Notes, NoteOverviewReplaced)
+	postOverview(ctx, log, pl.ref, pl.p, pub, render)
+	if !pub.Published {
+		// Neither edited nor posted: the note's "a new one was posted" is
+		// not true, and the old overview stays as it was.
+		res.Notes = res.Notes[:len(res.Notes)-1]
+	}
+}
+
+// errNoRenderer stands for a missing Deps.RenderProvider in editOverview.
+var errNoRenderer = errors.New("review: no provider renderer")
 
 // planInline resolves each finding's anchor on the provider's unextended
 // hunks (d.Files[i].Patch; spec P7 §3.1) and renders the inline comment of
@@ -130,11 +199,13 @@ func planInline(res *Result, d *provider.Diff, posted map[string]bool, render In
 		a, ok := anchor.Resolve(files[ki.RelevantFile], ki.StartLine, ki.EndLine)
 		if !ok {
 			sum.Unanchorable++
+			ki.InlineStatus = InlineUnanchorable
 			continue
 		}
 		fp := Fingerprint(a.Path, ki.IssueHeader, ki.IssueContent)
 		if posted[fp] {
 			sum.SkippedDuplicate++
+			ki.InlineStatus = InlineSkippedDuplicate
 			continue
 		}
 		body := strings.TrimRight(render(ki, caps), " \t\r\n") + "\n\n" + FingerprintMarker(fp)
@@ -143,8 +214,7 @@ func planInline(res *Result, d *provider.Diff, posted map[string]bool, render In
 	return out, sum
 }
 
-// postOverview posts the overview comment (WP-PR-4d's published comment
-// until WP-PR-7d) and records the outcome in out.
+// postOverview posts a new overview comment and records the outcome in out.
 func postOverview(ctx context.Context, log *slog.Logger, ref provider.PRRef, p provider.Provider,
 	out *PublishResult, render func(provider.Capabilities) string) {
 	var r llmrun.PublishResult
@@ -164,12 +234,15 @@ func postInline(ctx context.Context, log *slog.Logger, pl *Plan, items []inlineF
 		log.Debug("review: inline comments not posted", "error", fixedError(err))
 	}
 	for i, it := range items {
+		ki := &pl.Result.Review.KeyIssuesToReview[it.issue]
 		if err != nil || i >= len(results) || !results[i].Posted {
 			sum.Failed++
+			ki.InlineStatus = InlineFailed
 			continue
 		}
 		sum.Posted++
-		pl.Result.Review.KeyIssuesToReview[it.issue].InlineURL = results[i].URL
+		ki.InlineStatus = InlinePosted
+		ki.InlineURL = results[i].URL
 	}
 }
 

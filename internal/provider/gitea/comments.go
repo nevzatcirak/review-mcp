@@ -133,6 +133,7 @@ func (c *apiReviewComment) item() provider.CommentItem {
 	return provider.CommentItem{
 		ID: strconv.FormatInt(c.ID, 10), Author: login(c.User), Body: c.Body,
 		CreatedAt: c.CreatedAt.Time, UpdatedAt: c.UpdatedAt.Time,
+		AuthorID: userID(c.User), AuthorLogin: login(c.User),
 	}
 }
 
@@ -234,6 +235,8 @@ func (p *Provider) ListThreads(ctx context.Context, ref provider.PRRef) ([]provi
 			Comments: []provider.CommentItem{{
 				ID: strconv.FormatInt(c.ID, 10), Author: login(c.User), Body: c.Body,
 				CreatedAt: c.CreatedAt.Time, UpdatedAt: c.UpdatedAt.Time,
+				// The same id and login EditComment compares (userID, login).
+				AuthorID: userID(c.User), AuthorLogin: login(c.User), URL: c.HTMLURL,
 			}},
 		})
 	}

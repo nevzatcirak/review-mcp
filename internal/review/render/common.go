@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/nevzatcirak/review-mcp/internal/filter"
 	llmrender "github.com/nevzatcirak/review-mcp/internal/llmrun/render"
@@ -36,6 +37,10 @@ const (
 	textCoverage    = llmrender.TextCoverage
 	textNotes       = llmrender.TextNotes
 	textSnippetNote = "Snippet note: "
+	textListedHere  = "(listed here only)"
+	textDiscussed   = "Already discussed"
+	textCode        = "Code:"
+	textPublish     = "Publishing"
 	possibleBug     = "possible bug"
 	possibleIssue   = "Possible Issue"
 	defaultHeader   = "Issue"
@@ -94,6 +99,43 @@ func newView(res *review.Result) view {
 		v.hasPerf = v.perf != nil && r.HasPerformanceConcerns()
 	}
 	return v
+}
+
+// listedHereOnly reports a finding of an inline publish that has no inline
+// comment because it is not on a changed line or its comment failed.
+func listedHereOnly(i *review.KeyIssue) bool {
+	return i.InlineStatus == review.InlineUnanchorable || i.InlineStatus == review.InlineFailed
+}
+
+// runLine is the overview's second header line (spec P7 §4.3): the run time
+// in UTC and the head commit's short SHA, or "" when neither is known.
+func runLine(res *review.Result) string {
+	var parts []string
+	if t, err := time.Parse(time.RFC3339, res.Metadata.ReviewedAt); err == nil {
+		parts = append(parts, "on "+t.UTC().Format("2006-01-02 15:04")+" UTC")
+	}
+	if sha := shortSHA(res.PR.HeadSHA); sha != "" {
+		parts = append(parts, "at commit `"+sha+"`")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "Reviewed " + strings.Join(parts, " ") + "."
+}
+
+// shortSHA is the first 7 characters of a hexadecimal commit id, or ""
+// when sha is not one (it is then not shown).
+func shortSHA(sha string) string {
+	if len(sha) < 7 {
+		return ""
+	}
+	for i := 0; i < len(sha); i++ {
+		c := sha[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
+			return ""
+		}
+	}
+	return strings.ToLower(sha[:7])
 }
 
 // effortValue clamps the effort to 1..5 and renders "N/5" with the bars.

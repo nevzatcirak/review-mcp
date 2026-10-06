@@ -46,6 +46,9 @@ type PRInfo struct {
 	URL    string `json:"url"`
 	Number int64  `json:"number"`
 	Title  string `json:"title"`
+	// HeadSHA is the head commit the review describes; the published
+	// overview shows its short form.
+	HeadSHA string `json:"head_sha,omitempty"`
 }
 
 // Coverage accounts for every changed file (X-3). The types live in
@@ -77,19 +80,29 @@ type Metadata struct {
 	Reasked      bool   `json:"reasked"`
 	Truncated    bool   `json:"truncated"`
 	DiffTrimmed  bool   `json:"diff_trimmed"`
+	// ReviewedAt is the run time, RFC 3339 in UTC (Deps.Clock).
+	ReviewedAt string `json:"reviewed_at"`
+	// AlreadyDiscussed is the "already discussed" count of X-13, shown in
+	// the published overview when greater than 0. WP-PR-7e fills it; until
+	// then it is 0.
+	AlreadyDiscussed int `json:"already_discussed,omitempty"`
 }
 
-// PublishResult is the outcome of publishing (step 13): the posted overview
-// comment, or the classified error, and the inline comments. A failed
-// publish never discards the review. The first four fields are those of
-// llmrun.PublishResult, which pr_ask shares.
+// PublishResult is the outcome of publishing (step 13): the posted or
+// updated overview comment, or the classified error, and the inline
+// comments. A failed publish never discards the review. The first four
+// fields are those of llmrun.PublishResult, which pr_ask shares.
 type PublishResult struct {
 	Published bool   `json:"published"`
 	CommentID string `json:"comment_id,omitempty"`
 	URL       string `json:"url,omitempty"`
 	Error     string `json:"error,omitempty"`
+	// Updated is true when the overview of an earlier run was edited in
+	// place (X-12) instead of a new one being posted.
+	Updated bool `json:"updated,omitempty"`
 	// Inline is set when the findings were considered for inline comments:
-	// inline findings are on and the overview was posted.
+	// inline findings are on and the overview was posted, or an earlier
+	// overview was found to update.
 	Inline *InlineSummary `json:"inline,omitempty"`
 }
 

@@ -120,7 +120,19 @@ type KeyIssue struct {
 	// InlineURL is the URL of the finding's inline comment, when one was
 	// posted and the server reported its URL.
 	InlineURL string `json:"inline_url,omitempty"`
+	// InlineStatus is what happened to the finding in an inline publish
+	// (one of the Inline* values); empty when inline findings were not
+	// considered.
+	InlineStatus string `json:"inline_status,omitempty"`
 }
+
+// InlineStatus values: the counts of InlineSummary, per finding.
+const (
+	InlinePosted           = "posted"
+	InlineSkippedDuplicate = "skipped_duplicate"
+	InlineUnanchorable     = "unanchorable"
+	InlineFailed           = "failed"
+)
 
 // field describes one review field (X-4). Its prompt text reproduces
 // upstream's Pydantic-style schema and example.
@@ -209,6 +221,8 @@ var keyIssueExtraSchema = map[string]map[string]any{
 	"snippet_note": {"type": "string", "description": "why the snippet is missing or shortened"},
 	"link":         {"type": "string", "description": "provider URL of the file at start_line"},
 	"inline_url":   {"type": "string", "description": "URL of the inline comment posted for this finding"},
+	"inline_status": {"type": "string", "enum": []any{InlinePosted, InlineSkippedDuplicate, InlineUnanchorable, InlineFailed},
+		"description": "what happened to the finding in an inline publish; absent when inline findings were not considered"},
 }
 
 // fields is the review descriptor table, in upstream order (X-4), with the

@@ -44,7 +44,8 @@ func baseCoverage() review.Coverage {
 }
 
 func basePR() review.PRInfo {
-	return review.PRInfo{Kind: string(provider.KindGitea), URL: "https://your-gitea.example/org/repo/pulls/12", Number: 12, Title: "Add retry to the fetcher"}
+	return review.PRInfo{Kind: string(provider.KindGitea), URL: "https://your-gitea.example/org/repo/pulls/12", Number: 12,
+		Title: "Add retry to the fetcher", HeadSHA: "abc123def4567890abc123def4567890abc123de"}
 }
 
 func fixtures() map[string]*review.Result {
@@ -119,10 +120,52 @@ func fixtures() map[string]*review.Result {
 			PerformanceConcerns: sp(review.PerformanceNo), KeyIssuesToReview: []review.KeyIssue{},
 		},
 	}
-	return map[string]*review.Result{
-		"all_fields": allFields, "no_findings": noFindings, "no_snippet": noSnippet,
-		"non_english": nonEnglish, "coverage_many": coverageMany,
+	// published is a result after an inline publish that updated the
+	// overview of an earlier run (spec P7 §4.3): one finding posted inline,
+	// one not on a changed line, one whose inline comment failed; the
+	// "already discussed" count is set.
+	published := &review.Result{
+		PR: basePR(), EnabledFields: allKeys, Coverage: baseCoverage(),
+		Notes:    []string{"1 finding could not be placed on a changed line and is listed in the overview only."},
+		Metadata: review.Metadata{AlreadyDiscussed: 2},
+		Review: &review.Review{
+			EstimatedEffortToReview: ip(2), RelevantTests: bp(true), SecurityConcerns: sp(review.SecurityNo),
+			PerformanceConcerns: sp(review.PerformanceNo),
+			KeyIssuesToReview: []review.KeyIssue{
+				{
+					RelevantFile: "cmd/app/main.go", IssueHeader: "Possible Bug", IssueContent: "The loop never ends.",
+					StartLine: 10, EndLine: 10, Snippet: "for {}",
+					Link:         "https://your-gitea.example/org/repo/src/commit/abc123/cmd/app/main.go#L10",
+					InlineURL:    "https://your-gitea.example/org/repo/pulls/12/files#issuecomment-901",
+					InlineStatus: review.InlinePosted,
+				},
+				{
+					RelevantFile: "internal/util/strings_util.go", IssueHeader: "Outside the diff",
+					IssueContent: "An unchanged helper no longer fits.\nSee the caller.", StartLine: 80, EndLine: 82,
+					SnippetNote:  review.SnippetNoteUnverified,
+					Link:         "https://your-gitea.example/org/repo/src/commit/abc123/internal/util/strings_util.go#L80",
+					InlineStatus: review.InlineUnanchorable,
+				},
+				{
+					RelevantFile: "cmd/app/main.go", IssueHeader: "Leak", IssueContent: "The body is not closed.",
+					StartLine: 12, EndLine: 12, Snippet: "resp, _ := get()",
+					Link:         "https://your-gitea.example/org/repo/src/commit/abc123/cmd/app/main.go#L12",
+					InlineStatus: review.InlineFailed,
+				},
+			},
+		},
+		Publish: &review.PublishResult{Published: true, Updated: true, CommentID: "55",
+			URL:    "https://your-gitea.example/org/repo/pulls/12#issuecomment-55",
+			Inline: &review.InlineSummary{Posted: 1, Unanchorable: 1, Failed: 1}},
 	}
+	all := map[string]*review.Result{
+		"all_fields": allFields, "no_findings": noFindings, "no_snippet": noSnippet,
+		"non_english": nonEnglish, "coverage_many": coverageMany, "published": published,
+	}
+	for _, r := range all {
+		r.Metadata.ReviewedAt = "2026-10-06T09:30:15Z"
+	}
+	return all
 }
 
 // TestPerformanceFollowsEnabledFields: the performance row (or section)
@@ -371,8 +414,8 @@ func TestGiteaEscapesInjectedHTML(t *testing.T) {
 	if strings.Contains(out, "<script>") || strings.Contains(out, "<b>x") {
 		t.Errorf("injected tag survived\n%s", out)
 	}
-	if strings.Count(out, "<details>") != 1 { // the second finding has no snippet
-		t.Errorf("want exactly one <details>\n%s", out)
+	if strings.Count(out, "<details>") != 2 { // one per finding, with or without a snippet
+		t.Errorf("want one <details> per finding\n%s", out)
 	}
 	if strings.Contains(out, "onclick='x") {
 		t.Errorf("link attribute not escaped\n%s", out)
@@ -393,8 +436,8 @@ func TestBitbucketHasNoHTMLAndEscapesPipes(t *testing.T) {
 		t.Errorf("HTML in the Bitbucket profile\n%s", out)
 	}
 	for _, line := range strings.Split(out, "\n") {
-		if strings.HasPrefix(line, "| 1 |") && strings.Count(strings.ReplaceAll(line, `\|`, ""), "|") != 4 {
-			t.Errorf("unescaped pipe in a table row: %q", line)
+		if strings.HasPrefix(line, "1. ") && strings.Count(strings.ReplaceAll(line, `\|`, ""), "|") != 0 {
+			t.Errorf("unescaped pipe in the findings index: %q", line)
 		}
 	}
 	// Without table support the same data is a list.

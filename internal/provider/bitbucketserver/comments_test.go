@@ -70,7 +70,8 @@ func (f *fakeBBS) threadsFixture() {
 	f.handleJSON("GET", propsAPI, map[string]any{"version": "8.9.0"})
 	page1 := []any{
 		activity("APPROVED", "", nil, nil),
-		activity("COMMENTED", "ADDED", bcomment(1, "alice", "general root "+testMarker, 1, map[string]any{"state": "OPEN"},
+		activity("COMMENTED", "ADDED", bcomment(1, "alice", "general root "+testMarker, 1, map[string]any{"state": "OPEN",
+			"author": map[string]any{"id": 9, "name": "alice", "displayName": "alice Display"}},
 			bcomment(2, "bob", "reply one", 2, nil, bcomment(4, "alice", "nested reply", 5, nil)),
 			bcomment(3, "alice", "reply two", 3, nil),
 		), nil),
@@ -111,28 +112,29 @@ func TestListThreads(t *testing.T) {
 		t.Fatal(err)
 	}
 	yes, no := true, false
+	overview := f.baseURL() + "/projects/PROJ/repos/demo/pull-requests/7/overview?commentId="
 	want := []provider.Thread{
 		{ID: "1", Kind: provider.ThreadGeneral, Resolved: &no, ReplyInThread: true, Comments: []provider.CommentItem{
-			{ID: "1", Author: "alice", Body: "general root " + testMarker, CreatedAt: tm(1), UpdatedAt: tm(2)},
-			{ID: "2", Author: "bob", Body: "reply one", CreatedAt: tm(2), UpdatedAt: tm(3)},
-			{ID: "3", Author: "alice", Body: "reply two", CreatedAt: tm(3), UpdatedAt: tm(4)},
-			{ID: "4", Author: "alice", Body: "nested reply", CreatedAt: tm(5), UpdatedAt: tm(6)},
+			{ID: "1", Author: "alice", Body: "general root " + testMarker, CreatedAt: tm(1), UpdatedAt: tm(2), AuthorLogin: "alice", AuthorID: "9", URL: overview + "1"},
+			{ID: "2", Author: "bob", Body: "reply one", CreatedAt: tm(2), UpdatedAt: tm(3), AuthorLogin: "bob"},
+			{ID: "3", Author: "alice", Body: "reply two", CreatedAt: tm(3), UpdatedAt: tm(4), AuthorLogin: "alice"},
+			{ID: "4", Author: "alice", Body: "nested reply", CreatedAt: tm(5), UpdatedAt: tm(6), AuthorLogin: "alice"},
 		}},
 		{ID: "60", Kind: provider.ThreadGeneral, Resolved: &no, ReplyInThread: true, Comments: []provider.CommentItem{
-			{ID: "60", Author: "alice", Body: "has deleted reply", CreatedAt: tm(6), UpdatedAt: tm(7)},
-			{ID: "62", Author: "bob", Body: "kept", CreatedAt: tm(7), UpdatedAt: tm(8)},
+			{ID: "60", Author: "alice", Body: "has deleted reply", CreatedAt: tm(6), UpdatedAt: tm(7), AuthorLogin: "alice", URL: overview + "60"},
+			{ID: "62", Author: "bob", Body: "kept", CreatedAt: tm(7), UpdatedAt: tm(8), AuthorLogin: "bob"},
 		}},
 		{ID: "80", Kind: provider.ThreadGeneral, Resolved: &yes, ReplyInThread: true, Comments: []provider.CommentItem{
-			{ID: "80", Author: "Carol C", Body: "no state, display name only", CreatedAt: tm(8), UpdatedAt: tm(8)},
+			{ID: "80", Author: "Carol C", Body: "no state, display name only", CreatedAt: tm(8), UpdatedAt: tm(8), URL: overview + "80"},
 		}},
 		{ID: "40", Kind: provider.ThreadInline, Path: "src/app.go", Line: 0, ReplyInThread: true, Comments: []provider.CommentItem{
-			{ID: "40", Author: "alice", Body: "old side", CreatedAt: tm(40), UpdatedAt: tm(41)}}},
+			{ID: "40", Author: "alice", Body: "old side", CreatedAt: tm(40), UpdatedAt: tm(41), AuthorLogin: "alice", URL: overview + "40"}}},
 		{ID: "20", Kind: provider.ThreadInline, Path: "src/app.go", Line: 3, Resolved: &yes, ReplyInThread: true, Comments: []provider.CommentItem{
-			{ID: "20", Author: "bob", Body: "resolved", CreatedAt: tm(20), UpdatedAt: tm(21)}}},
+			{ID: "20", Author: "bob", Body: "resolved", CreatedAt: tm(20), UpdatedAt: tm(21), AuthorLogin: "bob", URL: overview + "20"}}},
 		{ID: "10", Kind: provider.ThreadInline, Path: "src/app.go", Line: 12, Resolved: &no, ReplyInThread: true, Comments: []provider.CommentItem{
-			{ID: "10", Author: "alice", Body: "inline root", CreatedAt: tm(1), UpdatedAt: tm(2)}}},
+			{ID: "10", Author: "alice", Body: "inline root", CreatedAt: tm(1), UpdatedAt: tm(2), AuthorLogin: "alice", URL: overview + "10"}}},
 		{ID: "30", Kind: provider.ThreadInline, Path: "src/gone.go", Line: 5, Outdated: true, Resolved: &no, ReplyInThread: true, Comments: []provider.CommentItem{
-			{ID: "30", Author: "bob", Body: "orphaned and reopened", CreatedAt: tm(30), UpdatedAt: tm(31)}}},
+			{ID: "30", Author: "bob", Body: "orphaned and reopened", CreatedAt: tm(30), UpdatedAt: tm(31), AuthorLogin: "bob", URL: overview + "30"}}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		gj, _ := json.MarshalIndent(got, "", " ")

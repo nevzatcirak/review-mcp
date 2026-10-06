@@ -1,0 +1,51 @@
+{
+ "languages": [
+  "Python",
+  "JavaScript",
+  "Java",
+  "C",
+  "Go",
+  "TypeScript",
+  "Other"
+ ],
+ "tokens": 2026,
+ "clip_overshoot_offset": null,
+ "upstream_dropped": [],
+ "fast_path": false,
+ "included": [
+  "docs/request_9.py",
+  "internal/store/gamma_4.py",
+  "docs/alpha_11.js",
+  "pkg/util/entry_6.js",
+  "pkg/util/value_2.java"
+ ],
+ "omitted": {
+  "added": [
+   "src/app/result_8.ts",
+   "scripts/state_7.zzz"
+  ],
+  "modified": [
+   "src/app/buffer_3.java",
+   "lib/core/index_5.c",
+   "internal/store/index_10.go",
+   "src/app/config_0.zzz"
+  ],
+  "deleted": [
+   "scripts/state_1.py"
+  ]
+ },
+ "file_dict_order": [
+  "docs/request_9.py",
+  "internal/store/gamma_4.py",
+  "docs/alpha_11.js",
+  "pkg/util/entry_6.js",
+  "pkg/util/value_2.java",
+  "src/app/buffer_3.java",
+  "lib/core/index_5.c",
+  "internal/store/index_10.go",
+  "src/app/result_8.ts",
+  "scripts/state_7.zzz",
+  "src/app/config_0.zzz"
+ ],
+ "policy_case": false
+}

@@ -1,0 +1,35 @@
+{
+ "languages": [
+  "Other"
+ ],
+ "tokens": 2082,
+ "clip_overshoot_offset": null,
+ "upstream_dropped": [],
+ "fast_path": false,
+ "included": [
+  "docs/result_2.zzz",
+  "docs/response_4.zzz"
+ ],
+ "omitted": {
+  "added": [
+   "src/app/state_0.zzz"
+  ],
+  "modified": [
+   "docs/cache_1.zzz",
+   "scripts/option_5.zzz",
+   "docs/option_3.zzz",
+   "src/app/alpha_6.zzz"
+  ],
+  "deleted": []
+ },
+ "file_dict_order": [
+  "docs/result_2.zzz",
+  "docs/response_4.zzz",
+  "src/app/state_0.zzz",
+  "docs/cache_1.zzz",
+  "scripts/option_5.zzz",
+  "docs/option_3.zzz",
+  "src/app/alpha_6.zzz"
+ ],
+ "policy_case": false
+}

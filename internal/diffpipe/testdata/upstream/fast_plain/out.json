@@ -1,0 +1,28 @@
+{
+ "languages": [
+  "Java",
+  "TypeScript",
+  "JavaScript",
+  "Markdown",
+  "Python",
+  "Ruby"
+ ],
+ "tokens": 3923,
+ "clip_overshoot_offset": null,
+ "upstream_dropped": [],
+ "fast_path": true,
+ "included": [
+  "internal/store/alpha_5.java",
+  "scripts/result_1.ts",
+  "scripts/gamma_0.js",
+  "docs/response_4.md",
+  "internal/store/option_3.py",
+  "pkg/util/delta_2.rb"
+ ],
+ "omitted": {
+  "added": [],
+  "modified": [],
+  "deleted": []
+ },
+ "policy_case": false
+}

@@ -1,0 +1,41 @@
+{
+ "languages": [
+  "Python",
+  "Markdown",
+  "C",
+  "Ruby",
+  "Java",
+  "Other"
+ ],
+ "tokens": 695,
+ "clip_overshoot_offset": null,
+ "upstream_dropped": [],
+ "fast_path": false,
+ "included": [
+  "src/app/record_7.py",
+  "scripts/entry_0.py",
+  "docs/item_3.md",
+  "docs/item_1.c",
+  "internal/store/value_4.rb",
+  "pkg/util/total_2.java"
+ ],
+ "omitted": {
+  "added": [],
+  "modified": [
+   "pkg/util/gamma_5.zzz",
+   "docs/gamma_6.zzz"
+  ],
+  "deleted": []
+ },
+ "file_dict_order": [
+  "src/app/record_7.py",
+  "scripts/entry_0.py",
+  "docs/item_3.md",
+  "docs/item_1.c",
+  "internal/store/value_4.rb",
+  "pkg/util/total_2.java",
+  "pkg/util/gamma_5.zzz",
+  "docs/gamma_6.zzz"
+ ],
+ "policy_case": false
+}

@@ -1,0 +1,127 @@
+
+
+## File: 'docs/result_5.go'
+
+@@ -0,0 +1,92 @@
+__new hunk__
+1 +block_alpha_0:
+2 +    item_1 = buffer(893)
+3 +    record_2 = gamma(632)
+4 +    result_3 = gamma(564)
+5 +    beta_4 = record(753)
+6 +    index_5 = count(75)
+7 +    request_6 = state(20)
+8 +    value_7 = state(499)
+9 +    count_8 = alpha(12)
+10 +    delta_9 = total(936)
+11 +    beta_10 = option(128)
+12 +    record_11 = record(38)
+13 +block_response_12:
+14 +    state_13 = state(101)
+15 +    record_14 = handler(238)
+16 +    beta_15 = alpha(497)
+17 +    buffer_16 = entry(905)
+18 +    config_17 = option(188)
+19 +    value_18 = total(106)
+20 +    alpha_19 = item(558)
+21 +    option_20 = alpha(43)
+22 +    buffer_21 = total(284)
+23 +    item_22 = entry(651)
+24 +    cache_23 = handler(364)
+25 +block_index_24:
+26 +    count_25 = record(575)
+27 +    index_26 = item(332)
+28 +    gamma_27 = handler(180)
+29 +    beta_28 = value(919)
+30 +    request_29 = count(983)
+31 +    cache_30 = state(979)
+32 +    config_31 = buffer(46)
+33 +    gamma_32 = beta(636)
+34 +    gamma_33 = buffer(931)
+35 +    config_34 = delta(483)
+36 +    entry_35 = cache(963)
+37 +block_node_36:
+38 +    buffer_37 = config(953)
+39 +    response_38 = alpha(797)
+40 +    response_39 = value(335)
+41 +    option_40 = record(178)
+42 +    record_41 = handler(259)
+43 +    node_42 = result(474)
+44 +    request_43 = handler(173)
+45 +    count_44 = gamma(172)
+46 +    state_45 = index(529)
+47 +    result_46 = value(861)
+48 +    entry_47 = cache(149)
+49 +block_beta_48:
+50 +    item_49 = value(659)
+51 +    item_50 = delta(711)
+52 +    request_51 = response(727)
+53 +    option_52 = state(970)
+54 +    item_53 = option(578)
+55 +    node_54 = alpha(213)
+56 +    alpha_55 = response(530)
+57 +    result_56 = option(304)
+58 +    handler_57 = value(257)
+59 +    option_58 = beta(53)
+60 +    response_59 = result(727)
+61 +block_index_60:
+62 +    item_61 = total(113)
+63 +    beta_62 = delta(631)
+64 +    config_63 = total(689)
+65 +    value_64 = result(161)
+66 +    result_65 = response(266)
+67 +    count_66 = option(524)
+68 +    entry_67 = alpha(46)
+69 +    result_68 = index(702)
+70 +    state_69 = index(772)
+71 +    state_70 = buffer(679)
+72 +    option_71 = record(209)
+73 +block_config_72:
+74 +    beta_73 = result(991)
+75 +    entry_74 = buffer(523)
+76 +    delta_75 = node(679)
+77 +    item_76 = entry(461)
+78 +    state_77 = index(324)
+79 +    value_78 = item(908)
+80 +    index_79 = entry(269)
+81 +    count_80 = item(392)
+82 +    total_81 = item(545)
+83 +    item_82 = state(898)
+84 +    entry_83 = beta(894)
+85 +block_state_84:
+86 +    handler_85 = node(950)
+87 +    handler_86 = response(122)
+88 +    cache_87 = config(45)
+89 +    delta_88 = delta(536)
+90 +    request_89 = config(895)
+91 +    delta_90 = index(877)
+92 +    beta_91 = gamma(981)
+
+
+## File: 'src/app/response_2.py'
+
+> **This file could not be read.** PR-Agent failed to fetch its contents, so no diff is available and nothing in it was reviewed. Do not assume this file is correct, unchanged, or free of issues: flag it for manual review.
+
+
+## File: 'scripts/alpha_1.py'
+
+> **This file could not be read.** PR-Agent failed to fetch its contents, so no diff is available and nothing in it was reviewed. Do not assume this file is correct, unchanged, or free of issues: flag it for manual review.
+
+
+## File: 'pkg/util/state_3.py'
+
+> **This file could not be read.** PR-Agent failed to fetch its contents, so no diff is available and nothing in it was reviewed. Do not assume this file is correct, unchanged, or free of issues: flag it for manual review.
+
+
+## File: 'lib/core/state_4.rb'
+
+> **This file could not be read.** PR-Agent failed to fetch its contents, so no diff is available and nothing in it was reviewed. Do not assume this file is correct, unchanged, or free of issues: flag it for manual review.
+
+Additional added files (insufficient token budget to process):
+
+pkg/util/total_0.java
+
+Additional modified files (insufficient token budget to process):
+
+src/app/state_6.rs
+internal/store/delta_7.c

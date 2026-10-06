@@ -1,0 +1,40 @@
+{
+ "languages": [
+  "Python"
+ ],
+ "tokens": 1833,
+ "clip_overshoot_offset": null,
+ "upstream_dropped": [],
+ "fast_path": false,
+ "included": [
+  "docs/result_2.py",
+  "internal/store/count_1.py",
+  "src/app/twin_0.py",
+  "src/app/twin_1.py",
+  "internal/store/node_3.py"
+ ],
+ "omitted": {
+  "added": [],
+  "modified": [
+   "src/app/twin_2.py",
+   "src/app/twin_3.py",
+   "src/app/twin_4.py",
+   "src/app/twin_5.py",
+   "pkg/util/entry_0.py"
+  ],
+  "deleted": []
+ },
+ "file_dict_order": [
+  "docs/result_2.py",
+  "internal/store/count_1.py",
+  "src/app/twin_0.py",
+  "src/app/twin_1.py",
+  "src/app/twin_2.py",
+  "src/app/twin_3.py",
+  "src/app/twin_4.py",
+  "src/app/twin_5.py",
+  "pkg/util/entry_0.py",
+  "internal/store/node_3.py"
+ ],
+ "policy_case": false
+}

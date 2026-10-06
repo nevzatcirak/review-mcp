@@ -1,0 +1,41 @@
+{
+ "languages": [
+  "Go",
+  "TypeScript",
+  "C",
+  "Rust",
+  "Ruby",
+  "Java"
+ ],
+ "tokens": 1438,
+ "clip_overshoot_offset": null,
+ "upstream_dropped": [],
+ "fast_path": false,
+ "included": [
+  "pkg/util/buffer_1.go",
+  "src/app/entry_6.go",
+  "docs/state_2.ts",
+  "src/app/alpha_5.ts"
+ ],
+ "omitted": {
+  "added": [],
+  "modified": [
+   "src/app/value_4.c",
+   "pkg/util/option_0.rs",
+   "src/app/option_7.rb",
+   "docs/result_3.java"
+  ],
+  "deleted": []
+ },
+ "file_dict_order": [
+  "pkg/util/buffer_1.go",
+  "src/app/entry_6.go",
+  "docs/state_2.ts",
+  "src/app/alpha_5.ts",
+  "src/app/value_4.c",
+  "pkg/util/option_0.rs",
+  "src/app/option_7.rb",
+  "docs/result_3.java"
+ ],
+ "policy_case": false
+}

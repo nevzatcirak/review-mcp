@@ -1,0 +1,27 @@
+{
+ "languages": [
+  "Ruby",
+  "Go",
+  "Python",
+  "Rust",
+  "TypeScript"
+ ],
+ "tokens": 4808,
+ "clip_overshoot_offset": null,
+ "upstream_dropped": [],
+ "fast_path": true,
+ "included": [
+  "pkg/util/gamma_2.rb",
+  "internal/store/buffer_5.rb",
+  "src/app/gamma_0.go",
+  "scripts/value_1.py",
+  "src/app/config_4.rs",
+  "internal/store/index_3.ts"
+ ],
+ "omitted": {
+  "added": [],
+  "modified": [],
+  "deleted": []
+ },
+ "policy_case": false
+}

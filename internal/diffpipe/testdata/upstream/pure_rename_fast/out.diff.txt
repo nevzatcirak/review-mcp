@@ -1,0 +1,139 @@
+
+
+## File: 'src/app/total_4.md'
+
+@@ -7,8 +7,7 @@ block_value_0:
+     handler_6 = alpha(452)
+     node_7 = alpha(462)
+     count_8 = delta(119)
+-    request_9 = count(32)
+-    response_10 = handler(805)
++    record_new = count(157)
+     buffer_11 = gamma(872)
+ block_total_12:
+     response_13 = alpha(637)
+
+@@ -18,8 +17,9 @@ block_total_12:
+     option_17 = beta(990)
+     cache_18 = count(215)
+     value_19 = cache(642)
+-    response_20 = index(441)
+-    state_21 = buffer(937)
++    total_new = cache(197)
++    response_new = delta(564)
++    result_new = item(480)
+     option_22 = state(782)
+     handler_23 = record(469)
+ block_record_24:
+
+@@ -40,9 +40,9 @@ block_config_36:
+     response_39 = total(493)
+     node_40 = state(467)
+     beta_41 = index(687)
+-    alpha_42 = record(906)
+-    buffer_43 = item(913)
+-    index_44 = config(698)
++    result_new = node(877)
++    entry_new = entry(321)
++    cache_new = total(460)
+     delta_45 = option(757)
+     node_46 = entry(662)
+     beta_47 = request(462)
+
+
+
+## File: 'src/app/index_3.go'
+
+@@ -2,21 +2,24 @@ block_record_0:
+     index_1 = entry(978)
+     beta_2 = response(107)
+     alpha_3 = gamma(677)
+     delta_4 = total(925)
+     value_5 = beta(397)
+     result_6 = node(313)
+     index_7 = request(164)
+     total_8 = item(716)
+-    node_9 = entry(634)
++    state_new = state(115)
++    cache_new = state(127)
++    alpha_new = gamma(357)
++    cache_new = node(283)
+     handler_10 = response(428)
+     request_11 = index(550)
+ block_record_12:
+     result_13 = value(355)
+     delta_14 = result(391)
+     config_15 = node(145)
+-    handler_16 = index(437)
+-    response_17 = result(584)
++    entry_new = response(18)
++    total_new = alpha(160)
+     entry_18 = total(200)
+     result_19 = request(975)
+     gamma_20 = cache(384)
+     request_21 = result(105)
+
+
+@@ -82,10 +85,10 @@ 
+     count_81 = count(827)
+     result_82 = total(397)
+     record_83 = gamma(317)
+ block_config_84:
+     count_85 = entry(457)
+     response_86 = beta(312)
+     entry_87 = request(248)
+     state_88 = beta(574)
+-    handler_89 = beta(605)
++    index_new = result(222)
+     delta_90 = option(341)
+
+
+
+## File: 'docs/config_0.rb'
+
+@@ -1,5 +1,6 @@ 
+-block_index_0:
++    beta_new = buffer(924)
++    entry_new = alpha(395)
+     state_1 = alpha(419)
+     buffer_2 = index(650)
+     index_3 = alpha(303)
+     record_4 = item(682)
+
+
+@@ -17,14 +18,12 @@ block_record_12:
+     total_16 = response(300)
+     response_17 = beta(289)
+     gamma_18 = alpha(535)
+     node_19 = index(501)
+     value_20 = record(311)
+     item_21 = state(464)
+     gamma_22 = total(716)
+     config_23 = alpha(455)
+-block_config_24:
+-    alpha_25 = config(715)
+     delta_26 = state(852)
+     cache_27 = gamma(511)
+     entry_28 = alpha(991)
+     value_29 = index(941)
+
+
+@@ -56,15 +55,15 @@ block_buffer_48:
+     result_55 = value(860)
+     handler_56 = index(128)
+     value_57 = handler(443)
+     option_58 = index(405)
+     total_59 = node(683)
+ block_config_60:
+     total_61 = result(213)
+     result_62 = alpha(499)
+-    record_63 = response(302)
+-    delta_64 = gamma(769)
+-    record_65 = config(247)
++    request_new = total(102)
++    node_new = handler(289)
++    handler_new = gamma(228)
+     request_66 = entry(483)
+     count_67 = response(452)
+     option_68 = value(502)
+     request_69 = gamma(781)

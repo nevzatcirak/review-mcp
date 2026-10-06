@@ -1,0 +1,66 @@
+{
+ "budget": {
+  "context_window": 6507,
+  "prompt_tokens": 300,
+  "factor": 0.3,
+  "max_output_tokens": null
+ },
+ "mode": "plain",
+ "diff": {
+  "extra_lines_before": 5,
+  "extra_lines_after": 1,
+  "skip_extend_extensions": [
+   ".md",
+   ".txt"
+  ],
+  "large_patch_policy": "clip"
+ },
+ "files": [
+  {
+   "path": "scripts/request_0.ts",
+   "old_path": "",
+   "type": "modified",
+   "patch": "@@ -46,7 +46,7 @@ block_delta_36:\n     cache_45 = buffer(159)\n     beta_46 = item(321)\n     node_47 = value(918)\n-block_handler_48:\n+    response_new = value(317)\n     handler_49 = state(890)\n     option_50 = handler(659)\n     cache_51 = request(105)\n@@ -56,12 +56,15 @@ block_handler_48:\n     buffer_55 = option(310)\n     request_56 = item(11)\n     result_57 = response(322)\n-    alpha_58 = handler(630)\n-    response_59 = entry(136)\n+    total_new = node(189)\n+    item_new = node(864)\n+    cache_new = buffer(307)\n block_beta_60:\n     entry_61 = entry(340)\n     state_62 = node(695)\n-    node_63 = cache(723)\n+    index_new = item(191)\n+    result_new = entry(714)\n+    delta_new = delta(615)\n     buffer_64 = config(22)\n     response_65 = beta(977)\n     alpha_66 = node(257)\n",
+   "base": "block_cache_0:\n    config_1 = entry(594)\n    gamma_2 = cache(13)\n    config_3 = buffer(564)\n    index_4 = count(734)\n    config_5 = request(856)\n    request_6 = config(406)\n    entry_7 = value(237)\n    entry_8 = value(888)\n    option_9 = handler(759)\n    alpha_10 = gamma(163)\n    response_11 = beta(308)\nblock_alpha_12:\n    buffer_13 = config(609)\n    handler_14 = result(404)\n    response_15 = state(987)\n    value_16 = node(99)\n    beta_17 = value(506)\n    count_18 = buffer(988)\n    result_19 = entry(875)\n    record_20 = result(519)\n    handler_21 = response(359)\n    request_22 = response(417)\n    response_23 = index(925)\nblock_item_24:\n    alpha_25 = buffer(620)\n    total_26 = item(987)\n    request_27 = response(582)\n    delta_28 = entry(216)\n    entry_29 = response(273)\n    record_30 = delta(64)\n    config_31 = entry(495)\n    gamma_32 = node(819)\n    gamma_33 = result(918)\n    value_34 = alpha(300)\n    result_35 = result(893)\nblock_delta_36:\n    beta_37 = cache(629)\n    beta_38 = handler(735)\n    response_39 = item(564)\n    buffer_40 = option(241)\n    beta_41 = record(7)\n    gamma_42 = delta(614)\n    request_43 = beta(971)\n    count_44 = result(298)\n    cache_45 = buffer(159)\n    beta_46 = item(321)\n    node_47 = value(918)\nblock_handler_48:\n    handler_49 = state(890)\n    option_50 = handler(659)\n    cache_51 = request(105)\n    cache_52 = option(277)\n    result_53 = entry(737)\n    index_54 = record(447)\n    buffer_55 = option(310)\n    request_56 = item(11)\n    result_57 = response(322)\n    alpha_58 = handler(630)\n    response_59 = entry(136)\nblock_beta_60:\n    entry_61 = entry(340)\n    state_62 = node(695)\n    node_63 = cache(723)\n    buffer_64 = config(22)\n    response_65 = beta(977)\n    alpha_66 = node(257)\n",
+   "head": "block_cache_0:\n    config_1 = entry(594)\n    gamma_2 = cache(13)\n    config_3 = buffer(564)\n    index_4 = count(734)\n    config_5 = request(856)\n    request_6 = config(406)\n    entry_7 = value(237)\n    entry_8 = value(888)\n    option_9 = handler(759)\n    alpha_10 = gamma(163)\n    response_11 = beta(308)\nblock_alpha_12:\n    buffer_13 = config(609)\n    handler_14 = result(404)\n    response_15 = state(987)\n    value_16 = node(99)\n    beta_17 = value(506)\n    count_18 = buffer(988)\n    result_19 = entry(875)\n    record_20 = result(519)\n    handler_21 = response(359)\n    request_22 = response(417)\n    response_23 = index(925)\nblock_item_24:\n    alpha_25 = buffer(620)\n    total_26 = item(987)\n    request_27 = response(582)\n    delta_28 = entry(216)\n    entry_29 = response(273)\n    record_30 = delta(64)\n    config_31 = entry(495)\n    gamma_32 = node(819)\n    gamma_33 = result(918)\n    value_34 = alpha(300)\n    result_35 = result(893)\nblock_delta_36:\n    beta_37 = cache(629)\n    beta_38 = handler(735)\n    response_39 = item(564)\n    buffer_40 = option(241)\n    beta_41 = record(7)\n    gamma_42 = delta(614)\n    request_43 = beta(971)\n    count_44 = result(298)\n    cache_45 = buffer(159)\n    beta_46 = item(321)\n    node_47 = value(918)\n    response_new = value(317)\n    handler_49 = state(890)\n    option_50 = handler(659)\n    cache_51 = request(105)\n    cache_52 = option(277)\n    result_53 = entry(737)\n    index_54 = record(447)\n    buffer_55 = option(310)\n    request_56 = item(11)\n    result_57 = response(322)\n    total_new = node(189)\n    item_new = node(864)\n    cache_new = buffer(307)\nblock_beta_60:\n    entry_61 = entry(340)\n    state_62 = node(695)\n    index_new = item(191)\n    result_new = entry(714)\n    delta_new = delta(615)\n    buffer_64 = config(22)\n    response_65 = beta(977)\n    alpha_66 = node(257)\n",
+   "head_status": "full"
+  },
+  {
+   "path": "pkg/util/index_1.rb",
+   "old_path": "",
+   "type": "deleted",
+   "patch": "@@ -1,41 +0,0 @@\n-block_gamma_0:\n-    item_1 = entry(223)\n-    response_2 = state(277)\n-    index_3 = delta(34)\n-    option_4 = count(322)\n-    response_5 = total(884)\n-    buffer_6 = item(826)\n-    entry_7 = gamma(825)\n-    cache_8 = node(603)\n-    value_9 = result(298)\n-    option_10 = buffer(475)\n-    node_11 = entry(426)\n-block_record_12:\n-    result_13 = response(419)\n-    beta_14 = result(159)\n-    count_15 = alpha(488)\n-    cache_16 = option(444)\n-    request_17 = index(33)\n-    state_18 = option(986)\n-    record_19 = request(349)\n-    index_20 = gamma(878)\n-    response_21 = record(122)\n-    index_22 = beta(35)\n-    option_23 = count(918)\n-block_result_24:\n-    response_25 = beta(13)\n-    config_26 = delta(175)\n-    option_27 = record(244)\n-    alpha_28 = option(549)\n-    result_29 = beta(961)\n-    cache_30 = delta(349)\n-    value_31 = buffer(995)\n-    request_32 = config(831)\n-    beta_33 = node(226)\n-    count_34 = delta(547)\n-    delta_35 = total(245)\n-block_buffer_36:\n-    value_37 = alpha(499)\n-    entry_38 = response(883)\n-    handler_39 = beta(774)\n-    buffer_40 = index(275)\n",
+   "base": "block_gamma_0:\n    item_1 = entry(223)\n    response_2 = state(277)\n    index_3 = delta(34)\n    option_4 = count(322)\n    response_5 = total(884)\n    buffer_6 = item(826)\n    entry_7 = gamma(825)\n    cache_8 = node(603)\n    value_9 = result(298)\n    option_10 = buffer(475)\n    node_11 = entry(426)\nblock_record_12:\n    result_13 = response(419)\n    beta_14 = result(159)\n    count_15 = alpha(488)\n    cache_16 = option(444)\n    request_17 = index(33)\n    state_18 = option(986)\n    record_19 = request(349)\n    index_20 = gamma(878)\n    response_21 = record(122)\n    index_22 = beta(35)\n    option_23 = count(918)\nblock_result_24:\n    response_25 = beta(13)\n    config_26 = delta(175)\n    option_27 = record(244)\n    alpha_28 = option(549)\n    result_29 = beta(961)\n    cache_30 = delta(349)\n    value_31 = buffer(995)\n    request_32 = config(831)\n    beta_33 = node(226)\n    count_34 = delta(547)\n    delta_35 = total(245)\nblock_buffer_36:\n    value_37 = alpha(499)\n    entry_38 = response(883)\n    handler_39 = beta(774)\n    buffer_40 = index(275)\n",
+   "head": null,
+   "head_status": "not_applicable"
+  },
+  {
+   "path": "scripts/option_2.zzz",
+   "old_path": "",
+   "type": "added",
+   "patch": "@@ -0,0 +1,26 @@\n+block_config_0:\n+    item_1 = alpha(877)\n+    beta_2 = value(47)\n+    delta_3 = beta(70)\n+    config_4 = beta(874)\n+    gamma_5 = option(514)\n+    config_6 = item(160)\n+    item_7 = gamma(359)\n+    handler_8 = entry(398)\n+    response_9 = record(369)\n+    buffer_10 = count(336)\n+    result_11 = delta(130)\n+block_request_12:\n+    alpha_13 = handler(814)\n+    gamma_14 = response(182)\n+    beta_15 = node(471)\n+    cache_16 = entry(801)\n+    request_17 = handler(651)\n+    beta_18 = cache(907)\n+    result_19 = beta(381)\n+    entry_20 = config(778)\n+    item_21 = result(973)\n+    result_22 = state(18)\n+    index_23 = count(548)\n+block_buffer_24:\n+    response_25 = gamma(822)\n",
+   "base": null,
+   "head": "block_config_0:\n    item_1 = alpha(877)\n    beta_2 = value(47)\n    delta_3 = beta(70)\n    config_4 = beta(874)\n    gamma_5 = option(514)\n    config_6 = item(160)\n    item_7 = gamma(359)\n    handler_8 = entry(398)\n    response_9 = record(369)\n    buffer_10 = count(336)\n    result_11 = delta(130)\nblock_request_12:\n    alpha_13 = handler(814)\n    gamma_14 = response(182)\n    beta_15 = node(471)\n    cache_16 = entry(801)\n    request_17 = handler(651)\n    beta_18 = cache(907)\n    result_19 = beta(381)\n    entry_20 = config(778)\n    item_21 = result(973)\n    result_22 = state(18)\n    index_23 = count(548)\nblock_buffer_24:\n    response_25 = gamma(822)\n",
+   "head_status": "full"
+  },
+  {
+   "path": "lib/core/result_3.c",
+   "old_path": "",
+   "type": "modified",
+   "patch": "@@ -11,13 +11,16 @@ block_item_0:\n     delta_10 = handler(183)\n     alpha_11 = item(861)\n block_delta_12:\n-    alpha_13 = delta(689)\n-    config_14 = record(592)\n-    record_15 = gamma(37)\n-    response_16 = option(541)\n+    response_new = response(690)\n+    option_new = config(159)\n+    response_new = total(139)\n+    buffer_new = count(150)\n+    response_new = option(322)\n+    index_new = request(976)\n     index_17 = delta(567)\n     delta_18 = request(62)\n-    request_19 = item(890)\n-    response_20 = total(847)\n-    gamma_21 = index(184)\n+    buffer_new = node(613)\n+    handler_new = node(569)\n+    result_new = gamma(384)\n+    option_new = index(996)\n     entry_22 = index(465)\n",
+   "base": "block_item_0:\n    node_1 = request(809)\n    buffer_2 = delta(475)\n    delta_3 = option(811)\n    handler_4 = delta(751)\n    item_5 = response(544)\n    delta_6 = response(733)\n    alpha_7 = config(146)\n    index_8 = handler(45)\n    option_9 = gamma(577)\n    delta_10 = handler(183)\n    alpha_11 = item(861)\nblock_delta_12:\n    alpha_13 = delta(689)\n    config_14 = record(592)\n    record_15 = gamma(37)\n    response_16 = option(541)\n    index_17 = delta(567)\n    delta_18 = request(62)\n    request_19 = item(890)\n    response_20 = total(847)\n    gamma_21 = index(184)\n    entry_22 = index(465)\n",
+   "head": "block_item_0:\n    node_1 = request(809)\n    buffer_2 = delta(475)\n    delta_3 = option(811)\n    handler_4 = delta(751)\n    item_5 = response(544)\n    delta_6 = response(733)\n    alpha_7 = config(146)\n    index_8 = handler(45)\n    option_9 = gamma(577)\n    delta_10 = handler(183)\n    alpha_11 = item(861)\nblock_delta_12:\n    response_new = response(690)\n    option_new = config(159)\n    response_new = total(139)\n    buffer_new = count(150)\n    response_new = option(322)\n    index_new = request(976)\n    index_17 = delta(567)\n    delta_18 = request(62)\n    buffer_new = node(613)\n    handler_new = node(569)\n    result_new = gamma(384)\n    option_new = index(996)\n    entry_22 = index(465)\n",
+   "head_status": "full"
+  }
+ ],
+ "skipped": [
+  {
+   "path": "assets/logo.png",
+   "reason": "binary"
+  },
+  {
+   "path": "vendor/lib/x.go",
+   "reason": "filtered"
+  }
+ ]
+}

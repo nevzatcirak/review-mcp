@@ -1,0 +1,199 @@
+
+
+## File: 'pkg/util/node_0.go'
+
+@@ -11,7 +11,9 @@ block_request_0:
+__new hunk__
+11      delta_10 = entry(70)
+12      record_11 = result(83)
+13  block_option_12:
+14 +    item_new = item(50)
+15 +    total_new = result(95)
+16 +    record_new = buffer(673)
+17      value_14 = result(832)
+18      option_15 = item(18)
+19      result_16 = node(585)
+__old hunk__
+     delta_10 = entry(70)
+     record_11 = result(83)
+ block_option_12:
+-    config_13 = entry(614)
+     value_14 = result(832)
+     option_15 = item(18)
+     result_16 = node(585)
+
+@@ -32,9 +32,8 @@ block_cache_24:
+__new hunk__
+32      beta_31 = node(19)
+33      state_32 = buffer(485)
+34      entry_33 = beta(746)
+35 +    request_new = buffer(589)
+36 +    total_new = record(50)
+37      response_37 = option(702)
+38      value_38 = handler(496)
+39      response_39 = handler(187)
+__old hunk__
+     beta_31 = node(19)
+     state_32 = buffer(485)
+     entry_33 = beta(746)
+-    count_34 = record(264)
+-    gamma_35 = config(21)
+-block_cache_36:
+     response_37 = option(702)
+     value_38 = handler(496)
+     response_39 = handler(187)
+
+
+## File: 'pkg/util/gamma_2.go'
+
+@@ -0,0 +1,76 @@
+__new hunk__
+1 +block_option_0:
+2 +    handler_1 = option(618)
+3 +    value_2 = request(146)
+4 +    total_3 = response(547)
+5 +    item_4 = config(822)
+6 +    record_5 = result(67)
+7 +    cache_6 = index(172)
+8 +    value_7 = index(437)
+9 +    request_8 = item(553)
+10 +    state_9 = option(818)
+11 +    value_10 = record(961)
+12 +    index_11 = config(256)
+13 +block_option_12:
+14 +    count_13 = node(7)
+15 +    entry_14 = delta(343)
+16 +    config_15 = gamma(440)
+17 +    gamma_16 = option(387)
+18 +    index_17 = total(72)
+19 +    record_18 = gamma(295)
+20 +    item_19 = state(329)
+21 +    value_20 = value(761)
+22 +    buffer_21 = record(392)
+23 +    item_22 = response(526)
+24 +    entry_23 = value(446)
+25 +block_delta_24:
+26 +    entry_25 = entry(792)
+27 +    buffer_26 = index(221)
+28 +    count_27 = request(888)
+29 +    node_28 = result(384)
+30 +    buffer_29 = gamma(315)
+31 +    handler_30 = entry(208)
+32 +    item_31 = alpha(36)
+33 +    response_32 = response(61)
+34 +    node_33 = entry(503)
+35 +    handler_34 = result(624)
+36 +    buffer_35 = record(460)
+37 +block_total_36:
+38 +    result_37 = count(193)
+39 +    count_38 = node(754)
+40 +    count_39 = index(782)
+41 +    entry_40 = handler(73)
+42 +    state_41 = count(363)
+43 +    option_42 = value(962)
+44 +    response_43 = config(755)
+45 +    state_44 = entry(89)
+46 +    value_45 = index(899)
+47 +    result_46 = handler(233)
+48 +    handler_47 = handler(497)
+49 +block_item_48:
+50 +    index_49 = item(973)
+51 +    handler_50 = count(878)
+52 +    total_51 = config(11)
+53 +    config_52 = delta(416)
+54 +    entry_53 = config(101)
+55 +    total_54 = config(31)
+56 +    buffer_55 = config(132)
+57 +    count_56 = total(262)
+58 +    value_57 = beta(877)
+59 +    delta_58 = record(451)
+60 +    beta_59 = gamma(920)
+61 +block_record_60:
+62 +    cache_61 = entry(266)
+63 +    request_62 = record(662)
+64 +    handler_63 = option(269)
+65 +    response_64 = beta(795)
+66 +    entry_65 = alpha(726)
+67 +    request_66 = record(547)
+68 +    cache_67 = gamma(720)
+69 +    beta_68 = buffer(301)
+70 +    cache_69 = node(922)
+71 +    config_70 = count(785)
+72 +    option_71 = delta(44)
+73 +block_node_72:
+74 +    node_73 = config(457)
+75 +    item_74 = config(375)
+76 +    index_75 = alpha(615)
+
+
+## File: 'pkg/util/option_3.go'
+
+@@ -1,6 +1,5 @@
+__new hunk__
+1  block_delta_0:
+2 +    entry_new = state(420)
+3      handler_3 = delta(692)
+4      state_4 = value(664)
+5      count_5 = request(828)
+__old hunk__
+ block_delta_0:
+-    cache_1 = request(981)
+-    gamma_2 = beta(730)
+     handler_3 = delta(692)
+     state_4 = value(664)
+     count_5 = request(828)
+
+@@ -12,9 +11,8 @@ block_delta_0:
+__new hunk__
+11      cache_11 = item(565)
+12  block_alpha_12:
+13      result_13 = gamma(393)
+14 +    item_new = index(214)
+15 +    option_new = total(166)
+16      beta_17 = config(95)
+17      request_18 = entry(479)
+18      record_19 = cache(951)
+__old hunk__
+     cache_11 = item(565)
+ block_alpha_12:
+     result_13 = gamma(393)
+-    alpha_14 = entry(472)
+-    delta_15 = item(549)
+-    item_16 = state(948)
+     beta_17 = config(95)
+     request_18 = entry(479)
+     record_19 = cache(951)
+
+@@ -30,8 +28,10 @@ block_count_24:
+__new hunk__
+28      buffer_29 = response(244)
+29      response_30 = option(752)
+30      handler_31 = cache(132)
+31 +    alpha_new = state(823)
+32 +    buffer_new = total(977)
+33 +    option_new = count(218)
+34 +    delta_new = beta(366)
+35      item_34 = count(635)
+36      delta_35 = count(770)
+37  block_option_36:
+__old hunk__
+     buffer_29 = response(244)
+     response_30 = option(752)
+     handler_31 = cache(132)
+-    index_32 = item(851)
+-    index_33 = item(482)
+     item_34 = count(635)
+     delta_35 = count(770)
+ block_option_36:
+
+Additional modified files (insufficient token budget to process):
+
+scripts/option_8.go
+lib/core/item_6.go
+internal/store/count_5.go
+pkg/util/option_4.go
+
+Deleted files:
+
+lib/core/total_7.go
+scripts/handler_1.go

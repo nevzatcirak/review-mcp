@@ -1,0 +1,60 @@
+
+
+## File: 'src/app/record_7.py'
+
+@@ -4,13 +4,15 @@ block_option_0:
+     beta_3 = value(404)
+     total_4 = buffer(334)
+     request_5 = entry(270)
+-    count_6 = node(360)
+-    handler_7 = response(162)
+-    alpha_8 = beta(373)
++    index_new = beta(77)
++    handler_new = handler(113)
++    request_new = index(931)
+     item_9 = buffer(745)
+     count_10 = count(504)
+     handler_11 = state(484)
+-block_beta_12:
++    total_new = index(914)
++    value_new = state(836)
++    handler_new = node(119)
+     node_13 = entry(274)
+     node_14 = request(149)
+     entry_15 = buffer(601)
+
+
+
+## File: 'scripts/entry_0.py'
+
+> **This file could not be read.** PR-Agent failed to fetch its contents, so no diff is available and nothing in it was reviewed. Do not assume this file is correct, unchanged, or free of issues: flag it for manual review.
+
+
+
+## File: 'docs/item_3.md'
+
+> **This file could not be read.** PR-Agent failed to fetch its contents, so no diff is available and nothing in it was reviewed. Do not assume this file is correct, unchanged, or free of issues: flag it for manual review.
+
+
+
+## File: 'docs/item_1.c'
+
+> **This file could not be read.** PR-Agent failed to fetch its contents, so no diff is available and nothing in it was reviewed. Do not assume this file is correct, unchanged, or free of issues: flag it for manual review.
+
+
+
+## File: 'internal/store/value_4.rb'
+
+> **This file could not be read.** PR-Agent failed to fetch its contents, so no diff is available and nothing in it was reviewed. Do not assume this file is correct, unchanged, or free of issues: flag it for manual review.
+
+
+
+## File: 'pkg/util/total_2.java'
+
+> **This file could not be read.** PR-Agent failed to fetch its contents, so no diff is available and nothing in it was reviewed. Do not assume this file is correct, unchanged, or free of issues: flag it for manual review.
+
+
+Additional modified files (insufficient token budget to process):
+
+pkg/util/gamma_5.zzz
+docs/gamma_6.zzz

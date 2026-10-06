@@ -1,0 +1,178 @@
+
+
+## File: 'docs/result_2.zzz'
+
+@@ -0,0 +1,88 @@
++block_delta_0:
++    buffer_1 = state(156)
++    count_2 = config(369)
++    index_3 = state(289)
++    count_4 = config(150)
++    buffer_5 = record(911)
++    handler_6 = node(774)
++    buffer_7 = config(316)
++    count_8 = record(584)
++    alpha_9 = handler(699)
++    index_10 = handler(46)
++    option_11 = cache(110)
++block_node_12:
++    beta_13 = handler(773)
++    result_14 = gamma(426)
++    cache_15 = node(492)
++    node_16 = request(204)
++    result_17 = record(559)
++    handler_18 = response(920)
++    index_19 = option(80)
++    index_20 = gamma(772)
++    response_21 = option(438)
++    item_22 = buffer(432)
++    node_23 = item(555)
++block_node_24:
++    response_25 = node(728)
++    response_26 = total(288)
++    total_27 = beta(322)
++    alpha_28 = count(392)
++    index_29 = item(575)
++    config_30 = delta(481)
++    record_31 = item(849)
++    value_32 = entry(81)
++    record_33 = index(979)
++    buffer_34 = index(901)
++    result_35 = result(211)
++block_gamma_36:
++    delta_37 = result(320)
++    item_38 = item(807)
++    cache_39 = count(740)
++    alpha_40 = gamma(804)
++    cache_41 = request(629)
++    response_42 = total(168)
++    alpha_43 = alpha(563)
++    value_44 = handler(861)
++    option_45 = delta(579)
++    value_46 = option(628)
++    count_47 = result(415)
++block_index_48:
++    item_49 = value(676)
++    response_50 = handler(440)
++    beta_51 = request(388)
++    count_52 = config(918)
++    item_53 = state(703)
++    cache_54 = state(58)
++    result_55 = gamma(43)
++    option_56 = cache(257)
++    total_57 = beta(694)
++    buffer_58 = cache(901)
++    value_59 = entry(834)
++block_item_60:
++    entry_61 = delta(27)
++    beta_62 = alpha(113)
++    record_63 = item(274)
++    record_64 = state(989)
++    request_65 = value(908)
++    item_66 = handler(846)
++    record_67 = gamma(64)
++    index_68 = option(627)
++    result_69 = gamma(131)
++    buffer_70 = option(327)
++    index_71 = request(41)
++block_alpha_72:
++    option_73 = cache(775)
++    state_74 = entry(117)
++    handler_75 = item(861)
++    gamma_76 = option(432)
++    delta_77 = buffer(645)
++    total_78 = beta(323)
++    beta_79 = request(307)
++    count_80 = result(179)
++    count_81 = value(960)
++    config_82 = state(633)
++    option_83 = index(733)
++block_beta_84:
++    value_85 = option(352)
++    node_86 = buffer(990)
++    option_87 = total(624)
+
+
+
+## File: 'docs/response_4.zzz'
+
+@@ -0,0 +1,67 @@
++block_count_0:
++    index_1 = response(841)
++    record_2 = alpha(155)
++    option_3 = request(618)
++    node_4 = count(466)
++    entry_5 = result(602)
++    config_6 = entry(954)
++    count_7 = beta(714)
++    option_8 = alpha(528)
++    item_9 = record(453)
++    delta_10 = handler(183)
++    option_11 = cache(23)
++block_alpha_12:
++    delta_13 = item(303)
++    alpha_14 = gamma(427)
++    delta_15 = cache(785)
++    state_16 = state(54)
++    alpha_17 = delta(841)
++    index_18 = response(384)
++    alpha_19 = request(65)
++    value_20 = gamma(667)
++    entry_21 = state(348)
++    item_22 = value(408)
++    request_23 = delta(517)
++block_entry_24:
++    handler_25 = entry(852)
++    response_26 = gamma(479)
++    handler_27 = total(657)
++    node_28 = option(520)
++    result_29 = gamma(623)
++    count_30 = total(234)
++    option_31 = beta(54)
++    value_32 = buffer(443)
++    beta_33 = state(290)
++    item_34 = beta(103)
++    count_35 = beta(494)
++block_value_36:
++    cache_37 = option(756)
++    alpha_38 = record(78)
++    config_39 = node(501)
++    value_40 = item(642)
++    cache_41 = item(887)
++    buffer_42 = item(934)
++    cache_43 = cache(314)
++    beta_44 = result(394)
++    option_45 = gamma(68)
++    request_46 = record(54)
++    item_47 = count(309)
++block_cache_48:
++    record_49 = node(936)
++    beta_50 = record(158)
++    count_51 = beta(979)
++    index_52 = gamma(493)
++    state_53 = alpha(893)
++    record_54 = handler(190)
++    buffer_55 = index(273)
++    handler_56 = result(839)
++    index_57 = entry(12)
++    beta_58 = delta(672)
++    node_59 = entry(668)
++block_value_60:
++    beta_61 = alpha(494)
++    record_62 = alpha(708)
++    handler_63 = result(804)
++    alpha_64 = option(540)
++    entry_65 = buffer(806)
++    record_66 = request(187)
+
+
+Additional added files (insufficient token budget to process):
+
+src/app/state_0.zzz
+
+Additional modified files (insufficient token budget to process):
+
+docs/cache_1.zzz
+scripts/option_5.zzz
+docs/option_3.zzz
+src/app/alpha_6.zzz

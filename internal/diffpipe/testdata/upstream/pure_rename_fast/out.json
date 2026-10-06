@@ -1,0 +1,25 @@
+{
+ "languages": [
+  "Markdown",
+  "Go",
+  "Ruby"
+ ],
+ "tokens": 1449,
+ "clip_overshoot_offset": null,
+ "upstream_dropped": [
+  "pkg/util/state_2.md",
+  "lib/core/request_1.go"
+ ],
+ "fast_path": true,
+ "included": [
+  "src/app/total_4.md",
+  "src/app/index_3.go",
+  "docs/config_0.rb"
+ ],
+ "omitted": {
+  "added": [],
+  "modified": [],
+  "deleted": []
+ },
+ "policy_case": false
+}

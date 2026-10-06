@@ -57,6 +57,34 @@ see the [changelog](CHANGELOG.md).
    }
    ```
 
+   Both providers can be enabled together: add the Bitbucket Server pair next
+   to the Gitea one. Each provider is enabled by its base URL; the Bitbucket
+   one includes any context path.
+
+   ```sh
+   claude mcp add review-mcp \
+     --env REVIEW_MCP_LLM_BASE_URL=https://llm.example.com/v1 \
+     --env REVIEW_MCP_LLM_MODEL=your-model-name \
+     --env REVIEW_MCP_LLM_CONTEXT_WINDOW=32000 \
+     --env REVIEW_MCP_GITEA_BASE_URL=https://your-gitea.example \
+     --env REVIEW_MCP_BITBUCKET_SERVER_BASE_URL=https://bitbucket.example.com \
+     --env REVIEW_MCP_LLM_API_KEY="$REVIEW_MCP_LLM_API_KEY" \
+     --env REVIEW_MCP_GITEA_TOKEN="$REVIEW_MCP_GITEA_TOKEN" \
+     --env REVIEW_MCP_BITBUCKET_SERVER_TOKEN="$REVIEW_MCP_BITBUCKET_SERVER_TOKEN" \
+     -- npx -y @nevzatcirak/review-mcp
+   ```
+
+   Release candidates are published under the npm dist-tag `next`; use
+   `npx -y @nevzatcirak/review-mcp@next` to run one. Stable releases are
+   published as `latest`, which is what the commands above use.
+
+   **Local OpenAI-compatible endpoint.** For a locally hosted server (for
+   example `REVIEW_MCP_LLM_BASE_URL=http://localhost:8080/v1`), the API key is
+   still required but may be any non-empty placeholder if your server ignores
+   it. Set `REVIEW_MCP_LLM_CONTEXT_WINDOW` (`llm.context_window`) to the
+   context size your server is actually configured with, not the model's
+   maximum.
+
 3. Ask the client to call `server_info`, then to review a pull request without
    publishing it. The [Setup guide](docs/setup.md) walks through the first run,
    keeps tokens out of files, and covers Bitbucket Server, release archives and

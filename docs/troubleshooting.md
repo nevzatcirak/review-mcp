@@ -1,0 +1,174 @@
+# Troubleshooting
+
+When something does not work, first check whether review-mcp can reach your
+pull request at all. The `diag` command does exactly that, without involving
+an LLM or an MCP client.
+
+## Check connectivity with `diag pr`
+
+Set the same environment you give the MCP server (provider base URL and token;
+see [Getting started](getting-started.md)), then run:
+
+```sh
+review-mcp diag pr https://your-gitea.example/octo/demo/pulls/7
+review-mcp diag pr https://bitbucket.example.com/projects/PROJ/repos/demo/pull-requests/7
+```
+
+The command resolves the provider from the URL, fetches the pull request, its
+commit messages and its diff, and prints one JSON report on stdout. Logs and
+errors go to stderr; the exit code is 0 on success, 1 on a failure and 2 on a
+usage error. `diag` never prints a token, an `Authorization` header, the PR
+description or commit bodies.
+
+```json
+{
+  "kind": "gitea",
+  "ref": { "namespace": "octo", "repo": "demo", "number": 7, "url": "https://your-gitea.example/octo/demo/pulls/7" },
+  "title": "Add feature",
+  "source_branch": "feature",
+  "target_branch": "main",
+  "head_sha": "headsha",
+  "base_sha": "mergesha",
+  "base_strategy": "gitea:merge_base",
+  "commit_count": 2,
+  "commits": ["First commit", "Second commit"],
+  "files": [
+    { "path": "src/renamed.go", "old_path": "src/old_name.go", "type": "renamed", "additions": 1, "deletions": 1,
+      "patch_bytes": 52, "base_status": "full", "head_status": "full", "binary": false }
+  ],
+  "skipped": [ { "path": "assets/logo.png", "reason": "binary" } ],
+  "totals": { "files": 1, "skipped": 1, "additions": 1, "deletions": 1, "patch_bytes": 52 },
+  "elapsed_ms": 41
+}
+```
+
+Compare `files`, their `type`, `old_path` and the `additions`/`deletions`
+counts with the provider's web UI. To look at one file's patch, add
+`--show-patch <path>` (the `path` as listed in `files`); the hunk-only patch
+is printed after the JSON, preceded by a line `--- patch: <path> ---`:
+
+```sh
+review-mcp diag pr <PR_URL> --show-patch src/renamed.go
+```
+
+### `base_strategy`
+
+It tells you which revision the diff was computed against (`base_sha`).
+
+| Value | Meaning |
+|---|---|
+| `gitea:merge_base` | Gitea reported the PR's merge base; this is the normal case. |
+| `gitea:base_sha` | Gitea reported no merge base, so the target branch's tip was used. |
+| `bbs:merge_base_endpoint` | Bitbucket Server reported the merge base; this is the normal case. |
+| `bbs:ancestor_walk` | The merge-base endpoint answered 404, so the common ancestor was found by walking the target branch history. |
+
+### `skipped` reasons
+
+A skipped file is not part of `files` and is not reviewed.
+
+| Reason | Meaning |
+|---|---|
+| `binary` | The file is binary. |
+| `file_limit` | More files than `diff.max_files_full_content` (Bitbucket Server cannot build a patch without file contents). |
+| `size_limit` | A side of the file is larger than `diff.max_file_bytes` (Bitbucket Server). |
+| `fetch_failed` | The file's contents could not be fetched or it is listed by only one of Gitea's two sources. |
+| `filtered` | An ignore rule excluded the file (`diag` applies none). |
+
+In `files`, `base_status` and `head_status` say whether the full content of
+each side was fetched: `full`, `not_fetched_file_limit`,
+`not_fetched_size_limit`, `fetch_failed`, or `not_applicable` (the base side
+of an added file, the head side of a deleted one). On Gitea a file without
+full content keeps its patch.
+
+### Posting a test comment
+
+```sh
+review-mcp diag comment <PR_URL> --body "review-mcp connectivity check"
+```
+
+Posts one PR-level comment with exactly that text and prints
+`{"id": ..., "url": ...}`. `--body` is required. This needs write access (see
+the token scopes below).
+
+## Error messages
+
+Every failure from a provider is reported as one of these fixed sentences.
+The text never contains a response body, a token or a query string. A status
+code and a short hint (a config key or a short phrase) may follow the
+sentence, for example `authentication failed: check the token and its scopes (HTTP 401)`.
+
+| Sentence | Class | Meaning and what to check |
+|---|---|---|
+| the pull request URL does not match any configured provider | `url_not_configured` | The URL's scheme, host, port or path prefix matches no configured base URL (or Gitea `web_url`). Compare it with `REVIEW_MCP_GITEA_BASE_URL` / `REVIEW_MCP_BITBUCKET_SERVER_BASE_URL`, including `http` vs `https`, the port, and a Bitbucket context path. No request was sent. |
+| the URL matches a configured provider but is not a pull request URL | `url_malformed` | Use the PR page URL: `.../{owner}/{repo}/pulls/{n}` (Gitea) or `.../projects/{KEY}/repos/{slug}/pull-requests/{id}` (Bitbucket Server; `/users/{user}/repos/...` for personal repositories). Do not put credentials in the URL. |
+| authentication failed: check the token and its scopes | `auth` (HTTP 401/403) | The token is wrong, expired, or lacks a scope; see the token scopes below. Also check that the token belongs to the provider whose URL you used. |
+| the requested resource was not found | `not_found` (HTTP 404) | The repository or PR does not exist, or the token's user cannot see it (many servers answer 404 for a hidden repository). On Bitbucket Server, a wrong context path also gives 404. |
+| the server rate-limited the request | `rate_limited` (HTTP 429) | Wait and retry; check any rate limits or a reverse proxy in front of the server. |
+| the server reported an internal error | `upstream` (HTTP 5xx) | The provider (or a proxy in front of it) failed. Look at the server's own logs. |
+| a response exceeded its size limit | `too_large` | The hint names the limit: `diff.max_diff_bytes` or `diff.max_file_bytes`; raise it, or review a smaller PR. The hint `(json response limit)` is a fixed 10 MiB safety cap on JSON responses and is not configurable; if you hit it, please report it. |
+| the server version is not supported | `unsupported_version` | Bitbucket Server / Data Center 7.0 or later is required. |
+| could not complete the request to the server | `transport` | The hint says why: `DNS lookup failed` (check the host name), `timeout` (check the network, proxy and server load), `TLS verification failed` (see CA certificates below), `connection failed` (check the port, firewall and scheme). |
+| the server sent an unexpected response | `protocol` | The server answered, but not in the expected shape. Check that the base URL points at the real API host and context path, not at a login page or a proxy; a redirect to another host is refused. A 4xx other than 401/403/404/429 also lands here. |
+
+Anything else is reported as `unexpected error; rerun with
+REVIEW_MCP_LOG_LEVEL=debug for details`, because arbitrary error text could
+contain URLs with query strings.
+
+If the configuration itself is invalid, `diag` prints every problem, one per
+line, exits 1 and makes no network request.
+
+## Token scopes
+
+Scopes are named differently across versions; grant the least that works.
+
+- **Gitea:** read access to the repository, plus write access to issues and
+  pull requests. The write part is needed only for publishing (`publish`) and
+  `diag comment`; reading a PR needs only read access.
+- **Bitbucket Server / Data Center:** an HTTP access token with repository
+  read permission, plus write permission only for comments. The token is sent
+  as `Authorization: Bearer ...`; basic authentication is not supported.
+
+Pass tokens only through the environment (`REVIEW_MCP_GITEA_TOKEN`,
+`REVIEW_MCP_BITBUCKET_SERVER_TOKEN`); never put them in a URL or a config file
+that is checked in.
+
+## Base URL notes
+
+- **Bitbucket Server context path.** `REVIEW_MCP_BITBUCKET_SERVER_BASE_URL`
+  must include the context path if the server has one, for example
+  `https://bitbucket.example.com/bitbucket`. The context path always comes
+  from the configuration, never from the PR URL. If `diag` reports
+  `url_not_configured` for a URL that looks right, or `not_found` for a PR
+  that exists, check this first.
+- **Gitea `web_url`.** `REVIEW_MCP_GITEA_BASE_URL` is where the API is
+  reached. If users open PRs under a different public address (for example a
+  reverse proxy), set `REVIEW_MCP_GITEA_WEB_URL` to that address: PR URLs
+  under it are accepted too. API requests still go to the base URL.
+- **Scheme, host and port must match exactly** (case-insensitive host; default
+  ports 80/443 are implied). `https://your-gitea.example.evil.example` or a
+  sibling path such as `/bitbucket-old` does not match `/bitbucket`.
+- **CA certificates.** For a server with a private CA, set
+  `REVIEW_MCP_GITEA_CA_CERT` or `REVIEW_MCP_BITBUCKET_SERVER_CA_CERT` to the
+  path of a PEM bundle; it is used in addition to the system roots. A
+  `transport` error with the hint `TLS verification failed` usually means the
+  CA is missing or the certificate does not cover the host name.
+- **`insecure_skip_verify`.** `REVIEW_MCP_GITEA_INSECURE_SKIP_VERIFY=true` (and
+  the Bitbucket Server equivalent) turns off certificate verification. Use it
+  only to confirm that TLS is the problem on a throwaway setup; prefer a CA
+  certificate. review-mcp warns at startup when it is set.
+
+## Debug logging
+
+```sh
+REVIEW_MCP_LOG_LEVEL=debug review-mcp diag pr <PR_URL>
+```
+
+Logs go to stderr only (stdout belongs to the MCP protocol and, for `diag`, to
+the report). At debug level each request is logged with its method, the URL
+with query values replaced by `REDACTED`, the status and the duration, and the
+provider notes things such as a failed version probe or a file present in only
+one source.
+
+Never logged, at any level: tokens and other secrets, `Authorization`
+headers, request and response bodies, diff content, and prompts or model
+responses. Still, skim a log before pasting it into a public issue.

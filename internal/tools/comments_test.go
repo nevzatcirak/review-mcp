@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 )
 
@@ -546,6 +547,9 @@ func TestPRCommentReplyErrors(t *testing.T) {
 }
 
 func TestUserMessage(t *testing.T) {
+	if le := (&llm.Error{Class: llm.ClassAuth, Status: 401, Hint: "REVIEW_MCP_LLM_API_KEY"}); UserMessage(fmt.Errorf("wrapped: %w", le)) != le.Error() {
+		t.Errorf("llm error not shown as its fixed sentence")
+	}
 	pe := &provider.Error{Class: provider.ClassNotFound, Status: 404, Hint: "x"}
 	if got := UserMessage(fmt.Errorf("wrapped: %w", pe)); got != pe.Error() {
 		t.Errorf("provider error = %q", got)

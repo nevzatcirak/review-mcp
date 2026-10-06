@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 )
@@ -374,6 +375,10 @@ func UserMessage(err error) string {
 	var pe *provider.Error
 	if errors.As(err, &pe) {
 		return pe.Error()
+	}
+	var le *llm.Error
+	if errors.As(err, &le) {
+		return le.UserMessage()
 	}
 	msg := genericErrorMessage
 	switch {

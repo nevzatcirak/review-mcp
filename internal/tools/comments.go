@@ -11,6 +11,7 @@ import (
 
 	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
+	"github.com/nevzatcirak/review-mcp/internal/mdutil"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 )
@@ -299,30 +300,11 @@ func plainID(id string) string {
 
 // writeFenced writes body inside a backtick fence that the body cannot close.
 func writeFenced(b *strings.Builder, body string) {
-	fence := strings.Repeat("`", fenceLen(body))
-	b.WriteString(fence + "\n")
-	b.WriteString(body)
-	if !strings.HasSuffix(body, "\n") {
-		b.WriteString("\n")
-	}
-	b.WriteString(fence + "\n")
+	mdutil.WriteFenced(b, body, "", "")
 }
 
 // fenceLen is one more than the longest backtick run in s, at least 3.
-func fenceLen(s string) int {
-	longest, run := 0, 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '`' {
-			run++
-			if run > longest {
-				longest = run
-			}
-		} else {
-			run = 0
-		}
-	}
-	return max(3, longest+1)
-}
+func fenceLen(s string) int { return mdutil.FenceLen(s) }
 
 // PRCommentReplyResult is the structured result of pr_comment_reply.
 type PRCommentReplyResult struct {

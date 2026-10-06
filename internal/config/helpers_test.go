@@ -14,9 +14,10 @@ const (
 	fakeGitea       = "FAKE-gitea-token-ZQ7X-do-not-leak"
 	fakeBitbkt      = "FAKE-bitbucket-token-ZQ7X-do-not-leak"
 	fakeURLUserinfo = "FAKE-url-password-ZQ7X"
+	fakeAccess      = "FAKE-serve-access-token-ZQ7X-do-not-leak"
 )
 
-var allFakeSecrets = []string{fakeLLMKey, fakeGitea, fakeBitbkt, fakeURLUserinfo}
+var allFakeSecrets = []string{fakeLLMKey, fakeGitea, fakeBitbkt, fakeURLUserinfo, fakeAccess}
 
 // minimalEnv is the smallest valid environment (Gitea enabled).
 func minimalEnv() map[string]string {

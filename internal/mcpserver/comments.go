@@ -4,9 +4,13 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/review"
 	"github.com/nevzatcirak/review-mcp/internal/tools"
 )
 
@@ -34,17 +38,90 @@ type prCommentReplyInput struct {
 // raw error.
 func toolError(msg string) error { return errors.New(msg) }
 
-// resolverFor returns the resolver for one tool call, or a tool error. While
-// the configuration is invalid no resolver is built and nothing touches the
-// network.
-func resolverFor(deps Deps) (tools.PRResolver, error) {
+// callScope returns the request-scoped resources of one tool call: the
+// effective configuration (Deps.ConfigFor), the resolver and the LLM client
+// factory, or a tool error. While the configuration is invalid nothing is
+// built and nothing touches the network.
+//
+// In serve mode the resolver is wrapped by tools.RequireCredentials: once
+// the URL has been matched, a call that lacks the matched provider's token
+// (or, when needLLM is set, the LLM API key) fails with credentials_missing
+// before any provider or LLM request.
+//
+// Every value is request-scoped: the caller uses it for this call only and
+// runs release with defer as soon as callScope succeeds, so the per-call
+// HTTP transports of the providers and LLM clients built for the call close
+// their keep-alive connections when the call ends, on success and on every
+// error path, in stdio and serve mode alike.
+func callScope(ctx context.Context, deps Deps, req *mcp.CallToolRequest, needLLM bool) (*scope, error) {
 	if deps.LoadErr != nil {
 		return nil, toolError(tools.ConfigInvalidMessage)
 	}
 	if deps.NewResolver == nil {
 		return nil, toolError("review-mcp has no provider wiring; this is a bug")
 	}
-	return deps.NewResolver(deps.Config, deps.Logger), nil
+	cfg, err := deps.ConfigFor(ctx, req)
+	if err != nil {
+		return nil, toolError(tools.UserMessage(err))
+	}
+	sc := &scope{cfg: cfg, inner: deps.NewResolver(cfg, deps.Logger)}
+	sc.resolver = sc.inner
+	if deps.Serve {
+		sc.resolver = tools.RequireCredentials(sc.inner, cfg, needLLM)
+	}
+	if deps.NewLLM != nil {
+		sc.newLLM = sc.trackLLM(llmFactory(deps))
+	}
+	return sc, nil
+}
+
+// scope holds what one tool call built. It is owned by that call and kept by
+// nobody after release; it holds no shared transport (P6 spec §1.1).
+type scope struct {
+	cfg      *config.Config
+	resolver tools.PRResolver
+	// newLLM builds the call's LLM client and remembers it for release; nil
+	// when Deps.NewLLM is nil.
+	newLLM func(*config.Config, *slog.Logger) (review.Completer, error)
+
+	inner *provider.Resolver
+
+	mu   sync.Mutex
+	llms []review.Completer
+}
+
+// trackLLM wraps f so that every client it builds is closed by release.
+func (s *scope) trackLLM(f func(*config.Config, *slog.Logger) (review.Completer, error)) func(*config.Config, *slog.Logger) (review.Completer, error) {
+	return func(cfg *config.Config, log *slog.Logger) (review.Completer, error) {
+		c, err := f(cfg, log)
+		if c != nil {
+			s.mu.Lock()
+			s.llms = append(s.llms, c)
+			s.mu.Unlock()
+		}
+		return c, err
+	}
+}
+
+// release closes the idle connections of every provider the resolver built
+// (including one built lazily by Resolve) and of every LLM client built
+// through newLLM. A connection still in use is closed as soon as it becomes
+// idle (net/http keeps the close request for connections that turn idle
+// later). It is safe to call more than once.
+func (s *scope) release() {
+	if s == nil {
+		return
+	}
+	s.inner.CloseIdleConnections()
+	s.mu.Lock()
+	llms := s.llms
+	s.llms = nil
+	s.mu.Unlock()
+	for _, c := range llms {
+		if ic, ok := c.(provider.IdleCloser); ok {
+			ic.CloseIdleConnections()
+		}
+	}
 }
 
 func logger(deps Deps) *slog.Logger {
@@ -65,13 +142,14 @@ func registerPRComments(s *mcp.Server, deps Deps) {
 			DestructiveHint: &f,
 			OpenWorldHint:   &tr,
 		},
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in prCommentsInput) (*mcp.CallToolResult, tools.PRCommentsResult, error) {
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in prCommentsInput) (*mcp.CallToolResult, tools.PRCommentsResult, error) {
 		var zero tools.PRCommentsResult
-		resolver, err := resolverFor(deps)
+		sc, err := callScope(ctx, deps, req, false)
 		if err != nil {
 			return nil, zero, err
 		}
-		res, err := tools.PRComments(ctx, resolver, in.PRURL, in.IncludeResolved)
+		defer sc.release()
+		res, err := tools.PRComments(ctx, sc.resolver, in.PRURL, in.IncludeResolved)
 		if err != nil {
 			msg := tools.UserMessage(err)
 			logger(deps).Debug("pr_comments failed", "error", msg)
@@ -98,13 +176,14 @@ func registerPRCommentReply(s *mcp.Server, deps Deps) {
 			DestructiveHint: &f,
 			OpenWorldHint:   &tr,
 		},
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in prCommentReplyInput) (*mcp.CallToolResult, tools.PRCommentReplyResult, error) {
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in prCommentReplyInput) (*mcp.CallToolResult, tools.PRCommentReplyResult, error) {
 		var zero tools.PRCommentReplyResult
-		resolver, err := resolverFor(deps)
+		sc, err := callScope(ctx, deps, req, false)
 		if err != nil {
 			return nil, zero, err
 		}
-		res, err := tools.PRCommentReply(ctx, resolver, in.PRURL, in.CommentID, in.Body)
+		defer sc.release()
+		res, err := tools.PRCommentReply(ctx, sc.resolver, in.PRURL, in.CommentID, in.Body)
 		if err != nil {
 			msg := tools.UserMessage(err)
 			logger(deps).Debug("pr_comment_reply failed", "error", msg)

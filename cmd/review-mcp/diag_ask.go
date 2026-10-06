@@ -96,8 +96,10 @@ func buildAskDryRunReport(pl *ask.Plan, elapsed time.Duration) askDryRunReport {
 // JSON report. No LLM client is built: nothing can reach the model.
 func diagAskDryRun(ctx context.Context, cfg *config.Config, logger *slog.Logger, args ask.Args, showPrompt bool, stdout, stderr io.Writer) int {
 	start := time.Now()
+	resolver := wiring.NewResolver(cfg, logger)
+	defer resolver.CloseIdleConnections()
 	pl, err := ask.Prepare(ctx, ask.Deps{
-		Config: cfg, Logger: logger, Resolver: wiring.NewResolver(cfg, logger),
+		Config: cfg, Logger: logger, Resolver: resolver,
 	}, args)
 	if err != nil {
 		return reportError(stderr, err)
@@ -122,9 +124,12 @@ func diagAsk(ctx context.Context, cfg *config.Config, logger *slog.Logger, args 
 	if err != nil {
 		return reportError(stderr, err)
 	}
+	defer closeIdle(client)
+	resolver := wiring.NewResolver(cfg, logger)
+	defer resolver.CloseIdleConnections()
 	rec := &promptRecorder{Completer: client}
 	res, err := ask.Run(ctx, ask.Deps{
-		Config: cfg, Logger: logger, Resolver: wiring.NewResolver(cfg, logger), LLM: rec,
+		Config: cfg, Logger: logger, Resolver: resolver, LLM: rec,
 		RenderProvider: askrender.Provider,
 	}, args)
 	if err != nil {

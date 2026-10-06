@@ -37,6 +37,9 @@ func (osSource) Stat(path string) (fs.FileInfo, error) { return os.Stat(path) }
 // file system. See Load for the failure contract.
 func LoadFromOS() (*Config, *Report, error) { return Load(osSource{}) }
 
+// LoadFromOSWith is LoadFromOS for the given options (see LoadWith).
+func LoadFromOSWith(opts LoadOptions) (*Config, *Report, error) { return LoadWith(osSource{}, opts) }
+
 // MemSource is an in-memory Source for tests: Env is the environment and FS
 // serves files. Leading "/" in paths is stripped before consulting FS, so a
 // testing/fstest.MapFS keyed "cfg/review.toml" serves "/cfg/review.toml".

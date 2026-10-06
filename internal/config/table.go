@@ -14,6 +14,7 @@ const (
 	envLLMAPIKey            = "REVIEW_MCP_LLM_API_KEY"            //nolint:gosec // G101 false positive: an environment variable name, not a credential
 	envGiteaToken           = "REVIEW_MCP_GITEA_TOKEN"            //nolint:gosec // G101 false positive: an environment variable name, not a credential
 	envBitbucketServerToken = "REVIEW_MCP_BITBUCKET_SERVER_TOKEN" //nolint:gosec // G101 false positive: an environment variable name, not a credential
+	envServeAccessToken     = "REVIEW_MCP_SERVE_ACCESS_TOKEN"     //nolint:gosec // G101 false positive: an environment variable name, not a credential
 )
 
 // entry binds one §5 key to its environment variable and its Config field.
@@ -75,6 +76,16 @@ var table = []entry{
 	{"ask.extra_instructions", "REVIEW_MCP_ASK_EXTRA_INSTRUCTIONS", func(c *Config) any { return &c.Ask.ExtraInstructions }},
 
 	{"log.level", "REVIEW_MCP_LOG_LEVEL", func(c *Config) any { return &c.Log.Level }},
+
+	// serve.* rows: P6 spec §1.2. They are read in every mode but validated
+	// (and used) only in serve mode.
+	{"serve.listen", "REVIEW_MCP_SERVE_LISTEN", func(c *Config) any { return &c.Serve.Listen }},
+	{"serve.tls_cert", "REVIEW_MCP_SERVE_TLS_CERT", func(c *Config) any { return &c.Serve.TLSCert }},
+	{"serve.tls_key", "REVIEW_MCP_SERVE_TLS_KEY", func(c *Config) any { return &c.Serve.TLSKey }},
+	{"serve.allow_insecure_http", "REVIEW_MCP_SERVE_ALLOW_INSECURE_HTTP", func(c *Config) any { return &c.Serve.AllowInsecureHTTP }},
+	{"serve.llm_key_source", "REVIEW_MCP_SERVE_LLM_KEY_SOURCE", func(c *Config) any { return &c.Serve.LLMKeySource }},
+	{"serve.allowed_origins", "REVIEW_MCP_SERVE_ALLOWED_ORIGINS", func(c *Config) any { return &c.Serve.AllowedOrigins }},
+	{"serve.max_concurrent_calls", "REVIEW_MCP_SERVE_MAX_CONCURRENT_CALLS", func(c *Config) any { return &c.Serve.MaxConcurrentCalls }},
 }
 
 // secretEntry binds a secret to its environment variable. Secrets have no
@@ -89,6 +100,7 @@ var secretTable = []secretEntry{
 	{"llm.api_key", envLLMAPIKey, func(c *Config) *Secret { return &c.Secrets.LLMAPIKey }},
 	{"gitea.token", envGiteaToken, func(c *Config) *Secret { return &c.Secrets.GiteaToken }},
 	{"bitbucket_server.token", envBitbucketServerToken, func(c *Config) *Secret { return &c.Secrets.BitbucketServerToken }},
+	{"serve.access_token", envServeAccessToken, func(c *Config) *Secret { return &c.Secrets.ServeAccessToken }},
 }
 
 // urlKeys are the keys whose values are URLs (redacted in summaries).

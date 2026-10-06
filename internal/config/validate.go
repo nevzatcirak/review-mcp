@@ -41,6 +41,9 @@ func (l *loader) validate() {
 	if _, err := logging.ParseLevel(c.Log.Level); err != nil {
 		l.problem("log.level: %v", err)
 	}
+	if l.mode == ModeServe {
+		l.validateServe()
+	}
 }
 
 func (l *loader) validateLLM() {
@@ -53,7 +56,9 @@ func (l *loader) validateLLM() {
 	if c.Model == "" && !l.bad["llm.model"] {
 		l.problem("llm.model is required (%s)", keyToEnv["llm.model"])
 	}
-	if !l.cfg.Secrets.LLMAPIKey.IsSet() {
+	// In serve mode the LLM API key rules depend on serve.llm_key_source;
+	// validateServe applies them.
+	if l.mode != ModeServe && !l.cfg.Secrets.LLMAPIKey.IsSet() {
 		l.problem("%s is required (secret; environment only)", envLLMAPIKey)
 	}
 
@@ -103,12 +108,21 @@ func (l *loader) validateProviders() {
 	giteaOn := g.BaseURL != ""
 	bbOn := b.BaseURL != ""
 
+	// In serve mode provider tokens come from request headers: the
+	// environment token must be unset whether or not the provider is enabled
+	// (X-10), and an enabled provider needs only its base URL (X-2).
+	serve := l.mode == ModeServe
+	if serve {
+		l.refuseServeEnvToken(c.Secrets.GiteaToken, envGiteaToken)
+		l.refuseServeEnvToken(c.Secrets.BitbucketServerToken, envBitbucketServerToken)
+	}
+
 	if giteaOn {
 		l.checkURL("gitea.base_url", &g.BaseURL)
-		if !c.Secrets.GiteaToken.IsSet() {
+		if !serve && !c.Secrets.GiteaToken.IsSet() {
 			l.problem("%s is required because gitea.base_url is set", envGiteaToken)
 		}
-	} else if c.Secrets.GiteaToken.IsSet() {
+	} else if !serve && c.Secrets.GiteaToken.IsSet() {
 		l.warn("%s is set but gitea is not enabled (gitea.base_url is unset); the token is ignored", envGiteaToken)
 	}
 	if g.WebURL != "" {
@@ -120,10 +134,10 @@ func (l *loader) validateProviders() {
 
 	if bbOn {
 		l.checkURL("bitbucket_server.base_url", &b.BaseURL)
-		if !c.Secrets.BitbucketServerToken.IsSet() {
+		if !serve && !c.Secrets.BitbucketServerToken.IsSet() {
 			l.problem("%s is required because bitbucket_server.base_url is set", envBitbucketServerToken)
 		}
-	} else if c.Secrets.BitbucketServerToken.IsSet() {
+	} else if !serve && c.Secrets.BitbucketServerToken.IsSet() {
 		l.warn("%s is set but bitbucket_server is not enabled (bitbucket_server.base_url is unset); the token is ignored", envBitbucketServerToken)
 	}
 

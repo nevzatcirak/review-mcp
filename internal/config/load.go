@@ -24,13 +24,37 @@ import (
 // server_info tool) should use the Config and Report anyway; callers that
 // cannot should treat a non-nil error as fatal. The Config must not be used to
 // perform reviews when err != nil.
-func Load(src Source) (*Config, *Report, error) {
+//
+// Load validates for stdio mode; LoadWith takes the mode.
+func Load(src Source) (*Config, *Report, error) { return LoadWith(src, LoadOptions{}) }
+
+// LoadOptions select the mode the configuration is validated for.
+type LoadOptions struct {
+	// Mode is ModeStdio (the zero value) or ModeServe.
+	Mode Mode
+	// Listen, when non-empty, overrides serve.listen (the serve command's
+	// --listen flag). Its source is reported as OriginFlag.
+	Listen string
+}
+
+// LoadWith is Load for the given options. In stdio mode the serve.* keys are
+// read but ignored: they are never validated and a malformed serve.*
+// environment value is not an error. In serve mode the rules of P6 spec §1.2
+// apply on top of the stdio rules, except that the provider tokens (and,
+// with serve.llm_key_source = header, the LLM API key) must be unset because
+// they arrive with each request.
+func LoadWith(src Source, opts LoadOptions) (*Config, *Report, error) {
 	cfg := Defaults()
 	rep := newReport()
-	l := &loader{src: src, cfg: cfg, rep: rep, bad: map[string]bool{}}
+	l := &loader{src: src, cfg: cfg, rep: rep, bad: map[string]bool{}, mode: opts.Mode}
 
 	l.loadFile()
 	l.loadEnv()
+	if opts.Listen != "" {
+		cfg.Serve.Listen = opts.Listen
+		rep.Sources["serve.listen"] = OriginFlag
+		delete(l.bad, "serve.listen")
+	}
 	l.loadSecrets()
 	l.warnUnknownEnv()
 	l.validate()
@@ -53,6 +77,8 @@ type loader struct {
 	// bad marks keys whose layer value was malformed, so validation does not
 	// pile a second, redundant complaint on top.
 	bad map[string]bool
+	// mode selects the mode-specific validation rules.
+	mode Mode
 }
 
 func (l *loader) problem(format string, args ...any) {
@@ -64,7 +90,7 @@ func (l *loader) warn(format string, args ...any) {
 }
 
 // secretKeyRE matches any key whose last segment looks like a credential.
-var secretKeyRE = regexp.MustCompile(`(?i)^(token|secret|password|api_key|apikey)$`)
+var secretKeyRE = regexp.MustCompile(`(?i)^(token|secret|password|api_key|apikey|access_token)$`)
 
 func isSecretKey(key string) bool {
 	last := key
@@ -186,8 +212,11 @@ func (l *loader) loadEnv() {
 			continue
 		}
 		if err := setFromEnv(e.ptr(l.cfg), e.env, raw); err != nil {
-			l.problems = append(l.problems, err.Error())
 			l.bad[e.key] = true
+			if l.mode != ModeServe && isServeKey(e.key) {
+				continue // stdio ignores serve.*: a malformed value is not an error
+			}
+			l.problems = append(l.problems, err.Error())
 			continue
 		}
 		l.rep.Sources[e.key] = OriginEnv

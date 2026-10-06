@@ -338,7 +338,9 @@ func writeJSON(w io.Writer, v any) error {
 
 func diagPR(ctx context.Context, cfg *config.Config, logger *slog.Logger, prURL, showPatch string, stdout, stderr io.Writer) int {
 	start := time.Now()
-	ref, p, err := wiring.NewResolver(cfg, logger).Resolve(prURL)
+	resolver := wiring.NewResolver(cfg, logger)
+	defer resolver.CloseIdleConnections()
+	ref, p, err := resolver.Resolve(prURL)
 	if err != nil {
 		return reportError(stderr, err)
 	}
@@ -374,7 +376,9 @@ func diagPR(ctx context.Context, cfg *config.Config, logger *slog.Logger, prURL,
 // ---- diag comment ----
 
 func diagComment(ctx context.Context, cfg *config.Config, logger *slog.Logger, prURL, body string, stdout, stderr io.Writer) int {
-	ref, p, err := wiring.NewResolver(cfg, logger).Resolve(prURL)
+	resolver := wiring.NewResolver(cfg, logger)
+	defer resolver.CloseIdleConnections()
+	ref, p, err := resolver.Resolve(prURL)
 	if err != nil {
 		return reportError(stderr, err)
 	}
@@ -401,7 +405,9 @@ func diagComment(ctx context.Context, cfg *config.Config, logger *slog.Logger, p
 
 // diagComments prints the structured result of the pr_comments tool.
 func diagComments(ctx context.Context, cfg *config.Config, logger *slog.Logger, prURL string, includeResolved bool, stdout, stderr io.Writer) int {
-	res, err := tools.PRComments(ctx, wiring.NewResolver(cfg, logger), prURL, includeResolved)
+	resolver := wiring.NewResolver(cfg, logger)
+	defer resolver.CloseIdleConnections()
+	res, err := tools.PRComments(ctx, resolver, prURL, includeResolved)
 	if err != nil {
 		return reportError(stderr, err)
 	}
@@ -414,7 +420,9 @@ func diagComments(ctx context.Context, cfg *config.Config, logger *slog.Logger, 
 
 // diagReply prints the structured result of the pr_comment_reply tool.
 func diagReply(ctx context.Context, cfg *config.Config, logger *slog.Logger, prURL, commentID, body string, stdout, stderr io.Writer) int {
-	res, err := tools.PRCommentReply(ctx, wiring.NewResolver(cfg, logger), prURL, commentID, body)
+	resolver := wiring.NewResolver(cfg, logger)
+	defer resolver.CloseIdleConnections()
+	res, err := tools.PRCommentReply(ctx, resolver, prURL, commentID, body)
 	if err != nil {
 		return reportError(stderr, err)
 	}

@@ -160,6 +160,16 @@ type Provider struct {
 
 var _ provider.Provider = (*Provider)(nil)
 
+// CloseIdleConnections closes the idle connections of the provider's
+// per-call HTTP client (provider.IdleCloser). It is safe on a nil provider
+// and may be called more than once.
+func (p *Provider) CloseIdleConnections() {
+	if p == nil {
+		return
+	}
+	p.client.CloseIdleConnections()
+}
+
 // Kind implements provider.Provider.
 func (*Provider) Kind() provider.Kind { return provider.KindBitbucketServer }
 

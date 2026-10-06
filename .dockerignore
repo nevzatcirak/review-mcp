@@ -1,0 +1,9 @@
+.git
+.github
+.claude
+.env
+.env.*
+/review-mcp
+/bin
+/dist
+/npm

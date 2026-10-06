@@ -10,11 +10,13 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/credentials"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 	"github.com/nevzatcirak/review-mcp/internal/tools"
@@ -41,6 +43,57 @@ type Deps struct {
 	// configuration (wiring.NewLLM). It is called once per call, never while
 	// LoadErr is non-nil, and nothing it returns is kept.
 	NewLLM func(cfg *config.Config, logger *slog.Logger) (review.Completer, error)
+	// Serve selects serve mode (X-10): each tool call takes its credentials
+	// from the headers of its own HTTP request (see ConfigFor), a missing
+	// credential fails with credentials_missing before any I/O, and tool
+	// calls pass a concurrency gate sized by Config.Serve.MaxConcurrentCalls.
+	// NewHTTPHandler sets it.
+	Serve bool
+}
+
+// ConfigFor returns the effective configuration of one tool call. It is the
+// single place a tool obtains its configuration (P6 spec §1.1).
+//
+//   - stdio: the startup configuration, unchanged.
+//   - serve: a per-call copy of the startup configuration whose Secrets come
+//     from req's HTTP headers (Config.WithSecrets). The copy is owned by the
+//     call: the resolver and the LLM client are built from it for this call
+//     only, and nothing keeps it after the handler returns.
+//
+// The headers are read through req.Extra.Header, the SDK's view of the HTTP
+// request that carries this call (E1); the map belongs to that request and
+// is only read. Request context values are deliberately not used: the SDK
+// hands the handler a context that does not derive from the HTTP request's
+// (and HTTP cancellation reaches it only with
+// StreamableHTTPOptions.PropagateRequestCancellation on protocol 2026-07-28
+// or later); the existing per-call deadlines bound the work instead.
+//
+// A malformed credential header yields a *credentials.MalformedError. The
+// HTTP middleware rejects such requests before any tool runs, so this is a
+// second line of defence.
+func (d Deps) ConfigFor(_ context.Context, req *mcp.CallToolRequest) (*config.Config, error) {
+	if !d.Serve {
+		return d.Config, nil
+	}
+	base := d.Config
+	if base == nil {
+		base = config.Defaults()
+	}
+	s, err := credentials.Secrets(requestHeader(req), base.Serve.LLMKeySource == config.LLMKeySourceServer,
+		base.Secrets.LLMAPIKey, base.Secrets.ServeAccessToken)
+	if err != nil {
+		return nil, err
+	}
+	return base.WithSecrets(s), nil
+}
+
+// requestHeader returns the HTTP header of the request carrying req, or nil
+// (stdio, or a request without transport metadata).
+func requestHeader(req *mcp.CallToolRequest) http.Header {
+	if req == nil || req.Extra == nil {
+		return nil
+	}
+	return req.Extra.Header
 }
 
 // serverInfoDescription is the one-sentence tool description.
@@ -51,8 +104,11 @@ const serverInfoDescription = "Reports the review-mcp version, enabled providers
 func New(deps Deps) *mcp.Server {
 	s := mcp.NewServer(
 		&mcp.Implementation{Name: tools.ServerName, Version: version.Info().Version},
-		&mcp.ServerOptions{Logger: sdkLogger(deps.Logger)},
+		&mcp.ServerOptions{Logger: sdkLogger(deps.Logger, deps.Serve)},
 	)
+	if deps.Serve {
+		s.AddReceivingMiddleware(concurrencyGate(deps))
+	}
 	registerServerInfo(s, deps)
 	registerPRComments(s, deps)
 	registerPRCommentReply(s, deps)
@@ -75,8 +131,20 @@ func registerServerInfo(s *mcp.Server, deps Deps) {
 			DestructiveHint: &f,
 			OpenWorldHint:   &f,
 		},
-	}, func(context.Context, *mcp.CallToolRequest, serverInfoInput) (*mcp.CallToolResult, tools.ServerInfoResult, error) {
-		res := tools.ServerInfo(deps.Config, deps.Report, deps.LoadErr)
+	}, func(ctx context.Context, req *mcp.CallToolRequest, _ serverInfoInput) (*mcp.CallToolResult, tools.ServerInfoResult, error) {
+		cfg, err := deps.ConfigFor(ctx, req)
+		if err != nil {
+			return nil, tools.ServerInfoResult{}, toolError(tools.UserMessage(err))
+		}
+		res := tools.ServerInfo(cfg, deps.Report, deps.LoadErr)
+		if deps.Serve {
+			res.Serve = &tools.ServeInfo{
+				Transport:      tools.TransportServe,
+				Listen:         cfg.Serve.Listen,
+				LLMKeySource:   cfg.Serve.LLMKeySource,
+				RequestHeaders: credentials.Presence(requestHeader(req)),
+			}
+		}
 		// Content carries the markdown; the SDK fills StructuredContent from
 		// the returned value and validates it against the inferred schema.
 		return &mcp.CallToolResult{

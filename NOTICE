@@ -78,3 +78,16 @@ as new adapted material lands.
 - internal/review/render/provider.go (emoji map and table / details presentation of the provider profile)
 - internal/review/render/testdata/ (golden renderings; the gitea_* files follow upstream's review presentation)
 - internal/ask/render/render.go (the question and answer headings of the Gitea provider profile and the quick-action sanitization of the published text)
+
+Tokenizer vocabulary (third-party data)
+---------------------------------------
+
+review-mcp links the Go module tiktoken-go/tokenizer (MIT License, see
+THIRD_PARTY_LICENSES), which embeds the o200k_base byte-pair-encoding
+vocabulary as Go data. That module generates the vocabulary from the file
+published by OpenAI at
+https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken
+(see internal/cmd/vocab.go in the module). The module's MIT license covers
+its own code; it does not state a license for the vocabulary data, which
+originates from OpenAI's tiktoken project (MIT License, Copyright (c) 2022
+OpenAI, Shantanu Jain). The vocabulary is used only to estimate token counts.

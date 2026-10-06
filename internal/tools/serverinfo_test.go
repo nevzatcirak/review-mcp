@@ -251,3 +251,32 @@ func TestCodeSpan(t *testing.T) {
 		}
 	}
 }
+
+// TestServerInfoReportsServeKeys: the summary lists the serve.* keys and the
+// serve access token as set or unset only (P6 §1.2).
+func TestServerInfoReportsServeKeys(t *testing.T) {
+	const access = "FAKE-serve-access-ZQ7X-do-not-leak" //nolint:gosec // synthetic test value
+	env := validEnv()
+	env["REVIEW_MCP_SERVE_ACCESS_TOKEN"] = access
+	env["REVIEW_MCP_SERVE_LISTEN"] = "127.0.0.1:9000"
+	cfg, rep, err := load(env)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	r := ServerInfo(cfg, rep, nil)
+	if r.Config.Secrets["serve.access_token"] != "set" {
+		t.Errorf("secrets = %v", r.Config.Secrets)
+	}
+	if v := r.Config.Values["serve.listen"]; v.Value != "127.0.0.1:9000" || v.Source != config.OriginEnv {
+		t.Errorf("serve.listen = %+v", v)
+	}
+	md := RenderServerInfoMarkdown(r)
+	if !strings.Contains(md, "`serve.access_token`: set") || !strings.Contains(md, "`serve.max_concurrent_calls` = `4` (default)") {
+		t.Errorf("markdown lacks the serve keys:\n%s", md)
+	}
+	raw, _ := json.Marshal(r)
+	if strings.Contains(string(raw), access) || strings.Contains(md, access) {
+		t.Error("access token leaked")
+	}
+	assertNoSecrets(t, r, md)
+}

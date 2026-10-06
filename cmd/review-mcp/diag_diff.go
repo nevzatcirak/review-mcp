@@ -164,7 +164,9 @@ func diagDiff(ctx context.Context, cfg *config.Config, logger *slog.Logger, prUR
 	if err != nil {
 		return reportError(stderr, err)
 	}
-	ref, p, err := wiring.NewResolver(cfg, logger).Resolve(prURL)
+	resolver := wiring.NewResolver(cfg, logger)
+	defer resolver.CloseIdleConnections()
+	ref, p, err := resolver.Resolve(prURL)
 	if err != nil {
 		return reportError(stderr, err)
 	}

@@ -14,6 +14,9 @@ const (
 	OriginDefault Origin = "default"
 	OriginFile    Origin = "file"
 	OriginEnv     Origin = "env"
+	// OriginFlag marks serve.listen when the serve command's --listen flag
+	// set it.
+	OriginFlag Origin = "flag"
 )
 
 // Report accompanies a loaded Config.

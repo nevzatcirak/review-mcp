@@ -139,6 +139,18 @@ func New(cfg config.LLM, key config.Secret, logger *slog.Logger, opts ...Option)
 	return c, nil
 }
 
+// CloseIdleConnections closes the idle keep-alive connections of the
+// client's own transport, and any connection that becomes idle later. The
+// transport is per client (one per tool call), so this never touches
+// another call's connections. It is safe on a nil or unused client and may
+// be called more than once.
+func (c *Client) CloseIdleConnections() {
+	if c == nil || c.hc == nil {
+		return
+	}
+	c.hc.CloseIdleConnections()
+}
+
 func sleepCtx(ctx context.Context, d time.Duration) error {
 	t := time.NewTimer(d)
 	defer t.Stop()

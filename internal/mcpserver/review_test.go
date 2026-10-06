@@ -64,8 +64,9 @@ const goodAnswer = "```yaml\nreview:\n  estimated_effort_to_review: 2\n  relevan
 
 // fakeServer counts requests and records bodies.
 type fakeServer struct {
-	srv  *httptest.Server
-	hits atomic.Int64
+	srv   *httptest.Server
+	conns *connCounter
+	hits  atomic.Int64
 
 	mu     sync.Mutex
 	bodies []string
@@ -99,7 +100,7 @@ func newFakeGiteaHost(t *testing.T) *fakeServer {
 	t.Helper()
 	f := &fakeServer{}
 	const api = "/api/v1/repos/octo/demo"
-	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	f.srv, f.conns = startCounted(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.record(r)
 		if r.Header.Get("Authorization") != "token "+fakeGitea {
 			http.Error(w, "bad auth", http.StatusUnauthorized)
@@ -153,7 +154,7 @@ type fakeLLMHost struct {
 func newFakeLLMHost(t *testing.T, status int, answer string) *fakeLLMHost {
 	t.Helper()
 	f := &fakeLLMHost{status: status, answer: answer}
-	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	f.srv, f.conns = startCounted(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.record(r)
 		if f.status != http.StatusOK {
 			http.Error(w, f.answer, f.status)
@@ -705,7 +706,7 @@ func TestSDKLogsCarryNoArgumentsOrResults(t *testing.T) {
 func TestSDKLogFilter(t *testing.T) {
 	var logs syncBuffer
 	base := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	sdk := sdkLogger(base)
+	sdk := sdkLogger(base, false)
 	sdk.Error("jsonrpc2 internal error", "error", fmt.Errorf("handler returned a result: %#v", map[string]string{"k": argMarker}))
 	sdk.Debug("a debug record", "arguments", argMarker, "result", bodyMarker, "session_id", "abc")
 	sdk.With("bound", argMarker).Info("bound attr", "request_id", "7")
@@ -722,7 +723,7 @@ func TestSDKLogFilter(t *testing.T) {
 			t.Errorf("filtered log lacks %q:\n%s", want, out)
 		}
 	}
-	if sdkLogger(nil) != nil {
+	if sdkLogger(nil, false) != nil || sdkLogger(nil, true) != nil {
 		t.Error("a nil logger must stay nil")
 	}
 }

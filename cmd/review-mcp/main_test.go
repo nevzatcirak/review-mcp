@@ -16,7 +16,8 @@ func TestRun(t *testing.T) {
 	}{
 		{"stdio bad flag", []string{"stdio", "-bogus"}, 2, "", "flag provided but not defined"},
 		{"version", []string{"version"}, 0, "review-mcp ", ""},
-		{"serve", []string{"serve"}, 2, "", "serve mode is not available in this version"},
+		{"serve bad flag", []string{"serve", "-bogus"}, 2, "", "flag provided but not defined"},
+		{"serve extra argument", []string{"serve", "extra"}, 2, "", "serve takes no arguments"},
 		{"unknown", []string{"bogus"}, 2, "", "usage:"},
 	}
 	for _, tc := range tests {

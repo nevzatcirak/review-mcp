@@ -243,3 +243,47 @@ func TestResolveFactoryErrorPropagates(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+// closingProvider counts CloseIdleConnections calls.
+type closingProvider struct {
+	fakeProvider
+	closes *atomic.Int64
+}
+
+func (p closingProvider) CloseIdleConnections() { p.closes.Add(1) }
+
+type closingFactory struct {
+	*fakeFactory
+	closes *atomic.Int64
+}
+
+func (f closingFactory) New(*config.Config, *slog.Logger) (Provider, error) {
+	return closingProvider{fakeProvider{f.kind}, f.closes}, nil
+}
+
+func TestResolverCloseIdleConnectionsClosesBuiltProviders(t *testing.T) {
+	var nilResolver *Resolver
+	nilResolver.CloseIdleConnections()
+
+	closes := &atomic.Int64{}
+	r := NewResolver(cfgFor("https://your-gitea.example", "", "https://bitbucket.example.com"), nil,
+		closingFactory{&fakeFactory{kind: KindGitea}, closes}, &fakeFactory{kind: KindBitbucketServer})
+	r.CloseIdleConnections() // unused: nothing to close
+	for range 2 {
+		if _, _, err := r.Resolve("https://your-gitea.example/octo/demo/pulls/7"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A provider without CloseIdleConnections is skipped.
+	if _, _, err := r.Resolve("https://bitbucket.example.com/octo/demo/pulls/7"); err != nil {
+		t.Fatal(err)
+	}
+	r.CloseIdleConnections()
+	if got := closes.Load(); got != 2 {
+		t.Fatalf("CloseIdleConnections reached %d providers, want 2", got)
+	}
+	r.CloseIdleConnections() // a second call closes nothing twice
+	if got := closes.Load(); got != 2 {
+		t.Fatalf("second CloseIdleConnections: %d closes, want still 2", got)
+	}
+}

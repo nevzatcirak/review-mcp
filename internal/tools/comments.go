@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nevzatcirak/review-mcp/internal/ask"
+	"github.com/nevzatcirak/review-mcp/internal/credentials"
 	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/mdutil"
@@ -363,6 +364,14 @@ func UserMessage(err error) string {
 	var ae *ArgumentError
 	if errors.As(err, &ae) {
 		return ae.Error()
+	}
+	var rqe *RequestError
+	if errors.As(err, &rqe) {
+		return rqe.UserMessage()
+	}
+	var me *credentials.MalformedError
+	if errors.As(err, &me) {
+		return me.UserMessage()
 	}
 	var qe *ask.QuestionError
 	if errors.As(err, &qe) {

@@ -1,0 +1,64 @@
+# GoReleaser v2 configuration for review-mcp.
+#
+# Release notes are not generated here: the release workflow extracts the
+# matching section of CHANGELOG.md with scripts/release-notes.sh and passes it
+# to GoReleaser through --release-notes (see .github/workflows/release.yml).
+version: 2
+
+project_name: review-mcp
+
+builds:
+  - id: review-mcp
+    main: ./cmd/review-mcp
+    binary: review-mcp
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -buildid=
+      - -X github.com/nevzatcirak/review-mcp/internal/version.Version={{.Version}}
+      - -X github.com/nevzatcirak/review-mcp/internal/version.Commit={{.FullCommit}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: review-mcp
+    ids:
+      - review-mcp
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - NOTICE
+      - THIRD_PARTY_LICENSES
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+# Release notes come from CHANGELOG.md through --release-notes.
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: nevzatcirak
+    name: review-mcp
+  # A tag with a pre-release suffix (v1.0.0-rc.1) is published as a pre-release.
+  prerelease: auto
+
+snapshot:
+  version_template: "{{ .Version }}-SNAPSHOT-{{ .ShortCommit }}"

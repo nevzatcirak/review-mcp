@@ -335,6 +335,54 @@ func TestPRReviewPublish(t *testing.T) {
 	}
 }
 
+// TestPRReviewLinksOnlyFilesOfThePR: findings on a path outside the PR (a
+// ".." path and a file the PR does not contain) carry no link in the
+// structured result, the client markdown or the published comment, while the
+// finding on a PR file keeps its link (architect review C1).
+func TestPRReviewLinksOnlyFilesOfThePR(t *testing.T) {
+	answer := "```yaml\nreview:\n  key_issues_to_review:\n" +
+		"    - relevant_file: src/app.go\n      issue_header: Real\n      issue_content: On a PR file.\n      start_line: 2\n      end_line: 2\n" +
+		"    - relevant_file: ../../evil/x.go\n      issue_header: Escaping\n      issue_content: Outside the repository.\n      start_line: 3\n      end_line: 3\n" +
+		"    - relevant_file: not/in/pr.go\n      issue_header: Missing\n      issue_content: Not in the PR.\n      start_line: 4\n      end_line: 4\n" +
+		"```\n"
+	g, l := newFakeGiteaHost(t), newFakeLLMHost(t, 200, answer)
+	cs := connect(t, realDeps(reviewEnv(g, l), nil))
+	res := callTool(t, cs, "pr_review", map[string]any{"pr_url": reviewPRURL(g), "publish": true})
+	if res.IsError {
+		t.Fatalf("tool error: %s", textOf(t, res))
+	}
+	var got review.Result
+	decodeStructured(t, res, &got)
+	if got.Review == nil || len(got.Review.KeyIssuesToReview) != 3 {
+		t.Fatalf("structured = %+v", got.Review)
+	}
+	for _, ki := range got.Review.KeyIssuesToReview {
+		if want := ki.RelevantFile == "src/app.go"; (ki.Link != "") != want {
+			t.Errorf("finding on %q: link %q, want a link = %v", ki.RelevantFile, ki.Link, want)
+		}
+	}
+	const linkPart = "/src/commit/headsha/"
+	var published string
+	for _, b := range g.recorded() {
+		if strings.Contains(b, "Escaping") {
+			published = b
+		}
+	}
+	if published == "" {
+		t.Fatal("the review was not published")
+	}
+	for name, out := range map[string]string{"client markdown": textOf(t, res), "published comment": published} {
+		if n := strings.Count(out, linkPart); n != 1 {
+			t.Errorf("%s has %d file links, want exactly 1 (src/app.go)", name, n)
+		}
+		for _, bad := range []string{linkPart + "..", "evil/x.go#L", "not/in/pr.go#L"} {
+			if strings.Contains(out, bad) {
+				t.Errorf("%s links a file outside the PR (%q)", name, bad)
+			}
+		}
+	}
+}
+
 // TestPRReviewValidation: invalid arguments are rejected with fixed sentences
 // before any request to either fake.
 func TestPRReviewValidation(t *testing.T) {

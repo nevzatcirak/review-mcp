@@ -444,6 +444,45 @@ func TestRunDoesNotFit(t *testing.T) {
 	})
 }
 
+// findingsAnswer is a valid answer whose findings name the given files.
+func findingsAnswer(files ...string) string {
+	var b strings.Builder
+	b.WriteString("```yaml\nreview:\n  key_issues_to_review:\n")
+	for _, f := range files {
+		fmt.Fprintf(&b, "    - relevant_file: %s\n      issue_header: Issue\n      issue_content: Something is wrong.\n"+
+			"      start_line: 10\n      end_line: 10\n", f)
+	}
+	b.WriteString("```\n")
+	return b.String()
+}
+
+// TestRunLinksOnlyFilesOfThePR: a finding whose relevant_file is not a
+// reviewable file of the PR (a path escaping with "..", or one that does not
+// exist) gets no link; a matched finding in the same answer keeps its link
+// (architect review C1).
+func TestRunLinksOnlyFilesOfThePR(t *testing.T) {
+	h := newHarness(findingsAnswer("src/app.go", "../../evil/x.go", "not/in/pr.go"))
+	res, err := Run(context.Background(), h.deps, Args{PRURL: testPRURL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kis := res.Review.KeyIssuesToReview
+	if len(kis) != 3 {
+		t.Fatalf("findings = %d, want 3", len(kis))
+	}
+	if kis[0].Link == "" {
+		t.Errorf("the finding on a PR file lost its link")
+	}
+	for _, ki := range kis[1:] {
+		if ki.Link != "" {
+			t.Errorf("finding on %q has link %q, want none", ki.RelevantFile, ki.Link)
+		}
+		if ki.RelevantFile == "" || ki.StartLine != 10 {
+			t.Errorf("finding lost its file or line: %+v", ki)
+		}
+	}
+}
+
 func TestRunTruncatedNote(t *testing.T) {
 	h := newHarness(goodAnswer)
 	h.llm.truncated = []bool{true}

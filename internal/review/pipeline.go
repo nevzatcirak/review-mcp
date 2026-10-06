@@ -348,12 +348,19 @@ func (pl *Plan) finish(ctx context.Context, deps Deps, args Args) (*Result, erro
 		// chose an exact match (after trimming) against the paths of the
 		// PR's reviewable files, because any normalization (a "./" or "a/"
 		// prefix, a basename) could pick the wrong file and show unrelated
-		// lines; an unmatched file keeps the finding without a snippet.
-		ki.Snippet, ki.SnippetNote = snippet(files[ki.RelevantFile], ki.StartLine, ki.EndLine)
+		// lines; an unmatched file keeps the finding without a snippet or link.
+		fp := files[ki.RelevantFile]
+		ki.Snippet, ki.SnippetNote = snippet(fp, ki.StartLine, ki.EndLine)
 		if ki.SnippetNote == SnippetNoteUnverified {
 			unverified++
 		}
-		ki.Link = p.FileLineURL(ref, pr, ki.RelevantFile, ki.StartLine)
+		// The path is model-authored: link only a file the PR contains. A
+		// hallucinated path (for example one with ".." segments, which
+		// browsers resolve to another location on the same host) keeps its
+		// file and line text but gets no link.
+		if fp != nil {
+			ki.Link = p.FileLineURL(ref, pr, ki.RelevantFile, ki.StartLine)
+		}
 	}
 	res.Review = rev
 	log.Debug("review: done", "findings", len(rev.KeyIssuesToReview), "unverified_snippets", unverified,

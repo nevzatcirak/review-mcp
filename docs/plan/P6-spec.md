@@ -230,7 +230,7 @@ The phase ends with the first release candidate, `v1.0.0-rc.1`. The owner runs t
   1. build the npm tarballs from the snapshot output with `npm pack`;
   2. install them into an empty directory with `--ignore-scripts`;
   3. run `npx review-mcp version`;
-  4. run a stdio `initialize` → `tools/list` round trip through the launcher, expecting the six v1 tools.
+  4. run a stdio `initialize` → `tools/list` round trip through the launcher, expecting the five v1 tools (`server_info`, `pr_comments`, `pr_comment_reply`, `pr_review`, `pr_ask`; corrected at the P6 review).
 
 ### 3.4 Publishing (in `release.yml`, after GoReleaser)
 - `npm/scripts/build-packages.mjs` assembles the seven package directories from `dist/` and sets the version from the tag.

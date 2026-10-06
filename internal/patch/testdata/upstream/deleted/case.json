@@ -1,0 +1,12 @@
+{
+  "path": "old/legacy.py",
+  "old_path": "",
+  "type": "deleted",
+  "head_status": "not_applicable",
+  "before": 5,
+  "after": 1,
+  "skip_extend_extensions": [
+    ".md",
+    ".txt"
+  ]
+}

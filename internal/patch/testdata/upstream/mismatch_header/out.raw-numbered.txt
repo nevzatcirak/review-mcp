@@ -1,0 +1,21 @@
+
+
+## File: 'src/mismatch.py'
+
+@@ -14,7 +14,7 @@ def run():
+__new hunk__
+14      value_11 = compute(11)
+15      value_12 = compute(12)
+16      value_13 = compute(13)
+17 +    value_14 = compute(140)
+18      value_15 = compute(15)
+19      value_16 = compute(16)
+20      value_17 = compute(17)
+__old hunk__
+     value_11 = compute(11)
+     value_12 = compute(12)
+     value_13 = compute(13)
+-    value_14 = compute(14)
+     value_15 = compute(15)
+     value_16 = compute(16)
+     value_17 = compute(17)

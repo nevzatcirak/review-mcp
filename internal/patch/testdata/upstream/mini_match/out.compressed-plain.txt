@@ -1,0 +1,10 @@
+
+
+## File: 'src/mini.py'
+
+@@ -10 +10 @@ def run():
+-    value_9 = compute(9)
++    value_9 = compute(900)
+@@ -13 +13 @@ def run():
+-    value_12 = compute(12)
++    value_12 = compute(1200)

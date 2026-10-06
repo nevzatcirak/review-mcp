@@ -1,0 +1,21 @@
+
+
+## File: 'src/ctxonly.py'
+
+@@ -3,7 +3,7 @@ def run():
+__new hunk__
+3      value_2 = compute(2)
+4      value_3 = compute(3)
+5      value_4 = compute(4)
+6 +    value_5 = compute(50)
+7      value_6 = compute(6)
+8      value_7 = compute(7)
+9      value_8 = compute(8)
+__old hunk__
+     value_2 = compute(2)
+     value_3 = compute(3)
+     value_4 = compute(4)
+-    value_5 = compute(5)
+     value_6 = compute(6)
+     value_7 = compute(7)
+     value_8 = compute(8)

@@ -1,0 +1,22 @@
+
+
+## File: 'src/service/handler.py'
+
+@@ -12,7 +12,8 @@ def run():
+__new hunk__
+12      value_11 = compute(11)
+13      value_12 = compute(12)
+14      value_13 = compute(13)
+15 +    value_14 = compute(14) + 1
+16 +    extra = value_14 * 2
+17      value_15 = compute(15)
+18      value_16 = compute(16)
+19      value_17 = compute(17)
+__old hunk__
+     value_11 = compute(11)
+     value_12 = compute(12)
+     value_13 = compute(13)
+-    value_14 = compute(14)
+     value_15 = compute(15)
+     value_16 = compute(16)
+     value_17 = compute(17)

@@ -1,0 +1,11 @@
+
+
+## File: 'src/app.go'
+
+@@ -1,5 +1,5 @@
+ def run():
+-    value_1 = compute(1)
++    value_1 = compute(100)
+     value_2 = compute(2)
+     value_3 = compute(3)
+     value_4 = compute(4)

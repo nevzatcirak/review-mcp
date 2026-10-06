@@ -1,0 +1,11 @@
+
+
+## File: 'cmd/helper.go'
+
+@@ -0,0 +1,5 @@
+__new hunk__
+1 +package main
+2 +
+3 +func helper() int {
+4 +	return 1
+5 +}

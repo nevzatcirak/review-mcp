@@ -1,0 +1,6 @@
+@@ -9 +9 @@
+-    value_8 = compute(8)
++    value_8 = compute(80)
+@@ -21 +21 @@
+-    value_20 = compute(20)
++    value_20 = compute(200)

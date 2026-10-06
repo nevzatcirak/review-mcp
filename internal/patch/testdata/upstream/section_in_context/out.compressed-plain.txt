@@ -1,0 +1,13 @@
+
+
+## File: 'src/section.py'
+
+@@ -9,7 +9,7 @@ def handle(request):
+     step_5 = request.get(5)
+     step_6 = request.get(6)
+     step_7 = request.get(7)
+-    step_8 = request.get(8)
++    step_8 = request.get(800)
+     step_9 = request.get(9)
+     step_10 = request.get(10)
+     step_11 = request.get(11)

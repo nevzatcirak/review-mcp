@@ -1,0 +1,12 @@
+{
+  "path": "src/pages.py",
+  "old_path": "",
+  "type": "modified",
+  "head_status": "full",
+  "before": 8,
+  "after": 2,
+  "skip_extend_extensions": [
+    ".md",
+    ".txt"
+  ]
+}

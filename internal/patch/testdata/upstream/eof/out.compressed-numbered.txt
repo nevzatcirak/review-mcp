@@ -1,0 +1,16 @@
+
+
+## File: 'lib/util.js'
+
+@@ -27,4 +27,5 @@ def run():
+__new hunk__
+27      value_26 = compute(26)
+28      value_27 = compute(27)
+29      value_28 = compute(28)
+30 +    value_29 = compute(290)
+31 +    return value_29
+__old hunk__
+     value_26 = compute(26)
+     value_27 = compute(27)
+     value_28 = compute(28)
+-    value_29 = compute(29)

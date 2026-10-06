@@ -1,0 +1,10 @@
+
+
+## File: 'src/nomini.py'
+
+@@ -0,0 +1,2 @@
++# top a
++# top b
+@@ -3 +5 @@ def run():
+-    value_2 = compute(2)
++    value_2 = compute(200)

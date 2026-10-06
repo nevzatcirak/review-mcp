@@ -1,0 +1,20 @@
+
+
+## File: 'pkg/store/cache.go'
+
+@@ -13,12 +13,14 @@ def run():
+__new hunk__
+13      value_12 = compute(12)
+14      value_13 = compute(13)
+15      value_14 = compute(14)
+16      value_15 = compute(15)
+17      value_16 = compute(16)
+18      value_17 = compute(17)
+19      value_18 = compute(18)
+20      value_19 = compute(19)
+21 +    added_a = 1
+22 +    added_b = 2
+23      value_20 = compute(20)
+24      value_21 = compute(21)
+25      value_22 = compute(22)
+26      value_23 = compute(23)

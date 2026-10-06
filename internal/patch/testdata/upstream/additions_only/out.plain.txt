@@ -1,0 +1,19 @@
+
+
+## File: 'pkg/store/cache.go'
+
+@@ -13,12 +13,14 @@ def run():
+     value_12 = compute(12)
+     value_13 = compute(13)
+     value_14 = compute(14)
+     value_15 = compute(15)
+     value_16 = compute(16)
+     value_17 = compute(17)
+     value_18 = compute(18)
+     value_19 = compute(19)
++    added_a = 1
++    added_b = 2
+     value_20 = compute(20)
+     value_21 = compute(21)
+     value_22 = compute(22)
+     value_23 = compute(23)

@@ -1,0 +1,8 @@
+
+
+## File: 'src/start0.py'
+
+@@ -0,0 +1,2 @@
+__new hunk__
+1 +# header a
+2 +# header b

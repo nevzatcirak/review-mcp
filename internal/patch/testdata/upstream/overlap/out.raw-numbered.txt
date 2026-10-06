@@ -1,0 +1,39 @@
+
+
+## File: 'src/overlap.py'
+
+@@ -7,7 +7,7 @@ def run():
+__new hunk__
+7      value_6 = compute(6)
+8      value_7 = compute(7)
+9      value_8 = compute(8)
+10 +    value_9 = compute(90)
+11      value_10 = compute(10)
+12      value_11 = compute(11)
+13      value_12 = compute(12)
+__old hunk__
+     value_6 = compute(6)
+     value_7 = compute(7)
+     value_8 = compute(8)
+-    value_9 = compute(9)
+     value_10 = compute(10)
+     value_11 = compute(11)
+     value_12 = compute(12)
+
+@@ -15,7 +15,7 @@ def run():
+__new hunk__
+15      value_14 = compute(14)
+16      value_15 = compute(15)
+17      value_16 = compute(16)
+18 +    value_17 = compute(170)
+19      value_18 = compute(18)
+20      value_19 = compute(19)
+21      value_20 = compute(20)
+__old hunk__
+     value_14 = compute(14)
+     value_15 = compute(15)
+     value_16 = compute(16)
+-    value_17 = compute(17)
+     value_18 = compute(18)
+     value_19 = compute(19)
+     value_20 = compute(20)

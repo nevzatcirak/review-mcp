@@ -1,0 +1,30 @@
+
+
+## File: 'src/prune.py'
+
+@@ -1,9 +1,8 @@ 
+ def run():
+     value_1 = compute(1)
+     value_2 = compute(2)
+     value_3 = compute(3)
+-    value_4 = compute(4)
+     value_5 = compute(5)
+     value_6 = compute(6)
+     value_7 = compute(7)
+     value_8 = compute(8)
+
+
+@@ -14,13 +13,12 @@ def run():
+     value_13 = compute(13)
+     value_14 = compute(14)
+     value_15 = compute(15)
+     value_16 = compute(16)
+     value_17 = compute(17)
+     value_18 = compute(18)
+     value_19 = compute(19)
+     value_20 = compute(20)
+-    value_21 = compute(21)
+     value_22 = compute(22)
+     value_23 = compute(23)
+     value_24 = compute(24)
+     value_25 = compute(25)

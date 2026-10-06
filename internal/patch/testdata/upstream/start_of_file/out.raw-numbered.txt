@@ -1,0 +1,17 @@
+
+
+## File: 'src/app.go'
+
+@@ -1,5 +1,5 @@
+__new hunk__
+1  def run():
+2 +    value_1 = compute(100)
+3      value_2 = compute(2)
+4      value_3 = compute(3)
+5      value_4 = compute(4)
+__old hunk__
+ def run():
+-    value_1 = compute(1)
+     value_2 = compute(2)
+     value_3 = compute(3)
+     value_4 = compute(4)

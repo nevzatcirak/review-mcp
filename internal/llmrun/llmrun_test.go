@@ -12,6 +12,20 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 )
 
+// TestClassValues pins the user-visible class values (X-6). The
+// does-not-fit class is shared by pr_review and pr_ask and names the diff,
+// not a tool.
+func TestClassValues(t *testing.T) {
+	for got, want := range map[ErrorClass]string{
+		ClassConfigInvalid: "config_invalid",
+		ClassDoesNotFit:    "diff_does_not_fit",
+	} {
+		if string(got) != want {
+			t.Errorf("class = %q, want %q", got, want)
+		}
+	}
+}
+
 func TestErrorClasses(t *testing.T) {
 	for _, e := range []*Error{ErrConfigInvalid, ErrDoesNotFit} {
 		if e.UserMessage() == "" || e.UserMessage() != e.Error() {

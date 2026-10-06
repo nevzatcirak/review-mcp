@@ -287,7 +287,7 @@ setting to check may follow.
 | the LLM request timed out | `llm_timeout` | Raise `llm.timeout_seconds`; large reviews on slow models take minutes. |
 | could not complete the request to the LLM endpoint | `llm_transport` | Network, DNS, TLS or proxy problem between you and the endpoint. |
 | the LLM endpoint sent an unexpected response | `llm_protocol` | The endpoint is not OpenAI-compatible at `llm.base_url`, or it answered with an empty message. |
-| the pull request diff does not fit the configured context window | `review_does_not_fit` | Raise `llm.context_window`, or narrow the PR. Nothing was sent to the model. |
+| the pull request diff does not fit the configured context window | `diff_does_not_fit` | Raise `llm.context_window`, or narrow the PR. Nothing was sent to the model. Applies to `pr_review` and `pr_ask`. |
 | the model's answer could not be parsed as a review, also after one retry | `review_unparseable` | Try again, or use a model that follows YAML output instructions. |
 | output_language must be a locale code such as en-US or tr-TR / max_findings must be an integer from 1 to 20 | (argument) | Fix the argument; nothing was sent anywhere. |
 

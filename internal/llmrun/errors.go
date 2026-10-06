@@ -19,12 +19,9 @@ const (
 	// nothing was sent anywhere.
 	ClassConfigInvalid ErrorClass = "config_invalid"
 	// ClassDoesNotFit: the prompt and the output reserve leave no room for
-	// the diff, or nothing of it fits.
-	//
-	// DESIGN-QUESTION: is the class value renamed now that pr_ask shares it?
-	// — chose to keep "review_does_not_fit" because the value is part of
-	// pr_review's observable behaviour and the extraction must not change it.
-	ClassDoesNotFit ErrorClass = "review_does_not_fit"
+	// the diff, or nothing of it fits. pr_review and pr_ask share it, so
+	// the value names the diff, not a tool (architect review, P5 C1).
+	ClassDoesNotFit ErrorClass = "diff_does_not_fit"
 )
 
 // Fixed client-facing sentences of the shared classes (X-6). The

@@ -1,0 +1,10 @@
+{
+  "extra_instructions": "",
+  "language": "en-US",
+  "title": "Retry failed HTTP requests",
+  "branch": "feature/http-retry",
+  "description": "",
+  "question": "Does the retry loop close the response body on every attempt?",
+  "main_language": "Go",
+  "diff": "## File: 'internal/httpx/retry.go'\n\n@@ -10,6 +10,12 @@ func Do(c *Client, req *Request) error {\n \tvar lastErr error\n+\tfor attempt := 0; attempt < c.maxRetries; attempt++ {\n+\t\tresp, err := c.send(req)\n+\t\tif err == nil {\n+\t\t\treturn resp.Body.Close()\n+\t\t}\n+\t\tlastErr = err\n+\t}\n-\tresp, err := c.send(req)\n-\t_ = resp\n \treturn lastErr"
+}

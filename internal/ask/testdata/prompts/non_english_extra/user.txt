@@ -1,0 +1,42 @@
+PR Info:
+
+Title: 'Retry failed HTTP requests'
+
+Branch: 'feature/http-retry'
+
+Description:
+======
+Adds a bounded retry loop to the HTTP client.
+
+Closes the body on success.
+======
+
+Main PR language: 'Go'
+
+
+The PR Git Diff:
+======
+## File: 'internal/httpx/retry.go'
+
+@@ -10,6 +10,12 @@ func Do(c *Client, req *Request) error {
+ 	var lastErr error
++	for attempt := 0; attempt < c.maxRetries; attempt++ {
++		resp, err := c.send(req)
++		if err == nil {
++			return resp.Body.Close()
++		}
++		lastErr = err
++	}
+-	resp, err := c.send(req)
+-	_ = resp
+ 	return lastErr
+======
+Note that lines in the diff body are prefixed with a symbol that represents the type of change: '-' for deletions, '+' for additions, and ' ' (a space) for unchanged lines
+
+
+The PR Questions:
+======
+Does the retry loop close the response body on every attempt?
+======
+
+Response to the PR Questions:

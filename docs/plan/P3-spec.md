@@ -158,7 +158,10 @@
   - `\ No newline` lines dropped;
   - the deleted-file line;
   - the skip rules for malformed pseudo-hunks.
-- **Unreadable notice:** when the provider's `HeadStatus` is `fetch_failed` for a file whose patch exists, render upstream's "could not be read … flag it for manual review" notice text in place of a silent drop. Use the exact upstream wording.
+- **Unreadable notice** (amended after the P3 review, D3/D4):
+  - Render the notice only when the provider's `HeadStatus` is `fetch_failed` **and** the patch has no hunks. This matches upstream's own trigger at `8e5a929`.
+  - A file with a valid patch is rendered normally. It stays unextended, because its head content is missing.
+  - The wording is upstream's "could not be read … flag it for manual review" text, with the product name changed to "review-mcp" (D4).
 - All literal strings live in `internal/patch/literals.go` (§0.2).
 - **[canary]** The numbered render of a fixture must equal the oracle golden byte for byte. Prove it by introducing an off-by-one in the line numbering.
 

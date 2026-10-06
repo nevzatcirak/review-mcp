@@ -24,3 +24,14 @@ studied during the porting research.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Development
+
+Requires Go 1.25 or newer and [golangci-lint](https://golangci-lint.run/) v2.
+
+```sh
+make build   # build ./review-mcp with version/commit embedded
+make test    # go test -race ./...
+make lint    # golangci-lint run ./...
+make fmt     # gofmt -w .
+```

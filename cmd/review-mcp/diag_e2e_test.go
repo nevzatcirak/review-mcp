@@ -90,6 +90,56 @@ func TestE2EDiagLeak(t *testing.T) {
 			t.Errorf("stdout = %q", out)
 		}
 	})
+	t.Run("comments", func(t *testing.T) {
+		for name, tc := range map[string]struct{ url, kind string }{
+			"gitea":     {g.giteaPR(), "gitea"},
+			"bitbucket": {b.bbsPR(), "bitbucket_server"},
+		} {
+			code, out, errs := runBinary(t, bin, env, "diag", "comments", tc.url, "--include-resolved")
+			check(t, code, out, errs, 0)
+			checkCommentStreams(t, out, errs)
+			res := decodeComments(t, out)
+			if res.PR.Kind != tc.kind || len(res.Threads) < 2 {
+				t.Errorf("%s: kind %q threads %d", name, res.PR.Kind, len(res.Threads))
+			}
+			// The bodies must be on stdout (else the stderr check is vacuous)
+			// and the debug log must have run.
+			if !strings.Contains(out, commentBodyMarker) || !strings.Contains(errs, "level=DEBUG") {
+				t.Errorf("%s: vacuous leak check; stdout has marker %v, stderr has debug %v",
+					name, strings.Contains(out, commentBodyMarker), strings.Contains(errs, "level=DEBUG"))
+			}
+		}
+	})
+	t.Run("reply", func(t *testing.T) {
+		code, out, errs := runBinary(t, bin, env, "diag", "reply", g.giteaPR(), "--comment-id", "201", "--body", "thanks")
+		check(t, code, out, errs, 0)
+		checkCommentStreams(t, out, errs)
+		if m := decodeReply(t, out); m["in_thread"] != false || !strings.Contains(errs, "level=DEBUG") {
+			t.Errorf("gitea reply: %v\n%s", m, errs)
+		}
+		code, out, errs = runBinary(t, bin, env, "diag", "reply", b.bbsPR(), "--comment-id", "10", "--body", "thanks")
+		check(t, code, out, errs, 0)
+		checkCommentStreams(t, out, errs)
+		if m := decodeReply(t, out); m["in_thread"] != true || !strings.Contains(errs, "level=DEBUG") {
+			t.Errorf("bitbucket reply: %v\n%s", m, errs)
+		}
+		// Error path: the fixed sentence only.
+		bad := newFakeGitea(t)
+		bad.failStatus.Store(401)
+		code, out, errs = runBinary(t, bin, diagEnv(bad, nil), "diag", "reply", bad.giteaPR(), "--comment-id", "101", "--body", "x")
+		check(t, code, out, errs, 1)
+		if want := (&provider.Error{Class: provider.ClassAuth, Status: 401}).Error(); out != "" || !hasLine(errs, want) {
+			t.Errorf("stdout %q; stderr lacks %q:\n%s", out, want, errs)
+		}
+	})
+	t.Run("comments usage", func(t *testing.T) {
+		before := g.requests() + b.requests()
+		code, out, errs := runBinary(t, bin, env, "diag", "reply", g.giteaPR(), "--comment-id", "abc", "--body", "x")
+		check(t, code, out, errs, 2)
+		if out != "" || !strings.Contains(errs, "usage:") || g.requests()+b.requests() != before {
+			t.Errorf("stdout %q stderr %q", out, errs)
+		}
+	})
 	t.Run("401 from the fake", func(t *testing.T) {
 		bad := newFakeGitea(t)
 		bad.failStatus.Store(401)

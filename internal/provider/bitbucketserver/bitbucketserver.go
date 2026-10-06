@@ -309,12 +309,18 @@ func (p *Provider) PostComment(ctx context.Context, ref provider.PRRef, body str
 	}
 	// The comment already exists at this point, so a response without an id
 	// is not turned into an error (a retry would post a duplicate).
+	return p.newComment(ref, out.ID), nil
+}
+
+// newComment builds the Comment for id; without an id the URL has no
+// commentId parameter.
+func (p *Provider) newComment(ref provider.PRRef, id int64) *provider.Comment {
 	c := &provider.Comment{URL: p.prWebURL(ref) + "/overview"}
-	if out.ID != 0 {
-		c.ID = strconv.FormatInt(out.ID, 10)
+	if id != 0 {
+		c.ID = strconv.FormatInt(id, 10)
 		c.URL += "?commentId=" + c.ID
 	}
-	return c, nil
+	return c
 }
 
 // prWebURL returns {base_url}/projects/{K}/repos/{s}/pull-requests/{id}

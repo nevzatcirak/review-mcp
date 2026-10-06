@@ -16,16 +16,25 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/tools"
+	"github.com/nevzatcirak/review-mcp/internal/wiring"
 )
 
 const diagUsageText = `usage:
   review-mcp diag pr <PR_URL> [--show-patch <path>]
   review-mcp diag comment <PR_URL> --body <TEXT>
+  review-mcp diag comments <PR_URL> [--include-resolved]
+  review-mcp diag reply <PR_URL> --comment-id <ID> --body <TEXT>
 
 diag pr       fetch a pull request and print a JSON connectivity report;
               --show-patch prints the hunk-only patch of one changed file
               (matched by its "path" in the report) after the JSON
 diag comment  post one PR-level comment and print {"id": ..., "url": ...}
+diag comments list the comment threads (the pr_comments structured result) as
+              JSON; resolved threads are hidden unless --include-resolved
+diag reply    reply to the comment --comment-id and print
+              {"id": ..., "url": ..., "in_thread": ...}; in_thread is false when
+              the provider posted a PR-level comment quoting the original
 `
 
 func diagUsage(w io.Writer) { _, _ = fmt.Fprint(w, diagUsageText) }
@@ -81,6 +90,49 @@ func runDiag(args []string, stdout, stderr io.Writer, load configLoader) int {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
 		return diagComment(ctx, cfg, logger, prURL, *body, stdout, stderr)
+	case "comments":
+		fs := flag.NewFlagSet("diag comments", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		fs.Usage = func() { diagUsage(stderr) }
+		includeResolved := fs.Bool("include-resolved", false, "also list resolved threads")
+		prURL, ok := parseDiagArgs(fs, rest, stderr)
+		if !ok {
+			return 2
+		}
+		cfg, logger, code := diagSetup(load, stderr)
+		if cfg == nil {
+			return code
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		return diagComments(ctx, cfg, logger, prURL, *includeResolved, stdout, stderr)
+	case "reply":
+		fs := flag.NewFlagSet("diag reply", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		fs.Usage = func() { diagUsage(stderr) }
+		commentID := fs.String("comment-id", "", "`id` of the comment to reply to (a positive integer)")
+		body := fs.String("body", "", "reply `text` (required, posted verbatim)")
+		prURL, ok := parseDiagArgs(fs, rest, stderr)
+		if !ok {
+			return 2
+		}
+		if !provider.IsPositiveInt(*commentID) {
+			_, _ = fmt.Fprintln(stderr, "diag reply: --comment-id is required and must be a positive integer")
+			diagUsage(stderr)
+			return 2
+		}
+		if strings.TrimSpace(*body) == "" {
+			_, _ = fmt.Fprintln(stderr, "diag reply: --body is required and must not be empty")
+			diagUsage(stderr)
+			return 2
+		}
+		cfg, logger, code := diagSetup(load, stderr)
+		if cfg == nil {
+			return code
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		return diagReply(ctx, cfg, logger, prURL, *commentID, *body, stdout, stderr)
 	default:
 		diagUsage(stderr)
 		return 2
@@ -146,24 +198,11 @@ func diagSetup(load configLoader, stderr io.Writer) (*config.Config, *slog.Logge
 	return cfg, logger, 0
 }
 
-// reportError prints a failure to stderr and returns exit code 1. A
-// *provider.Error carries a fixed, leak-free sentence (X-6) and is printed
-// as is. Anything else may embed URLs with query strings, so only a generic
-// sentence and, when known, a coarse class are printed.
+// reportError prints a failure to stderr and returns exit code 1. The text
+// comes from tools.UserMessage: a fixed X-6 sentence for a *provider.Error,
+// otherwise a generic sentence that never echoes the error.
 func reportError(stderr io.Writer, err error) int {
-	var pe *provider.Error
-	if errors.As(err, &pe) {
-		_, _ = fmt.Fprintln(stderr, pe.Error())
-		return 1
-	}
-	msg := "unexpected error; rerun with REVIEW_MCP_LOG_LEVEL=debug for details"
-	switch {
-	case errors.Is(err, context.DeadlineExceeded):
-		msg += " (class: timeout)"
-	case errors.Is(err, context.Canceled):
-		msg += " (class: canceled)"
-	}
-	_, _ = fmt.Fprintln(stderr, msg)
+	_, _ = fmt.Fprintln(stderr, tools.UserMessage(err))
 	return 1
 }
 
@@ -271,7 +310,7 @@ func writeJSON(w io.Writer, v any) error {
 
 func diagPR(ctx context.Context, cfg *config.Config, logger *slog.Logger, prURL, showPatch string, stdout, stderr io.Writer) int {
 	start := time.Now()
-	ref, p, err := newResolver(cfg, logger).Resolve(prURL)
+	ref, p, err := wiring.NewResolver(cfg, logger).Resolve(prURL)
 	if err != nil {
 		return reportError(stderr, err)
 	}
@@ -307,7 +346,7 @@ func diagPR(ctx context.Context, cfg *config.Config, logger *slog.Logger, prURL,
 // ---- diag comment ----
 
 func diagComment(ctx context.Context, cfg *config.Config, logger *slog.Logger, prURL, body string, stdout, stderr io.Writer) int {
-	ref, p, err := newResolver(cfg, logger).Resolve(prURL)
+	ref, p, err := wiring.NewResolver(cfg, logger).Resolve(prURL)
 	if err != nil {
 		return reportError(stderr, err)
 	}
@@ -324,6 +363,34 @@ func diagComment(ctx context.Context, cfg *config.Config, logger *slog.Logger, p
 		URL string `json:"url"`
 	}{c.ID, logging.RedactURL(c.URL)}
 	if err := writeJSON(stdout, out); err != nil {
+		_, _ = fmt.Fprintln(stderr, "could not write the result to stdout")
+		return 1
+	}
+	return 0
+}
+
+// ---- diag comments / diag reply ----
+
+// diagComments prints the structured result of the pr_comments tool.
+func diagComments(ctx context.Context, cfg *config.Config, logger *slog.Logger, prURL string, includeResolved bool, stdout, stderr io.Writer) int {
+	res, err := tools.PRComments(ctx, wiring.NewResolver(cfg, logger), prURL, includeResolved)
+	if err != nil {
+		return reportError(stderr, err)
+	}
+	if err := writeJSON(stdout, res); err != nil {
+		_, _ = fmt.Fprintln(stderr, "could not write the result to stdout")
+		return 1
+	}
+	return 0
+}
+
+// diagReply prints the structured result of the pr_comment_reply tool.
+func diagReply(ctx context.Context, cfg *config.Config, logger *slog.Logger, prURL, commentID, body string, stdout, stderr io.Writer) int {
+	res, err := tools.PRCommentReply(ctx, wiring.NewResolver(cfg, logger), prURL, commentID, body)
+	if err != nil {
+		return reportError(stderr, err)
+	}
+	if err := writeJSON(stdout, res); err != nil {
 		_, _ = fmt.Fprintln(stderr, "could not write the result to stdout")
 		return 1
 	}

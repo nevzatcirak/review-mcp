@@ -90,6 +90,36 @@ Posts one PR-level comment with exactly that text and prints
 `{"id": ..., "url": ...}`. `--body` is required. This needs write access (see
 the token scopes below).
 
+### Reading comment threads
+
+```sh
+review-mcp diag comments <PR_URL> [--include-resolved]
+```
+
+Prints the result of the `pr_comments` tool as JSON: `pr`, `threads` and
+`truncated`. General threads come first, then inline threads by path and line.
+Resolved threads are hidden unless `--include-resolved` is given;
+`truncated.resolved_hidden` says how many were hidden. A thread whose resolved
+state the provider does not report (`"resolved": null`) is always shown. At most
+100 threads are listed (the oldest root comments are dropped first) and each
+body is cut at 4000 characters; `truncated` counts both. Unlike the other `diag`
+output, this prints comment text and author names, which are untrusted content
+written by third parties; they are never written to the logs.
+
+### Replying to a comment
+
+```sh
+review-mcp diag reply <PR_URL> --comment-id <ID> --body <TEXT>
+```
+
+Replies to the comment `--comment-id` (an id from `diag comments`) and prints
+`{"id": ..., "url": ..., "in_thread": ...}`. Both flags are required and the
+body is posted verbatim. On Bitbucket Server the reply lands inside the thread
+(`"in_thread": true`). Gitea has no usable reply endpoint, so the command posts
+a new PR-level comment that starts with a quote line such as
+`> Replying to @alice on src/app.go:10`, and `"in_thread": false` is expected
+there. This needs write access (see the token scopes below).
+
 ## Error messages
 
 Every failure from a provider is reported as one of these fixed sentences.

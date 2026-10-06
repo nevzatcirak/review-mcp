@@ -15,6 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/tools"
 	"github.com/nevzatcirak/review-mcp/internal/version"
 )
@@ -27,8 +28,13 @@ type Deps struct {
 	Report *config.Report
 	// LoadErr is the error returned by config.Load, if any.
 	LoadErr error
-	// Logger receives the SDK's own diagnostics. Nil discards them.
+	// Logger receives the SDK's own diagnostics and the tools' debug lines
+	// (counts and redacted URLs only). Nil discards them.
 	Logger *slog.Logger
+	// NewResolver builds the PR-URL resolver the PR conversation tools use.
+	// Production passes wiring.NewResolver; tests inject fakes. It is called
+	// once per tool call and never while LoadErr is non-nil.
+	NewResolver func(cfg *config.Config, logger *slog.Logger) *provider.Resolver
 }
 
 // serverInfoDescription is the one-sentence tool description.
@@ -42,6 +48,8 @@ func New(deps Deps) *mcp.Server {
 		&mcp.ServerOptions{Logger: deps.Logger},
 	)
 	registerServerInfo(s, deps)
+	registerPRComments(s, deps)
+	registerPRCommentReply(s, deps)
 	return s
 }
 

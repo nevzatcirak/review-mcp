@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"testing"
@@ -121,8 +122,13 @@ func TestE2EStdio(t *testing.T) {
 				Tools []struct{ Name string } `json:"tools"`
 			}
 			mustResult(t, recv(), &lr)
-			if len(lr.Tools) != 1 || lr.Tools[0].Name != "server_info" {
-				t.Errorf("tools = %+v", lr.Tools)
+			var names []string
+			for _, tl := range lr.Tools {
+				names = append(names, tl.Name)
+			}
+			sort.Strings(names)
+			if strings.Join(names, ",") != "pr_comment_reply,pr_comments,server_info" {
+				t.Errorf("tools = %v", names)
 			}
 
 			send(handshake[3])

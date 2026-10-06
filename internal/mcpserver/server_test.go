@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -144,10 +145,18 @@ func TestInitializeAndListTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list.Tools) != 1 || list.Tools[0].Name != "server_info" {
-		t.Fatalf("tools = %+v, want exactly server_info", list.Tools)
+	var tool *mcp.Tool
+	var names []string
+	for _, tl := range list.Tools {
+		names = append(names, tl.Name)
+		if tl.Name == "server_info" {
+			tool = tl
+		}
 	}
-	tool := list.Tools[0]
+	sort.Strings(names)
+	if got := strings.Join(names, ","); got != "pr_comment_reply,pr_comments,server_info" || tool == nil {
+		t.Fatalf("tools = %v, want exactly pr_comment_reply, pr_comments, server_info", names)
+	}
 	if !strings.HasSuffix(tool.Description, ".") || strings.Count(tool.Description, ". ") != 0 {
 		t.Errorf("description should be one sentence: %q", tool.Description)
 	}

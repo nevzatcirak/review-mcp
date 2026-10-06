@@ -16,6 +16,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/mcpserver"
 	"github.com/nevzatcirak/review-mcp/internal/version"
+	"github.com/nevzatcirak/review-mcp/internal/wiring"
 )
 
 func main() {
@@ -81,6 +82,10 @@ commands:
             fetch a pull request and print a JSON connectivity report
   diag comment <PR_URL> --body <TEXT>
             post one PR-level comment
+  diag comments <PR_URL> [--include-resolved]
+            list the comment threads of a pull request as JSON
+  diag reply <PR_URL> --comment-id <ID> --body <TEXT>
+            reply to a pull request comment
   serve     HTTP mode (not available in this version)
 `)
 }
@@ -114,7 +119,7 @@ func runStdio(stdin io.Reader, stdout, stderr io.Writer, load configLoader) int 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	srv := mcpserver.New(mcpserver.Deps{Config: cfg, Report: rep, LoadErr: loadErr, Logger: logger})
+	srv := mcpserver.New(mcpserver.Deps{Config: cfg, Report: rep, LoadErr: loadErr, Logger: logger, NewResolver: wiring.NewResolver})
 	err := mcpserver.RunIO(ctx, srv, io.NopCloser(stdin), nopWriteCloser{stdout})
 	switch {
 	case err == nil:

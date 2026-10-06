@@ -57,7 +57,11 @@ func (fakeProvider) GetDiff(_ ctxT, _ PRRef, _ *PullRequest, _ DiffOptions) (*Di
 	return nil, nil
 }
 func (fakeProvider) PostComment(_ ctxT, _ PRRef, _ string) (*Comment, error) { return nil, nil }
-func (fakeProvider) FileLineURL(PRRef, *PullRequest, string, int) string     { return "" }
+func (fakeProvider) ListThreads(_ ctxT, _ PRRef) ([]Thread, error)           { return nil, nil }
+func (fakeProvider) ReplyToComment(_ ctxT, _ PRRef, _, _ string) (*ReplyResult, error) {
+	return nil, nil
+}
+func (fakeProvider) FileLineURL(PRRef, *PullRequest, string, int) string { return "" }
 
 func cfgFor(gitea, web, bbs string) *config.Config {
 	c := config.Defaults()

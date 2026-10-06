@@ -51,6 +51,7 @@ code must not anticipate them beyond the seams named here.
 | X-6 | Error reporting | Allowlist-classified, sanitized messages always; no verbosity knob | Decided |
 | X-7 | License compliance for ported text/data | Full PR-Agent MIT notice in NOTICE before first ported text/data lands | Decided |
 | X-8 | Logging | `log/slog` to stderr only; never prompt/response bodies, never secrets | Decided |
+| X-9 | PR conversation tools (added 2026-10-06) | `pr_comments` (read threads) + `pr_comment_reply` (reply in thread, honest fallback) in v1 | Decided |
 
 ---
 
@@ -246,6 +247,17 @@ implementation must do or must not do).
 - **Decision:** `log/slog` to **stderr only** (stdout is the MCP stdio channel), level from `log.level` (default `info`). Never logged: prompt or response bodies, diff content, secrets, `Authorization` headers. A `redact` helper (port of upstream's credential-redaction regexes) wraps every URL/header that reaches a log line.
 - **Consequences:** Canary test: a token placed in env must not appear in captured stderr across a full (mocked) tool run, including error paths.
 
+#### X-9 — PR conversation tools (added 2026-10-06, extends O1)
+- **Decision:** v1 also ships two LLM-free tools so an MCP client can read a PR's discussion and answer it:
+  - `pr_comments` (read-only): PR-level comments and inline review threads, with author, timestamps, file/line anchors and resolved state where the provider exposes them;
+  - `pr_comment_reply` (write): a reply inside the thread when the provider supports it (Bitbucket Server). Otherwise (Gitea review threads) a new PR-level comment quoting the referenced comment, and the result says so explicitly.
+  Implemented as WP-PR-2e on top of the P2 provider layer, before P3, and covered by the P2 live acceptance.
+- **Rationale:** a direct user request. The provider layer already exists, so the feature needs no LLM pipeline. It also makes "read the review feedback and respond" workflows possible in any MCP client.
+- **Consequences:**
+  - Comment bodies are **untrusted third-party content**: the tool description and the output say so, and bodies are rendered inside fenced blocks with adaptive fences so they cannot break the output structure. The size of the output is capped (number of threads, characters per body) with explicit truncation notes.
+  - Replying is an explicit write: the tool is not marked read-only, and it never posts without a non-empty body.
+  - `pr_ask`'s statelessness (X-5) is unchanged.
+
 ---
 
 ## 5. Resulting v1 configuration surface
@@ -307,6 +319,8 @@ violations are reported together in one token-free startup error.
 | `server_info` (P1 diagnostic) | — | Version, enabled providers, effective non-secret config (secrets shown as set/unset only) |
 | `pr_review` | `pr_url` (required), `extra_instructions`, `output_language`, `max_findings`, `publish` | Markdown (`client` profile) + `structuredContent` (DQ-6) |
 | `pr_ask` | `pr_url` (required), `question` (required), `extra_instructions`, `output_language`, `publish` | Markdown answer |
+| `pr_comments` (X-9) | `pr_url` (required), `include_resolved` (default false) | Markdown thread listing + `structuredContent` |
+| `pr_comment_reply` (X-9) | `pr_url` (required), `comment_id` (required), `body` (required) | Posted comment id/URL + whether it landed in-thread or as a PR-level fallback |
 
 ## 7. Items deferred beyond v1 (with seams)
 

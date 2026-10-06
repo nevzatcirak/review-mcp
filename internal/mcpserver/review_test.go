@@ -638,7 +638,7 @@ func TestLeakPRReviewEndToEnd(t *testing.T) {
 // TestSDKLogsCarryNoArgumentsOrResults [canary]: with log.level=debug, tool
 // arguments and results carrying markers pass through the real MCP server;
 // the capture of everything logged (the SDK's records and ours) contains no
-// marker. It covers pr_review and pr_comments.
+// marker. It covers pr_review, pr_ask and pr_comments.
 func TestSDKLogsCarryNoArgumentsOrResults(t *testing.T) {
 	var logs syncBuffer
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
@@ -663,6 +663,22 @@ func TestSDKLogsCarryNoArgumentsOrResults(t *testing.T) {
 	if !bad.IsError {
 		t.Fatal("expected a tool error")
 	}
+	// pr_ask through the real wiring, markers in every argument and in the
+	// question; the fake model's answer carries a marker too.
+	ak := callTool(t, cs, "pr_ask", map[string]any{
+		"pr_url": reviewPRURL(g) + "?x=" + argMarker, "question": questionMarker, "extra_instructions": argMarker,
+		"output_language": "tr-TR",
+	})
+	if ak.IsError {
+		t.Fatalf("pr_ask: %s", textOf(t, ak))
+	}
+	if !strings.Contains(textOf(t, ak), headerMarker) || !strings.Contains(textOf(t, ak), questionMarker) {
+		t.Fatal("the answer and question markers must reach the pr_ask result, or the log check is vacuous")
+	}
+	badAsk := callTool(t, cs, "pr_ask", map[string]any{"pr_url": argMarker, "question": questionMarker + " ", "output_language": "bad " + argMarker})
+	if !badAsk.IsError {
+		t.Fatal("expected a tool error from pr_ask")
+	}
 	// A second tool, with markers in its arguments and in its result.
 	cs2 := connect(t, deps2)
 	cm := callTool(t, cs2, "pr_comment_reply", map[string]any{"pr_url": prURL, "comment_id": "1", "body": argMarker})
@@ -676,7 +692,7 @@ func TestSDKLogsCarryNoArgumentsOrResults(t *testing.T) {
 		t.Fatalf("the capture holds no SDK records; the check would be vacuous:\n%s", logText)
 	}
 	for _, m := range []string{argMarker, bodyMarker, descMarker, answerMarker, authorMarker, pathMarker,
-		titleMarker, branchMarker, diffMarker, headerMarker, contentMarker, securityMarker} {
+		titleMarker, branchMarker, diffMarker, headerMarker, contentMarker, securityMarker, questionMarker, askAnswerMarker} {
 		if strings.Contains(logText, m) {
 			t.Errorf("marker %q appears in the log capture", m)
 		}

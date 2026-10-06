@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nevzatcirak/review-mcp/internal/ask"
 	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/mdutil"
@@ -362,6 +363,10 @@ func UserMessage(err error) string {
 	var ae *ArgumentError
 	if errors.As(err, &ae) {
 		return ae.Error()
+	}
+	var qe *ask.QuestionError
+	if errors.As(err, &qe) {
+		return qe.UserMessage()
 	}
 	var le *llm.Error
 	if errors.As(err, &le) {

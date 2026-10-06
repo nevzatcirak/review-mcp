@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	llmrender "github.com/nevzatcirak/review-mcp/internal/llmrun/render"
 	"github.com/nevzatcirak/review-mcp/internal/mdutil"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 )
@@ -58,8 +59,8 @@ func Client(res *review.Result) string {
 	if v.showIssues && v.hasReview {
 		writeClientIssues(&b, v.issues)
 	}
-	writeCoverage(&b, "### "+textCoverage, &res.Coverage)
-	writeNotes(&b, "### "+textNotes, res.Notes)
+	llmrender.Coverage(&b, "### "+textCoverage, &res.Coverage)
+	llmrender.Notes(&b, "### "+textNotes, res.Notes)
 	return b.String()
 }
 

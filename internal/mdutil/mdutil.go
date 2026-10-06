@@ -120,3 +120,13 @@ func escapeLine(line string) string {
 	}
 	return b.String()
 }
+
+// Literal renders a path or URL as a code span, or as escaped plain text
+// when it holds characters that a code span cannot make inert in every
+// context (HTML angle brackets, ampersands, pipes).
+func Literal(s string) string {
+	if strings.ContainsAny(s, "<>&|") {
+		return Inline(s)
+	}
+	return CodeSpan(s)
+}

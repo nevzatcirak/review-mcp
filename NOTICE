@@ -58,3 +58,7 @@ Pinned upstream: https://github.com/The-PR-Agent/pr-agent at commit
 8e5a9295973b24af4b70cafd0b660a230811ef9e (tag v0.47.0). Add one line per file
 as new adapted material lands.
 
+- internal/filter/data/generated_code.go
+- internal/filter/data/bad_extensions.go
+- internal/filter/data/languages.go
+- internal/filter/data/auto_generated.go

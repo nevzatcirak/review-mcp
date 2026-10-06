@@ -21,6 +21,8 @@ type promptCase struct {
 		Effort   bool `json:"effort"`
 		Tests    bool `json:"tests"`
 		Security bool `json:"security"`
+		// Performance is ours (X-12); the upstream oracle ignores it.
+		Performance bool `json:"performance"`
 	} `json:"toggles"`
 	MaxFindings       int    `json:"max_findings"`
 	ExtraInstructions string `json:"extra_instructions"`
@@ -34,7 +36,8 @@ type promptCase struct {
 
 func (c *promptCase) input() PromptInput {
 	return PromptInput{
-		Toggles:           Toggles{EffortEstimate: c.Toggles.Effort, Tests: c.Toggles.Tests, Security: c.Toggles.Security},
+		Toggles: Toggles{EffortEstimate: c.Toggles.Effort, Tests: c.Toggles.Tests, Security: c.Toggles.Security,
+			Performance: c.Toggles.Performance},
 		MaxFindings:       c.MaxFindings,
 		ExtraInstructions: c.ExtraInstructions,
 		Language:          c.Language,

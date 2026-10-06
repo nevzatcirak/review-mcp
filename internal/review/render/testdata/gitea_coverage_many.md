@@ -6,6 +6,7 @@ Pull request: Gitea #12 — Add retry to the fetcher (`https://your-gitea.exampl
 <tr><td>⏱️&nbsp;<strong>Estimated effort to review</strong>: 5/5 🔵🔵🔵🔵🔵</td></tr>
 <tr><td>🧪&nbsp;<strong>No relevant tests</strong></td></tr>
 <tr><td>🔒&nbsp;<strong>No security concerns identified</strong></td></tr>
+<tr><td>🐢&nbsp;<strong>No performance concerns identified</strong></td></tr>
 <tr><td>⚡&nbsp;<strong>No major issues detected</strong></td></tr>
 </table>
 

@@ -36,6 +36,7 @@ func TestDefaultsAppliedWhenNothingSet(t *testing.T) {
 		{"review.max_findings", cfg.Review.MaxFindings, 3},
 		{"review.require_tests", cfg.Review.RequireTests, true},
 		{"review.require_security", cfg.Review.RequireSecurity, true},
+		{"review.require_performance", cfg.Review.RequirePerformance, true},
 		{"review.require_effort_estimate", cfg.Review.RequireEffortEstimate, true},
 		{"review.extra_instructions", cfg.Review.ExtraInstructions, ""},
 		{"ask.extra_instructions", cfg.Ask.ExtraInstructions, ""},
@@ -288,6 +289,7 @@ func TestEnvParsingStrict(t *testing.T) {
 	}{
 		{"REVIEW_MCP_REVIEW_REQUIRE_TESTS", "FALSE", func(c *Config) bool { return !c.Review.RequireTests }},
 		{"REVIEW_MCP_REVIEW_REQUIRE_TESTS", "0", func(c *Config) bool { return !c.Review.RequireTests }},
+		{"REVIEW_MCP_REVIEW_REQUIRE_PERFORMANCE", "false", func(c *Config) bool { return !c.Review.RequirePerformance }},
 		{"REVIEW_MCP_GITEA_INSECURE_SKIP_VERIFY", "True", func(c *Config) bool { return c.Gitea.InsecureSkipVerify }},
 		{"REVIEW_MCP_GITEA_INSECURE_SKIP_VERIFY", "1", func(c *Config) bool { return c.Gitea.InsecureSkipVerify }},
 		{"REVIEW_MCP_LLM_SEED", "-5", func(c *Config) bool { return *c.LLM.Seed == -5 }},
@@ -313,6 +315,7 @@ func TestEnvParsingStrict(t *testing.T) {
 		{"REVIEW_MCP_LLM_TEMPERATURE", "warm", "REVIEW_MCP_LLM_TEMPERATURE: invalid value \"warm\" (expected a decimal number)"},
 		{"REVIEW_MCP_LLM_SEED", "1.5", "REVIEW_MCP_LLM_SEED: invalid value"},
 		{"REVIEW_MCP_REVIEW_REQUIRE_TESTS", "yes", "REVIEW_MCP_REVIEW_REQUIRE_TESTS: invalid value \"yes\" (expected a boolean"},
+		{"REVIEW_MCP_REVIEW_REQUIRE_PERFORMANCE", "no", "REVIEW_MCP_REVIEW_REQUIRE_PERFORMANCE: invalid value \"no\" (expected a boolean"},
 		{"REVIEW_MCP_LLM_MODEL", "", "REVIEW_MCP_LLM_MODEL is set but empty"},
 		{"REVIEW_MCP_LLM_MAX_RETRIES", "", "REVIEW_MCP_LLM_MAX_RETRIES is set but empty"},
 		{"REVIEW_MCP_LLM_TEMPERATURE", "", "REVIEW_MCP_LLM_TEMPERATURE is set but empty"},

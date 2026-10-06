@@ -4,7 +4,7 @@
 
 | File | Written by | Meaning |
 |---|---|---|
-| `case.json` | `oracle/make_cases.py` | toggles (`effort`, `tests`, `security`), `max_findings`, `extra_instructions`, `language`, and the PR fields `title`, `branch`, `description`, `date`, `diff` |
+| `case.json` | `oracle/make_cases.py` | toggles (`effort`, `tests`, `security`, `performance`; the oracle ignores `performance`, see difference 3), `max_findings`, `extra_instructions`, `language`, and the PR fields `title`, `branch`, `description`, `date`, `diff` |
 | `upstream.system.txt`, `upstream.user.txt` | `oracle/render_upstream.py` | **upstream's** prompts: PR-Agent at `8e5a9295973b24af4b70cafd0b660a230811ef9e` rendering its own `pr_reviewer_prompts.toml` with matching variables (MIT data, see `NOTICE`) |
 | `system.txt`, `user.txt` | `go test -run TestPromptGoldens -update` | **our** prompts: `RenderPrompts` on the case |
 | `upstream.diff` | `go test -run TestPromptGoldens -update` | unified diff (1 line of context) from upstream's prompts to ours; empty when they are identical |
@@ -19,16 +19,16 @@ The oracle is not run by the tests; regenerate it as described in
 
 ## Cases
 
-| Case | Toggles (effort, tests, security) | Language | Extra instructions | Other |
+| Case | Toggles (effort, tests, security, performance) | Language | Extra instructions | Other |
 |---|---|---|---|---|
-| `all_fields` | on, on, on | en-US | — | |
-| `all_fields_extra` | on, on, on | en-US | yes | |
-| `key_issues_only` | off, off, off | en-US | — | |
-| `key_issues_only_extra` | off, off, off | en-US | yes | |
-| `non_english` | on, on, on | tr-TR | — | |
-| `non_english_extra` | on, on, on | de-DE | yes | |
-| `tests_and_security_no_description` | off, on, on | en-US | — | empty description (the `PR Description` block is omitted) |
-| `effort_only_max_findings_5` | on, off, off | en-US | — | `max_findings` 5 |
+| `all_fields` | on, on, on, on | en-US | — | |
+| `all_fields_extra` | on, on, on, on | en-US | yes | |
+| `key_issues_only` | off, off, off, off | en-US | — | |
+| `key_issues_only_extra` | off, off, off, off | en-US | yes | |
+| `non_english` | on, on, on, on | tr-TR | — | |
+| `non_english_extra` | on, on, on, on | de-DE | yes | |
+| `tests_and_security_no_description` | off, on, on, off | en-US | — | empty description (the `PR Description` block is omitted) |
+| `effort_only_max_findings_5` | on, off, off, off | en-US | — | `max_findings` 5 |
 
 ## Differences from upstream (the content of the `upstream.diff` files)
 
@@ -48,6 +48,16 @@ The remaining differences, all expected:
    ask for them; ours is generated from the descriptor table and shows only
    the enabled fields. (`key_issues_only`, `key_issues_only_extra`,
    `effort_only_max_findings_5`.)
+3. **Performance field** (X-12, spec P7 §4.1; an intentional deviation):
+   upstream has no `performance_concerns`. With the performance toggle on,
+   our `Review` class gains its schema line after `security_concerns`, and
+   the example gains `performance_concerns: |` / `No` after the security
+   answer. The description is ours: the spec wording plus security's
+   no-translation sentence ("Answer with the exact English literal 'No', …";
+   lead decision, reported to the architect as a DESIGN-QUESTION), so that
+   the No-detector works under any output language. (`all_fields`, `all_fields_extra`,
+   `non_english`, `non_english_extra`; the cases with the toggle off show
+   that switching it off removes both lines.)
 
 There are no other differences: the role, the diff-format notes (upstream's
 numbered `diff_hunk_format`), "Determining what to flag", "Constructing

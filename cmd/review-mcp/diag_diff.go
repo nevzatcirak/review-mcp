@@ -24,14 +24,15 @@ import (
 // defaultPromptTokens is the default of --prompt-tokens: the measured maximum
 // of the review prompt scaffolding (system and user prompt around an empty
 // diff, with the framing allowance). It was measured in WP-PR-4c with every
-// field on, tr-TR and extra instructions; reproduce it with
+// field on, tr-TR and extra instructions, and re-measured in WP-PR-7d after
+// the performance field (X-12) was added (2056 before); reproduce it with
 //
 //	go test ./internal/review -run TestScaffoldingTokens -v
 //
-// (the last row of the table: request tokens 2056). A review of a real PR
+// (the last row of the table: request tokens 2205). A review of a real PR
 // adds its title, branch and description on top; diag review --dry-run
 // reports the exact figure for one PR.
-const defaultPromptTokens = 2056
+const defaultPromptTokens = 2205
 
 // diffSeparator is the line between the JSON header and the prepared diff.
 const diffSeparator = "--- prepared diff ---"

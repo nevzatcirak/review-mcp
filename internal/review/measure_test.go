@@ -15,8 +15,8 @@ const measureExtra = "Focus on error handling and concurrency. Ignore formatting
 
 // TestScaffoldingTokens is the measurement of entry criterion P4 §0.3: it
 // renders the prompt scaffolding with an empty diff and empty PR fields
-// (title, branch, description) for every combination of the three field
-// toggles, en-US and one non-English language, with and without extra
+// (title, branch, description) for every combination of the four field
+// toggles (the performance toggle added by X-12), en-US and one non-English language, with and without extra
 // instructions, and logs the token figures (run with -v to see the
 // table). It asserts only invariants; the figures go into the report and
 // WP-PR-4e sets the diag diff --prompt-tokens default from the maximum.
@@ -28,10 +28,10 @@ const measureExtra = "Focus on error handling and concurrency. Ignore formatting
 func TestScaffoldingTokens(t *testing.T) {
 	factor := config.Defaults().LLM.TokenEstimateFactor
 	var b strings.Builder
-	fmt.Fprintf(&b, "\n| effort | tests | security | language | extra | raw | est (f=%.1f) | request |\n|---|---|---|---|---|---|---|---|\n", factor)
+	fmt.Fprintf(&b, "\n| effort | tests | security | performance | language | extra | raw | est (f=%.1f) | request |\n|---|---|---|---|---|---|---|---|---|\n", factor)
 	maxReq, minReq := 0, int(^uint(0)>>1)
-	for mask := range 8 {
-		tg := Toggles{EffortEstimate: mask&1 != 0, Tests: mask&2 != 0, Security: mask&4 != 0}
+	for mask := range 16 {
+		tg := Toggles{EffortEstimate: mask&1 != 0, Tests: mask&2 != 0, Security: mask&4 != 0, Performance: mask&8 != 0}
 		for _, lang := range []string{"en-US", "tr-TR"} {
 			for _, extra := range []string{"", measureExtra} {
 				in := PromptInput{Toggles: tg, MaxFindings: config.Defaults().Review.MaxFindings,
@@ -50,8 +50,8 @@ func TestScaffoldingTokens(t *testing.T) {
 					t.Errorf("request %d != est %d + 48", req, est)
 				}
 				maxReq, minReq = max(maxReq, req), min(minReq, req)
-				fmt.Fprintf(&b, "| %v | %v | %v | %s | %v | %d | %d | %d |\n",
-					tg.EffortEstimate, tg.Tests, tg.Security, lang, extra != "", raw, est, req)
+				fmt.Fprintf(&b, "| %v | %v | %v | %v | %s | %v | %d | %d | %d |\n",
+					tg.EffortEstimate, tg.Tests, tg.Security, tg.Performance, lang, extra != "", raw, est, req)
 			}
 		}
 	}

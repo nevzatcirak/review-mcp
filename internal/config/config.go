@@ -86,6 +86,7 @@ type Review struct {
 	MaxFindings           int    `toml:"max_findings" json:"max_findings"`
 	RequireTests          bool   `toml:"require_tests" json:"require_tests"`
 	RequireSecurity       bool   `toml:"require_security" json:"require_security"`
+	RequirePerformance    bool   `toml:"require_performance" json:"require_performance"`
 	RequireEffortEstimate bool   `toml:"require_effort_estimate" json:"require_effort_estimate"`
 	ExtraInstructions     string `toml:"extra_instructions" json:"extra_instructions"`
 }
@@ -131,6 +132,7 @@ func Defaults() *Config {
 			MaxFindings:           3,
 			RequireTests:          true,
 			RequireSecurity:       true,
+			RequirePerformance:    true,
 			RequireEffortEstimate: true,
 		},
 		Log: Log{Level: "info"},

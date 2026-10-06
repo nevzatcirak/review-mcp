@@ -15,11 +15,13 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/review"
 )
 
-// Emojis of the provider profile (upstream's map, for our fields).
+// Emojis of the provider profile (upstream's map, for our fields;
+// emojiPerf is ours, since upstream has no performance field).
 const (
 	emojiEffort   = "⏱️"
 	emojiTests    = "🧪"
 	emojiSecurity = "🔒"
+	emojiPerf     = "🐢"
 	emojiIssues   = "⚡"
 	emojiCoverage = "📂"
 	emojiNotes    = "📝"
@@ -80,6 +82,13 @@ func writeGFM(b *strings.Builder, res *review.Result, v *view) {
 			}
 			b.WriteString("<tr><td>" + emojiSecurity + "&nbsp;<strong>" + textSecurity + "</strong><br><br>\n\n" +
 				gfmText(*v.security) + "\n</td></tr>\n")
+		case k == review.KeyPerformanceConcerns && v.perf != nil:
+			if !v.hasPerf {
+				gfmRow(b, emojiPerf, textNoPerf, "")
+				continue
+			}
+			b.WriteString("<tr><td>" + emojiPerf + "&nbsp;<strong>" + textPerf + "</strong><br><br>\n\n" +
+				gfmText(*v.perf) + "\n</td></tr>\n")
 		}
 	}
 	if v.showIssues && v.hasReview {
@@ -148,6 +157,8 @@ func writePlain(b *strings.Builder, res *review.Result, v *view, tables bool) {
 			rows = append(rows, row{emojiTests + " Tests", testsText(*v.tests)})
 		case k == review.KeySecurityConcerns && v.security != nil && !v.hasConcerns:
 			rows = append(rows, row{emojiSecurity + " Security", textNoSecurity})
+		case k == review.KeyPerformanceConcerns && v.perf != nil && !v.hasPerf:
+			rows = append(rows, row{emojiPerf + " Performance", textNoPerf})
 		}
 	}
 	if len(rows) > 0 {
@@ -165,6 +176,9 @@ func writePlain(b *strings.Builder, res *review.Result, v *view, tables bool) {
 	}
 	if v.showSec && v.hasConcerns {
 		b.WriteString("### " + emojiSecurity + " " + textSecurity + "\n\n" + mdutil.Escape(strings.TrimSpace(*v.security)) + "\n\n")
+	}
+	if v.showPerf && v.hasPerf {
+		b.WriteString("### " + emojiPerf + " " + textPerf + "\n\n" + mdutil.Escape(strings.TrimSpace(*v.perf)) + "\n\n")
 	}
 	if !v.showIssues || !v.hasReview {
 		return

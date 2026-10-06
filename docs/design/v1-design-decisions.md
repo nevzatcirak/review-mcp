@@ -309,6 +309,7 @@ Secrets are environment-only (in `serve` mode, credentials come from request hea
 | `review.max_findings` | `REVIEW_MCP_REVIEW_MAX_FINDINGS` | 3 | Per-call override (DQ-25) |
 | `review.require_tests` | `REVIEW_MCP_REVIEW_REQUIRE_TESTS` | true | X-4 |
 | `review.require_security` | `REVIEW_MCP_REVIEW_REQUIRE_SECURITY` | true | X-4 |
+| `review.require_performance` | `REVIEW_MCP_REVIEW_REQUIRE_PERFORMANCE` | true | X-12 (extends X-4) |
 | `review.require_effort_estimate` | `REVIEW_MCP_REVIEW_REQUIRE_EFFORT_ESTIMATE` | true | X-4 |
 | `review.extra_instructions` | `REVIEW_MCP_REVIEW_EXTRA_INSTRUCTIONS` | (empty) | Per-call override |
 | `ask.extra_instructions` | `REVIEW_MCP_ASK_EXTRA_INSTRUCTIONS` | (empty) | Per-call override |

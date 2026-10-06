@@ -42,7 +42,7 @@ diag diff     run the diff pipeline (provider, file filter, token budget) and
               print a JSON header, the line "--- prepared diff ---" and the
               exact diff text a review would embed; --mode picks the render
               format (default plain); --prompt-tokens N is the estimated size
-              of the prompt scaffolding in tokens (default 2056, the measured
+              of the prompt scaffolding in tokens (default 2205, the measured
               maximum of the review prompts)
 diag review   review the pull request with the configured LLM and print the
               client markdown; --publish also posts it as a PR comment.

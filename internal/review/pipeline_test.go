@@ -217,7 +217,8 @@ const goodAnswer = "```yaml\nreview:\n" +
 	"      start_line: 10\n      end_line: 12\n" +
 	"    - relevant_file: src/util.go\n      issue_header: Style\n      issue_content: The range is partly outside the diff.\n" +
 	"      start_line: 2\n      end_line: 5\n" +
-	"  security_concerns: |\n    No\n```\n"
+	"  security_concerns: |\n    No\n" +
+	"  performance_concerns: |\n    No\n```\n"
 
 func testConfig() *config.Config {
 	cfg := config.Defaults()
@@ -304,7 +305,7 @@ func TestRunReview(t *testing.T) {
 
 	r := res.Review
 	if r.EstimatedEffortToReview == nil || *r.EstimatedEffortToReview != 2 || r.RelevantTests == nil || *r.RelevantTests ||
-		r.HasSecurityConcerns() || len(r.KeyIssuesToReview) != 2 {
+		r.HasSecurityConcerns() || r.PerformanceConcerns == nil || r.HasPerformanceConcerns() || len(r.KeyIssuesToReview) != 2 {
 		t.Fatalf("review = %+v", r)
 	}
 	app, util := r.KeyIssuesToReview[0], r.KeyIssuesToReview[1]
@@ -317,7 +318,7 @@ func TestRunReview(t *testing.T) {
 	if util.Snippet != "" || util.SnippetNote != SnippetNoteUnverified || util.Link == "" {
 		t.Errorf("util finding = %+v", util)
 	}
-	if !slices.Equal(res.EnabledFields, []string{KeyEffort, KeyRelevantTests, KeyKeyIssues, KeySecurityConcerns}) {
+	if !slices.Equal(res.EnabledFields, []string{KeyEffort, KeyRelevantTests, KeyKeyIssues, KeySecurityConcerns, KeyPerformanceConcerns}) {
 		t.Errorf("enabled fields = %v", res.EnabledFields)
 	}
 	c := res.Coverage

@@ -70,6 +70,7 @@ var table = []entry{
 	{"review.max_findings", "REVIEW_MCP_REVIEW_MAX_FINDINGS", func(c *Config) any { return &c.Review.MaxFindings }},
 	{"review.require_tests", "REVIEW_MCP_REVIEW_REQUIRE_TESTS", func(c *Config) any { return &c.Review.RequireTests }},
 	{"review.require_security", "REVIEW_MCP_REVIEW_REQUIRE_SECURITY", func(c *Config) any { return &c.Review.RequireSecurity }},
+	{"review.require_performance", "REVIEW_MCP_REVIEW_REQUIRE_PERFORMANCE", func(c *Config) any { return &c.Review.RequirePerformance }},
 	{"review.require_effort_estimate", "REVIEW_MCP_REVIEW_REQUIRE_EFFORT_ESTIMATE", func(c *Config) any { return &c.Review.RequireEffortEstimate }},
 	{"review.extra_instructions", "REVIEW_MCP_REVIEW_EXTRA_INSTRUCTIONS", func(c *Config) any { return &c.Review.ExtraInstructions }},
 

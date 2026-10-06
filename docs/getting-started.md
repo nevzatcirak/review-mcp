@@ -61,13 +61,13 @@ The room left for the pull request's diff is computed from them:
 | hard limit | `context_window` - hard reserve - prompt tokens |
 
 "Prompt tokens" is the size of the review instructions, title and
-description around the diff (about 1600 to 2100 tokens for the instructions
+description around the diff (about 1600 to 2200 tokens for the instructions
 alone; see [Reviewing pull requests](review.md#prompt-tokens)). The soft limit is what the diff is fitted into (a diff that
 fits is sent whole, with extra context around each change; otherwise files are
 admitted largest-first until it is reached). The hard limit is a ceiling that
 stops further additions. For example, with a 32000-token window, no
-`max_output_tokens` and 2056 prompt tokens, the soft limit is
-32000 - 1500 - 2056 = 28444 tokens.
+`max_output_tokens` and 2205 prompt tokens, the soft limit is
+32000 - 1500 - 2205 = 28295 tokens.
 
 Token counts come from a built-in estimator that works offline. It is exact
 only for OpenAI-style tokenizers, so every count is multiplied by

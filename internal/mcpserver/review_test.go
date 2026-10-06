@@ -41,9 +41,10 @@ const (
 	diffMarker   = "DIFF-MARKER-3e9b1f"
 	// headerMarker, contentMarker and securityMarker are in the fake model's
 	// answer: they reach the tool result, never the logs.
-	headerMarker   = "HEADER-MARKER-3e9b1f"
-	contentMarker  = "CONTENT-MARKER-3e9b1f"
-	securityMarker = "SECURITY-MARKER-3e9b1f"
+	headerMarker      = "HEADER-MARKER-3e9b1f"
+	contentMarker     = "CONTENT-MARKER-3e9b1f"
+	securityMarker    = "SECURITY-MARKER-3e9b1f"
+	performanceMarker = "PERFORMANCE-MARKER-3e9b1f"
 )
 
 const reviewDiff = `diff --git a/src/app.go b/src/app.go
@@ -60,7 +61,8 @@ index 1111111..2222222 100644
 const goodAnswer = "```yaml\nreview:\n  estimated_effort_to_review: 2\n  relevant_tests: \"No\"\n" +
 	"  key_issues_to_review:\n    - relevant_file: src/app.go\n      issue_header: Constant changed " + headerMarker + "\n" +
 	"      issue_content: The constant changed without a test. " + contentMarker + "\n      start_line: 2\n      end_line: 2\n" +
-	"  security_concerns: Possible exposure. " + securityMarker + "\n```\n"
+	"  security_concerns: Possible exposure. " + securityMarker + "\n" +
+	"  performance_concerns: One query per item in src/app.go. " + performanceMarker + "\n```\n"
 
 // fakeServer counts requests and records bodies.
 type fakeServer struct {
@@ -336,6 +338,70 @@ func TestPRReviewPublish(t *testing.T) {
 	}
 }
 
+// TestPRReviewPerformanceToggle: review.require_performance (X-12) switches
+// the performance field end to end. On (the default), the schema line and
+// the example line reach the prompt and the model's answer reaches the
+// result, the client markdown and the published overview; off, the prompt
+// has neither line and no profile shows a performance row, even when the
+// model answers the field anyway.
+func TestPRReviewPerformanceToggle(t *testing.T) {
+	const schemaLine = `performance_concerns: str = Field(description=\"Does this PR introduce code with a likely performance problem`
+	const exampleLine = `\n  performance_concerns: |\n    No\n`
+	for _, on := range []bool{true, false} {
+		t.Run(fmt.Sprintf("require_performance=%v", on), func(t *testing.T) {
+			g, l := newFakeGiteaHost(t), newFakeLLMHost(t, 200, goodAnswer)
+			env := reviewEnv(g, l)
+			if !on {
+				env["REVIEW_MCP_REVIEW_REQUIRE_PERFORMANCE"] = "false"
+			}
+			cs := connect(t, realDeps(env, nil))
+			res := callTool(t, cs, "pr_review", map[string]any{"pr_url": reviewPRURL(g), "publish": true})
+			if res.IsError {
+				t.Fatalf("tool error: %s", textOf(t, res))
+			}
+			bodies := l.recorded()
+			if len(bodies) != 1 {
+				t.Fatalf("LLM requests = %d", len(bodies))
+			}
+			var req struct {
+				Messages []struct{ Content string } `json:"messages"`
+			}
+			if err := json.Unmarshal([]byte(bodies[0]), &req); err != nil || len(req.Messages) == 0 {
+				t.Fatalf("LLM request: %v", err)
+			}
+			system := req.Messages[0].Content
+			if got := strings.Contains(system, strings.ReplaceAll(schemaLine, `\"`, `"`)); got != on {
+				t.Errorf("schema line in the system prompt = %v, want %v", got, on)
+			}
+			if got := strings.Contains(system, strings.ReplaceAll(exampleLine, `\n`, "\n")); got != on {
+				t.Errorf("example line in the system prompt = %v, want %v", got, on)
+			}
+			var overview string
+			for _, b := range g.recorded() {
+				if strings.Contains(b, "PR Review") {
+					overview = b
+				}
+			}
+			if overview == "" {
+				t.Fatal("no overview was posted")
+			}
+			var got review.Result
+			decodeStructured(t, res, &got)
+			surfaces := map[string]string{"text": textOf(t, res), "structured": mustJSON(t, res.StructuredContent), "overview": overview}
+			for what, s := range surfaces {
+				if c := strings.Contains(s, performanceMarker); c != on {
+					t.Errorf("performance answer in the %s = %v, want %v", what, c, on)
+				}
+			}
+			for _, what := range []string{"text", "overview"} {
+				if c := strings.Contains(surfaces[what], "Performance concerns"); c != on {
+					t.Errorf("performance row in the %s = %v, want %v", what, c, on)
+				}
+			}
+		})
+	}
+}
+
 // TestPRReviewLinksOnlyFilesOfThePR: findings on a path outside the PR (a
 // ".." path and a file the PR does not contain) carry no link in the
 // structured result, the client markdown or the published comment, while the
@@ -588,12 +654,12 @@ func TestLeakPRReviewEndToEnd(t *testing.T) {
 				t.Fatalf("debug logging did not run; the leak check would be vacuous:\n%s", logText)
 			}
 			allMarkers := []string{descMarker, titleMarker, branchMarker, diffMarker, argMarker,
-				answerMarker, headerMarker, contentMarker, securityMarker}
+				answerMarker, headerMarker, contentMarker, securityMarker, performanceMarker}
 			if !v.wantError {
 				// The model's words reach the tool result, as text and as
 				// structured content; the PR title and the changed line too.
 				text, structured := textOf(t, res), mustJSON(t, res.StructuredContent)
-				for _, m := range []string{headerMarker, contentMarker, securityMarker, titleMarker, diffMarker} {
+				for _, m := range []string{headerMarker, contentMarker, securityMarker, performanceMarker, titleMarker, diffMarker} {
 					if !strings.Contains(text, m) || !strings.Contains(structured, m) {
 						t.Errorf("marker %q is missing from the result text or structured content", m)
 					}

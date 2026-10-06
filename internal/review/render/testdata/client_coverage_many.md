@@ -5,6 +5,7 @@ Pull request: Gitea #12 — Add retry to the fetcher (`https://your-gitea.exampl
 - Estimated effort to review: 5/5 🔵🔵🔵🔵🔵
 - No relevant tests
 - No security concerns identified
+- No performance concerns identified
 
 ### Key issues to review
 

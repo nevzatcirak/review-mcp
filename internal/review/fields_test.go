@@ -13,14 +13,14 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/yamlrepair"
 )
 
-var allOn = Toggles{EffortEstimate: true, Tests: true, Security: true}
+var allOn = Toggles{EffortEstimate: true, Tests: true, Security: true, Performance: true}
 
 func TestFieldOrderIsUpstreams(t *testing.T) {
 	var keys []string
 	for _, f := range fields {
 		keys = append(keys, f.key)
 	}
-	want := []string{KeyEffort, KeyRelevantTests, KeyKeyIssues, KeySecurityConcerns}
+	want := []string{KeyEffort, KeyRelevantTests, KeyKeyIssues, KeySecurityConcerns, KeyPerformanceConcerns}
 	if !slices.Equal(keys, want) {
 		t.Errorf("fields = %v, want %v", keys, want)
 	}
@@ -34,6 +34,12 @@ func TestTogglesFrom(t *testing.T) {
 	if got != (Toggles{EffortEstimate: true, Security: true}) {
 		t.Errorf("TogglesFrom = %+v", got)
 	}
+	if got := TogglesFrom(config.Review{RequirePerformance: true}); got != (Toggles{Performance: true}) {
+		t.Errorf("TogglesFrom(performance) = %+v", got)
+	}
+	if got := TogglesFrom(config.Defaults().Review); got != allOn {
+		t.Errorf("TogglesFrom(defaults) = %+v, want every field on", got)
+	}
 }
 
 func TestSchemaAndExampleFollowToggles(t *testing.T) {
@@ -42,9 +48,10 @@ func TestSchemaAndExampleFollowToggles(t *testing.T) {
 		present []string
 		absent  []string
 	}{
-		{allOn, []string{KeyEffort, KeyRelevantTests, KeyKeyIssues, KeySecurityConcerns}, nil},
-		{Toggles{}, []string{KeyKeyIssues}, []string{KeyEffort, KeyRelevantTests, KeySecurityConcerns}},
-		{Toggles{Security: true}, []string{KeyKeyIssues, KeySecurityConcerns}, []string{KeyEffort, KeyRelevantTests}},
+		{allOn, []string{KeyEffort, KeyRelevantTests, KeyKeyIssues, KeySecurityConcerns, KeyPerformanceConcerns}, nil},
+		{Toggles{}, []string{KeyKeyIssues}, []string{KeyEffort, KeyRelevantTests, KeySecurityConcerns, KeyPerformanceConcerns}},
+		{Toggles{Security: true}, []string{KeyKeyIssues, KeySecurityConcerns}, []string{KeyEffort, KeyRelevantTests, KeyPerformanceConcerns}},
+		{Toggles{Performance: true}, []string{KeyKeyIssues, KeyPerformanceConcerns}, []string{KeyEffort, KeyRelevantTests, KeySecurityConcerns}},
 	} {
 		s, e := SchemaText(tc.t, 4), ExampleYAML(tc.t)
 		for _, k := range tc.present {
@@ -81,22 +88,27 @@ func TestExampleIsValidYAML(t *testing.T) {
 		t.Errorf("warnings: %v", c.Warnings)
 	}
 	if r.EstimatedEffortToReview == nil || *r.EstimatedEffortToReview != 3 || r.RelevantTests == nil || *r.RelevantTests ||
-		r.SecurityConcerns == nil || *r.SecurityConcerns != SecurityNo || len(r.KeyIssuesToReview) != 1 {
+		r.SecurityConcerns == nil || *r.SecurityConcerns != SecurityNo ||
+		r.PerformanceConcerns == nil || *r.PerformanceConcerns != PerformanceNo || len(r.KeyIssuesToReview) != 1 {
 		t.Errorf("example converted to %+v", r)
 	}
 }
 
 func TestRepairKeys(t *testing.T) {
 	k := RepairKeys(allOn)
-	want := []string{KeyEffort, KeyRelevantTests, KeyRelevantFile, KeyIssueHeader, KeyIssueContent, KeyStartLine, KeyEndLine, KeySecurityConcerns}
+	want := []string{KeyEffort, KeyRelevantTests, KeyRelevantFile, KeyIssueHeader, KeyIssueContent, KeyStartLine, KeyEndLine,
+		KeySecurityConcerns, KeyPerformanceConcerns}
 	if !slices.Equal(k.Names, want) {
 		t.Errorf("Names = %v, want %v", k.Names, want)
 	}
 	if slices.Contains(k.Names, KeyKeyIssues) || slices.Contains(k.Names, RootKey) {
 		t.Errorf("Names must hold scalar leaf keys only: %v", k.Names)
 	}
-	if k.First != RootKey || k.Last != KeySecurityConcerns {
+	if k.First != RootKey || k.Last != KeyPerformanceConcerns {
 		t.Errorf("First/Last = %q/%q", k.First, k.Last)
+	}
+	if k := RepairKeys(Toggles{Security: true}); k.Last != KeySecurityConcerns || slices.Contains(k.Names, KeyPerformanceConcerns) {
+		t.Errorf("without performance: %+v", k)
 	}
 	if k := RepairKeys(Toggles{EffortEstimate: true, Tests: true}); k.Last != KeyKeyIssues || slices.Contains(k.Names, KeySecurityConcerns) {
 		t.Errorf("without security: %+v", k)
@@ -229,6 +241,69 @@ func TestConvertSecurity(t *testing.T) {
 		if got != tc.want || r.HasSecurityConcerns() != tc.concern {
 			t.Errorf("security %#v -> %q (concern %v), want %q (%v)", tc.v, got, r.HasSecurityConcerns(), tc.want, tc.concern)
 		}
+	}
+}
+
+// TestPerformanceDescriptionKeepsEnglishNo pins the lead decision on the
+// performance description: the spec wording, then security's no-translation
+// sentence verbatim, so a non-English review still answers the literal "No"
+// that the No-detector reads.
+func TestPerformanceDescriptionKeepsEnglishNo(t *testing.T) {
+	const spec = "Answer 'No' if there are none, otherwise describe each one briefly with its file."
+	const englishNo = "Answer with the exact English literal 'No', and do not translate it into another language, " +
+		"even if extra instructions ask you to write your response in another language."
+	if !strings.HasSuffix(descPerformance, spec+" "+englishNo) {
+		t.Errorf("performance description does not end with the spec sentence and the no-translation sentence:\n%s", descPerformance)
+	}
+	if !strings.Contains(descSecurity, "if there are no possible issues. "+englishNo+" If there are security concerns") {
+		t.Errorf("security description lost its no-translation sentence:\n%s", descSecurity)
+	}
+	s := SchemaText(Toggles{Performance: true, Security: true}, 3)
+	if strings.Count(s, englishNo) != 2 {
+		t.Errorf("schema has %d no-translation sentences, want 2 (security and performance)", strings.Count(s, englishNo))
+	}
+}
+
+// TestConvertPerformance: performance_concerns has the No-or-text semantics
+// of security_concerns (X-12), normalised through yamlrepair.IsNo.
+func TestConvertPerformance(t *testing.T) {
+	for _, tc := range []struct {
+		v       any
+		want    string // "" means absent
+		concern bool
+	}{
+		{"No", PerformanceNo, false}, {"no\n", PerformanceNo, false}, {false, PerformanceNo, false}, {"None", PerformanceNo, false},
+		{nil, PerformanceNo, false}, {"FALSE", PerformanceNo, false}, {"", PerformanceNo, false},
+		{"internal/store/list.go: one query per item (N+1).\n", "internal/store/list.go: one query per item (N+1).", true},
+		{"  ", "", false}, {[]any{"x"}, "", false}, {map[string]any{"a": "b"}, "", false},
+	} {
+		r, c, err := Convert(review(map[string]any{KeyPerformanceConcerns: tc.v}), Toggles{Performance: true}, 3)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := ""
+		if r.PerformanceConcerns != nil {
+			got = *r.PerformanceConcerns
+		}
+		if got != tc.want || r.HasPerformanceConcerns() != tc.concern {
+			t.Errorf("performance %#v -> %q (concern %v), want %q (%v)", tc.v, got, r.HasPerformanceConcerns(), tc.want, tc.concern)
+		}
+		if r.SecurityConcerns != nil {
+			t.Errorf("performance %#v set the security field", tc.v)
+		}
+		for _, w := range c.Warnings {
+			if !strings.HasPrefix(w, KeyPerformanceConcerns+": ") && !strings.HasPrefix(w, KeyKeyIssues+": ") {
+				t.Errorf("unexpected warning %q", w)
+			}
+		}
+	}
+	// Disabled: the value is ignored.
+	r, _, err := Convert(review(map[string]any{KeyPerformanceConcerns: "slow"}), Toggles{Security: true}, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.PerformanceConcerns != nil {
+		t.Errorf("disabled performance converted: %q", *r.PerformanceConcerns)
 	}
 }
 

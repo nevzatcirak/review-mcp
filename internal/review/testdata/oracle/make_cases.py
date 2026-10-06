@@ -42,8 +42,10 @@ PR = {
     "diff": DIFF,
 }
 
-ALL = {"effort": True, "tests": True, "security": True}
-NONE = {"effort": False, "tests": False, "security": False}
+# "performance" is ours (X-12); render_upstream.py ignores it, because
+# upstream has no performance field.
+ALL = {"effort": True, "tests": True, "security": True, "performance": True}
+NONE = {"effort": False, "tests": False, "security": False, "performance": False}
 EXTRA = "Focus on error handling.\nIgnore formatting-only changes."
 
 CASES = {
@@ -54,9 +56,9 @@ CASES = {
     "non_english": dict(toggles=ALL, language="tr-TR"),
     "non_english_extra": dict(toggles=ALL, language="de-DE", extra_instructions=EXTRA),
     "tests_and_security_no_description": dict(
-        toggles={"effort": False, "tests": True, "security": True}, description=""),
+        toggles={"effort": False, "tests": True, "security": True, "performance": False}, description=""),
     "effort_only_max_findings_5": dict(
-        toggles={"effort": True, "tests": False, "security": False}, max_findings=5),
+        toggles={"effort": True, "tests": False, "security": False, "performance": False}, max_findings=5),
 }
 
 

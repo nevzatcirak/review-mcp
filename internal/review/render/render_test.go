@@ -26,7 +26,8 @@ func ip(n int) *int       { return &n }
 func bp(b bool) *bool     { return &b }
 func sp(s string) *string { return &s }
 
-var allKeys = []string{review.KeyEffort, review.KeyRelevantTests, review.KeyKeyIssues, review.KeySecurityConcerns}
+var allKeys = []string{review.KeyEffort, review.KeyRelevantTests, review.KeyKeyIssues, review.KeySecurityConcerns,
+	review.KeyPerformanceConcerns}
 
 func baseCoverage() review.Coverage {
 	return review.Coverage{
@@ -53,6 +54,7 @@ func fixtures() map[string]*review.Result {
 			EstimatedEffortToReview: ip(3),
 			RelevantTests:           bp(true),
 			SecurityConcerns:        sp("SQL injection: the query is built by string concatenation.\nUse bound parameters instead."),
+			PerformanceConcerns:     sp("N+1 access: cmd/app/main.go loads each item with its own query.\nBatch the <ids> instead."),
 			KeyIssuesToReview: []review.KeyIssue{
 				{
 					RelevantFile: "cmd/app/main.go", IssueHeader: "Possible Bug",
@@ -74,7 +76,7 @@ func fixtures() map[string]*review.Result {
 		PR: basePR(), EnabledFields: allKeys, Coverage: baseCoverage(), Notes: []string{},
 		Review: &review.Review{
 			EstimatedEffortToReview: ip(1), RelevantTests: bp(false), SecurityConcerns: sp(review.SecurityNo),
-			KeyIssuesToReview: []review.KeyIssue{},
+			PerformanceConcerns: sp(review.PerformanceNo), KeyIssuesToReview: []review.KeyIssue{},
 		},
 	}
 	noSnippet := &review.Result{
@@ -92,7 +94,8 @@ func fixtures() map[string]*review.Result {
 		EnabledFields: allKeys, Coverage: baseCoverage(), Notes: []string{"Fark kısaltıldı; kapsam bölümüne bakın."},
 		Review: &review.Review{
 			EstimatedEffortToReview: ip(4), RelevantTests: bp(true),
-			SecurityConcerns: sp("Hassas bilgi ifşası: şifre günlüğe yazılıyor."),
+			SecurityConcerns:    sp("Hassas bilgi ifşası: şifre günlüğe yazılıyor."),
+			PerformanceConcerns: sp("src/main.py: her istekte dosya yeniden okunuyor."),
 			KeyIssuesToReview: []review.KeyIssue{
 				{
 					RelevantFile: "src/main.py", IssueHeader: "Olası hata 🐞",
@@ -113,12 +116,60 @@ func fixtures() map[string]*review.Result {
 		PR: basePR(), EnabledFields: allKeys, Coverage: many, Notes: []string{review.NoteDiffTrimmed},
 		Review: &review.Review{
 			EstimatedEffortToReview: ip(5), RelevantTests: bp(false), SecurityConcerns: sp(review.SecurityNo),
-			KeyIssuesToReview: []review.KeyIssue{},
+			PerformanceConcerns: sp(review.PerformanceNo), KeyIssuesToReview: []review.KeyIssue{},
 		},
 	}
 	return map[string]*review.Result{
 		"all_fields": allFields, "no_findings": noFindings, "no_snippet": noSnippet,
 		"non_english": nonEnglish, "coverage_many": coverageMany,
+	}
+}
+
+// TestPerformanceFollowsEnabledFields: the performance row (or section)
+// appears in every profile exactly when performance_concerns is an enabled
+// field, next to the security row; a value without the field enabled is
+// not shown (X-12).
+func TestPerformanceFollowsEnabledFields(t *testing.T) {
+	const concern = "unbounded loop in cmd/app/main.go"
+	profiles := map[string]func(*review.Result) string{
+		"client":    Client,
+		"gitea":     func(r *review.Result) string { return Provider(r, capsGitea) },
+		"bitbucket": func(r *review.Result) string { return Provider(r, capsBB) },
+	}
+	withoutPerf := []string{review.KeyEffort, review.KeyRelevantTests, review.KeyKeyIssues, review.KeySecurityConcerns}
+	for _, tc := range []struct {
+		name    string
+		enabled []string
+		value   string
+		want    []string // in this order
+		absent  []string
+	}{
+		{"on, no", allKeys, review.PerformanceNo, []string{textNoSecurity, textNoPerf}, []string{textPerf}},
+		{"on, concern", allKeys, concern, []string{textNoSecurity, textPerf, concern}, []string{textNoPerf}},
+		{"off, no", withoutPerf, review.PerformanceNo, []string{textNoSecurity}, []string{"erformance"}},
+		{"off, concern", withoutPerf, concern, []string{textNoSecurity}, []string{"erformance", concern}},
+		{"on, empty", allKeys, "  ", []string{textNoSecurity}, []string{"erformance"}},
+	} {
+		for profile, render := range profiles {
+			res := &review.Result{PR: basePR(), EnabledFields: tc.enabled, Coverage: baseCoverage(), Notes: []string{},
+				Review: &review.Review{SecurityConcerns: sp(review.SecurityNo), PerformanceConcerns: sp(tc.value),
+					KeyIssuesToReview: []review.KeyIssue{}}}
+			got := render(res)
+			at := 0
+			for _, w := range tc.want {
+				i := strings.Index(got[at:], w)
+				if i < 0 {
+					t.Errorf("%s/%s: %q missing or out of order:\n%s", profile, tc.name, w, got)
+					break
+				}
+				at += i + len(w)
+			}
+			for _, a := range tc.absent {
+				if strings.Contains(got, a) {
+					t.Errorf("%s/%s: %q present:\n%s", profile, tc.name, a, got)
+				}
+			}
+		}
 	}
 }
 
@@ -190,6 +241,7 @@ func TestClientHasNoHTML(t *testing.T) {
 		Notes: []string{"note " + inj},
 		Review: &review.Review{
 			EstimatedEffortToReview: ip(2), RelevantTests: bp(true), SecurityConcerns: sp("Header: " + inj),
+			PerformanceConcerns: sp("Perf: " + inj),
 			KeyIssuesToReview: []review.KeyIssue{{
 				RelevantFile: "file" + inj + ".go", IssueHeader: "H " + inj, IssueContent: "C " + inj + "\n" + inj,
 				StartLine: 1, EndLine: 2, Snippet: "plain code", SnippetNote: "N " + inj,
@@ -308,6 +360,7 @@ func TestGiteaEscapesInjectedHTML(t *testing.T) {
 		PR: basePR(), EnabledFields: allKeys, Coverage: review.Coverage{},
 		Review: &review.Review{
 			EstimatedEffortToReview: ip(2), RelevantTests: bp(true), SecurityConcerns: sp("Hdr: " + inj),
+			PerformanceConcerns: sp("Perf: " + inj),
 			KeyIssuesToReview: []review.KeyIssue{
 				{RelevantFile: "a" + inj, IssueHeader: "H" + inj, IssueContent: inj, StartLine: 1, EndLine: 1, Snippet: "x", Link: "https://example.com/a'onclick='x"},
 				{RelevantFile: "b.go", IssueHeader: "H2", IssueContent: "c"},
@@ -331,7 +384,8 @@ func TestBitbucketHasNoHTMLAndEscapesPipes(t *testing.T) {
 		PR: basePR(), EnabledFields: allKeys, Coverage: review.Coverage{},
 		Review: &review.Review{
 			EstimatedEffortToReview: ip(2), RelevantTests: bp(true), SecurityConcerns: sp("No"),
-			KeyIssuesToReview: []review.KeyIssue{{RelevantFile: "a|b.go", IssueHeader: "x | y <b>", IssueContent: "c", StartLine: 1, EndLine: 1}},
+			PerformanceConcerns: sp("loop | <b>x</b>"),
+			KeyIssuesToReview:   []review.KeyIssue{{RelevantFile: "a|b.go", IssueHeader: "x | y <b>", IssueContent: "c", StartLine: 1, EndLine: 1}},
 		},
 	}
 	out := Provider(res, capsBB)

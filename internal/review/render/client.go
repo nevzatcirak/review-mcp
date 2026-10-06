@@ -3,8 +3,8 @@
 // provider comment (Gitea: GFM with HTML; Bitbucket Server: headings and
 // pipe tables).
 //
-// Language: the review text (finding headers and contents, security text,
-// notes) is model-authored in the requested output language. The fixed
+// Language: the review text (finding headers and contents, security and
+// performance text, notes) is model-authored in the requested output language. The fixed
 // headings and labels of the renderers stay English; translating them is out
 // of scope.
 package render
@@ -35,7 +35,8 @@ func Client(res *review.Result) string {
 	b.WriteString("## PR Review\n\n")
 	b.WriteString(clientPRLine(&res.PR) + "\n")
 
-	// Short facts as a list; the security text is a section of its own.
+	// Short facts as a list; the security and performance texts are
+	// sections of their own.
 	var facts []string
 	for _, k := range res.EnabledFields {
 		switch {
@@ -45,6 +46,8 @@ func Client(res *review.Result) string {
 			facts = append(facts, testsText(*v.tests))
 		case k == review.KeySecurityConcerns && v.security != nil && !v.hasConcerns:
 			facts = append(facts, textNoSecurity)
+		case k == review.KeyPerformanceConcerns && v.perf != nil && !v.hasPerf:
+			facts = append(facts, textNoPerf)
 		}
 	}
 	if len(facts) > 0 {
@@ -55,6 +58,9 @@ func Client(res *review.Result) string {
 	}
 	if v.showSec && v.hasConcerns {
 		b.WriteString("\n### " + textSecurity + "\n\n" + mdutil.Escape(strings.TrimSpace(*v.security)) + "\n")
+	}
+	if v.showPerf && v.hasPerf {
+		b.WriteString("\n### " + textPerf + "\n\n" + mdutil.Escape(strings.TrimSpace(*v.perf)) + "\n")
 	}
 	if v.showIssues && v.hasReview {
 		writeClientIssues(&b, v.issues)

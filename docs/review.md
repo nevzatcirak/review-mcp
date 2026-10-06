@@ -2,8 +2,8 @@
 
 `pr_review` reads a pull request, asks your LLM to review it, and returns a
 structured review: key issues with code excerpts, an effort estimate, whether
-the PR contains tests, and security concerns. With `publish=true` it also
-posts the review as one PR-level comment.
+the PR contains tests, and security and performance concerns. With
+`publish=true` it also posts the review as one PR-level comment.
 
 ## Calling the tool
 
@@ -73,8 +73,8 @@ for the full table.
 
 The prompt scaffolding (instructions, output format, empty PR fields) was
 measured with the real templates. With every field enabled, a non-English
-language and extra instructions it is **2056 tokens** (estimate, including the
-safety factor and framing). The other combinations range from 1589 to 2056.
+language and extra instructions it is **2205 tokens** (estimate, including the
+safety factor and framing). The other combinations range from 1589 to 2205.
 That maximum is the default of `diag diff --prompt-tokens`. On top of it come
 the title, branch and description of the actual PR; `diag review --dry-run`
 (below) reports the exact figure for a given PR.
@@ -114,6 +114,9 @@ then the enabled fields in a fixed order:
   relevant tests".
 - **Security** (`review.require_security`): "No security concerns
   identified", or the text of the concern.
+- **Performance** (`review.require_performance`): "No performance concerns
+  identified", or the text of the concern (for example unbounded work, N+1
+  access or blocking I/O on a request path).
 - **Key issues to review**, last: a numbered list; each item has a header, the
   file with line numbers (a link to the line on the provider when one is
   available), an explanation and a code excerpt.

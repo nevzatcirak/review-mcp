@@ -20,7 +20,7 @@ const MaxListedFiles = llmrender.MaxListedFiles
 func literal(s string) string { return mdutil.Literal(s) }
 
 // Fixed English texts. The review text itself (headers, finding contents,
-// security text, notes) is model-authored in the requested output language;
+// security and performance text, notes) is model-authored in the requested output language;
 // these headings and labels stay English.
 const (
 	textEffort      = "Estimated effort to review"
@@ -28,6 +28,8 @@ const (
 	textNoTests     = "No relevant tests"
 	textNoSecurity  = "No security concerns identified"
 	textSecurity    = "Security concerns"
+	textNoPerf      = "No performance concerns identified"
+	textPerf        = "Performance concerns"
 	textKeyIssues   = "Key issues to review"
 	textNoIssues    = "No major issues detected"
 	textFocusAreas  = "Recommended focus areas for review"
@@ -50,13 +52,16 @@ type view struct {
 	effort      *int
 	tests       *bool
 	security    *string
+	perf        *string
 	showEffort  bool
 	showTests   bool
 	showSec     bool
+	showPerf    bool
 	showIssues  bool
 	issues      []review.KeyIssue
 	hasReview   bool
 	hasConcerns bool
+	hasPerf     bool
 }
 
 func newView(res *review.Result) view {
@@ -69,6 +74,8 @@ func newView(res *review.Result) view {
 			v.showTests = true
 		case review.KeySecurityConcerns:
 			v.showSec = true
+		case review.KeyPerformanceConcerns:
+			v.showPerf = true
 		case review.KeyKeyIssues:
 			v.showIssues = true
 		}
@@ -80,6 +87,11 @@ func newView(res *review.Result) view {
 			v.security = nil // an empty answer says nothing; do not claim "no concerns"
 		}
 		v.hasConcerns = v.security != nil && r.HasSecurityConcerns()
+		v.perf = r.PerformanceConcerns
+		if v.perf != nil && strings.TrimSpace(*v.perf) == "" {
+			v.perf = nil // as for security: an empty answer claims nothing
+		}
+		v.hasPerf = v.perf != nil && r.HasPerformanceConcerns()
 	}
 	return v
 }

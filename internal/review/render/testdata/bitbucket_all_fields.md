@@ -12,6 +12,11 @@ Pull request: Gitea #12 — Add retry to the fetcher (`https://your-gitea.exampl
 SQL injection: the query is built by string concatenation.
 Use bound parameters instead.
 
+### 🐢 Performance concerns
+
+N+1 access: cmd/app/main.go loads each item with its own query.
+Batch the \<ids\> instead.
+
 ### ⚡ Recommended focus areas for review
 
 | # | Issue | Location |

@@ -132,11 +132,25 @@ Specification: `docs/plan/P6-spec.md`. Its live items are section A and G of
 
 ---
 
+## P7 — Conversation-aware review (added 2026-10-06, owner decision)
+
+**Goal:** Close the gaps found in the first real session on `v1.0.0-rc.1`
+(acceptance record #8, H3): anchorable findings as inline comments, one
+persistent overview comment edited in place (with a new performance field),
+and awareness of the existing PR discussion so that findings are not
+repeated. Also carries the rc.2 hygiene items (case-colliding fixture paths,
+npm trusted publishing, README examples) and the `pr_comment_create` tool.
+
+Specification: `docs/plan/P7-spec.md`. Its live items are section I of
+`docs/plan/v1-acceptance.md`. `v1.0.0` is tagged after P7 and the full
+consolidated acceptance on the resulting release candidate.
+
+---
+
 ## v2 backlog (explicitly out of v1 scope)
 
 - `pr_describe` (cheapest next tool — no line anchoring).
-- `pr_improve` + the suggestion→line anchoring pipeline (most fragile part;
-  design informed by porting-map section E).
+- `pr_improve` (code suggestions). Its anchoring builds on P7's inline anchors.
 - GitHub provider.
 - Anything surfaced by usage friction during v1 (friction reports become work
   items).

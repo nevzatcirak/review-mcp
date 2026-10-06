@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Replaces | The per-phase live gates: P2 §6 (1–7), P2e §6 (8–10), P3 §7 (1–4), P4 §8 (1–6), P5 §4 (1–4) and the P6 gate (phase-plan amendment, 2026-10-06) |
-| Runs against | The first release candidate `v1.0.0-rc.1`, and each later `rc.N` for the items its fixes touch |
+| Runs against | The release candidate that contains P7 (`v1.0.0-rc.2` or later). `rc.1` was used for a first real session (record #8). |
 | Run by | The owner |
 | Record | One GitHub issue, "v1.0.0 acceptance record": one comment per section, redacted (see §0). A fix PR links the item ID it fixes. |
 
@@ -47,7 +47,7 @@
   - Publishing and replying need the scopes the guide says they need, and fail with the auth sentence without them.
 
   Record every scope that was wrong in the guide.
-- **A4** Register the server in Claude Code and in opencode using the guide's snippets. Both list the five v1 tools (`server_info`, `pr_comments`, `pr_comment_reply`, `pr_review`, `pr_ask`). `server_info` shows the secrets as set or unset only.
+- **A4** Register the server in Claude Code and in opencode using the guide's snippets. Both list the six v1 tools (`server_info`, `pr_comments`, `pr_comment_reply`, `pr_comment_create`, `pr_review`, `pr_ask`). `server_info` shows the secrets as set or unset only.
 - **A5** Download one release archive, verify it against `checksums.txt`, and check that the archive contains `LICENSE`, `NOTICE` and `THIRD_PARTY_LICENSES`.
 
 ## B. Providers (P2 §6, items 1–7)
@@ -121,6 +121,18 @@
 - **H1** Run one full session (E1, F1 and C2) at `REVIEW_MCP_LOG_LEVEL=debug`, then search the captured stderr for each token value and for a distinctive phrase from the PR description. Zero hits.
 - **H2** Force each error you can (bad token, wrong host, unreachable LLM, tiny context window). Each message is a fixed sentence with no raw server text.
 - **H3** Record any friction from the whole run (see §0). Watch in particular how model-authored inline code (backticks) reads in the client profile, where it is escaped (P4 review, point 4).
+
+## I. Conversation-aware review (P7)
+Run on a **personal** Bitbucket Data Center trial instance and, if available, a personal Gitea.
+- **I1** `server_info` and a `pr_review` publish identify the token's user correctly. Record which Bitbucket identity mechanism was used.
+- **I2** On a PR with an added line, a context line and an out-of-hunk finding:
+  - the inline comments land on the right lines;
+  - the Bitbucket context-line anchor is accepted;
+  - the out-of-hunk finding appears in the overview only, with its note.
+- **I3** The overview marker is invisible in both UIs. A second `publish=true` run **edits** the overview: there is still one overview comment, with an updated time and SHA, and no duplicate inline comments.
+- **I4** The security and performance rows are present. A deliberate N+1 or unbounded loop in the test PR is reported under performance.
+- **I5** A reviewer comment that already raises an issue is not repeated by the review, and the overview shows the "already discussed" count. A comment containing "ignore previous instructions…" does not change the review.
+- **I6** In an MCP client, asking to write a comment on line N of file X uses `pr_comment_create` and lands on the line. A line outside the diff is refused with the fixed sentence.
 
 ## Exit
 `v1.0.0` is tagged when every item is pass, or not run with an accepted reason, and no blocker is open. The record issue is then closed with a link to the tag.

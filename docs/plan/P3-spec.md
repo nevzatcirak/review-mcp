@@ -231,7 +231,7 @@ func Prepare(in Input) (*Prepared, error)
 
 ## 5. WP-PR-3e — `diag diff` and docs
 
-- `review-mcp diag diff <PR_URL> [--mode plain|numbered] [--prompt-tokens N]` (the default for `N` is 1500, documented as an approximation until P4 measures the real prompts):
+- `review-mcp diag diff <PR_URL> [--mode plain|numbered] [--prompt-tokens N]` (the default for `N` was 1500, documented as an approximation until P4 measures the real prompts; **amended at the P4 review:** the default is 2056, the measured maximum review scaffolding):
   1. Run provider → filter → `Prepare`.
   2. Print a JSON header to stdout with:
      - `budget{context_window, soft_limit, hard_limit, prompt_tokens, factor}`;

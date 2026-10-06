@@ -5,10 +5,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // Distinctive per-provider tokens and a marker that must never be echoed.
@@ -16,6 +18,11 @@ const (
 	diagGiteaToken = "FAKE-diag-gitea-token-QX42-do-not-leak" //nolint:gosec // synthetic test value
 	diagBBSToken   = "FAKE-diag-bbs-token-QX42-do-not-leak"   //nolint:gosec // synthetic test value
 	diagMarker     = "FAKE-RESPONSE-MARKER-QX42-never-echo"
+
+	// Markers placed in comment fixtures. They must reach the output of
+	// "diag comments" and must never reach the logs.
+	commentBodyMarker   = "FAKE-COMMENT-BODY-QX42-stdout-only"
+	commentAuthorMarker = "fake-author-qx42"
 )
 
 // fakeHost is a minimal httptest provider host. It counts every request,
@@ -130,6 +137,30 @@ func newFakeGitea(t *testing.T) *fakeHost {
 			})
 		case r.Method == "GET" && strings.HasPrefix(p, api+"/raw/"):
 			_, _ = io.WriteString(w, "content "+diagMarker)
+		case r.Method == "GET" && p == api+"/issues/7/comments":
+			if r.URL.Query().Get("page") != "1" {
+				_, _ = io.WriteString(w, "[]")
+				return
+			}
+			writeJSONResp(w, []any{giteaIssueComment(101)})
+		case r.Method == "GET" && p == api+"/issues/comments/101":
+			writeJSONResp(w, giteaIssueComment(101))
+		case r.Method == "GET" && p == api+"/pulls/7/reviews":
+			if r.URL.Query().Get("page") != "1" {
+				_, _ = io.WriteString(w, "[]")
+				return
+			}
+			writeJSONResp(w, []any{map[string]any{"id": 11, "state": "COMMENT"}})
+		case r.Method == "GET" && p == api+"/pulls/7/reviews/11/comments":
+			if r.URL.Query().Get("page") != "1" {
+				_, _ = io.WriteString(w, "[]")
+				return
+			}
+			writeJSONResp(w, []any{
+				giteaReviewComment(201, "src/app.go", 10, 100, ""),
+				giteaReviewComment(202, "src/app.go", 10, 105, ""),
+				giteaReviewComment(301, "src/done.go", 3, 110, "bob"),
+			})
 		case r.Method == "POST" && p == api+"/issues/7/comments":
 			f.mu.Lock()
 			f.posted = append(f.posted, string(body))
@@ -141,6 +172,31 @@ func newFakeGitea(t *testing.T) *fakeHost {
 	}))
 	t.Cleanup(f.srv.Close)
 	return f
+}
+
+func commentTime(sec int) string {
+	return time.Date(2026, 1, 2, 3, 4, 0, 0, time.UTC).Add(time.Duration(sec) * time.Second).Format(time.RFC3339)
+}
+
+func giteaIssueComment(id int) map[string]any {
+	return map[string]any{
+		"id": id, "user": map[string]any{"login": commentAuthorMarker}, "body": "general " + commentBodyMarker,
+		"created_at": commentTime(1), "updated_at": commentTime(1), "type": "comment",
+		"html_url":  "https://your-gitea.example/octo/demo/pulls/7#issuecomment-" + strconv.Itoa(id),
+		"issue_url": "https://your-gitea.example/api/v1/repos/octo/demo/issues/7",
+	}
+}
+
+func giteaReviewComment(id int, path string, position, sec int, resolver string) map[string]any {
+	m := map[string]any{
+		"id": id, "user": map[string]any{"login": "bob"}, "body": "inline " + commentBodyMarker, "path": path,
+		"position": position, "original_position": position,
+		"created_at": commentTime(sec), "updated_at": commentTime(sec),
+	}
+	if resolver != "" {
+		m["resolver"] = map[string]any{"id": 2, "login": resolver}
+	}
+	return m
 }
 
 func (f *fakeHost) giteaBase() string { return f.srv.URL + "/gitea" }
@@ -197,6 +253,29 @@ func newFakeBBS(t *testing.T) *fakeHost {
 			}
 		case r.Method == "GET" && p == v1+"/raw/src/new.go":
 			_, _ = io.WriteString(w, "package main\nvar n = 1\n")
+		case r.Method == "GET" && p == v1+"/pull-requests/7/activities":
+			ms := func(sec int) int64 { return 1_700_000_000_000 + int64(sec)*1000 }
+			comment := func(id int, text string, sec int, extra map[string]any, replies ...any) map[string]any {
+				m := map[string]any{
+					"id": id, "text": text, "author": map[string]any{"name": commentAuthorMarker},
+					"createdDate": ms(sec), "updatedDate": ms(sec), "comments": replies,
+				}
+				for k, v := range extra {
+					m[k] = v
+				}
+				return m
+			}
+			anchor := map[string]any{"path": "src/app.go", "line": 12, "fileType": "TO"}
+			paged([]any{
+				map[string]any{"action": "APPROVED"},
+				map[string]any{"action": "COMMENTED", "commentAction": "ADDED",
+					"comment": comment(1, "general "+commentBodyMarker, 1, map[string]any{"state": "OPEN"},
+						comment(2, "reply "+commentBodyMarker, 2, nil))},
+				map[string]any{"action": "COMMENTED", "commentAction": "ADDED", "commentAnchor": anchor,
+					"comment": comment(10, "inline "+commentBodyMarker, 3, map[string]any{"state": "OPEN"})},
+				map[string]any{"action": "COMMENTED", "commentAction": "ADDED",
+					"comment": comment(20, "resolved "+commentBodyMarker, 4, map[string]any{"state": "RESOLVED"})},
+			})
 		case r.Method == "POST" && p == v1+"/pull-requests/7/comments":
 			f.mu.Lock()
 			f.posted = append(f.posted, string(body))

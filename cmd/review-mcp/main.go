@@ -82,6 +82,10 @@ commands:
             fetch a pull request and print a JSON connectivity report
   diag comment <PR_URL> --body <TEXT>
             post one PR-level comment
+  diag comments <PR_URL> [--include-resolved]
+            list the comment threads of a pull request as JSON
+  diag reply <PR_URL> --comment-id <ID> --body <TEXT>
+            reply to a pull request comment
   serve     HTTP mode (not available in this version)
 `)
 }

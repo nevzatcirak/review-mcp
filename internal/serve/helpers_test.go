@@ -59,8 +59,9 @@ type observation struct {
 // fakeGitea serves octo/demo pull requests 1..N. Each PR's title carries
 // "PR-<n>-TITLE" so the LLM request can be tied back to its PR.
 type fakeGitea struct {
-	srv  *httptest.Server
-	hits atomic.Int64
+	srv   *httptest.Server
+	conns *connCounter
+	hits  atomic.Int64
 
 	mu  sync.Mutex
 	obs []observation
@@ -82,7 +83,7 @@ type fakeGitea struct {
 func newFakeGitea(t *testing.T) *fakeGitea {
 	t.Helper()
 	f := &fakeGitea{arrived: make(chan struct{}, 1024)}
-	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
+	f.srv, f.conns = startCounted(http.HandlerFunc(f.serve))
 	t.Cleanup(f.srv.Close)
 	return f
 }
@@ -191,8 +192,9 @@ const goodAnswer = "```yaml\nreview:\n  estimated_effort_to_review: 2\n  relevan
 // fakeLLM answers every chat completion with goodAnswer and records the key
 // it was called with and the PR number found in the prompt.
 type fakeLLM struct {
-	srv  *httptest.Server
-	hits atomic.Int64
+	srv   *httptest.Server
+	conns *connCounter
+	hits  atomic.Int64
 
 	mu  sync.Mutex
 	obs []observation
@@ -201,7 +203,7 @@ type fakeLLM struct {
 func newFakeLLM(t *testing.T) *fakeLLM {
 	t.Helper()
 	f := &fakeLLM{}
-	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	f.srv, f.conns = startCounted(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.hits.Add(1)
 		body, _ := io.ReadAll(r.Body)
 		pr := -1

@@ -38,17 +38,18 @@ func registerPRAsk(s *mcp.Server, deps Deps) {
 		log := logger(deps)
 		// The degraded configuration check comes first: nothing is built and
 		// nothing touches the network.
-		cfg, resolver, err := callScope(ctx, deps, req, true)
+		sc, err := callScope(ctx, deps, req, true)
 		if err != nil {
 			return nil, zero, err
 		}
+		defer sc.release()
 		if deps.NewLLM == nil {
 			return nil, zero, toolError("review-mcp has no LLM wiring; this is a bug")
 		}
 		res, text, err := tools.PRAsk(ctx, tools.AskDeps{
-			Config:   cfg,
-			Resolver: resolver,
-			NewLLM:   llmFactory(deps),
+			Config:   sc.cfg,
+			Resolver: sc.resolver,
+			NewLLM:   sc.newLLM,
 			Logger:   log,
 			Progress: progressFunc(ctx, req, log, "pr_ask"),
 		}, tools.PRAskArgs{

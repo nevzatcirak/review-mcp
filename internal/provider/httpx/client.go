@@ -127,6 +127,19 @@ func New(opts Options) (*Client, error) {
 	return c, nil
 }
 
+// CloseIdleConnections closes the idle keep-alive connections of the
+// client's own transport, and any connection that becomes idle later (a
+// response body closed after this call). The transport is per client, so
+// this never touches another call's connections. Callers run it when the
+// tool call that built the client ends. It is safe on a nil or unused
+// client and may be called more than once.
+func (c *Client) CloseIdleConnections() {
+	if c == nil || c.hc == nil {
+		return
+	}
+	c.hc.CloseIdleConnections()
+}
+
 func splitEscaped(p string) []string {
 	p = strings.Trim(p, "/")
 	if p == "" {

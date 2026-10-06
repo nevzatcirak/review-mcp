@@ -12,6 +12,7 @@ import (
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/llm"
+	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 	"github.com/nevzatcirak/review-mcp/internal/review/render"
 	"github.com/nevzatcirak/review-mcp/internal/wiring"
@@ -116,8 +117,10 @@ func writePrompts(w io.Writer, system, user string) error {
 // the JSON report. No LLM client is built: nothing can reach the model.
 func diagReviewDryRun(ctx context.Context, cfg *config.Config, logger *slog.Logger, prURL string, showPrompt bool, stdout, stderr io.Writer) int {
 	start := time.Now()
+	resolver := wiring.NewResolver(cfg, logger)
+	defer resolver.CloseIdleConnections()
 	pl, err := review.Prepare(ctx, review.Deps{
-		Config: cfg, Logger: logger, Resolver: wiring.NewResolver(cfg, logger),
+		Config: cfg, Logger: logger, Resolver: resolver,
 	}, review.Args{PRURL: prURL})
 	if err != nil {
 		return reportError(stderr, err)
@@ -133,6 +136,14 @@ func diagReviewDryRun(ctx context.Context, cfg *config.Config, logger *slog.Logg
 		}
 	}
 	return 0
+}
+
+// closeIdle closes the idle connections of a chat client built for one diag
+// command, like the MCP tool handlers do when a call ends.
+func closeIdle(c review.Completer) {
+	if ic, ok := c.(provider.IdleCloser); ok {
+		ic.CloseIdleConnections()
+	}
 }
 
 // promptRecorder wraps the chat client to keep the first request's prompts
@@ -158,9 +169,12 @@ func diagReview(ctx context.Context, cfg *config.Config, logger *slog.Logger, pr
 	if err != nil {
 		return reportError(stderr, err)
 	}
+	defer closeIdle(client)
+	resolver := wiring.NewResolver(cfg, logger)
+	defer resolver.CloseIdleConnections()
 	rec := &promptRecorder{Completer: client}
 	res, err := review.Run(ctx, review.Deps{
-		Config: cfg, Logger: logger, Resolver: wiring.NewResolver(cfg, logger), LLM: rec,
+		Config: cfg, Logger: logger, Resolver: resolver, LLM: rec,
 		RenderProvider: render.Provider,
 	}, review.Args{PRURL: prURL, Publish: publish})
 	if err != nil {

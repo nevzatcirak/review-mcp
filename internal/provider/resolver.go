@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
@@ -35,11 +36,43 @@ type candidate struct {
 
 // Resolver maps a PR URL to a PRRef and a Provider (X-2). It performs no
 // network I/O.
+//
+// A Resolver is request-scoped: it remembers the providers its Resolve calls
+// built so that CloseIdleConnections can release their connections when the
+// call ends.
 type Resolver struct {
 	cfg        *config.Config
 	logger     *slog.Logger
 	candidates []candidate
 	configured []string // redacted base URLs for hints
+
+	mu    sync.Mutex
+	built []Provider
+}
+
+// IdleCloser is implemented by a Provider (or any per-call client) that owns
+// an HTTP transport whose idle connections can be released.
+type IdleCloser interface {
+	CloseIdleConnections()
+}
+
+// CloseIdleConnections closes the idle connections of every provider this
+// resolver built (those implementing IdleCloser). The caller runs it, with
+// defer, when the tool call that owns the resolver ends. It is safe on a nil
+// or unused resolver and may be called more than once.
+func (r *Resolver) CloseIdleConnections() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	built := r.built
+	r.built = nil
+	r.mu.Unlock()
+	for _, p := range built {
+		if c, ok := p.(IdleCloser); ok {
+			c.CloseIdleConnections()
+		}
+	}
 }
 
 // NewResolver builds a Resolver from the enabled providers' base URLs (plus
@@ -191,6 +224,9 @@ func (r *Resolver) Resolve(rawURL string) (PRRef, Provider, error) {
 	if err != nil {
 		return PRRef{}, nil, err
 	}
+	r.mu.Lock()
+	r.built = append(r.built, p)
+	r.mu.Unlock()
 	r.logger.Debug("resolved pull request URL", "kind", string(best.kind), "url", logging.RedactURL(rawURL))
 	return PRRef{Kind: best.kind, Namespace: ns, Repo: repo, Number: num, URL: rawURL}, p, nil
 }

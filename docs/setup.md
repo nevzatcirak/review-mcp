@@ -86,14 +86,15 @@ works, and keep it in a secret manager or your shell profile, never in a file
 that is checked in.
 
 Use a read-only token to start. `pr_review` and `pr_ask` need write access only
-when you pass `publish=true`, and `pr_comment_reply` always writes.
+when you pass `publish=true`, and `pr_comment_reply` and `pr_comment_create`
+always write.
 
 ### What each token needs
 
 | Use | Needs |
 |---|---|
 | Read only: `pr_comments`, `pr_review` and `pr_ask` with `publish=false` | the read scopes below |
-| Read and write: `publish=true`, `pr_comment_reply` | the read scopes plus the write scope |
+| Read and write: `publish=true`, `pr_comment_reply`, `pr_comment_create` | the read scopes plus the write scope |
 
 > **Every scope in this guide is unconfirmed.** They are derived from the API
 > calls the code makes, in the tables below, and each is marked "verify at V1
@@ -126,14 +127,17 @@ Endpoints the Gitea provider calls (under `{base_url}/api/v1/repos/{owner}/{repo
 | `GET /pulls/{n}/files` | the list of changed files | `read:repository` | `internal/provider/gitea/diff.go` (`GetDiff`) |
 | `GET /raw/{path}?ref={sha}` | full file contents on both sides, for extra context | `read:repository` | `internal/provider/gitea/diff.go` (`rawPath`, `fetchSide`) |
 | `GET /pulls/{n}/reviews` and `GET /pulls/{n}/reviews/{id}/comments` | inline review comments (`pr_comments`, reply lookup); before posting inline comments, a check for a pending review of the token's user; after posting, the posted comments' links | `read:repository` | `internal/provider/gitea/comments.go` (`reviewComments`), `internal/provider/gitea/write.go` (`PostInlineComments`) |
-| `POST /pulls/{n}/reviews` | inline comments, posted as one review with event `COMMENT` on the head commit (one review per comment if that fails) | `write:repository` | `internal/provider/gitea/write.go` (`PostInlineComments`) |
+| `POST /pulls/{n}/reviews` | inline comments (`publish=true`, and `pr_comment_create` with `file` and `line`), posted as one review with event `COMMENT` on the head commit (one review per comment if that fails) | `write:repository` | `internal/provider/gitea/write.go` (`PostInlineComments`) |
 | `DELETE /pulls/{n}/reviews/{id}` | delete a pending review of the token's user that a failed post left behind | `write:repository` | `internal/provider/gitea/write.go` (`deletePending`) |
 | `GET /issues/{n}/comments` | PR-level comments (`pr_comments`) | `read:issue` | `internal/provider/gitea/comments.go` (`ListThreads`) |
 | `GET /issues/comments/{id}` | find the comment a reply refers to (`pr_comment_reply`); re-read a comment and check its author before editing it | `read:issue` | `internal/provider/gitea/comments.go` (`ReplyToComment`), `internal/provider/gitea/write.go` (`EditComment`) |
 | `PATCH /issues/comments/{id}` | edit a PR comment the token's user wrote (the review overview) | `write:issue` | `internal/provider/gitea/write.go` (`EditComment`) |
 | `GET /api/v1/user` | the token's own user | `read:user` | `internal/provider/gitea/write.go` (`CurrentUser`) |
-| `POST /issues/{n}/comments` | post a comment: `publish=true`, and `pr_comment_reply` (Gitea has no thread reply, so a reply is a new PR-level comment with a quote line) | `write:issue` | `internal/provider/gitea/gitea.go` (`PostComment`) |
+| `POST /issues/{n}/comments` | post a comment: `publish=true` (the overview), `pr_comment_create` without a file, and `pr_comment_reply` (Gitea has no thread reply, so a reply is a new PR-level comment with a quote line) | `write:issue` | `internal/provider/gitea/gitea.go` (`PostComment`) |
 
+`pr_comment_create` adds no endpoint of its own: a PR-level comment needs the
+`write:issue` rows above, and an inline one also reads the diff (the
+`read:repository` rows) to validate the line and needs `write:repository`.
 Every row's scope is "verify at V1 acceptance (item A3)".
 
 ### Bitbucket Server / Data Center
@@ -165,13 +169,15 @@ includes your context path):
 | `GET .../pull-requests/{id}/changes` | the list of changed files | read | `internal/provider/bitbucketserver/diff.go` (`GetDiff`) |
 | `GET /rest/api/1.0/projects/{key}/repos/{slug}/raw/{path}?at={sha}` | file contents on both sides; the patch is built from them | read | `internal/provider/bitbucketserver/diff.go` (`rawPath`, `fetchSide`) |
 | `GET .../pull-requests/{id}/activities` | comment threads (`pr_comments`, reply lookup) | read | `internal/provider/bitbucketserver/comments.go` (`ListThreads`) |
-| `POST .../pull-requests/{id}/comments` | PR-level comment (`publish=true`) | write | `internal/provider/bitbucketserver/bitbucketserver.go` (`PostComment`) |
+| `POST .../pull-requests/{id}/comments` | PR-level comment (`publish=true`, `pr_comment_create` without a file) | write | `internal/provider/bitbucketserver/bitbucketserver.go` (`PostComment`) |
 | `POST .../pull-requests/{id}/comments` with `parent` | reply inside a thread (`pr_comment_reply`) | write | `internal/provider/bitbucketserver/comments.go` (`ReplyToComment`) |
-| `POST .../pull-requests/{id}/comments` with `anchor` | inline comment on a changed or context line, one request per comment | read (to be confirmed at A3) | `internal/provider/bitbucketserver/write.go` (`PostInlineComments`) |
+| `POST .../pull-requests/{id}/comments` with `anchor` | inline comment on a changed or context line, one request per comment (`publish=true`, and `pr_comment_create` with `file` and `line`) | read (to be confirmed at A3) | `internal/provider/bitbucketserver/write.go` (`PostInlineComments`) |
 | `GET .../pull-requests/{id}/comments/{commentId}` | a comment's version and author, read before editing it | read | `internal/provider/bitbucketserver/write.go` (`EditComment`) |
 | `PUT .../pull-requests/{id}/comments/{commentId}` | edit a comment the token's user wrote (the review overview) | read (to be confirmed at A3) | `internal/provider/bitbucketserver/write.go` (`EditComment`) |
 
-The permission column says what the code needs; whether Bitbucket accepts a
+`pr_comment_create` uses the comment rows above plus the read rows for the
+pull request, its changes and its file contents, which validate the line
+against the diff. The permission column says what the code needs; whether Bitbucket accepts a
 read-level token for commenting is exactly what item A3 checks. Bitbucket lets
 users with repository read permission comment on pull requests, so Repository
 read may be enough for posting, inline comments and editing your own comments;

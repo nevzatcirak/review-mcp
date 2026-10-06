@@ -3,7 +3,7 @@
 `review-mcp` is a standalone, open-source (MIT) MCP server written in Go that
 brings AI-powered pull-request tools to any MCP client, such as Claude Code and
 opencode. It reviews a pull request with `pr_review`, answers questions about
-one with `pr_ask`, and reads and replies to comment threads. It targets Gitea
+one with `pr_ask`, and reads, answers and writes comments on pull requests. It targets Gitea
 and Bitbucket Server (Data Center) first, with GitHub planned for later, and
 works with any OpenAI-compatible LLM endpoint. Identity is per user: provider
 tokens and the LLM API key come from the MCP client configuration (as
@@ -97,14 +97,15 @@ see the [changelog](CHANGELOG.md).
 | `server_info` | Version, enabled providers and the effective non-secret configuration; secrets show only as set or unset. |
 | `pr_comments` | Lists a pull request's comment threads. |
 | `pr_comment_reply` | Replies to a pull request comment (inside the thread on Bitbucket Server; as a quoting PR-level comment on Gitea). |
-| `pr_review` | Reviews a pull request with your LLM. The title, description and diff are sent to your LLM endpoint. Optionally publishes the review as a PR comment. |
+| `pr_comment_create` | Posts a new comment on a pull request, PR-level or on a changed line (`file` and `line`). A line outside the diff is refused, never posted at PR level instead. |
+| `pr_review` | Reviews a pull request with your LLM. The title, description, existing comments and diff are sent to your LLM endpoint. Optionally publishes the review: one overview comment, edited in place on later runs, and inline comments on the changed lines. |
 | `pr_ask` | Answers a free-text question about a pull request, grounded in its title, description and diff. Optionally publishes the question and answer as a PR comment. |
 
 ## Documentation
 
 - [Setup guide](docs/setup.md): install, token checklist, LLM endpoint, client configuration, first run.
 - [Serve mode](docs/serve.md): one shared HTTP server for a team, the header contract, TLS, the container.
-- [Reviewing pull requests](docs/review.md): what `pr_review` sends to the LLM, choosing `llm.context_window`, reading coverage and notes, `publish`, `diag review --dry-run`.
+- [Reviewing pull requests](docs/review.md): what `pr_review` sends to the LLM, choosing `llm.context_window`, reading coverage and notes, `publish` (the overview and inline comments), discussion awareness, `diag review --dry-run`.
 - [Asking questions about a pull request](docs/ask.md): what `pr_ask` sends to the LLM, grounding and honesty, coverage, `publish` and the slash sanitization, `diag ask --dry-run`.
 - [Getting started](docs/getting-started.md): the minimal configuration and the diff budget in detail.
 - [Troubleshooting](docs/troubleshooting.md): the `diag` commands and every error sentence.

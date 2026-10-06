@@ -129,7 +129,8 @@ If `command` is not found, use the absolute path to the binary.
 | `server_info` | Version, enabled providers and the effective non-secret configuration. |
 | `pr_comments` | Lists a pull request's comment threads. |
 | `pr_comment_reply` | Replies to a pull request comment. |
-| `pr_review` | Reviews a pull request with your LLM; see [Reviewing pull requests](review.md). The PR's title, description and diff are sent to `llm.base_url`. |
+| `pr_comment_create` | Posts a new comment on a pull request, PR-level or on a changed line (`file` and `line`). |
+| `pr_review` | Reviews a pull request with your LLM; see [Reviewing pull requests](review.md). The PR's title, description, existing comments and diff are sent to `llm.base_url`. |
 | `pr_ask` | Answers a question about a pull request with your LLM, grounded in its title, description and diff; see [Asking questions](ask.md). The PR content and the question are sent to `llm.base_url`. |
 
 For reviews, the recommended sampling setting is `REVIEW_MCP_LLM_TEMPERATURE=0.2`

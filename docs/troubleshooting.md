@@ -413,7 +413,8 @@ A3) has verified them.
   (`write:issue`, for posting and editing PR comments) and to the repository
   (`write:repository`, for inline comments, which are posted as a review).
   The write part is needed only for publishing (`publish`),
-  `pr_comment_reply` and `diag comment`; reading a PR needs only read access.
+  `pr_comment_reply`, `pr_comment_create` and `diag comment`; reading a PR needs
+  only read access.
 - **Bitbucket Server / Data Center:** an HTTP access token with repository
   read permission, plus write permission only for comments. The token is sent
   as `Authorization: Bearer ...`; basic authentication is not supported.

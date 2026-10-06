@@ -1,0 +1,17 @@
+
+
+## File: 'config/settings.ini'
+
+@@ -1,5 +1,5 @@
+__new hunk__
+1  [server]
+2  host = localhost
+3  port = 8080
+4 +workers = 8
+5 +timeout = 60
+__old hunk__
+ [server]
+ host = localhost
+ port = 8080
+-workers = 4
+-timeout = 30

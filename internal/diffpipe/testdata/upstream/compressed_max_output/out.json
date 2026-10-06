@@ -1,0 +1,49 @@
+{
+ "languages": [
+  "Java",
+  "TypeScript",
+  "Ruby",
+  "C",
+  "JavaScript",
+  "Rust",
+  "Other"
+ ],
+ "tokens": 3348,
+ "clip_overshoot_offset": null,
+ "upstream_dropped": [],
+ "fast_path": false,
+ "included": [
+  "internal/store/item_8.java",
+  "src/app/buffer_4.java",
+  "docs/count_2.rb",
+  "lib/core/handler_0.rb",
+  "lib/core/index_9.c",
+  "docs/item_6.c",
+  "internal/store/entry_10.js",
+  "src/app/handler_3.zzz"
+ ],
+ "omitted": {
+  "added": [],
+  "modified": [
+   "docs/record_5.rs",
+   "internal/store/state_1.zzz"
+  ],
+  "deleted": [
+   "pkg/util/config_11.java",
+   "src/app/result_7.ts"
+  ]
+ },
+ "file_dict_order": [
+  "internal/store/item_8.java",
+  "src/app/buffer_4.java",
+  "docs/count_2.rb",
+  "lib/core/handler_0.rb",
+  "lib/core/index_9.c",
+  "docs/item_6.c",
+  "internal/store/entry_10.js",
+  "docs/record_5.rs",
+  "internal/store/state_1.zzz",
+  "src/app/handler_3.zzz"
+ ],
+ "policy_case": false
+}

@@ -1,0 +1,15 @@
+
+
+## File: 'src/mini.py'
+
+@@ -10 +10 @@ def run():
+__new hunk__
+10 +    value_9 = compute(900)
+__old hunk__
+-    value_9 = compute(9)
+
+@@ -13 +13 @@ def run():
+__new hunk__
+13 +    value_12 = compute(1200)
+__old hunk__
+-    value_12 = compute(12)

@@ -27,7 +27,7 @@ MIT — see [LICENSE](LICENSE).
 
 ## Development
 
-Requires Go 1.25 or newer and [golangci-lint](https://golangci-lint.run/) v2.
+Requires Go 1.26 or newer and [golangci-lint](https://golangci-lint.run/) v2.14.0 or newer (v2.x releases built with Go 1.26+; older ones refuse to lint a Go 1.26 module).
 
 ```sh
 make build   # build ./review-mcp with version/commit embedded

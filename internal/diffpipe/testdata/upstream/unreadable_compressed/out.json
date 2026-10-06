@@ -1,0 +1,42 @@
+{
+ "languages": [
+  "Go",
+  "Python",
+  "Java",
+  "Ruby",
+  "Rust",
+  "C"
+ ],
+ "tokens": 1982,
+ "clip_overshoot_offset": null,
+ "upstream_dropped": [],
+ "fast_path": false,
+ "included": [
+  "docs/result_5.go",
+  "pkg/util/state_3.py"
+ ],
+ "omitted": {
+  "added": [
+   "pkg/util/total_0.java"
+  ],
+  "modified": [
+   "scripts/alpha_1.py",
+   "src/app/response_2.py",
+   "lib/core/state_4.rb",
+   "src/app/state_6.rs",
+   "internal/store/delta_7.c"
+  ],
+  "deleted": []
+ },
+ "file_dict_order": [
+  "docs/result_5.go",
+  "pkg/util/state_3.py",
+  "scripts/alpha_1.py",
+  "src/app/response_2.py",
+  "pkg/util/total_0.java",
+  "lib/core/state_4.rb",
+  "src/app/state_6.rs",
+  "internal/store/delta_7.c"
+ ],
+ "policy_case": false
+}

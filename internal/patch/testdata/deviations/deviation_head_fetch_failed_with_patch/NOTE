@@ -1,0 +1,19 @@
+INTENTIONAL DEVIATION FROM UPSTREAM: architect decision D3 (PR #4).
+
+Not oracle output. A Gitea-style modified file whose head-content fetch
+failed (head_status fetch_failed, no head.txt) while its patch, taken from
+the PR's .diff, is present and trustworthy.
+
+review-mcp renders the patch normally in every view, unextended because the
+head content is nil (spec section 3.2). It never shows the unreadable notice,
+which would claim that no diff is available. The notice is reserved for
+head_status fetch_failed with an empty patch (case
+testdata/deviations/deviation_unreadable_notice, formerly the oracle case
+testdata/upstream/unreadable; it moved there under D4).
+
+Upstream PR-Agent at 8e5a929 would extend this patch against an empty head
+string, so it cannot produce these outputs. They were derived by running the
+upstream oracle (gen_goldens.py) on a twin case: same path, type and patch,
+head_status "full", no base.txt and no head.txt. Upstream then leaves the patch
+unextended (no original file) and renders it normally. See
+testdata/upstream/README.md, section "Deviations".

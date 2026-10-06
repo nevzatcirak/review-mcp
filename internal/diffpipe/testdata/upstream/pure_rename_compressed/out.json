@@ -1,0 +1,44 @@
+{
+ "languages": [
+  "Ruby",
+  "Java",
+  "Rust",
+  "Markdown",
+  "TypeScript",
+  "Go",
+  "Other"
+ ],
+ "tokens": 1260,
+ "clip_overshoot_offset": null,
+ "upstream_dropped": [
+  "pkg/util/index_5.rs",
+  "pkg/util/result_4.go",
+  "scripts/buffer_7.zzz"
+ ],
+ "fast_path": false,
+ "included": [
+  "pkg/util/delta_6.rb",
+  "lib/core/buffer_2.rb",
+  "scripts/count_8.java"
+ ],
+ "omitted": {
+  "added": [],
+  "modified": [
+   "scripts/config_1.rs",
+   "internal/store/record_3.md",
+   "src/app/option_0.ts",
+   "lib/core/value_9.zzz"
+  ],
+  "deleted": []
+ },
+ "file_dict_order": [
+  "pkg/util/delta_6.rb",
+  "lib/core/buffer_2.rb",
+  "scripts/count_8.java",
+  "scripts/config_1.rs",
+  "internal/store/record_3.md",
+  "src/app/option_0.ts",
+  "lib/core/value_9.zzz"
+ ],
+ "policy_case": false
+}

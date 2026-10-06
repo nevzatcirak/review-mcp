@@ -1,0 +1,13 @@
+{
+  "path": "src/gitea_app.py",
+  "old_path": "",
+  "type": "modified",
+  "head_status": "fetch_failed",
+  "before": 5,
+  "after": 1,
+  "skip_extend_extensions": [
+    ".md",
+    ".txt"
+  ],
+  "deviation": "D3"
+}

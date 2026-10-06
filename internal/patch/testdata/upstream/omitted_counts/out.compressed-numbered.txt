@@ -1,0 +1,15 @@
+
+
+## File: 'src/counts.py'
+
+@@ -9 +9 @@
+__new hunk__
+9 +    value_8 = compute(80)
+__old hunk__
+-    value_8 = compute(8)
+
+@@ -21 +21 @@
+__new hunk__
+21 +    value_20 = compute(200)
+__old hunk__
+-    value_20 = compute(20)

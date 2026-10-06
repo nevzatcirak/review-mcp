@@ -1,0 +1,21 @@
+INTENTIONAL DEVIATION FROM UPSTREAM: architect decision D4 (PR #4).
+
+Formerly the oracle case testdata/upstream/unreadable; the inputs are unchanged.
+The head-content fetch failed (head_status fetch_failed, no head.txt) and the
+patch is empty, so every view renders the unreadable-file notice (upstream's
+trigger, also review-mcp's under D3).
+
+The notice is adapted from upstream's _unreadable_file_notice: the product
+name "PR-Agent" is replaced by "review-mcp", so the model and the users see
+the name of the tool they are actually running. The rest of the wording is
+upstream's. internal/patch/literals.go holds the literal; NOTICE covers it
+as adapted material.
+
+How the outputs were derived: the upstream oracle (gen_goldens.py) was run
+on a twin case with exactly these inputs, minus the "deviation" field. The
+twin's outputs are byte-identical to the former oracle golden. Exactly one
+substitution was then applied to every out.* file:
+
+    "** PR-Agent failed"  ->  "** review-mcp failed"
+
+See testdata/upstream/README.md, section "Deviations".

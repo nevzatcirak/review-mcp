@@ -1,0 +1,56 @@
+{
+ "languages": [
+  "C",
+  "JavaScript",
+  "Markdown",
+  "Java",
+  "Go",
+  "Python",
+  "TypeScript",
+  "Other"
+ ],
+ "tokens": 3400,
+ "clip_overshoot_offset": null,
+ "upstream_dropped": [],
+ "fast_path": false,
+ "included": [
+  "src/app/count_1.c",
+  "pkg/util/delta_5.c",
+  "src/app/result_11.js",
+  "scripts/cache_10.zzz"
+ ],
+ "omitted": {
+  "added": [
+   "pkg/util/config_4.md"
+  ],
+  "modified": [
+   "src/app/record_12.java",
+   "scripts/value_3.java",
+   "lib/core/result_8.go",
+   "pkg/util/entry_9.py",
+   "src/app/index_13.ts",
+   "scripts/index_7.zzz",
+   "scripts/request_2.zzz",
+   "pkg/util/node_0.zzz"
+  ],
+  "deleted": [
+   "scripts/gamma_6.js"
+  ]
+ },
+ "file_dict_order": [
+  "src/app/count_1.c",
+  "pkg/util/delta_5.c",
+  "src/app/result_11.js",
+  "pkg/util/config_4.md",
+  "src/app/record_12.java",
+  "scripts/value_3.java",
+  "lib/core/result_8.go",
+  "pkg/util/entry_9.py",
+  "src/app/index_13.ts",
+  "scripts/index_7.zzz",
+  "scripts/request_2.zzz",
+  "scripts/cache_10.zzz",
+  "pkg/util/node_0.zzz"
+ ],
+ "policy_case": false
+}

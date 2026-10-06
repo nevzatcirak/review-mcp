@@ -1,0 +1,39 @@
+
+
+## File: 'src/counts.py'
+
+@@ -4,7 +4,7 @@ 
+__new hunk__
+4      value_3 = compute(3)
+5      value_4 = compute(4)
+6      value_5 = compute(5)
+7      value_6 = compute(6)
+8      value_7 = compute(7)
+9 +    value_8 = compute(80)
+10      value_9 = compute(9)
+__old hunk__
+     value_3 = compute(3)
+     value_4 = compute(4)
+     value_5 = compute(5)
+     value_6 = compute(6)
+     value_7 = compute(7)
+-    value_8 = compute(8)
+     value_9 = compute(9)
+
+@@ -16,7 +16,7 @@ 
+__new hunk__
+16      value_15 = compute(15)
+17      value_16 = compute(16)
+18      value_17 = compute(17)
+19      value_18 = compute(18)
+20      value_19 = compute(19)
+21 +    value_20 = compute(200)
+22      value_21 = compute(21)
+__old hunk__
+     value_15 = compute(15)
+     value_16 = compute(16)
+     value_17 = compute(17)
+     value_18 = compute(18)
+     value_19 = compute(19)
+-    value_20 = compute(20)
+     value_21 = compute(21)

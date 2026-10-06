@@ -86,6 +86,8 @@ commands:
             list the comment threads of a pull request as JSON
   diag reply <PR_URL> --comment-id <ID> --body <TEXT>
             reply to a pull request comment
+  diag diff <PR_URL> [--mode plain|numbered] [--prompt-tokens N]
+            print the prepared (filtered, budgeted) diff and how it was built
   serve     HTTP mode (not available in this version)
 `)
 }

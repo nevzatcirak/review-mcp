@@ -1,0 +1,12 @@
+{
+  "path": "src/after.py",
+  "old_path": "",
+  "type": "modified",
+  "head_status": "full",
+  "before": 0,
+  "after": 3,
+  "skip_extend_extensions": [
+    ".md",
+    ".txt"
+  ]
+}

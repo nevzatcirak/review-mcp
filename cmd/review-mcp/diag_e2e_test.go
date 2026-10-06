@@ -132,6 +132,37 @@ func TestE2EDiagLeak(t *testing.T) {
 			t.Errorf("stdout %q; stderr lacks %q:\n%s", out, want, errs)
 		}
 	})
+	t.Run("diff", func(t *testing.T) {
+		url := g.srv.URL + "/gitea/octo/demo/pulls/8"
+		for _, mode := range []string{"plain", "numbered"} {
+			code, out, errs := runBinary(t, bin, env, "diag", "diff", url, "--mode", mode)
+			check(t, code, out, errs, 0)
+			// The body marker sits inside a patch: it must be on stdout, in the
+			// diff after the separator, and nowhere in the logs.
+			_, text, found := strings.Cut(out, "\n--- prepared diff ---\n")
+			if !found || !strings.Contains(text, diffBodyMarker) {
+				t.Errorf("%s: vacuous leak check; the marker is not in the diff on stdout", mode)
+			}
+			if strings.Contains(errs, diffBodyMarker) || !strings.Contains(errs, "level=DEBUG") {
+				t.Errorf("%s: stderr must carry debug logs and no diff body:\n%s", mode, errs)
+			}
+		}
+		// Error path: the fixed does-not-fit sentence, nothing on stdout.
+		small := diagEnv(g, nil)
+		small["REVIEW_MCP_LLM_CONTEXT_WINDOW"] = "4096"
+		code, out, errs := runBinary(t, bin, small, "diag", "diff", url, "--prompt-tokens", "3000")
+		check(t, code, out, errs, 1)
+		if out != "" || !hasLine(errs, doesNotFitMessage) || strings.Contains(errs, diffBodyMarker) {
+			t.Errorf("stdout %q stderr %q", out, errs)
+		}
+		// Usage error: no request.
+		before := g.requests()
+		code, out, errs = runBinary(t, bin, env, "diag", "diff", url, "--mode", "fancy")
+		check(t, code, out, errs, 2)
+		if out != "" || !strings.Contains(errs, "usage:") || g.requests() != before {
+			t.Errorf("stdout %q stderr %q", out, errs)
+		}
+	})
 	t.Run("comments usage", func(t *testing.T) {
 		before := g.requests() + b.requests()
 		code, out, errs := runBinary(t, bin, env, "diag", "reply", g.giteaPR(), "--comment-id", "abc", "--body", "x")

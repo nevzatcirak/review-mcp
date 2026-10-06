@@ -1,0 +1,33 @@
+
+
+## File: 'src/mini.py'
+
+@@ -5,7 +5,7 @@ def run():
+__new hunk__
+5      value_4 = compute(4)
+6      value_5 = compute(5)
+7      value_6 = compute(6)
+8      value_7 = compute(7)
+9      value_8 = compute(8)
+10 +    value_9 = compute(900)
+11      value_10 = compute(10)
+__old hunk__
+     value_4 = compute(4)
+     value_5 = compute(5)
+     value_6 = compute(6)
+     value_7 = compute(7)
+     value_8 = compute(8)
+-    value_9 = compute(9)
+     value_10 = compute(10)
+
+@@ -11,4 +11,4 @@ def run():
+__new hunk__
+11      value_10 = compute(10)
+12      value_11 = compute(11)
+13 +    value_12 = compute(1200)
+14      value_13 = compute(13)
+__old hunk__
+     value_10 = compute(10)
+     value_11 = compute(11)
+-    value_12 = compute(12)
+     value_13 = compute(13)

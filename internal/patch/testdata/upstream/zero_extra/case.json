@@ -1,0 +1,12 @@
+{
+  "path": "src/zero.py",
+  "old_path": "",
+  "type": "modified",
+  "head_status": "full",
+  "before": 0,
+  "after": 0,
+  "skip_extend_extensions": [
+    ".md",
+    ".txt"
+  ]
+}

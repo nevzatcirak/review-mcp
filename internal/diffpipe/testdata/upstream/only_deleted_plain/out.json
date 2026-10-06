@@ -1,0 +1,27 @@
+{
+ "languages": [
+  "Java",
+  "JavaScript",
+  "Rust",
+  "Other"
+ ],
+ "tokens": 58,
+ "clip_overshoot_offset": null,
+ "upstream_dropped": [],
+ "fast_path": false,
+ "included": [],
+ "omitted": {
+  "added": [],
+  "modified": [],
+  "deleted": [
+   "scripts/node_3.java",
+   "docs/item_5.java",
+   "internal/store/state_4.js",
+   "scripts/state_0.rs",
+   "pkg/util/record_1.rs",
+   "internal/store/config_2.zzz"
+  ]
+ },
+ "file_dict_order": [],
+ "policy_case": false
+}

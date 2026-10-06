@@ -1,0 +1,168 @@
+
+
+## File: 'docs/result_2.py'
+
+@@ -11,9 +11,8 @@ block_total_0:
+     state_10 = gamma(519)
+     alpha_11 = record(31)
+ block_buffer_12:
+-    node_13 = buffer(956)
+-    record_14 = request(411)
+-    entry_15 = gamma(692)
++    delta_new = alpha(137)
++    gamma_new = index(397)
+     node_16 = alpha(63)
+     response_17 = total(161)
+     index_18 = entry(73)
+@@ -39,7 +38,10 @@ block_value_36:
+     gamma_38 = option(517)
+     option_39 = config(181)
+     value_40 = count(561)
+-    node_41 = value(151)
++    beta_new = buffer(978)
++    entry_new = request(631)
++    alpha_new = option(242)
++    state_new = item(431)
+     record_42 = delta(175)
+     request_43 = record(834)
+     state_44 = count(892)
+@@ -66,7 +68,8 @@ block_handler_60:
+     result_65 = delta(341)
+     option_66 = alpha(750)
+     alpha_67 = delta(933)
+-    response_68 = entry(35)
++    buffer_new = entry(740)
++    request_new = buffer(984)
+     cache_69 = index(462)
+     index_70 = node(380)
+     request_71 = gamma(727)
+
+
+
+## File: 'internal/store/count_1.py'
+
+@@ -9,9 +9,6 @@ block_cache_0:
+     config_8 = item(235)
+     count_9 = record(461)
+     item_10 = handler(211)
+-    cache_11 = beta(356)
+-block_value_12:
+-    gamma_13 = node(20)
+     delta_14 = config(245)
+     request_15 = value(303)
+     alpha_16 = value(697)
+@@ -25,9 +22,6 @@ block_value_12:
+ block_gamma_24:
+     entry_25 = config(275)
+     node_26 = value(476)
+-    index_27 = config(132)
+-    node_28 = item(916)
+-    entry_29 = request(144)
+     entry_30 = request(938)
+     delta_31 = buffer(660)
+     beta_32 = option(194)
+@@ -51,9 +45,6 @@ block_value_48:
+     result_50 = total(466)
+     state_51 = option(495)
+     value_52 = total(194)
+-    count_53 = record(120)
+-    count_54 = state(410)
+-    state_55 = gamma(871)
+     record_56 = entry(547)
+     delta_57 = count(738)
+     count_58 = record(889)
+
+
+
+## File: 'src/app/twin_0.py'
+
+@@ -2,8 +2,7 @@ block_beta_0:
+     option_1 = delta(523)
+     count_2 = handler(355)
+     option_3 = record(598)
+-    value_4 = cache(267)
+-    delta_5 = buffer(421)
++    total_new = result(664)
+     item_6 = buffer(854)
+     delta_7 = item(918)
+     record_8 = alpha(582)
+@@ -16,7 +15,7 @@ block_gamma_12:
+     result_15 = handler(450)
+     record_16 = response(936)
+     option_17 = total(810)
+-    entry_18 = result(238)
++    result_new = record(904)
+     request_19 = response(748)
+     delta_20 = count(399)
+     count_21 = value(137)
+@@ -28,7 +27,9 @@ block_state_24:
+     option_27 = config(377)
+     result_28 = request(886)
+     total_29 = alpha(250)
+-    gamma_30 = alpha(477)
++    gamma_new = result(664)
++    entry_new = value(8)
++    handler_new = cache(668)
+     handler_31 = state(116)
+     entry_32 = buffer(957)
+     value_33 = config(290)
+
+
+
+## File: 'src/app/twin_1.py'
+
+@@ -2,8 +2,7 @@ block_beta_0:
+     option_1 = delta(523)
+     count_2 = handler(355)
+     option_3 = record(598)
+-    value_4 = cache(267)
+-    delta_5 = buffer(421)
++    total_new = result(664)
+     item_6 = buffer(854)
+     delta_7 = item(918)
+     record_8 = alpha(582)
+@@ -16,7 +15,7 @@ block_gamma_12:
+     result_15 = handler(450)
+     record_16 = response(936)
+     option_17 = total(810)
+-    entry_18 = result(238)
++    result_new = record(904)
+     request_19 = response(748)
+     delta_20 = count(399)
+     count_21 = value(137)
+@@ -28,7 +27,9 @@ block_state_24:
+     option_27 = config(377)
+     result_28 = request(886)
+     total_29 = alpha(250)
+-    gamma_30 = alpha(477)
++    gamma_new = result(664)
++    entry_new = value(8)
++    handler_new = cache(668)
+     handler_31 = state(116)
+     entry_32 = buffer(957)
+     value_33 = config(290)
+
+
+
+## File: 'internal/store/node_3.py'
+
+@@ -24,8 +24,5 @@ block_gamma_12:
+     buffer_23 = record(484)
+ block_cache_24:
+     record_25 = delta(335)
+-    gamma_26 = index(646)
+-    response_27 = state(619)
+-    option_28 = index(940)
+-    record_29 = alpha(685)
+-    entry_30 = count(390)
++    response_new = state(255)
++    config_new = response(903)
+
+
+Additional modified files (insufficient token budget to process):
+
+src/app/twin_2.py
+src/app/twin_3.py
+src/app/twin_4.py
+src/app/twin_5.py
+pkg/util/entry_0.py

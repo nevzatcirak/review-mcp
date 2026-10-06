@@ -1,0 +1,41 @@
+{
+ "languages": [
+  "Python",
+  "Ruby",
+  "Go",
+  "TypeScript",
+  "Markdown",
+  "Java",
+  "JavaScript",
+  "Other"
+ ],
+ "tokens": 1668,
+ "clip_overshoot_offset": null,
+ "upstream_dropped": [],
+ "fast_path": false,
+ "included": [
+  "lib/core/record_3.ts",
+  "scripts/config_6.md",
+  "lib/core/response_7.java",
+  "src/app/result_0.zzz"
+ ],
+ "omitted": {
+  "added": [],
+  "modified": [],
+  "deleted": [
+   "src/app/option_4.py",
+   "lib/core/entry_9.py",
+   "pkg/util/response_5.rb",
+   "lib/core/response_1.go",
+   "pkg/util/index_8.ts",
+   "src/app/handler_2.js"
+  ]
+ },
+ "file_dict_order": [
+  "lib/core/record_3.ts",
+  "scripts/config_6.md",
+  "lib/core/response_7.java",
+  "src/app/result_0.zzz"
+ ],
+ "policy_case": false
+}

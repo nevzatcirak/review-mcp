@@ -1,0 +1,158 @@
+
+
+## File: 'lib/core/record_3.ts'
+
+@@ -1,17 +1,19 @@
+ block_alpha_0:
+     node_1 = option(685)
+     delta_2 = config(306)
+-    state_3 = state(179)
+-    entry_4 = value(28)
++    total_new = delta(912)
++    result_new = result(94)
++    delta_new = state(165)
++    gamma_new = handler(544)
+     handler_5 = cache(157)
+     state_6 = total(346)
+     option_7 = config(158)
+     beta_8 = config(604)
+     handler_9 = total(480)
+     buffer_10 = count(506)
+-    option_11 = node(669)
+-block_response_12:
+-    request_13 = handler(152)
++    entry_new = count(253)
++    item_new = record(603)
++    buffer_new = value(60)
+     entry_14 = item(756)
+     item_15 = value(56)
+     state_16 = beta(689)
+@@ -29,8 +31,7 @@ block_node_24:
+     request_28 = count(697)
+     index_29 = value(858)
+     handler_30 = count(883)
+-    option_31 = cache(501)
+-    handler_32 = count(69)
++    item_new = record(513)
+     request_33 = value(874)
+     cache_34 = response(551)
+     value_35 = gamma(672)
+
+
+
+## File: 'scripts/config_6.md'
+
+@@ -1,24 +1,27 @@
+ block_value_0:
+     config_1 = gamma(309)
+     total_2 = config(793)
+-    config_3 = record(776)
+-    beta_4 = config(301)
+-    beta_5 = node(68)
++    beta_new = value(587)
++    alpha_new = buffer(232)
++    node_new = request(18)
+     gamma_6 = node(539)
+     result_7 = beta(113)
+     request_8 = entry(962)
+     total_9 = value(45)
+     index_10 = result(907)
+     beta_11 = gamma(949)
+-block_record_12:
+-    beta_13 = result(870)
++    result_new = delta(461)
++    value_new = index(391)
++    request_new = item(689)
+     node_14 = item(949)
+     option_15 = cache(624)
+     cache_16 = record(395)
+     buffer_17 = handler(15)
+     request_18 = request(0)
+-    state_19 = index(569)
+-    gamma_20 = handler(853)
++    request_new = entry(841)
++    handler_new = cache(940)
++    state_new = item(740)
++    alpha_new = value(300)
+     request_21 = node(851)
+     buffer_22 = request(36)
+     beta_23 = item(597)
+
+
+
+## File: 'lib/core/response_7.java'
+
+@@ -3,19 +3,18 @@ block_gamma_0:
+     count_2 = total(50)
+     gamma_3 = node(381)
+     delta_4 = total(756)
+-    cache_5 = beta(978)
+-    entry_6 = gamma(23)
++    value_new = option(742)
+     result_7 = index(719)
+-    gamma_8 = request(686)
++    response_new = record(680)
++    response_new = entry(650)
+     result_9 = config(267)
+     delta_10 = alpha(555)
+     delta_11 = count(583)
+ block_cache_12:
+     entry_13 = gamma(855)
+     handler_14 = entry(271)
+-    gamma_15 = item(617)
+-    delta_16 = record(731)
+-    index_17 = index(459)
++    config_new = handler(726)
++    delta_new = buffer(50)
+     value_18 = config(675)
+     item_19 = record(206)
+     result_20 = beta(444)
+
+
+
+## File: 'src/app/result_0.zzz'
+
+@@ -7,9 +7,9 @@ block_alpha_0:
+     result_6 = value(617)
+     node_7 = handler(431)
+     record_8 = buffer(467)
+-    total_9 = record(677)
+-    node_10 = value(467)
+-    index_11 = state(628)
++    record_new = cache(190)
++    index_new = total(315)
++    delta_new = request(809)
+ block_handler_12:
+     beta_13 = response(4)
+     index_14 = value(199)
+@@ -62,13 +62,15 @@ block_state_60:
+     item_61 = buffer(919)
+     state_62 = result(336)
+     entry_63 = option(931)
+-    option_64 = value(757)
+-    index_65 = item(633)
++    node_new = buffer(494)
++    state_new = config(601)
++    config_new = gamma(706)
+     beta_66 = count(658)
+     response_67 = response(849)
+-    entry_68 = config(25)
+-    delta_69 = record(445)
+-    index_70 = record(910)
++    total_new = cache(425)
++    response_new = gamma(609)
++    record_new = alpha(605)
++    item_new = entry(329)
+     gamma_71 = beta(611)
+ block_request_72:
+     delta_73 = record(166)
+
+
+Deleted files:
+
+src/app/option_4.py
+lib/core/entry_9.py
+pkg/util/response_5.rb
+lib/core/response_1.go
+pkg/util/index_8.ts
+src/app/handler_2.js

@@ -1,0 +1,133 @@
+
+
+## File: 'pkg/util/buffer_1.go'
+
+@@ -8,9 +8,6 @@ block_option_0:
+     state_7 = count(751)
+     record_8 = option(261)
+     alpha_9 = alpha(710)
+-    alpha_10 = value(571)
+-    buffer_11 = result(141)
+-block_index_12:
+     count_13 = result(483)
+     beta_14 = request(583)
+     cache_15 = buffer(778)
+@@ -30,8 +27,6 @@ block_result_24:
+     cache_29 = cache(127)
+     count_30 = request(613)
+     handler_31 = response(251)
+-    gamma_32 = result(364)
+-    item_33 = gamma(701)
+     item_34 = value(703)
+     gamma_35 = record(318)
+ block_total_36:
+@@ -41,9 +36,6 @@ block_total_36:
+     config_40 = total(58)
+     cache_41 = item(467)
+     index_42 = item(99)
+-    index_43 = alpha(987)
+-    node_44 = node(286)
+-    count_45 = result(303)
+     index_46 = option(940)
+     value_47 = option(924)
+ block_item_48:
+
+
+
+## File: 'src/app/entry_6.go'
+
+@@ -18,7 +18,6 @@ block_handler_12:
+     delta_17 = request(60)
+     gamma_18 = response(150)
+     result_19 = handler(379)
+-    delta_20 = option(392)
+     cache_21 = request(508)
+     cache_22 = result(57)
+     index_23 = value(272)
+@@ -67,8 +66,6 @@ block_result_60:
+     value_66 = option(202)
+     option_67 = index(202)
+     cache_68 = cache(332)
+-    alpha_69 = alpha(590)
+-    cache_70 = option(828)
+     entry_71 = delta(470)
+ block_state_72:
+     total_73 = node(484)
+@@ -80,9 +77,6 @@ block_state_72:
+     node_79 = state(726)
+     record_80 = entry(915)
+     cache_81 = node(628)
+-    option_82 = alpha(475)
+-    total_83 = response(662)
+-block_buffer_84:
+     state_85 = alpha(352)
+     request_86 = option(747)
+     value_87 = result(663)
+
+
+
+## File: 'docs/state_2.ts'
+
+@@ -38,7 +38,6 @@ block_delta_36:
+     node_37 = config(549)
+     count_38 = state(100)
+     option_39 = alpha(667)
+-    value_40 = handler(517)
+     config_41 = entry(300)
+     state_42 = node(649)
+     handler_43 = result(914)
+@@ -51,9 +50,6 @@ block_result_48:
+     cache_50 = node(771)
+     gamma_51 = value(356)
+     beta_52 = index(110)
+-    result_53 = gamma(825)
+-    beta_54 = alpha(955)
+-    index_55 = alpha(115)
+     response_56 = cache(945)
+     entry_57 = alpha(607)
+     index_58 = response(948)
+@@ -86,9 +82,6 @@ block_value_84:
+     cache_85 = cache(591)
+     buffer_86 = handler(343)
+     record_87 = node(363)
+-    item_88 = option(612)
+-    state_89 = gamma(177)
+-    cache_90 = handler(910)
+     count_91 = item(635)
+     node_92 = cache(358)
+     value_93 = record(344)
+
+
+
+## File: 'src/app/alpha_5.ts'
+
+@@ -27,8 +27,6 @@ block_delta_24:
+     state_26 = delta(939)
+     beta_27 = alpha(484)
+     beta_28 = beta(525)
+-    index_29 = item(722)
+-    alpha_30 = record(169)
+     request_31 = result(642)
+     result_32 = gamma(336)
+     delta_33 = beta(498)
+@@ -42,12 +40,8 @@ block_response_36:
+     value_41 = entry(201)
+     response_42 = alpha(962)
+     state_43 = item(175)
+-    index_44 = config(287)
+     option_45 = cache(744)
+     gamma_46 = count(150)
+-    total_47 = cache(22)
+-block_total_48:
+-    config_49 = request(831)
+     entry_50 = result(892)
+     index_51 = cache(713)
+     result_52 = result(167)
+
+
+Additional modified files (insufficient token budget to process):
+
+src/app/value_4.c
+pkg/util/option_0.rs
+src/app/option_7.rb
+docs/result_3.java

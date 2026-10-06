@@ -37,6 +37,8 @@ func TestValidationRules(t *testing.T) {
 		{"diff bytes below file bytes", map[string]string{"REVIEW_MCP_DIFF_MAX_DIFF_BYTES": "1024"}, "diff.max_diff_bytes: 1024 must be at least diff.max_file_bytes"},
 		{"regex invalid", map[string]string{"REVIEW_MCP_IGNORE_REGEX": "ok,(unclosed"}, "ignore.regex[1]: pattern does not compile"},
 		{"regex lookahead unsupported by RE2", map[string]string{"REVIEW_MCP_IGNORE_REGEX": "(?=x)"}, "ignore.regex[0]"},
+		{"glob malformed", map[string]string{"REVIEW_MCP_IGNORE_GLOB": "ok/**,a/[b"}, "ignore.glob[1]: not a valid glob pattern"},
+		{"framework unknown", map[string]string{"REVIEW_MCP_DIFF_IGNORE_GENERATED_FRAMEWORKS": "protobuf,nosuchfw"}, "diff.ignore_generated_frameworks[1]: unknown framework \"nosuchfw\" (valid names: go_gen, graphql,"},
 		{"max findings low", map[string]string{"REVIEW_MCP_REVIEW_MAX_FINDINGS": "0"}, "review.max_findings: 0 is out of range (1-20)"},
 		{"max findings high", map[string]string{"REVIEW_MCP_REVIEW_MAX_FINDINGS": "21"}, "review.max_findings"},
 		{"log level", map[string]string{"REVIEW_MCP_LOG_LEVEL": "loud"}, "log.level: invalid log level"},
@@ -267,5 +269,25 @@ func TestCACertRules(t *testing.T) {
 	}), base))
 	if !hasProblem(problemsOf(t, err), "bitbucket_server.ca_cert") {
 		t.Errorf("bitbucket ca_cert not validated: %v", err)
+	}
+}
+
+func TestIgnoreAndFrameworkAccepted(t *testing.T) {
+	env := envWith(map[string]string{
+		"REVIEW_MCP_IGNORE_GLOB":                      "**/*.pb.go,vendor/**",
+		"REVIEW_MCP_DIFF_IGNORE_GENERATED_FRAMEWORKS": "protobuf,graphql",
+	})
+	if _, _, err := Load(MemSource{Env: env}); err != nil {
+		t.Fatalf("valid ignore settings rejected: %v", err)
+	}
+}
+
+func TestGlobProblemDoesNotEchoPattern(t *testing.T) {
+	env := envWith(map[string]string{"REVIEW_MCP_IGNORE_GLOB": "secret-dir/[b"})
+	_, _, err := Load(MemSource{Env: env})
+	for _, p := range problemsOf(t, err) {
+		if strings.Contains(p, "secret-dir") {
+			t.Errorf("problem echoes the raw pattern: %q", p)
+		}
 	}
 }

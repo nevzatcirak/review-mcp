@@ -105,6 +105,9 @@ func newFakeGitea(t *testing.T) *fakeHost {
 			return
 		}
 		p := r.URL.Path
+		if handleDiffFixture(w, r, api) {
+			return
+		}
 		switch {
 		case r.Method == "GET" && p == api+"/pulls/7":
 			writeJSONResp(w, map[string]any{

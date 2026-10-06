@@ -1,0 +1,26 @@
+{
+ "languages": [
+  "Go",
+  "Java",
+  "JavaScript"
+ ],
+ "tokens": 51,
+ "clip_overshoot_offset": null,
+ "upstream_dropped": [],
+ "fast_path": false,
+ "included": [],
+ "omitted": {
+  "added": [],
+  "modified": [
+   "src/app/huge_0.go"
+  ],
+  "deleted": [
+   "lib/core/handler_1.java",
+   "lib/core/alpha_0.js"
+  ]
+ },
+ "file_dict_order": [
+  "src/app/huge_0.go"
+ ],
+ "policy_case": true
+}

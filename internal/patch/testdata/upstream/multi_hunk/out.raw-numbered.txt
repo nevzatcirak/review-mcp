@@ -1,0 +1,49 @@
+
+
+## File: 'src/engine/core.rs'
+
+@@ -5,7 +5,7 @@ fn main() {
+__new hunk__
+5      item_4 = compute(4)
+6      item_5 = compute(5)
+7      item_6 = compute(6)
+8 +    item_7 = compute(700)
+9      item_8 = compute(8)
+10      item_9 = compute(9)
+11      item_10 = compute(10)
+__old hunk__
+     item_4 = compute(4)
+     item_5 = compute(5)
+     item_6 = compute(6)
+-    item_7 = compute(7)
+     item_8 = compute(8)
+     item_9 = compute(9)
+     item_10 = compute(10)
+
+@@ -22,8 +22,6 @@ fn main() {
+__new hunk__
+22      item_21 = compute(21)
+23      item_22 = compute(22)
+24      item_23 = compute(23)
+25      item_26 = compute(26)
+26      item_27 = compute(27)
+27      item_28 = compute(28)
+__old hunk__
+     item_21 = compute(21)
+     item_22 = compute(22)
+     item_23 = compute(23)
+-    item_24 = compute(24)
+-    item_25 = compute(25)
+     item_26 = compute(26)
+     item_27 = compute(27)
+     item_28 = compute(28)
+
+@@ -43,6 +41,7 @@ fn main() {
+__new hunk__
+41      item_42 = compute(42)
+42      item_43 = compute(43)
+43      item_44 = compute(44)
+44 +    item_extra = compute(0)
+45      item_45 = compute(45)
+46      item_46 = compute(46)
+47      item_47 = compute(47)

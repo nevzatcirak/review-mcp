@@ -1,0 +1,24 @@
+{
+ "languages": [
+  "Ruby",
+  "TypeScript",
+  "C",
+  "Other"
+ ],
+ "tokens": 1733,
+ "clip_overshoot_offset": null,
+ "upstream_dropped": [],
+ "fast_path": true,
+ "included": [
+  "pkg/util/index_1.rb",
+  "scripts/request_0.ts",
+  "lib/core/result_3.c",
+  "scripts/option_2.zzz"
+ ],
+ "omitted": {
+  "added": [],
+  "modified": [],
+  "deleted": []
+ },
+ "policy_case": false
+}

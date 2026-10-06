@@ -1,0 +1,14 @@
+
+
+## File: 'src/nomini.py'
+
+@@ -0,0 +1,2 @@
+__new hunk__
+1 +# top a
+2 +# top b
+
+@@ -3 +5 @@ def run():
+__new hunk__
+5 +    value_2 = compute(200)
+__old hunk__
+-    value_2 = compute(2)

@@ -1,0 +1,37 @@
+{
+ "languages": [
+  "Go"
+ ],
+ "tokens": 2298,
+ "clip_overshoot_offset": null,
+ "upstream_dropped": [],
+ "fast_path": false,
+ "included": [
+  "pkg/util/node_0.go",
+  "pkg/util/gamma_2.go",
+  "pkg/util/option_3.go"
+ ],
+ "omitted": {
+  "added": [],
+  "modified": [
+   "scripts/option_8.go",
+   "lib/core/item_6.go",
+   "internal/store/count_5.go",
+   "pkg/util/option_4.go"
+  ],
+  "deleted": [
+   "lib/core/total_7.go",
+   "scripts/handler_1.go"
+  ]
+ },
+ "file_dict_order": [
+  "pkg/util/node_0.go",
+  "pkg/util/gamma_2.go",
+  "pkg/util/option_3.go",
+  "scripts/option_8.go",
+  "lib/core/item_6.go",
+  "internal/store/count_5.go",
+  "pkg/util/option_4.go"
+ ],
+ "policy_case": false
+}

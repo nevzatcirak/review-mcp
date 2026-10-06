@@ -1,0 +1,39 @@
+
+
+## File: 'src/malformed.py'
+
+@@ -3,7 +3,7 @@ def run():
+__new hunk__
+3      value_2 = compute(2)
+4      value_3 = compute(3)
+5      value_4 = compute(4)
+6 +    value_5 = compute(50)
+7      value_6 = compute(6)
+8      value_7 = compute(7)
+9      value_8 = compute(8)
+__old hunk__
+     value_2 = compute(2)
+     value_3 = compute(3)
+     value_4 = compute(4)
+-    value_5 = compute(5)
+     value_6 = compute(6)
+     value_7 = compute(7)
+     value_8 = compute(8)
+
+@@ -19,7 +19,7 @@ def run():
+__new hunk__
+19      value_18 = compute(18)
+20      value_19 = compute(19)
+21      value_20 = compute(20)
+22 +    value_21 = compute(210)
+23      value_22 = compute(22)
+24      value_23 = compute(23)
+25      value_24 = compute(24)
+__old hunk__
+     value_18 = compute(18)
+     value_19 = compute(19)
+     value_20 = compute(20)
+-    value_21 = compute(21)
+     value_22 = compute(22)
+     value_23 = compute(23)
+     value_24 = compute(24)

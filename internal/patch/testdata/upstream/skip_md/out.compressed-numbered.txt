@@ -1,0 +1,21 @@
+
+
+## File: 'docs/guide.md'
+
+@@ -9,7 +9,7 @@ Paragraph 6.
+__new hunk__
+9  Paragraph 7.
+10  Paragraph 8.
+11  Paragraph 9.
+12 +Paragraph 10, revised.
+13  Paragraph 11.
+14  Paragraph 12.
+15  Paragraph 13.
+__old hunk__
+ Paragraph 7.
+ Paragraph 8.
+ Paragraph 9.
+-Paragraph 10.
+ Paragraph 11.
+ Paragraph 12.
+ Paragraph 13.

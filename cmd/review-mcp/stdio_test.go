@@ -69,8 +69,44 @@ func (l *lockedBuffer) String() string {
 	return l.b.String()
 }
 
-// session runs runWith over pipes: it sends the given JSON-RPC lines, closes
-// stdin, and returns the exit code with everything written to stdout/stderr.
+// responseIDs returns the ids (raw JSON) of the complete response lines in
+// out: objects with an id and a result or error. A trailing partial line is
+// ignored; server-initiated requests (they carry a method) are not responses.
+func responseIDs(out string) map[string]bool {
+	ids := map[string]bool{}
+	complete := out[:strings.LastIndexByte(out, '\n')+1]
+	for _, l := range strings.Split(complete, "\n") {
+		var m map[string]json.RawMessage
+		if json.Unmarshal([]byte(l), &m) != nil {
+			continue
+		}
+		_, hasResult := m["result"]
+		_, hasError := m["error"]
+		if _, isReq := m["method"]; !isReq && m["id"] != nil && (hasResult || hasError) {
+			ids[string(m["id"])] = true
+		}
+	}
+	return ids
+}
+
+// requestID returns the raw JSON id of a request line, or "" for a
+// notification (no id) or a line that is not a JSON object.
+func requestID(line string) string {
+	var m map[string]json.RawMessage
+	if json.Unmarshal([]byte(line), &m) != nil {
+		return ""
+	}
+	return string(m["id"])
+}
+
+// session runs runWith over pipes like a real client: it sends the given
+// JSON-RPC lines, and after each one waits until every request with an id sent
+// so far has a response on stdout (notifications get none). Only then does it
+// close stdin, because the SDK ends the session on EOF and drops in-flight
+// responses (P1 decision 6: real clients keep stdin open). With no id-bearing
+// lines it closes immediately. It returns the exit code with everything
+// written to stdout/stderr. Every request line must therefore be answered; no
+// current caller sends one that is not.
 func session(t *testing.T, args []string, env map[string]string, lines ...string) (code int, stdout, stderr string) {
 	t.Helper()
 	inR, inW := io.Pipe()
@@ -78,13 +114,34 @@ func session(t *testing.T, args []string, env map[string]string, lines ...string
 	done := make(chan int, 1)
 	go func() { done <- runWith(args, inR, &out, &errb, loaderFor(env)) }()
 
-	go func() {
-		for _, l := range lines {
-			_, _ = io.WriteString(inW, l+"\n")
-			time.Sleep(20 * time.Millisecond)
+	var pending []string // ids of requests sent, in order
+	deadline := time.Now().Add(20 * time.Second)
+	for _, l := range lines {
+		if _, err := io.WriteString(inW, l+"\n"); err != nil {
+			t.Fatalf("write request: %v", err)
 		}
-		_ = inW.Close()
-	}()
+		if id := requestID(l); id != "" {
+			pending = append(pending, id)
+		}
+		for {
+			got := responseIDs(out.String())
+			var missing []string
+			for _, id := range pending {
+				if !got[id] {
+					missing = append(missing, id)
+				}
+			}
+			if len(missing) == 0 {
+				break
+			}
+			if time.Now().After(deadline) {
+				_ = inW.Close()
+				t.Fatalf("no response before the deadline for request ids %v; stdout:\n%s\nstderr:\n%s", missing, out.String(), errb.String())
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	_ = inW.Close()
 	select {
 	case code = <-done:
 	case <-time.After(20 * time.Second):

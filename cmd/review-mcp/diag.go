@@ -25,6 +25,7 @@ const diagUsageText = `usage:
   review-mcp diag comment <PR_URL> --body <TEXT>
   review-mcp diag comments <PR_URL> [--include-resolved]
   review-mcp diag reply <PR_URL> --comment-id <ID> --body <TEXT>
+  review-mcp diag diff <PR_URL> [--mode plain|numbered] [--prompt-tokens N]
 
 diag pr       fetch a pull request and print a JSON connectivity report;
               --show-patch prints the hunk-only patch of one changed file
@@ -35,6 +36,12 @@ diag comments list the comment threads (the pr_comments structured result) as
 diag reply    reply to the comment --comment-id and print
               {"id": ..., "url": ..., "in_thread": ...}; in_thread is false when
               the provider posted a PR-level comment quoting the original
+diag diff     run the diff pipeline (provider, file filter, token budget) and
+              print a JSON header, the line "--- prepared diff ---" and the
+              exact diff text a review would embed; --mode picks the render
+              format (default plain); --prompt-tokens N is the estimated size
+              of the prompt scaffolding in tokens (default 1500, an
+              approximation until the prompts are measured)
 `
 
 func diagUsage(w io.Writer) { _, _ = fmt.Fprint(w, diagUsageText) }
@@ -133,6 +140,8 @@ func runDiag(args []string, stdout, stderr io.Writer, load configLoader) int {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
 		return diagReply(ctx, cfg, logger, prURL, *commentID, *body, stdout, stderr)
+	case "diff":
+		return runDiagDiff(rest, stdout, stderr, load)
 	default:
 		diagUsage(stderr)
 		return 2

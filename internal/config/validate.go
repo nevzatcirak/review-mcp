@@ -7,6 +7,9 @@ import (
 	"regexp/syntax"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
+
+	"github.com/nevzatcirak/review-mcp/internal/filter/data"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 )
 
@@ -213,22 +216,27 @@ func (l *loader) validateDiff() {
 		l.problem("diff.max_diff_bytes: %d must be at least diff.max_file_bytes (%d)", d.MaxDiffBytes, d.MaxFileBytes)
 	}
 
-	// Accepted as non-empty strings in P1. Semantic validation (names against
-	// the embedded generated-code table) arrives with that table in P3.
 	for i, n := range d.IgnoreGeneratedFrameworks {
 		if strings.TrimSpace(n) == "" {
 			l.problem("diff.ignore_generated_frameworks[%d]: must not be empty", i)
+			continue
+		}
+		if _, ok := data.GeneratedCode[n]; !ok {
+			l.problem("diff.ignore_generated_frameworks[%d]: unknown framework %q (valid names: %s)",
+				i, n, strings.Join(data.FrameworkNames(), ", "))
 		}
 	}
 }
 
 func (l *loader) validateIgnore() {
 	ig := &l.cfg.Ignore
-	// Accepted as non-empty strings in P1. Glob semantics (doublestar) are
-	// validated in P3 together with the glob engine.
 	for i, g := range ig.Glob {
-		if strings.TrimSpace(g) == "" {
+		switch {
+		case strings.TrimSpace(g) == "":
 			l.problem("ignore.glob[%d]: must not be empty", i)
+		case !doublestar.ValidatePattern(g):
+			// The index is reported instead of the pattern, like ignore.regex.
+			l.problem("ignore.glob[%d]: not a valid glob pattern (doublestar syntax)", i)
 		}
 	}
 	for i, r := range ig.Regex {

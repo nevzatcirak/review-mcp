@@ -1,0 +1,10 @@
+
+
+## File: 'old/legacy.py'
+
+@@ -1,5 +1,0 @@ 
+-import os
+-
+-
+-def legacy():
+-    return os.getcwd()

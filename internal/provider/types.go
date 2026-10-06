@@ -5,6 +5,8 @@
 // I/O; this package never does.
 package provider
 
+import "time"
+
 // Kind identifies a provider implementation. The string values are shared
 // with server_info and must not change.
 type Kind string
@@ -131,4 +133,53 @@ type Comment struct {
 // Capabilities describes what a provider's markup supports (DQ-16).
 type Capabilities struct {
 	GFM, MarkdownTables, Labels, InlineComments bool
+}
+
+// ThreadKind says whether a comment thread is PR-level or anchored to code.
+type ThreadKind string
+
+// Thread kinds.
+const (
+	// ThreadGeneral is a PR-level conversation.
+	ThreadGeneral ThreadKind = "general"
+	// ThreadInline is a thread anchored to a file and line.
+	ThreadInline ThreadKind = "inline"
+)
+
+// CommentItem is one comment inside a Thread. Author and Body are untrusted
+// third-party content.
+type CommentItem struct {
+	ID        string    `json:"id"`
+	Author    string    `json:"author"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Thread is a comment thread of a pull request.
+type Thread struct {
+	// ID is the ID of the thread's root comment.
+	ID   string     `json:"id"`
+	Kind ThreadKind `json:"kind"`
+	// Path is set for inline threads only.
+	Path string `json:"path"`
+	// Line is the new-side line of an inline thread; 0 when unknown.
+	Line int `json:"line"`
+	// Outdated is true when the provider says the anchor no longer matches
+	// the current diff.
+	Outdated bool `json:"outdated"`
+	// Resolved is nil when the provider does not expose the state.
+	Resolved *bool `json:"resolved"`
+	// Comments holds the root first, then the replies, oldest first. It is
+	// never nil.
+	Comments []CommentItem `json:"comments"`
+	// ReplyInThread says whether ReplyToComment can post inside this thread.
+	ReplyInThread bool `json:"reply_in_thread"`
+}
+
+// ReplyResult is the result of Provider.ReplyToComment. InThread is false
+// when the reply was posted as a PR-level comment instead.
+type ReplyResult struct {
+	Comment  Comment
+	InThread bool
 }

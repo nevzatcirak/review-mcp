@@ -145,7 +145,7 @@ In P4 the oracle targets are `load_yaml` / `try_fix_yaml` (WP-PR-4b) and the pro
 2. **Resolve:** resolve the PR URL (X-2), then fetch the PR and its diff with `filter.Include`.
 3. **Description:** clip it with `tokens.ClipDescription`.
 4. **Measure:** render the prompts with an empty diff to get `PromptTokens`, then build a `tokens.Budget` and run `RequireCapacity`.
-5. **Prepare:** call `diffpipe.Prepare` in `ModeNumbered`. `ErrDoesNotFit` becomes a classified "does not fit" error.
+5. **Prepare:** call `diffpipe.Prepare` in `ModeNumbered`. `ErrDoesNotFit` becomes a classified "does not fit" error. If `Prepared.Text` is empty (every file was filtered, skipped or empty), do **not** call the LLM. Return a review with no findings, the note "No reviewable changes after filtering." and the full coverage section (P3 review, item 4 of the 3d DESIGN-QUESTIONs).
 6. **Render:** render the final prompts.
    - Check `tokens.RequestTokens` + `HardReserve` ≤ `ContextWindow`. If it does not fit, trim through the verified prefix — the guard against estimator drift.
 7. **Call the LLM.** If the response is truncated by length, note it.

@@ -79,7 +79,7 @@ implementation must do or must not do).
 #### DQ-1 — Dynamic context in v1
 - **Decision:** v1 extends hunks with static context only (`diff.extra_lines_before` = 5, `diff.extra_lines_after` = 1, each capped at 10). Dynamic context (hoisting to the enclosing function/class header) is not implemented and has no config key in v1.
 - **Rationale:** Static extension carries most of the value; dynamic context is the most intricate code in `extend_patch`, with several bail-out branches, and is not on v1's critical path.
-- **Consequences:** The `extend` function's signature must not preclude a later dynamic variant (it already needs head-file content for the static safety checks). The rendered `@@ … @@ <section header>` text is preserved as-is.
+- **Consequences:** The `extend` function's signature must not preclude a later dynamic variant (it already needs head-file content for the static safety checks). The rendered `@@ … @@ <section header>` text is preserved as-is, except in one case decided at P3 review (D2, 2026-10-06). When the section line itself falls inside the added pre-context, the header text is dropped, matching upstream with dynamic context off. The function header is then already visible in the context lines.
 
 #### DQ-2 — Language ranking without a languages API
 - **Decision:** Language ordering is derived locally for every provider: classify each changed file by extension via the embedded extension map, sum patch bytes per language, sort descending; unmatched files go to the final "Other" group. The Gitea languages endpoint is **not** used in v1.

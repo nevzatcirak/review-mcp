@@ -21,6 +21,7 @@ type Config struct {
 	Ignore          Ignore          `toml:"ignore" json:"ignore"`
 	Review          Review          `toml:"review" json:"review"`
 	Ask             Ask             `toml:"ask" json:"ask"`
+	Context         Context         `toml:"context" json:"context"`
 	Log             Log             `toml:"log" json:"log"`
 	Serve           Serve           `toml:"serve" json:"serve"`
 	Secrets         Secrets         `toml:"-" json:"secrets"`
@@ -118,6 +119,31 @@ type Ask struct {
 	ExtraInstructions string `toml:"extra_instructions" json:"extra_instructions"`
 }
 
+// Context configures the context added to prompts beyond the diff.
+type Context struct {
+	Repo ContextRepo `toml:"repo" json:"repo"`
+}
+
+// ContextRepo configures repository context (X-22, RC-1 to RC-10): a cached
+// shallow fetch of the PR head that is searched for the uses of changed
+// symbols.
+type ContextRepo struct {
+	// Enabled turns repository context on (stdio only, RC-1).
+	Enabled bool `toml:"enabled" json:"enabled"`
+	// CacheDir holds the cached repositories; "" means the OS user cache
+	// directory plus review-mcp/repos.
+	CacheDir string `toml:"cache_dir" json:"cache_dir"`
+	// IdleDays: a cached repository unused for longer is deleted.
+	IdleDays int `toml:"idle_days" json:"idle_days"`
+	// MaxCacheMB caps the cache; least-recently-used repositories are
+	// deleted until it fits.
+	MaxCacheMB int `toml:"max_cache_mb" json:"max_cache_mb"`
+	// MaxRepoMB caps one repository, measured after the fetch.
+	MaxRepoMB int `toml:"max_repo_mb" json:"max_repo_mb"`
+	// FetchTimeoutSeconds limits the fetch of a pull request head.
+	FetchTimeoutSeconds int `toml:"fetch_timeout_seconds" json:"fetch_timeout_seconds"`
+}
+
 // Log configures logging (stderr only).
 type Log struct {
 	Level string `toml:"level" json:"level"`
@@ -163,6 +189,12 @@ func Defaults() *Config {
 			MaxChunks:             8,
 			MaxTotalFindings:      10,
 		},
+		Context: Context{Repo: ContextRepo{
+			IdleDays:            7,
+			MaxCacheMB:          2048,
+			MaxRepoMB:           500,
+			FetchTimeoutSeconds: 60,
+		}},
 		Log: Log{Level: "info"},
 		Serve: Serve{
 			Listen:             DefaultServeListen,

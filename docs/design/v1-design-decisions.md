@@ -475,6 +475,12 @@ Secrets are environment-only (in `serve` mode, credentials come from request hea
 | `review.max_chunks` | `REVIEW_MCP_REVIEW_MAX_CHUNKS` | 8 | X-19 (v1.1); 1 to 32; 1 reviews in one call |
 | `review.max_total_findings` | `REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS` | 10 | X-19 (v1.1); 1 to 50; at least `review.max_findings` when set; the run-time cap is the larger of the two |
 | `ask.extra_instructions` | `REVIEW_MCP_ASK_EXTRA_INSTRUCTIONS` | (empty) | Per-call override |
+| `context.repo.enabled` | `REVIEW_MCP_CONTEXT_REPO_ENABLED` | false | X-22 (v1.1); repository context, stdio only; `server_info` shows `enabled, git <version>` or `enabled, unavailable: <reason>` when set |
+| `context.repo.cache_dir` | `REVIEW_MCP_CONTEXT_REPO_CACHE_DIR` | (empty) | X-22; absolute path; empty means `os.UserCacheDir()/review-mcp/repos`; created with mode 0700; a non-empty directory without review-mcp's `CACHEDIR.TAG` is refused |
+| `context.repo.idle_days` | `REVIEW_MCP_CONTEXT_REPO_IDLE_DAYS` | 7 | X-22; 1 to 365 |
+| `context.repo.max_cache_mb` | `REVIEW_MCP_CONTEXT_REPO_MAX_CACHE_MB` | 2048 | X-22; 1 to 1048576 |
+| `context.repo.max_repo_mb` | `REVIEW_MCP_CONTEXT_REPO_MAX_REPO_MB` | 500 | X-22; 1 to 1048576, at most `max_cache_mb`; measured after the fetch |
+| `context.repo.fetch_timeout_seconds` | `REVIEW_MCP_CONTEXT_REPO_FETCH_TIMEOUT_SECONDS` | 60 | X-22; 1 to 600; covers the lock wait and the fetch, including the auth retry |
 | `log.level` | `REVIEW_MCP_LOG_LEVEL` | `info` | stderr only (X-8) |
 | `serve.listen` | `REVIEW_MCP_SERVE_LISTEN` | `127.0.0.1:8787` | serve only (X-10); `host:port`; `--listen` overrides |
 | `serve.tls_cert` | `REVIEW_MCP_SERVE_TLS_CERT` | — | serve only; PEM path, set together with `tls_key` |

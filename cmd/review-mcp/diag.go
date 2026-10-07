@@ -29,6 +29,7 @@ const diagUsageText = `usage:
                        [--context-window N]
   review-mcp diag review <PR_URL> [--dry-run] [--show-prompt] [--publish]
   review-mcp diag ask <PR_URL> --question <TEXT> [--dry-run] [--show-prompt] [--publish]
+  review-mcp diag cache [--prune]
 
 diag pr      fetch a pull request and print a JSON connectivity report;
               --show-patch prints the hunk-only patch of one changed file
@@ -63,6 +64,11 @@ diag ask      answer --question (required, at most 8000 characters) about the
               markdown; --publish also posts the question and answer as a PR
               comment. --dry-run and --show-prompt behave as for diag review;
               --dry-run cannot be combined with --publish
+diag cache    list the repository-context cache (context.repo.cache_dir) as
+              JSON: each repository with its size, last use and idle days;
+              --prune first deletes repositories idle longer than
+              context.repo.idle_days, then least-recently-used ones until the
+              cache fits context.repo.max_cache_mb (what every use does)
 `
 
 func diagUsage(w io.Writer) { _, _ = fmt.Fprint(w, diagUsageText) }
@@ -167,6 +173,8 @@ func runDiag(args []string, stdout, stderr io.Writer, load configLoader) int {
 		return runDiagReview(rest, stdout, stderr, load)
 	case "ask":
 		return runDiagAsk(rest, stdout, stderr, load)
+	case "cache":
+		return runDiagCache(rest, stdout, stderr, load)
 	default:
 		diagUsage(stderr)
 		return 2

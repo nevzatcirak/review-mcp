@@ -44,6 +44,9 @@ validated by the V1 acceptance run (section H4) before v1.0.0.
   read: "No security concerns identified in the reviewed files", "No
   performance concerns identified in the reviewed files" and "No key issues
   found in the reviewed files". Complete results read as before.
+- The npm publish job now verifies every package version on the registry after
+  publishing (retries for up to 5 minutes) and fails, naming the packages, when
+  one is missing or was staged instead of published. Nothing is republished.
 
 ## [1.0.0-rc.3]
 

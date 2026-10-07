@@ -221,6 +221,13 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The context window comes from llm.context_window or, when unset, from
+	// the endpoint (X-15). The probe runs before any provider request, so a
+	// failing probe sends nothing to the provider.
+	window, _, err := llmrun.ContextWindow(ctx, cfg, deps.LLM)
+	if err != nil {
+		return nil, err
+	}
 	pr, err := p.GetPullRequest(ctx, ref)
 	if err != nil {
 		return nil, err
@@ -247,10 +254,11 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		return nil, err
 	}
 	budget := tokens.Budget{
-		ContextWindow:   cfg.LLM.ContextWindow,
+		ContextWindow:   window,
 		MaxOutputTokens: cfg.LLM.MaxOutputTokens,
 		PromptTokens:    promptTokens,
 		Factor:          factor,
+		MaxDiffTokens:   tokens.Cap(cfg.Diff.MaxTokens),
 	}
 	if err := budget.RequireCapacity(); err != nil {
 		return nil, llmrun.DoesNotFit(err)
@@ -272,7 +280,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		Coverage: llmrun.BuildCoverage(prep, flt),
 		Notes:    []string{},
 		Metadata: Metadata{
-			Model: cfg.LLM.Model, ContextWindow: cfg.LLM.ContextWindow, PromptTokens: promptTokens,
+			Model: cfg.LLM.Model, ContextWindow: window, PromptTokens: promptTokens,
 			DiffTokens: prep.Tokens, FastPath: prep.FastPath,
 		},
 	}

@@ -102,3 +102,8 @@ type missingKeyCompleter struct{}
 func (missingKeyCompleter) Complete(context.Context, string, string) (*llm.Response, error) {
 	return nil, tools.MissingLLMKey()
 }
+
+// ResolveContextWindow fails like Complete: without a key there is no probe.
+func (missingKeyCompleter) ResolveContextWindow(context.Context) (int, string, error) {
+	return 0, "", tools.MissingLLMKey()
+}

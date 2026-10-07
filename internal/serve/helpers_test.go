@@ -310,6 +310,12 @@ type fakeLLM struct {
 	hits  atomic.Int64
 	// answer, when set, replaces goodAnswer.
 	answer atomic.Pointer[string]
+	// models counts the GETs of the model list (the context-window probe)
+	// and modelKeys records the bearer credential of each; modelsStatus,
+	// when non-zero, answers them with that status instead of the list.
+	models       atomic.Int64
+	modelsStatus atomic.Int64
+	modelKeys    []string
 
 	mu  sync.Mutex
 	obs []observation
@@ -319,6 +325,19 @@ func newFakeLLM(t *testing.T) *fakeLLM {
 	t.Helper()
 	f := &fakeLLM{}
 	f.srv, f.conns = startCounted(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/models") {
+			f.models.Add(1)
+			f.mu.Lock()
+			f.modelKeys = append(f.modelKeys, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+			f.mu.Unlock()
+			if st := int(f.modelsStatus.Load()); st != 0 {
+				w.WriteHeader(st)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"id":"example-model","max_model_len":40000}]}`))
+			return
+		}
 		f.hits.Add(1)
 		body, _ := io.ReadAll(r.Body)
 		pr := -1
@@ -371,7 +390,9 @@ type testServer struct {
 }
 
 type serverOpts struct {
-	env             map[string]string
+	env map[string]string
+	// unset names environment variables removed from the defaults.
+	unset           []string
 	level           slog.Level
 	shutdownTimeout time.Duration
 }
@@ -396,6 +417,9 @@ func startServer(t *testing.T, o serverOpts) *testServer {
 	}
 	for k, v := range o.env {
 		env[k] = v
+	}
+	for _, k := range o.unset {
+		delete(env, k)
 	}
 	cfg, rep, err := config.LoadWith(config.MemSource{Env: env}, config.LoadOptions{Mode: config.ModeServe})
 	if err != nil {

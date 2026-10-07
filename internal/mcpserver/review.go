@@ -2,16 +2,22 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/nevzatcirak/review-mcp/internal/review"
 	"github.com/nevzatcirak/review-mcp/internal/tools"
 )
 
 // prReviewDescription is the tool description from spec P4 §6.1.
+//
+// In stdio mode the description gains prReviewJobSentence (X-16).
 const prReviewDescription = "Reviews a pull request with the configured LLM and returns a structured review (key issues, effort, tests, security, performance) with code excerpts. Set publish=true to also post it: one overview comment that later runs edit in place, and the findings on changed lines as inline comments. The PR's title, description, existing comments and diff are sent to the configured LLM endpoint."
+
+// prReviewJobSentence ends the pr_review description in stdio mode, where a
+// slow review answers with a job id (P8 spec §2.4).
+const prReviewJobSentence = " A review that takes longer than wait_seconds answers with a job_id instead: call job_result for the result. The review keeps running and, with publish=true, still posts its comments even if job_result is never called."
 
 type prReviewInput struct {
 	PRURL             string `json:"pr_url" jsonschema:"URL of the pull request, on a configured Gitea or Bitbucket Server host"`
@@ -20,10 +26,20 @@ type prReviewInput struct {
 	MaxFindings       *int   `json:"max_findings,omitempty" jsonschema:"most key issues to return, 1 to 20; replaces review.max_findings for this call"`
 	Publish           bool   `json:"publish,omitempty" jsonschema:"also post the review: the overview comment, and with inline_findings the findings on changed lines as inline comments (default false)"`
 	InlineFindings    *bool  `json:"inline_findings,omitempty" jsonschema:"with publish, post each finding that falls on a changed line as an inline comment; replaces review.inline_findings for this call"`
+	WaitSeconds       *int   `json:"wait_seconds,omitempty" jsonschema:"seconds to wait for the result before answering with a job_id for job_result, 0 to 600; replaces llm.wait_seconds (default 45) for this call; ignored in serve mode"`
 }
 
 // progressTotal is the number of stages of a review or an answer.
 const progressTotal = 4
+
+// toolDescription returns desc, plus jobSentence when the tool may answer
+// with a job id.
+func toolDescription(deps Deps, desc, jobSentence string) string {
+	if deps.background() {
+		return desc + jobSentence
+	}
+	return desc
+}
 
 // progressFunc returns the stage callback of one call, or nil when the client
 // sent no progress token (MCP progress notifications need the token from the
@@ -48,47 +64,61 @@ func progressFunc(ctx context.Context, req *mcp.CallToolRequest, log *slog.Logge
 func registerPRReview(s *mcp.Server, deps Deps) {
 	f, tr := false, true
 	mcp.AddTool(s, &mcp.Tool{
-		Name:        "pr_review",
-		Description: prReviewDescription,
+		Name:        toolPRReview,
+		Description: toolDescription(deps, prReviewDescription, prReviewJobSentence),
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:    false,
 			IdempotentHint:  false,
 			DestructiveHint: &f,
 			OpenWorldHint:   &tr,
 		},
-		OutputSchema: review.ResultSchema(),
-	}, func(ctx context.Context, req *mcp.CallToolRequest, in prReviewInput) (*mcp.CallToolResult, review.Result, error) {
-		var zero review.Result
+		OutputSchema: reviewOutputSchema(deps),
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in prReviewInput) (*mcp.CallToolResult, any, error) {
 		log := logger(deps)
 		// The degraded configuration check comes first: nothing is built and
 		// nothing touches the network.
 		sc, err := callScope(ctx, deps, req, true)
 		if err != nil {
-			return nil, zero, err
+			return nil, nil, err
 		}
-		defer sc.release()
 		if deps.NewLLM == nil {
-			return nil, zero, toolError("review-mcp has no LLM wiring; this is a bug")
+			sc.release()
+			return nil, nil, toolError("review-mcp has no LLM wiring; this is a bug")
 		}
-		res, text, err := tools.PRReview(ctx, tools.ReviewDeps{
+		// Everything that fails without network I/O fails here, before a
+		// job exists: the arguments, the LLM client, the URL resolution and
+		// (serve) the credentials, then wait_seconds.
+		call, err := tools.PreparePRReview(tools.ReviewDeps{
 			Config:   sc.cfg,
 			Resolver: sc.resolver,
 			NewLLM:   sc.newLLM,
 			Logger:   log,
-			Progress: progressFunc(ctx, req, log, "pr_review"),
 		}, tools.PRReviewArgs{
 			PRURL: in.PRURL, ExtraInstructions: in.ExtraInstructions, OutputLanguage: in.OutputLanguage,
 			MaxFindings: in.MaxFindings, Publish: in.Publish, InlineFindings: in.InlineFindings,
 		})
+		wait := 0
+		if err == nil && deps.background() {
+			wait, err = tools.WaitSeconds(in.WaitSeconds, sc.cfg)
+		}
 		if err != nil {
+			sc.release()
 			msg := tools.UserMessage(err)
 			log.Debug("pr_review failed", "error", msg)
-			return nil, zero, toolError(msg)
+			return nil, nil, toolError(msg)
 		}
-		// Counts and the redacted URL only: never the review text, prompts or
-		// PR content.
-		log.Debug("pr_review", "url", res.PR.URL, "findings", len(res.Review.KeyIssuesToReview),
-			"llm_calls", res.Metadata.LLMCalls, "notes", len(res.Notes), "published", res.Publish != nil && res.Publish.Published)
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, *res, nil
+		return answerCall(ctx, deps, req, toolPRReview, sc, wait, func(ctx context.Context, progress func(string)) (jobOutcome, error) {
+			res, text, err := call.Run(ctx, progress)
+			if err != nil {
+				msg := tools.UserMessage(err)
+				log.Debug("pr_review failed", "error", msg)
+				return jobOutcome{}, errors.New(msg)
+			}
+			// Counts and the redacted URL only: never the review text,
+			// prompts or PR content.
+			log.Debug("pr_review", "url", res.PR.URL, "findings", len(res.Review.KeyIssuesToReview),
+				"llm_calls", res.Metadata.LLMCalls, "notes", len(res.Notes), "published", res.Publish != nil && res.Publish.Published)
+			return jobOutcome{text: text, out: *res}, nil
+		})
 	})
 }

@@ -1,6 +1,6 @@
 # Serve mode
 
-`review-mcp serve` runs the same tools over HTTP, for a team that shares one
+`review-mcp serve` runs the same tools over HTTP (six: everything stdio has except `job_result`, see [Long calls](#long-calls)), for a team that shares one
 server instead of everyone running a local process. The default transport,
 stdio, is described in the [Setup guide](setup.md).
 
@@ -288,6 +288,22 @@ The key files must be readable by the image's non-root user. A private CA for
 your provider needs `REVIEW_MCP_GITEA_CA_CERT` (or the Bitbucket one) pointing
 at a mounted PEM file. Because the image has no shell, use `GET /healthz` from
 the orchestrator for health checks.
+
+## Long calls
+
+In stdio mode a slow `pr_review` or `pr_ask` answers with a `job_id` after
+`wait_seconds` and finishes in the background
+([Slow endpoints](review.md#slow-endpoints)). Serve mode does not do this:
+
+- every call runs in its own request, start to finish;
+- the `wait_seconds` argument and `llm.wait_seconds` are ignored;
+- there is no `job_result` tool.
+
+A background job would outlive its request, and with it the credentials the
+request carried. Serve mode never keeps those beyond the request. Give your
+client a tool timeout that fits your model, and set `llm.timeout_seconds` to
+match. A client that reports `-32001 Request timed out` gave up on its own
+timeout: raise that timeout in the client.
 
 ## Errors specific to serve mode
 

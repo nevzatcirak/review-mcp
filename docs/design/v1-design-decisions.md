@@ -19,7 +19,7 @@ code must not anticipate them beyond the seams named here.
 |---|---|---|---|
 | DQ-1 | Dynamic context in v1 | Static extra-lines only; no dynamic-context key in v1 | Decided |
 | DQ-2 | Language ranking without a languages API | Derive language sizes locally from the diff, for **all** providers | Decided |
-| DQ-3 | Context-window source | Required config `llm.context_window`; no model registry | Decided |
+| DQ-3 | Context-window source | Optional config `llm.context_window`, resolved from the endpoint when unset (amended by X-15); no model registry | Decided (amended) |
 | DQ-4 | Output reserve | One knob (`llm.max_output_tokens`); reserve = max(knob, 1000), soft = reserve + 500 | Decided |
 | DQ-5 | Accurate token counting | Local estimates only (`o200k_base` + safety factor) | Decided |
 | DQ-6 | `pr_review` output format | Markdown text content + MCP `structuredContent` with declared output schema | Decided |
@@ -57,6 +57,9 @@ code must not anticipate them beyond the seams named here.
 | X-12 | Persistent overview (P7, amends X-1, extends X-4) | One overview per PR per token user, found by marker and author, edited in place; new `performance_concerns` field | Decided |
 | X-13 | Discussion awareness (P7) | The PR's threads go into the prompt as untrusted, budgeted data; inline findings carry a fingerprint and are not posted twice | Decided |
 | X-14 | `pr_comment_create` (P7, extends X-9) | Sixth tool: a new PR-level or inline comment; an unanchorable line is refused, never downgraded | Decided |
+| X-15 | Context window from the endpoint (P8, amends DQ-3) | `llm.context_window` is optional; unset, the endpoint's model list is asked once per process and 90 % of the reported window is used; training-size fields are never used | Decided |
+| X-16 | Background jobs for long calls (P8) | stdio only: `pr_review` and `pr_ask` wait at most `wait_seconds`, then return a `job_id`; the new tool `job_result` collects the result; serve mode stays synchronous | Decided |
+| X-17 | Latency controls (P8) | `llm.timeout_seconds` default 300; optional `diff.max_tokens` caps the diff budget | Decided |
 
 ---
 
@@ -94,8 +97,8 @@ implementation must do or must not do).
 ### Area B — Token budgeting
 
 #### DQ-3 — Context-window source
-- **Decision:** `llm.context_window` (integer tokens) is **required**; startup validation rejects a missing value or one below 4096. No model registry is shipped; no LiteLLM-style metadata lookup exists.
-- **Rationale:** Context windows are model- and deployment-specific (some deployments cap around ~250k); a required value is honest, generic, and immune to registry staleness. Avoids upstream's silent 32000-token clamp surprise.
+- **Decision:** `llm.context_window` (integer tokens) is **optional** (amended by X-15, P8); when set, startup validation rejects a value below 4096, and a set value always wins. When unset, the context window is resolved from the endpoint (X-15). No model registry is shipped; no LiteLLM-style metadata lookup exists.
+- **Rationale:** Context windows are model- and deployment-specific (some deployments cap around ~250k); an explicit value is honest, generic, and immune to registry staleness (rc.1 and rc.2 required it; X-15 made it optional). Avoids upstream's silent 32000-token clamp surprise.
 - **Consequences:** The setup guide explains how to choose the value. This single value replaces upstream's `max_model_tokens` + `custom_model_max_tokens` + registry.
 
 #### DQ-4 — Output reserve
@@ -315,6 +318,40 @@ implementation must do or must not do).
   - **URL redaction (decided, architect review on PR #9 (2026-10-07)):** the URLs in the `pr_comment_create` and `pr_comment_reply` results are built by the provider from the configured base URL plus the comment id (Gitea `...#issuecomment-N`, Bitbucket Server `...?commentId=N`). Config validation forbids credentials in a base URL, so they are returned unredacted and the deep link works. `logging.RedactURL` is for logs only, and every log line stays redacted.
   - The tool is not read-only, not destructive, not idempotent, open-world.
 
+#### X-15 — Context window from the endpoint (added P8, amends DQ-3)
+- **Decision:**
+  - `llm.context_window` becomes **optional**. A set value always wins.
+  - When it is unset, review-mcp asks the endpoint once per process: `GET {llm.base_url}/models`, then the entry whose `id` equals `llm.model` exactly.
+  - It reads the first of these fields that holds a positive integer (a JSON number or a numeric string): `max_model_len`, `context_length`, `context_window`, `max_context_length`. It uses **90 %** of that value, rounded down, with a minimum of 4096.
+  - Training-size fields are **never** used: `n_ctx_train`, `meta.n_ctx_train`, and model metadata in general. A server often serves a smaller context than the model was trained with, and that is exactly the mistake that makes prompts truncate silently.
+  - If no field is found, the call fails with a fixed sentence that names `llm.context_window`. It never guesses.
+- **Consequences:**
+  - `diag diff --context-window N` works without any LLM access.
+  - **Decided, architect review on PR #10 (2026-10-07):** `server_info` keeps the integer `context_window` plus a separate source field; it reports `auto (endpoint)` until the value is resolved.
+  - **Decided, architect review on PR #10 (2026-10-07):** an endpoint window that resolves below 4096 is refused, not floored into use.
+  - **Decided, architect review on PR #10 (2026-10-07):** concurrent first probes coalesce into one request, and a failure is not cached, so a later call can succeed once the endpoint is up.
+  - **Decided, architect review on PR #10 (2026-10-07):** the process-global cache is keyed by `(base_url, model)`. The cached number is not a secret; the LLM key is never stored.
+
+#### X-16 — Background jobs for long calls (added P8, stdio only)
+- **Decision:**
+  - `pr_review` and `pr_ask` wait at most `wait_seconds` for their result (argument, 0 to 600; default `llm.wait_seconds` = 45).
+  - If the run is still going, the tool returns a **running** result with a `job_id` and a fixed instruction to call `job_result`. The run continues in the server process, and `publish=true` still happens inside it.
+  - A new tool, `job_result(job_id, wait_seconds?)`, waits again up to `wait_seconds` and returns the finished result exactly as the original tool would have, or the running status.
+  - A fast run returns exactly today's result, with no `job_id`.
+  - This keeps every call under a typical 60 s client timeout whatever the model speed, and does not depend on any client setting.
+  - **serve mode does not use background jobs:** calls stay synchronous, `wait_seconds` is ignored and there is no `job_result`. X-10 requires credentials to live no longer than the request; a background job would outlive it. A serve client sets its own timeout.
+- **Consequences:**
+  - At most 4 jobs run at once; the fifth call is refused with "too many background jobs are running; wait for one to finish" (decided, architect review on PR #10 (2026-10-07)).
+  - Finished jobs are dropped 30 minutes after they finish; at 64 kept results the oldest finished job is evicted (decided, architect review on PR #10 (2026-10-07)). A running job is never dropped.
+  - **Prepare/run split (decided, architect review on PR #10 (2026-10-07)):** no job is created before argument validation, URL resolution and credentials succeed; those failures are returned directly.
+  - **Output schemas (decided, architect review on PR #10 (2026-10-07)):** the three tools declare a root `oneOf` output schema (result or running status). Whether opencode and Claude Code accept it is checked live (acceptance J2). The fallback is pre-chosen: if either rejects it, `outputSchema` is dropped for `pr_review`, `pr_ask` and `job_result` in stdio only, keeping structured content, and ships in the next release candidate.
+  - Jobs live in memory only; nothing is written to disk, and running jobs are cancelled at shutdown.
+
+#### X-17 — Latency controls (added P8)
+- **Decision:**
+  - `llm.timeout_seconds` rises to **300**. 120 is too short for local models on large prompts.
+  - A new optional cap, `diff.max_tokens` (at least 1000, unset by default), caps the diff budget below the context window, so that large windows do not imply very slow requests. The budget is `min(the context-window budget, diff.max_tokens)`; the prompt scaffolding and the reserve rules are unchanged, and `pr_ask` uses the same budget. Files left out are reported in the coverage section as usual (X-3). `diag diff` and `diag review --dry-run` report which limit applied.
+
 ---
 
 ## 5. Resulting v1 configuration surface
@@ -329,14 +366,15 @@ Secrets are environment-only (in `serve` mode, credentials come from request hea
 | — | `REVIEW_MCP_BITBUCKET_SERVER_TOKEN` | — | **Secret**, required iff Bitbucket Server enabled |
 | `llm.base_url` | `REVIEW_MCP_LLM_BASE_URL` | — | Required |
 | `llm.model` | `REVIEW_MCP_LLM_MODEL` | — | Required |
-| `llm.context_window` | `REVIEW_MCP_LLM_CONTEXT_WINDOW` | — | Required, ≥ 4096 (DQ-3) |
+| `llm.context_window` | `REVIEW_MCP_LLM_CONTEXT_WINDOW` | — | Optional, ≥ 4096 when set; unset means resolved from the endpoint (DQ-3, X-15) |
 | `llm.max_output_tokens` | `REVIEW_MCP_LLM_MAX_OUTPUT_TOKENS` | — | Optional (DQ-4) |
 | `llm.temperature` | `REVIEW_MCP_LLM_TEMPERATURE` | — | Optional, sent only if set (DQ-26) |
 | `llm.seed` | `REVIEW_MCP_LLM_SEED` | — | Optional |
 | `llm.reasoning_effort` | `REVIEW_MCP_LLM_REASONING_EFFORT` | — | Optional pass-through |
-| `llm.timeout_seconds` | `REVIEW_MCP_LLM_TIMEOUT_SECONDS` | 120 | |
+| `llm.timeout_seconds` | `REVIEW_MCP_LLM_TIMEOUT_SECONDS` | 300 | X-17 (120 in rc.1 and rc.2) |
 | `llm.max_retries` | `REVIEW_MCP_LLM_MAX_RETRIES` | 1 | Transport retries (DQ-9) |
 | `llm.token_estimate_factor` | `REVIEW_MCP_LLM_TOKEN_ESTIMATE_FACTOR` | 0.3 | DQ-5 |
+| `llm.wait_seconds` | `REVIEW_MCP_LLM_WAIT_SECONDS` | 45 | X-16; 0 to 600; stdio only; per-call `wait_seconds` argument |
 | `gitea.base_url` | `REVIEW_MCP_GITEA_BASE_URL` | — | Enables Gitea (X-2) |
 | `gitea.web_url` | `REVIEW_MCP_GITEA_WEB_URL` | — | Optional split web URL |
 | `gitea.ca_cert` | `REVIEW_MCP_GITEA_CA_CERT` | — | Optional CA bundle path |
@@ -354,6 +392,7 @@ Secrets are environment-only (in `serve` mode, credentials come from request hea
 | `diff.max_files_full_content` | `REVIEW_MCP_DIFF_MAX_FILES_FULL_CONTENT` | 50 | Both providers (DQ-19) |
 | `diff.max_file_bytes` | `REVIEW_MCP_DIFF_MAX_FILE_BYTES` | 1048576 | Proposed; tune at live acceptance |
 | `diff.max_diff_bytes` | `REVIEW_MCP_DIFF_MAX_DIFF_BYTES` | 20971520 | Proposed; tune at live acceptance (DQ-17) |
+| `diff.max_tokens` | `REVIEW_MCP_DIFF_MAX_TOKENS` | — | Optional, ≥ 1000 when set (X-17) |
 | `diff.ignore_generated_frameworks` | `REVIEW_MCP_DIFF_IGNORE_GENERATED_FRAMEWORKS` | (empty) | Names from embedded generated-code table |
 | `ignore.glob` | `REVIEW_MCP_IGNORE_GLOB` | `vendor/**` | doublestar semantics |
 | `ignore.regex` | `REVIEW_MCP_IGNORE_REGEX` | (empty) | RE2 dialect; compile errors fail startup |
@@ -386,11 +425,12 @@ violations are reported together in one token-free startup error.
 | Tool | Arguments | Result |
 |---|---|---|
 | `server_info` (P1 diagnostic) | — | Version, enabled providers, effective non-secret config (secrets shown as set/unset only) |
-| `pr_review` | `pr_url` (required), `extra_instructions`, `output_language`, `max_findings`, `publish`, `inline_findings` (P7) | Markdown (`client` profile) + `structuredContent` (DQ-6) |
-| `pr_ask` | `pr_url` (required), `question` (required), `extra_instructions`, `output_language`, `publish` | Markdown answer |
+| `pr_review` | `pr_url` (required), `extra_instructions`, `output_language`, `max_findings`, `publish`, `inline_findings` (P7), `wait_seconds` (X-16) | Markdown (`client` profile) + `structuredContent` (DQ-6) |
+| `pr_ask` | `pr_url` (required), `question` (required), `extra_instructions`, `output_language`, `publish`, `wait_seconds` (X-16) | Markdown answer |
 | `pr_comments` (X-9) | `pr_url` (required), `include_resolved` (default false) | Markdown thread listing + `structuredContent` |
 | `pr_comment_reply` (X-9) | `pr_url` (required), `comment_id` (required), `body` (required) | Posted comment id/URL + whether it landed in-thread or as a PR-level fallback |
 | `pr_comment_create` (X-14) | `pr_url` (required), `body` (required), `file`, `line` (together) | Posted comment id/URL + `inline` true or false |
+| `job_result` (X-16, **stdio only**) | `job_id` (required), `wait_seconds` | The finished `pr_review` or `pr_ask` result, or the running status |
 
 ## 7. Items deferred beyond v1 (with seams)
 

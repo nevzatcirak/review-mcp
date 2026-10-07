@@ -82,7 +82,7 @@ func buildAskDryRunReport(pl *ask.Plan, elapsed time.Duration) askDryRunReport {
 		Empty:  pl.Empty,
 		Budget: budgetJSON{
 			ContextWindow: b.ContextWindow, SoftLimit: b.SoftLimit(), HardLimit: b.HardLimit(),
-			PromptTokens: b.PromptTokens, Factor: b.Factor,
+			PromptTokens: b.PromptTokens, Factor: b.Factor, Limit: b.Limit(), MaxDiffTokens: b.MaxDiffTokens,
 		},
 		Tokens:    dryRunTokens{Prompt: m.PromptTokens, Diff: m.DiffTokens, Request: m.RequestTokens, ContextWindow: m.ContextWindow},
 		Fast:      m.FastPath,
@@ -93,13 +93,19 @@ func buildAskDryRunReport(pl *ask.Plan, elapsed time.Duration) askDryRunReport {
 }
 
 // diagAskDryRun runs the ask pipeline up to the model call and prints the
-// JSON report. No LLM client is built: nothing can reach the model.
+// JSON report. The model is never called; the only LLM request is the
+// context-window probe, and only when llm.context_window is unset.
 func diagAskDryRun(ctx context.Context, cfg *config.Config, logger *slog.Logger, args ask.Args, showPrompt bool, stdout, stderr io.Writer) int {
 	start := time.Now()
+	client, closeLLM, err := dryRunLLM(cfg, logger)
+	if err != nil {
+		return reportError(stderr, err)
+	}
+	defer closeLLM()
 	resolver := wiring.NewResolver(cfg, logger)
 	defer resolver.CloseIdleConnections()
 	pl, err := ask.Prepare(ctx, ask.Deps{
-		Config: cfg, Logger: logger, Resolver: resolver,
+		Config: cfg, Logger: logger, Resolver: resolver, LLM: client,
 	}, args)
 	if err != nil {
 		return reportError(stderr, err)

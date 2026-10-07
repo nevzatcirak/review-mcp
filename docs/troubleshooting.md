@@ -143,7 +143,7 @@ Flags (they may come before or after the URL):
 
 ```json
 {
-  "budget": { "context_window": 4096, "soft_limit": 1596, "hard_limit": 2096, "prompt_tokens": 1000, "factor": 0.3 },
+  "budget": { "context_window": 4096, "soft_limit": 1596, "hard_limit": 2096, "prompt_tokens": 1000, "factor": 0.3, "limit": "context_window" },
   "fast_path": false,
   "tokens": 1454,
   "included": ["server/app.go", "server/util.go", "server/fresh.go"],
@@ -284,12 +284,15 @@ setting to check may follow.
 | the request is too long for the model's context window | `llm_context_too_long` | `llm.context_window` is larger than the model really accepts; lower it. |
 | the LLM endpoint rejected the request | `llm_bad_request` | Often an unsupported sampling setting; the hint names the keys you set (`llm.temperature`, `llm.seed`, `llm.reasoning_effort`, `llm.max_output_tokens`). Unset them. |
 | the LLM endpoint reported an internal error | `llm_upstream` (HTTP 5xx) | The endpoint failed; see its logs. Retried like 429. |
-| the LLM request timed out | `llm_timeout` | Raise `llm.timeout_seconds`; large reviews on slow models take minutes. |
+| the LLM request timed out | `llm_timeout` | The default `llm.timeout_seconds` is 300; raise it, lower `diff.max_tokens`, or use a faster model. Large reviews on slow models take minutes. |
+| the LLM endpoint does not list the configured model; check llm.model | `llm_not_found` | The endpoint's model list (`GET {llm.base_url}/models`) has no entry whose `id` equals `llm.model` exactly. Fix `llm.model`, or set `llm.context_window` to skip the lookup. |
+| the LLM endpoint does not report the model's context window; set llm.context_window | `llm_protocol` | `llm.context_window` is unset and the endpoint's entry for the model has none of `max_model_len`, `context_length`, `context_window`, `max_context_length` (training-size fields are never used). Set `llm.context_window` to the window your server runs; for Ollama, its `num_ctx`. |
+| the LLM endpoint reports a context window below the 4096-token minimum; set llm.context_window if the endpoint is wrong | `llm_protocol` | 90 % of the reported window is below 4096. Use a model with a larger window, or, if the endpoint reports it wrongly, set `llm.context_window` (at least 4096). |
 | could not complete the request to the LLM endpoint | `llm_transport` | Network, DNS, TLS or proxy problem between you and the endpoint. |
 | the LLM endpoint sent an unexpected response | `llm_protocol` | The endpoint is not OpenAI-compatible at `llm.base_url`, or it answered with an empty message. |
 | the pull request diff does not fit the configured context window | `diff_does_not_fit` | Raise `llm.context_window`, or narrow the PR. Nothing was sent to the model. Applies to `pr_review` and `pr_ask`. |
 | the model's answer could not be parsed as a review, also after one retry | `review_unparseable` | Try again, or use a model that follows YAML output instructions. |
-| output_language must be a locale code such as en-US or tr-TR / max_findings must be an integer from 1 to 20 | (argument) | Fix the argument; nothing was sent anywhere. |
+| output_language must be a locale code such as en-US or tr-TR / max_findings must be an integer from 1 to 20 / wait_seconds must be an integer from 0 to 600 | (argument) | Fix the argument; nothing was sent anywhere. |
 
 If the configuration is invalid, `pr_review` returns "review-mcp configuration
 is invalid; call server_info for the list of problems" and sends nothing to
@@ -379,7 +382,14 @@ table also covers the configuration, argument and serve-mode errors.
 | the request is too long for the model's context window | `llm_context_too_long` | `llm.context_window` is larger than the endpoint really accepts. |
 | the LLM endpoint rejected the request | `llm_bad_request` | Unset the sampling keys named in the hint (`llm.temperature`, `llm.seed`, `llm.reasoning_effort`, `llm.max_output_tokens`). |
 | the LLM endpoint reported an internal error | `llm_upstream` | The endpoint failed; see its logs. |
-| the LLM request timed out | `llm_timeout` | Raise `llm.timeout_seconds`. |
+| the LLM request timed out | `llm_timeout` | Raise `llm.timeout_seconds` (default 300), or lower `diff.max_tokens`. |
+| the LLM endpoint does not list the configured model; check llm.model | `llm_not_found` | The endpoint's model list (`GET {llm.base_url}/models`) has no entry whose `id` equals `llm.model` exactly. Fix `llm.model`, or set `llm.context_window` to skip the lookup. |
+| the LLM endpoint does not report the model's context window; set llm.context_window | `llm_protocol` | `llm.context_window` is unset and the endpoint's entry for the model has none of `max_model_len`, `context_length`, `context_window`, `max_context_length` (training-size fields are never used). Set `llm.context_window` to the window your server runs; for Ollama, its `num_ctx`. |
+| the LLM endpoint reports a context window below the 4096-token minimum; set llm.context_window if the endpoint is wrong | `llm_protocol` | 90 % of the reported window is below 4096. Use a model with a larger window, or, if the endpoint reports it wrongly, set `llm.context_window` (at least 4096). |
+| too many background jobs are running; wait for one to finish | (job limit) | stdio only. Four `pr_review` or `pr_ask` runs are already going in the background. Collect one with `job_result`, or wait for it to finish; nothing ran for this call. |
+| unknown or expired job_id | (job) | `job_result` got an id the server never issued, one older than 30 minutes after it finished, one evicted (only 64 results are kept), or one from before a restart. Jobs live in memory; run the review again. |
+| wait_seconds must be an integer from 0 to 600 | (argument) | Fix `wait_seconds` (`pr_review`, `pr_ask`, `job_result`); the same range applies to `llm.wait_seconds`. |
+| review-mcp is shutting down; no new background job can start | (shutdown) | The server received SIGINT or SIGTERM, or its client closed it. Restart it; running jobs were cancelled. |
 | could not complete the request to the LLM endpoint | `llm_transport` | Network, DNS, TLS or proxy between you and `llm.base_url`. |
 | the LLM endpoint sent an unexpected response | `llm_protocol` | `llm.base_url` is not an OpenAI-compatible endpoint, or the answer was empty. |
 | the pull request diff does not fit the configured context window; raise llm.context_window (REVIEW_MCP_LLM_CONTEXT_WINDOW) or narrow the pull request | `diff_does_not_fit` | `llm.context_window`, `llm.max_output_tokens`, `diff.large_patch_policy`; or narrow the PR. Nothing was sent to the model. |
@@ -397,6 +407,22 @@ table also covers the configuration, argument and serve-mode errors.
 | forbidden: invalid Host header / forbidden: origin not allowed (HTTP 403) | (HTTP) | Serve mode: a loopback listener got a `Host` that is not a loopback name with the configured port, or a request with an `Origin` that is not in `serve.allowed_origins` (exact, lower case). |
 | request body too large (HTTP 413) | (HTTP) | The request body is over 1 MiB. |
 | unexpected error; rerun with REVIEW_MCP_LOG_LEVEL=debug for details | (generic) | Anything not classified; debug logs say more. A `(class: timeout)` or `(class: canceled)` suffix means the call ran out of time or was canceled. |
+
+## A client reports `-32001 Request timed out`
+
+The MCP client gave up waiting for the tool call; the server did not fail.
+
+- **stdio:** `pr_review` and `pr_ask` answer within `wait_seconds` (default 45)
+  with a result or a `job_id`, so a call stays under a typical 60-second client
+  timeout whatever the model speed. If you still see `-32001`, your client
+  timeout is shorter than that: lower `llm.wait_seconds` (or pass a smaller
+  `wait_seconds`), then call `job_result` with the `job_id`. A client that
+  resets its timeout on progress notifications may never see the running
+  status; that is expected ([Slow endpoints](review.md#slow-endpoints)).
+- **serve:** there are no background jobs, so the call runs until the review is
+  done. The client sets its own tool timeout: raise it to fit your model, and
+  set `llm.timeout_seconds` to match ([Serve mode](serve.md#long-calls)).
+- Either way, a smaller `diff.max_tokens` or a faster model shortens the run.
 
 ## Token scopes
 

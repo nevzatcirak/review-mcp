@@ -13,7 +13,7 @@ func TestValidationRules(t *testing.T) {
 		want string // substring of one problem
 	}{
 		{"context window too small", map[string]string{"REVIEW_MCP_LLM_CONTEXT_WINDOW": "4095"}, "llm.context_window: 4095 is below the minimum 4096"},
-		{"context window zero", map[string]string{"REVIEW_MCP_LLM_CONTEXT_WINDOW": "0"}, "llm.context_window is required"},
+		{"context window negative", map[string]string{"REVIEW_MCP_LLM_CONTEXT_WINDOW": "-1"}, "llm.context_window: -1 is below the minimum 4096"},
 		{"max output zero", map[string]string{"REVIEW_MCP_LLM_MAX_OUTPUT_TOKENS": "0"}, "llm.max_output_tokens: 0 must be greater than 0"},
 		{"max output >= window", map[string]string{"REVIEW_MCP_LLM_MAX_OUTPUT_TOKENS": "32000"}, "must be less than llm.context_window"},
 		{"temperature high", map[string]string{"REVIEW_MCP_LLM_TEMPERATURE": "2.1"}, "llm.temperature: 2.1 is out of range (0-2)"},
@@ -21,8 +21,12 @@ func TestValidationRules(t *testing.T) {
 		{"temperature NaN", map[string]string{"REVIEW_MCP_LLM_TEMPERATURE": "NaN"}, "llm.temperature"},
 		{"timeout zero", map[string]string{"REVIEW_MCP_LLM_TIMEOUT_SECONDS": "0"}, "llm.timeout_seconds: 0 is out of range (1-3600)"},
 		{"timeout high", map[string]string{"REVIEW_MCP_LLM_TIMEOUT_SECONDS": "3601"}, "llm.timeout_seconds"},
+		{"diff max tokens below minimum", map[string]string{"REVIEW_MCP_DIFF_MAX_TOKENS": "999"}, "diff.max_tokens: 999 is below the minimum 1000"},
+		{"diff max tokens negative", map[string]string{"REVIEW_MCP_DIFF_MAX_TOKENS": "-5"}, "diff.max_tokens: -5 is below the minimum 1000"},
 		{"retries high", map[string]string{"REVIEW_MCP_LLM_MAX_RETRIES": "6"}, "llm.max_retries: 6 is out of range (0-5)"},
 		{"retries negative", map[string]string{"REVIEW_MCP_LLM_MAX_RETRIES": "-1"}, "llm.max_retries"},
+		{"wait negative", map[string]string{"REVIEW_MCP_LLM_WAIT_SECONDS": "-1"}, "llm.wait_seconds: -1 is out of range (0-600)"},
+		{"wait high", map[string]string{"REVIEW_MCP_LLM_WAIT_SECONDS": "601"}, "llm.wait_seconds: 601 is out of range (0-600)"},
 		{"estimate factor high", map[string]string{"REVIEW_MCP_LLM_TOKEN_ESTIMATE_FACTOR": "2.5"}, "llm.token_estimate_factor"},
 		{"locale bad", map[string]string{"REVIEW_MCP_OUTPUT_LANGUAGE": "english_US"}, "output.language"},
 		{"locale too short", map[string]string{"REVIEW_MCP_OUTPUT_LANGUAGE": "e"}, "output.language"},
@@ -63,6 +67,27 @@ func TestValidationRules(t *testing.T) {
 	}
 }
 
+// X-15: llm.context_window is optional; unset (absent or 0) is valid and
+// leaves the value to be resolved from the endpoint.
+func TestContextWindowUnsetIsValid(t *testing.T) {
+	for name, set := range map[string]string{"absent": "", "zero": "0"} {
+		t.Run(name, func(t *testing.T) {
+			env := envWith(nil)
+			delete(env, "REVIEW_MCP_LLM_CONTEXT_WINDOW")
+			if set != "" {
+				env["REVIEW_MCP_LLM_CONTEXT_WINDOW"] = set
+			}
+			cfg, _, err := Load(MemSource{Env: env})
+			if err != nil {
+				t.Fatalf("unset llm.context_window must validate: %v", err)
+			}
+			if cfg.LLM.ContextWindow != 0 {
+				t.Errorf("ContextWindow = %d, want 0 (unset)", cfg.LLM.ContextWindow)
+			}
+		})
+	}
+}
+
 func TestValidationBoundariesAccepted(t *testing.T) {
 	env := envWith(map[string]string{
 		"REVIEW_MCP_LLM_CONTEXT_WINDOW":               "4096",
@@ -71,6 +96,7 @@ func TestValidationBoundariesAccepted(t *testing.T) {
 		"REVIEW_MCP_LLM_TIMEOUT_SECONDS":              "3600",
 		"REVIEW_MCP_LLM_MAX_RETRIES":                  "0",
 		"REVIEW_MCP_LLM_TOKEN_ESTIMATE_FACTOR":        "0",
+		"REVIEW_MCP_LLM_WAIT_SECONDS":                 "600",
 		"REVIEW_MCP_OUTPUT_LANGUAGE":                  "zh-Hans-CN",
 		"REVIEW_MCP_DIFF_EXTRA_LINES_BEFORE":          "10",
 		"REVIEW_MCP_DIFF_EXTRA_LINES_AFTER":           "0",
@@ -82,6 +108,8 @@ func TestValidationBoundariesAccepted(t *testing.T) {
 		"REVIEW_MCP_DIFF_IGNORE_GENERATED_FRAMEWORKS": "protobuf",
 	})
 	mustLoad(t, MemSource{Env: env})
+	// wait_seconds 0 is valid: answer with a job id at once (X-16).
+	mustLoad(t, MemSource{Env: envWith(map[string]string{"REVIEW_MCP_LLM_WAIT_SECONDS": "0"})})
 }
 
 func TestEmptyStringsInFileListsRejected(t *testing.T) {
@@ -289,5 +317,23 @@ func TestGlobProblemDoesNotEchoPattern(t *testing.T) {
 		if strings.Contains(p, "secret-dir") {
 			t.Errorf("problem echoes the raw pattern: %q", p)
 		}
+	}
+}
+
+func TestDiffMaxTokens(t *testing.T) {
+	cfg, _ := mustLoad(t, MemSource{Env: minimalEnv()})
+	if cfg.Diff.MaxTokens != nil {
+		t.Errorf("diff.max_tokens is %d by default, want unset", *cfg.Diff.MaxTokens)
+	}
+	cfg, rep := mustLoad(t, MemSource{Env: envWith(map[string]string{"REVIEW_MCP_DIFF_MAX_TOKENS": "24000"})})
+	if cfg.Diff.MaxTokens == nil || *cfg.Diff.MaxTokens != 24000 {
+		t.Errorf("env REVIEW_MCP_DIFF_MAX_TOKENS: got %v, want 24000", cfg.Diff.MaxTokens)
+	}
+	if rep.Sources["diff.max_tokens"] != OriginEnv {
+		t.Errorf("origin = %v, want env", rep.Sources["diff.max_tokens"])
+	}
+	cfg, _ = mustLoad(t, MemSource{Env: envWith(map[string]string{"REVIEW_MCP_DIFF_MAX_TOKENS": "1000"})})
+	if cfg.Diff.MaxTokens == nil || *cfg.Diff.MaxTokens != 1000 {
+		t.Error("1000 is the minimum and must load")
 	}
 }

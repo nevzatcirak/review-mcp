@@ -49,6 +49,9 @@ type Error struct {
 	Status int
 	Hint   string
 	Detail string
+	// Sentence, when set, replaces the class sentence (the probe's fixed
+	// sentences, which carry their own hint).
+	Sentence string
 }
 
 var sentences = map[ErrorClass]string{
@@ -70,6 +73,9 @@ func (e *Error) Error() string {
 	s, ok := sentences[e.Class]
 	if !ok {
 		s = "LLM error"
+	}
+	if e.Sentence != "" {
+		s = e.Sentence
 	}
 	if e.Status != 0 {
 		s += " (HTTP " + strconv.Itoa(e.Status) + ")"

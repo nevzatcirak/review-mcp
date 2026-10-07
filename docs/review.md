@@ -17,9 +17,11 @@ edit in place, and an inline comment on each changed line a finding is about
 | `max_findings` | no | The most key issues to return, 1 to 20; replaces `review.max_findings` (default 3). |
 | `publish` | no | `true` also posts the review: the overview comment and, unless `inline_findings` is false, inline comments. Default `false`. |
 | `inline_findings` | no | With `publish`, post each finding that falls on a changed line as an inline comment. Replaces `review.inline_findings` (default `true`) for this call. |
+| `wait_seconds` | no | How long the call waits for the review before it answers with a `job_id`, 0 to 600; replaces `llm.wait_seconds` (default 45). stdio only; see [Slow endpoints](#slow-endpoints). |
 
-Invalid `output_language` or `max_findings` values are rejected with a fixed
-message before anything is sent to the provider or the LLM.
+Invalid `output_language`, `max_findings` or `wait_seconds` values are
+rejected with a fixed message before anything is sent to the provider or the
+LLM.
 
 The result has two parts: the review as portable markdown (the text content;
 no raw HTML, so terminal clients show it as is) and the same data as
@@ -59,9 +61,11 @@ with that code.
 
 ## Choosing `llm.context_window`
 
-review-mcp has no model registry: tell it the real context window, in tokens,
-with `llm.context_window` (`REVIEW_MCP_LLM_CONTEXT_WINDOW`, at least 4096).
-Use the limit your server actually runs the model with; some servers start a
+review-mcp has no model registry. When `llm.context_window` is unset it reads
+the window from the endpoint (`GET {llm.base_url}/models`, 90 % of the value
+reported for `llm.model`); to set it yourself, give the real context window,
+in tokens, with `llm.context_window` (`REVIEW_MCP_LLM_CONTEXT_WINDOW`, at least
+4096), which always wins. Use the limit your server actually runs the model with; some servers start a
 model with less than it supports.
 
 The diff gets what is left after the output reserve and the prompt:
@@ -72,7 +76,13 @@ soft limit = context_window - max(max_output_tokens, 1000) - 500 - prompt tokens
 
 `llm.max_output_tokens` is optional. If you set it, make it generous enough for
 a review with all fields enabled and several findings (a few thousand tokens);
-an answer cut off by the limit is reported in the notes. See
+an answer cut off by the limit is reported in the notes.
+
+`diff.max_tokens` (`REVIEW_MCP_DIFF_MAX_TOKENS`, at least 1000, unset by
+default) caps the diff budget below that: the soft limit is the smaller of the
+formula and the cap. Use it when a large window makes requests slow (for a
+local model, `24000` is a reasonable start). Files that no longer fit are
+listed under Omitted, as with a small window; `pr_ask` uses the same cap. See
 [Getting started](getting-started.md#how-the-context-window-shapes-the-diff-budget)
 for the full table.
 
@@ -287,6 +297,64 @@ never written to the logs.
   not sent to the LLM. With `publish` and inline comments on, the PR is still
   read to skip findings that were already posted.
 
+## Slow endpoints
+
+A review on a slow model, such as a local one or any model on a large diff,
+can take minutes. Many MCP clients give up on a tool call after about 60
+seconds, whatever the server is doing. In stdio mode `pr_review` therefore
+waits at most `wait_seconds` for the review: the argument, or
+`llm.wait_seconds` (`REVIEW_MCP_LLM_WAIT_SECONDS`, default 45, 0 to 600).
+
+- If the review finishes in time, the result is exactly the one described
+  above; nothing about it changes.
+- If not, the call answers at once with a running status. It is not an
+  error. The text is
+
+  ```text
+  The review is still running (stage: calling model, 45 s so far). Call `job_result` with job_id `job_…` to get the result.
+  ```
+
+  and the structured content is
+  `{"status": "running", "job_id": "job_…", "stage": "calling model", "elapsed_seconds": 45}`.
+  The stage is one of the progress stages, or `starting` before the first.
+
+The review keeps running in the server. Call `job_result` with that `job_id`
+and, optionally, its own `wait_seconds` (same range and default). It waits
+again and returns one of:
+
+- the finished review, exactly as `pr_review` would have returned it,
+  including the `publish` outcome;
+- the review's error, as a tool error with the usual fixed sentence;
+- the running status again, when the review is still not done.
+
+A client that prefers polling passes `wait_seconds: 0` and gets the running
+status at once.
+
+**Why the client timeout no longer matters.** Every call, `pr_review` and each
+`job_result`, answers within `wait_seconds`, however long the model takes. At
+the default of 45 that stays under a typical 60-second client timeout. If
+your client gives up sooner, lower `wait_seconds`. `llm.timeout_seconds` still
+bounds the model request itself. While a call waits, a client that sent a
+progress token keeps receiving the stages; a client that resets its timeout
+on progress may then never see the running status at all.
+
+Good to know:
+
+- With `publish=true` the run itself posts the comments, so they appear even
+  if `job_result` is never called.
+- At most 4 reviews and answers run in the background at once. A fifth call
+  gets "too many background jobs are running; wait for one to finish".
+- A finished result is kept for 30 minutes, and at most 64 results are kept
+  (the oldest goes first). After that, or for an id the server never issued,
+  `job_result` answers "unknown or expired job_id". Results live in the
+  server's memory only; nothing is written to disk.
+- Ending the server (the client closes it, or SIGINT or SIGTERM) cancels the
+  runs that are still going.
+- Argument errors, a pull request URL on no configured host and, in serve
+  mode, missing credentials still fail at once, before any run starts.
+- Serve mode has no background jobs: calls run in their request, and
+  `wait_seconds` is ignored. See [Serve mode](serve.md#long-calls).
+
 ## Tuning the budget with `diag review --dry-run`
 
 ```sh
@@ -302,7 +370,7 @@ review (the LLM API key must be set, but it is not used).
   "dry_run": true,
   "pr": { "kind": "gitea", "url": "https://your-gitea.example/octo/demo/pulls/7", "number": 7, "title": "Add feature" },
   "empty": false,
-  "budget": { "context_window": 32000, "soft_limit": 28200, "hard_limit": 28700, "prompt_tokens": 2300, "factor": 0.3 },
+  "budget": { "context_window": 32000, "soft_limit": 28200, "hard_limit": 28700, "prompt_tokens": 2300, "factor": 0.3, "limit": "context_window" },
   "tokens": { "prompt": 2300, "diff": 5120, "request": 7480, "context_window": 32000 },
   "fast_path": true,
   "coverage": { "included": ["src/app.go"], "clipped": [], "omitted": { "added": [], "modified": [], "deleted": [] }, "skipped": [], "filtered": [] },
@@ -311,8 +379,10 @@ review (the LLM API key must be set, but it is not used).
 }
 ```
 
-`tokens.request` is the estimate of the whole request; compare it with
-`context_window`. If `fast_path` is false, the diff did not fit whole and the
+`budget.limit` says what bounds the soft limit: `context_window`, or
+`diff.max_tokens` when that cap is set and lower (the report then also has
+`budget.max_diff_tokens`). `tokens.request` is the estimate of the whole
+request; compare it with `context_window`. If `fast_path` is false, the diff did not fit whole and the
 coverage lists what was clipped or omitted. To see the effect of a smaller
 window, set `REVIEW_MCP_LLM_CONTEXT_WINDOW` for one run.
 

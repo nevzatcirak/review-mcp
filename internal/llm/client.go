@@ -73,6 +73,11 @@ func WithClock(now func() time.Time) Option {
 	return func(c *Client) { c.now = now }
 }
 
+// WithProbeTimeout replaces the 10 s timeout of ResolveContextWindow.
+func WithProbeTimeout(d time.Duration) Option {
+	return func(c *Client) { c.probeTimeout = d }
+}
+
 // Client calls one OpenAI-compatible endpoint. It holds no per-request state;
 // Complete is safe for concurrent use.
 type Client struct {
@@ -84,9 +89,11 @@ type Client struct {
 	logger   *slog.Logger
 	hc       *http.Client
 	timeout  time.Duration
-	maxBytes int64
-	sleep    func(context.Context, time.Duration) error
-	now      func() time.Time
+	// probeTimeout bounds ResolveContextWindow.
+	probeTimeout time.Duration
+	maxBytes     int64
+	sleep        func(context.Context, time.Duration) error
+	now          func() time.Time
 }
 
 // redirectError marks a refused redirect.
@@ -115,16 +122,17 @@ func New(cfg config.LLM, key config.Secret, logger *slog.Logger, opts ...Option)
 		timeout = 120 * time.Second
 	}
 	c := &Client{
-		cfg:      cfg,
-		key:      key,
-		base:     u,
-		baseStr:  strings.TrimRight(cfg.BaseURL, "/"),
-		baseSegs: splitEscaped(u.EscapedPath()),
-		logger:   logger,
-		timeout:  timeout,
-		maxBytes: MaxResponseBytes,
-		sleep:    sleepCtx,
-		now:      time.Now,
+		cfg:          cfg,
+		key:          key,
+		base:         u,
+		baseStr:      strings.TrimRight(cfg.BaseURL, "/"),
+		baseSegs:     splitEscaped(u.EscapedPath()),
+		logger:       logger,
+		timeout:      timeout,
+		probeTimeout: probeTimeout,
+		maxBytes:     MaxResponseBytes,
+		sleep:        sleepCtx,
+		now:          time.Now,
 	}
 	tr, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {

@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/mdutil"
 	"github.com/nevzatcirak/review-mcp/internal/version"
 )
@@ -73,6 +75,7 @@ func ServerInfo(cfg *config.Config, rep *config.Report, loadErr error) ServerInf
 	}
 	bi := version.Info()
 	sum := cfg.Summary(rep)
+	reportContextWindow(&sum, cfg)
 
 	res := ServerInfoResult{
 		Name:      ServerName,
@@ -98,6 +101,29 @@ func ServerInfo(cfg *config.Config, rep *config.Report, loadErr error) ServerInf
 		}
 	}
 	return res
+}
+
+// ContextWindowAuto is the llm.context_window value server_info reports
+// while the window is unset and not yet resolved.
+const ContextWindowAuto = "auto (endpoint)"
+
+// reportContextWindow shows how an unset llm.context_window is (or will be)
+// resolved (X-15): "auto (endpoint)" until the first call has asked the
+// endpoint, then "<n> (endpoint, 90% of <m>)". server_info only reads the
+// process-wide result of that probe; it never makes a request itself, so it
+// stays free of network I/O. A configured value is reported as it is: its
+// source field already says where it came from.
+func reportContextWindow(sum *config.Summary, cfg *config.Config) {
+	const key = "llm.context_window"
+	v, ok := sum.Values[key]
+	if !ok || cfg.LLM.ContextWindow > 0 {
+		return
+	}
+	v.Value = ContextWindowAuto
+	if n, src, ok := llm.ResolvedContextWindow(cfg.LLM.BaseURL, cfg.LLM.Model); ok {
+		v.Value = strconv.Itoa(n) + " (" + src + ")"
+	}
+	sum.Values[key] = v
 }
 
 // ServerName is the implementation name reported to MCP clients.

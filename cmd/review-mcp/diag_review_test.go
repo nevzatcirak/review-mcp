@@ -19,6 +19,10 @@ type fakeLLM struct {
 	hits   atomic.Int64
 	status int
 	answer string
+	// modelsBody is the answer to GET .../models (the context-window
+	// probe); modelsStatus, when non-zero, fails it with that status.
+	modelsBody   string
+	modelsStatus int
 
 	mu     sync.Mutex
 	bodies []string
@@ -35,6 +39,15 @@ func newFakeLLM(t *testing.T, status int, answer string) *fakeLLM {
 		f.bodies = append(f.bodies, string(b))
 		f.auths = append(f.auths, r.Header.Get("Authorization"))
 		f.mu.Unlock()
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/models") {
+			if f.modelsStatus != 0 {
+				http.Error(w, "denied "+diagMarker+" "+fakeLLMKey, f.modelsStatus)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(f.modelsBody))
+			return
+		}
 		if f.status != http.StatusOK {
 			http.Error(w, "denied "+diagMarker+" "+fakeLLMKey, f.status)
 			return
@@ -78,10 +91,12 @@ type dryRunOut struct {
 		Number int    `json:"number"`
 	} `json:"pr"`
 	Budget struct {
-		ContextWindow int `json:"context_window"`
-		SoftLimit     int `json:"soft_limit"`
-		HardLimit     int `json:"hard_limit"`
-		PromptTokens  int `json:"prompt_tokens"`
+		ContextWindow int    `json:"context_window"`
+		SoftLimit     int    `json:"soft_limit"`
+		HardLimit     int    `json:"hard_limit"`
+		PromptTokens  int    `json:"prompt_tokens"`
+		Limit         string `json:"limit"`
+		MaxDiffTokens int    `json:"max_diff_tokens"`
 	} `json:"budget"`
 	Tokens struct {
 		Prompt        int `json:"prompt"`
@@ -279,5 +294,22 @@ func TestDiagReviewLLMErrorIsAFixedSentence(t *testing.T) {
 	assertNoLeak(t, "stderr", errs)
 	if strings.Contains(errs, diffBodyMarker) {
 		t.Error("diff text reached stderr")
+	}
+}
+
+func TestDiagReviewDryRunReportsTheBudgetLimit(t *testing.T) {
+	g, l := newFakeGitea(t), newFakeLLM(t, 200, reviewAnswer)
+	env := reviewDiagEnv(g, l)
+	env["REVIEW_MCP_DIFF_MAX_TOKENS"] = "1200"
+	code, out, errs := diag(env, "review", prURLOf(g, 8), "--dry-run")
+	if code != 0 {
+		t.Fatalf("exit %d; stderr:\n%s", code, errs)
+	}
+	var d dryRunOut
+	if err := json.NewDecoder(strings.NewReader(out)).Decode(&d); err != nil {
+		t.Fatal(err)
+	}
+	if d.Budget.Limit != "diff.max_tokens" || d.Budget.MaxDiffTokens != 1200 || d.Budget.SoftLimit != 1200 {
+		t.Errorf("budget = %+v", d.Budget)
 	}
 }

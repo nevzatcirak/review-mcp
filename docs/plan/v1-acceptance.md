@@ -141,6 +141,7 @@ Run on a **personal** Bitbucket Data Center trial instance and, if available, a 
 ## J. Slow endpoints (P8)
 - **J1** With `llm.context_window` unset against your local endpoint, `server_info` shows the resolved value and its source. Against an endpoint that does not report it, the fixed sentence names `llm.context_window`.
 - **J2** In an MCP client, a review that takes longer than 60 s returns a running status within about 45 s. Asking for the result uses `job_result` and returns the full review. With `publish=true`, the comments appear on the PR.
+  - **J2 output schemas** `pr_review`, `pr_ask` and `job_result` declare a root `oneOf` output schema (the result or the running status). Record whether opencode and Claude Code accept all three tools (they list and call them without a schema error), per client, pass or fail. If either rejects them, the pre-chosen fallback ships in the next release candidate: drop `outputSchema` for `pr_review`, `pr_ask` and `job_result` in stdio only, keeping the structured content.
 - **J3** `diff.max_tokens=24000` on a large PR makes the review noticeably faster, and the omitted files are listed in the coverage section.
 
 ## Exit

@@ -12,6 +12,7 @@ import (
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/llm"
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 	"github.com/nevzatcirak/review-mcp/internal/review/render"
@@ -97,7 +98,7 @@ func buildDryRunReport(pl *review.Plan, elapsed time.Duration) dryRunReport {
 		Empty:  pl.Empty,
 		Budget: budgetJSON{
 			ContextWindow: b.ContextWindow, SoftLimit: b.SoftLimit(), HardLimit: b.HardLimit(),
-			PromptTokens: b.PromptTokens, Factor: b.Factor,
+			PromptTokens: b.PromptTokens, Factor: b.Factor, Limit: b.Limit(), MaxDiffTokens: b.MaxDiffTokens,
 		},
 		Tokens:    dryRunTokens{Prompt: m.PromptTokens, Diff: m.DiffTokens, Request: m.RequestTokens, ContextWindow: m.ContextWindow},
 		Fast:      m.FastPath,
@@ -113,14 +114,35 @@ func writePrompts(w io.Writer, system, user string) error {
 	return err
 }
 
+// dryRunLLM returns the chat client a dry run needs only to resolve an unset
+// llm.context_window (X-15): the probe is a GET of the model list, no
+// completion is ever requested. With llm.context_window set it returns nil
+// and the dry run builds no client at all. close must be called.
+func dryRunLLM(cfg *config.Config, logger *slog.Logger) (c review.Completer, closeFn func(), err error) {
+	if cfg.LLM.ContextWindow > 0 {
+		return nil, func() {}, nil
+	}
+	c, err = wiring.NewLLM(cfg, logger)
+	if err != nil {
+		return nil, func() {}, err
+	}
+	return c, func() { closeIdle(c) }, nil
+}
+
 // diagReviewDryRun runs the review pipeline up to the model call and prints
-// the JSON report. No LLM client is built: nothing can reach the model.
+// the JSON report. The model is never called; the only LLM request is the
+// context-window probe, and only when llm.context_window is unset.
 func diagReviewDryRun(ctx context.Context, cfg *config.Config, logger *slog.Logger, prURL string, showPrompt bool, stdout, stderr io.Writer) int {
 	start := time.Now()
+	client, closeLLM, err := dryRunLLM(cfg, logger)
+	if err != nil {
+		return reportError(stderr, err)
+	}
+	defer closeLLM()
 	resolver := wiring.NewResolver(cfg, logger)
 	defer resolver.CloseIdleConnections()
 	pl, err := review.Prepare(ctx, review.Deps{
-		Config: cfg, Logger: logger, Resolver: resolver,
+		Config: cfg, Logger: logger, Resolver: resolver, LLM: client,
 	}, review.Args{PRURL: prURL})
 	if err != nil {
 		return reportError(stderr, err)
@@ -160,6 +182,15 @@ func (r *promptRecorder) Complete(ctx context.Context, system, user string) (*ll
 		r.seen, r.system, r.user = true, system, user
 	}
 	return r.Completer.Complete(ctx, system, user)
+}
+
+// ResolveContextWindow forwards to the wrapped client, so wrapping it does
+// not hide the context-window probe from the pipeline (X-15).
+func (r *promptRecorder) ResolveContextWindow(ctx context.Context) (int, string, error) {
+	if w, ok := r.Completer.(llmrun.WindowResolver); ok {
+		return w.ResolveContextWindow(ctx)
+	}
+	return 0, "", llm.NoContextWindowError()
 }
 
 // diagReview runs the full review and prints the client markdown; with

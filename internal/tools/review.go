@@ -66,17 +66,34 @@ type ReviewDeps struct {
 	Progress func(stage string)
 }
 
-// PRReview validates the arguments, builds the LLM client for this call,
-// runs the review pipeline and renders the client-profile markdown. The
-// error, if any, is classified; use UserMessage for its text.
-func PRReview(ctx context.Context, deps ReviewDeps, a PRReviewArgs) (*review.Result, string, error) {
+// ReviewCall is a pr_review call that passed every check that needs no
+// network: the arguments, the LLM client construction and the URL
+// resolution (including serve mode's credential check). Run does the rest:
+// the context-window probe, the provider and LLM I/O, the publish and the
+// rendering. The split is the job boundary of X-16: a check that fails here
+// answers the MCP call at once, and only Run may continue in the
+// background.
+type ReviewCall struct {
+	deps   ReviewDeps
+	client review.Completer
+	args   review.Args
+}
+
+// PreparePRReview runs the checks of a pr_review call that need no network.
+// The error, if any, is classified; use UserMessage for its text.
+func PreparePRReview(deps ReviewDeps, a PRReviewArgs) (*ReviewCall, error) {
 	if err := a.Validate(); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	client, err := deps.NewLLM(deps.Config, deps.Logger)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
+	resolver, err := pinResolution(deps.Resolver, a.PRURL)
+	if err != nil {
+		return nil, err
+	}
+	deps.Resolver = resolver
 	args := review.Args{
 		PRURL:             a.PRURL,
 		ExtraInstructions: a.ExtraInstructions,
@@ -90,20 +107,39 @@ func PRReview(ctx context.Context, deps ReviewDeps, a PRReviewArgs) (*review.Res
 	// The options the call leaves unset come from the configuration; the
 	// persistent overview and the discussion budget have no tool argument.
 	args = args.WithConfigDefaults(deps.Config)
+	return &ReviewCall{deps: deps, client: client, args: args}, nil
+}
+
+// Run runs the review pipeline and renders the client-profile markdown.
+// progress receives the review.Stage* words (nil is ignored); it replaces
+// ReviewDeps.Progress. The error, if any, is classified.
+func (c *ReviewCall) Run(ctx context.Context, progress func(stage string)) (*review.Result, string, error) {
 	res, err := review.Run(ctx, review.Deps{
-		Config:         deps.Config,
-		Logger:         deps.Logger,
-		Resolver:       deps.Resolver,
-		LLM:            client,
+		Config:         c.deps.Config,
+		Logger:         c.deps.Logger,
+		Resolver:       c.deps.Resolver,
+		LLM:            c.client,
 		RenderProvider: render.Provider,
 		RenderInline:   render.Inline,
-		Progress:       deps.Progress,
-	}, args)
+		Progress:       progress,
+	}, c.args)
 	if err != nil {
 		return nil, "", err
 	}
-	if deps.Progress != nil {
-		deps.Progress(review.StageRendering)
+	if progress != nil {
+		progress(review.StageRendering)
 	}
 	return res, render.Client(res), nil
+}
+
+// PRReview validates the arguments, builds the LLM client for this call,
+// runs the review pipeline and renders the client-profile markdown
+// (PreparePRReview, then Run with ReviewDeps.Progress). The error, if any,
+// is classified; use UserMessage for its text.
+func PRReview(ctx context.Context, deps ReviewDeps, a PRReviewArgs) (*review.Result, string, error) {
+	c, err := PreparePRReview(deps, a)
+	if err != nil {
+		return nil, "", err
+	}
+	return c.Run(ctx, deps.Progress)
 }

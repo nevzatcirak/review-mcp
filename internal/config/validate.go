@@ -20,7 +20,15 @@ var localeRE = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$`)
 // argument with it.
 func ValidLocale(s string) bool { return localeRE.MatchString(s) }
 
-const minContextWindow = 4096
+const (
+	minContextWindow = 4096
+	// minDiffMaxTokens is the smallest diff.max_tokens (X-17).
+	minDiffMaxTokens = 1000
+)
+
+// MaxWaitSeconds is the upper bound of llm.wait_seconds and of the
+// wait_seconds tool argument (X-16): ten minutes.
+const MaxWaitSeconds = 600
 
 // validate checks the layered configuration, normalizes URLs in place and
 // records every problem and warning.
@@ -68,7 +76,7 @@ func (l *loader) validateLLM() {
 	switch {
 	case l.bad["llm.context_window"]:
 	case c.ContextWindow == 0:
-		l.problem("llm.context_window is required (integer >= %d; %s)", minContextWindow, keyToEnv["llm.context_window"])
+		// Optional (X-15): unset means the endpoint is asked at the first use.
 	case c.ContextWindow < minContextWindow:
 		l.problem("llm.context_window: %d is below the minimum %d", c.ContextWindow, minContextWindow)
 	}
@@ -95,6 +103,9 @@ func (l *loader) validateLLM() {
 	}
 	if !l.bad["llm.max_retries"] && (c.MaxRetries < 0 || c.MaxRetries > 5) {
 		l.problem("llm.max_retries: %d is out of range (0-5)", c.MaxRetries)
+	}
+	if !l.bad["llm.wait_seconds"] && (c.WaitSeconds < 0 || c.WaitSeconds > MaxWaitSeconds) {
+		l.problem("llm.wait_seconds: %d is out of range (0-%d)", c.WaitSeconds, MaxWaitSeconds)
 	}
 	if f := c.TokenEstimateFactor; !l.bad["llm.token_estimate_factor"] && !(f >= 0 && f <= 2) {
 		l.problem("llm.token_estimate_factor: %v is out of range (0-2)", f)
@@ -236,6 +247,10 @@ func (l *loader) validateDiff() {
 	min("diff.max_file_bytes", d.MaxFileBytes, 1024)
 	if !l.bad["diff.max_diff_bytes"] && !l.bad["diff.max_file_bytes"] && d.MaxDiffBytes < d.MaxFileBytes {
 		l.problem("diff.max_diff_bytes: %d must be at least diff.max_file_bytes (%d)", d.MaxDiffBytes, d.MaxFileBytes)
+	}
+
+	if d.MaxTokens != nil && !l.bad["diff.max_tokens"] && *d.MaxTokens < minDiffMaxTokens {
+		l.problem("diff.max_tokens: %d is below the minimum %d", *d.MaxTokens, minDiffMaxTokens)
 	}
 
 	for i, n := range d.IgnoreGeneratedFrameworks {

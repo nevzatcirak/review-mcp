@@ -9,7 +9,7 @@ package config
 
 // Config is the effective configuration.
 //
-// Optional values without a default (llm.max_output_tokens, llm.temperature,
+// Optional values without a default (diff.max_tokens, llm.max_output_tokens, llm.temperature,
 // llm.seed, llm.reasoning_effort) are pointers: nil means "unset" and, per
 // DQ-26, "do not send".
 type Config struct {
@@ -30,7 +30,7 @@ type Config struct {
 type LLM struct {
 	BaseURL             string   `toml:"base_url" json:"base_url"`
 	Model               string   `toml:"model" json:"model"`
-	ContextWindow       int      `toml:"context_window" json:"context_window"` // required; 0 means unset
+	ContextWindow       int      `toml:"context_window" json:"context_window"` // optional (X-15); 0 means unset, resolved from the endpoint
 	MaxOutputTokens     *int     `toml:"max_output_tokens" json:"max_output_tokens"`
 	Temperature         *float64 `toml:"temperature" json:"temperature"`
 	Seed                *int64   `toml:"seed" json:"seed"`
@@ -38,6 +38,9 @@ type LLM struct {
 	TimeoutSeconds      int      `toml:"timeout_seconds" json:"timeout_seconds"`
 	MaxRetries          int      `toml:"max_retries" json:"max_retries"`
 	TokenEstimateFactor float64  `toml:"token_estimate_factor" json:"token_estimate_factor"`
+	// WaitSeconds is how long a stdio pr_review or pr_ask call waits for its
+	// result before it answers with a job id (X-16); serve mode ignores it.
+	WaitSeconds int `toml:"wait_seconds" json:"wait_seconds"`
 }
 
 // Gitea configures the Gitea provider; it is enabled iff BaseURL is set.
@@ -63,15 +66,18 @@ type Output struct {
 
 // Diff configures diff acquisition and budgeting.
 type Diff struct {
-	ExtraLinesBefore          int      `toml:"extra_lines_before" json:"extra_lines_before"`
-	ExtraLinesAfter           int      `toml:"extra_lines_after" json:"extra_lines_after"`
-	SkipExtendExtensions      []string `toml:"skip_extend_extensions" json:"skip_extend_extensions"`
-	LargePatchPolicy          string   `toml:"large_patch_policy" json:"large_patch_policy"`
-	MaxDescriptionTokens      int      `toml:"max_description_tokens" json:"max_description_tokens"`
-	MaxCommitsTokens          int      `toml:"max_commits_tokens" json:"max_commits_tokens"`
-	MaxFilesFullContent       int      `toml:"max_files_full_content" json:"max_files_full_content"`
-	MaxFileBytes              int      `toml:"max_file_bytes" json:"max_file_bytes"`
-	MaxDiffBytes              int      `toml:"max_diff_bytes" json:"max_diff_bytes"`
+	ExtraLinesBefore     int      `toml:"extra_lines_before" json:"extra_lines_before"`
+	ExtraLinesAfter      int      `toml:"extra_lines_after" json:"extra_lines_after"`
+	SkipExtendExtensions []string `toml:"skip_extend_extensions" json:"skip_extend_extensions"`
+	LargePatchPolicy     string   `toml:"large_patch_policy" json:"large_patch_policy"`
+	MaxDescriptionTokens int      `toml:"max_description_tokens" json:"max_description_tokens"`
+	MaxCommitsTokens     int      `toml:"max_commits_tokens" json:"max_commits_tokens"`
+	MaxFilesFullContent  int      `toml:"max_files_full_content" json:"max_files_full_content"`
+	MaxFileBytes         int      `toml:"max_file_bytes" json:"max_file_bytes"`
+	MaxDiffBytes         int      `toml:"max_diff_bytes" json:"max_diff_bytes"`
+	// MaxTokens caps the diff token budget below what the context window
+	// allows (X-17); nil means no cap.
+	MaxTokens                 *int     `toml:"max_tokens" json:"max_tokens"`
 	IgnoreGeneratedFrameworks []string `toml:"ignore_generated_frameworks" json:"ignore_generated_frameworks"`
 }
 
@@ -116,9 +122,10 @@ type Log struct {
 func Defaults() *Config {
 	return &Config{
 		LLM: LLM{
-			TimeoutSeconds:      120,
+			TimeoutSeconds:      300,
 			MaxRetries:          1,
 			TokenEstimateFactor: 0.3,
+			WaitSeconds:         45,
 		},
 		Output: Output{Language: "en-US"},
 		Diff: Diff{

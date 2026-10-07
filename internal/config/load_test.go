@@ -15,9 +15,10 @@ func TestDefaultsAppliedWhenNothingSet(t *testing.T) {
 		name      string
 		got, want any
 	}{
-		{"llm.timeout_seconds", cfg.LLM.TimeoutSeconds, 120},
+		{"llm.timeout_seconds", cfg.LLM.TimeoutSeconds, 300},
 		{"llm.max_retries", cfg.LLM.MaxRetries, 1},
 		{"llm.token_estimate_factor", cfg.LLM.TokenEstimateFactor, 0.3},
+		{"llm.wait_seconds", cfg.LLM.WaitSeconds, 45},
 		{"gitea.insecure_skip_verify", cfg.Gitea.InsecureSkipVerify, false},
 		{"bitbucket_server.insecure_skip_verify", cfg.BitbucketServer.InsecureSkipVerify, false},
 		{"output.language", cfg.Output.Language, "en-US"},
@@ -84,7 +85,6 @@ func TestRequiredMissingListsAllInOneError(t *testing.T) {
 	for _, want := range []string{
 		"llm.base_url is required",
 		"llm.model is required",
-		"llm.context_window is required",
 		"REVIEW_MCP_LLM_API_KEY is required",
 		"no provider enabled",
 	} {
@@ -92,8 +92,12 @@ func TestRequiredMissingListsAllInOneError(t *testing.T) {
 			t.Errorf("missing problem %q in %v", want, probs)
 		}
 	}
-	if len(probs) != 5 {
-		t.Errorf("got %d problems, want exactly 5: %v", len(probs), probs)
+	if len(probs) != 4 {
+		t.Errorf("got %d problems, want exactly 4: %v", len(probs), probs)
+	}
+	// X-15: llm.context_window is optional, so its absence is not a problem.
+	if hasProblem(probs, "llm.context_window") {
+		t.Errorf("an unset llm.context_window must be valid: %v", probs)
 	}
 	if !strings.Contains(err.Error(), "llm.model is required") || !strings.Contains(err.Error(), "no provider enabled") {
 		t.Errorf("Error() must join all problems: %v", err)
@@ -161,7 +165,7 @@ func TestFilePartialLeavesDefaultsIntact(t *testing.T) {
 	if !reflect.DeepEqual(cfg.Ignore.Glob, []string{"dist/**"}) {
 		t.Errorf("glob = %v", cfg.Ignore.Glob)
 	}
-	if cfg.Diff.ExtraLinesBefore != 5 || cfg.Review.MaxFindings != 3 || cfg.LLM.TimeoutSeconds != 120 {
+	if cfg.Diff.ExtraLinesBefore != 5 || cfg.Review.MaxFindings != 3 || cfg.LLM.TimeoutSeconds != 300 {
 		t.Error("untouched keys lost their defaults")
 	}
 	if rep.Sources["diff.extra_lines_before"] != OriginDefault {

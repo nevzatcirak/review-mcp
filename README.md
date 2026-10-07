@@ -12,14 +12,19 @@ mode), are never logged and are never persisted. There is no telemetry and there
 are no embedded defaults for URLs or endpoints: everything comes from your
 configuration.
 
-**Status: release candidate.** v1.0.0-rc.1 is being validated before v1.0.0;
-see the [changelog](CHANGELOG.md).
+**Status: release candidate.** The current release candidate is published
+under the npm dist-tag `next`; it is being validated before v1.0.0. See the
+[changelog](CHANGELOG.md).
 
 ## Quick start
 
-1. Create a read-only token on your provider and note your LLM endpoint
-   ([Setup guide, steps 2 and 3](docs/setup.md#2-create-tokens)).
+1. Create a token on your provider and note your LLM endpoint
+   ([Setup guide, steps 2 and 3](docs/setup.md#2-create-tokens)). A read-only
+   token is enough for reviews and questions that are not published.
 2. Register the server with your client. With npm there is nothing to install.
+   Release candidates are published under the dist-tag `next`; pin the exact
+   version you test (for example `@nevzatcirak/review-mcp@1.0.0-rc.3`) so that
+   `npx` does not reuse an older cached copy. Stable releases are `latest`.
 
    **Claude Code**
 
@@ -27,11 +32,10 @@ see the [changelog](CHANGELOG.md).
    claude mcp add review-mcp \
      --env REVIEW_MCP_LLM_BASE_URL=https://llm.example.com/v1 \
      --env REVIEW_MCP_LLM_MODEL=your-model-name \
-     --env REVIEW_MCP_LLM_CONTEXT_WINDOW=32000 \
      --env REVIEW_MCP_GITEA_BASE_URL=https://your-gitea.example \
      --env REVIEW_MCP_LLM_API_KEY="$REVIEW_MCP_LLM_API_KEY" \
      --env REVIEW_MCP_GITEA_TOKEN="$REVIEW_MCP_GITEA_TOKEN" \
-     -- npx -y @nevzatcirak/review-mcp
+     -- npx -y @nevzatcirak/review-mcp@next
    ```
 
    **opencode** (`opencode.json`)
@@ -42,12 +46,11 @@ see the [changelog](CHANGELOG.md).
      "mcp": {
        "review-mcp": {
          "type": "local",
-         "command": ["npx", "-y", "@nevzatcirak/review-mcp"],
+         "command": ["npx", "-y", "@nevzatcirak/review-mcp@next"],
          "enabled": true,
          "environment": {
            "REVIEW_MCP_LLM_BASE_URL": "https://llm.example.com/v1",
            "REVIEW_MCP_LLM_MODEL": "your-model-name",
-           "REVIEW_MCP_LLM_CONTEXT_WINDOW": "32000",
            "REVIEW_MCP_LLM_API_KEY": "{env:REVIEW_MCP_LLM_API_KEY}",
            "REVIEW_MCP_GITEA_BASE_URL": "https://your-gitea.example",
            "REVIEW_MCP_GITEA_TOKEN": "{env:REVIEW_MCP_GITEA_TOKEN}"
@@ -57,39 +60,56 @@ see the [changelog](CHANGELOG.md).
    }
    ```
 
-   Both providers can be enabled together: add the Bitbucket Server pair next
-   to the Gitea one. Each provider is enabled by its base URL; the Bitbucket
-   one includes any context path.
+   **Bitbucket Server.** Each provider is enabled by its base URL (the
+   Bitbucket one includes any context path), and both can be enabled
+   together. With Bitbucket Server only, replace the Gitea pair:
 
-   ```sh
-   claude mcp add review-mcp \
-     --env REVIEW_MCP_LLM_BASE_URL=https://llm.example.com/v1 \
-     --env REVIEW_MCP_LLM_MODEL=your-model-name \
-     --env REVIEW_MCP_LLM_CONTEXT_WINDOW=32000 \
-     --env REVIEW_MCP_GITEA_BASE_URL=https://your-gitea.example \
-     --env REVIEW_MCP_BITBUCKET_SERVER_BASE_URL=https://bitbucket.example.com \
-     --env REVIEW_MCP_LLM_API_KEY="$REVIEW_MCP_LLM_API_KEY" \
-     --env REVIEW_MCP_GITEA_TOKEN="$REVIEW_MCP_GITEA_TOKEN" \
-     --env REVIEW_MCP_BITBUCKET_SERVER_TOKEN="$REVIEW_MCP_BITBUCKET_SERVER_TOKEN" \
-     -- npx -y @nevzatcirak/review-mcp
+   ```json
+   "environment": {
+     "REVIEW_MCP_LLM_BASE_URL": "https://llm.example.com/v1",
+     "REVIEW_MCP_LLM_MODEL": "your-model-name",
+     "REVIEW_MCP_LLM_API_KEY": "{env:REVIEW_MCP_LLM_API_KEY}",
+     "REVIEW_MCP_BITBUCKET_SERVER_BASE_URL": "https://bitbucket.example.com",
+     "REVIEW_MCP_BITBUCKET_SERVER_TOKEN": "{env:REVIEW_MCP_BITBUCKET_SERVER_TOKEN}"
+   }
    ```
 
-   Release candidates are published under the npm dist-tag `next`; use
-   `npx -y @nevzatcirak/review-mcp@next` to run one. Stable releases are
-   published as `latest`, which is what the commands above use.
+   **Local or slow model.** For a locally hosted OpenAI-compatible server
+   (for example `http://localhost:8080/v1`):
 
-   **Local OpenAI-compatible endpoint.** For a locally hosted server (for
-   example `REVIEW_MCP_LLM_BASE_URL=http://localhost:8080/v1`), the API key is
-   still required but may be any non-empty placeholder if your server ignores
-   it. The context window is read from the endpoint's model list when
-   `REVIEW_MCP_LLM_CONTEXT_WINDOW` (`llm.context_window`) is unset; set it to
-   the context size your server is actually configured with, not the model's
-   maximum, when the endpoint does not report it.
+   ```json
+   "environment": {
+     "REVIEW_MCP_LLM_BASE_URL": "http://localhost:8080/v1",
+     "REVIEW_MCP_LLM_MODEL": "your-model-name",
+     "REVIEW_MCP_LLM_API_KEY": "local",
+     "REVIEW_MCP_DIFF_MAX_TOKENS": "24000",
+     "REVIEW_MCP_BITBUCKET_SERVER_BASE_URL": "https://bitbucket.example.com",
+     "REVIEW_MCP_BITBUCKET_SERVER_TOKEN": "{env:REVIEW_MCP_BITBUCKET_SERVER_TOKEN}"
+   }
+   ```
+
+   - The API key is required but may be any non-empty placeholder when the
+     server ignores it.
+   - **Context window:** `REVIEW_MCP_LLM_CONTEXT_WINDOW` is optional. When it
+     is unset, review-mcp reads the served context size from the endpoint's
+     model list and budgets 90 % of it. If the endpoint does not report it
+     (Ollama, for example), set it to the context size your server actually
+     runs with, not the model's maximum.
+   - **`REVIEW_MCP_DIFF_MAX_TOKENS`** (optional) caps how much of the diff is
+     sent, independently of the context window. A smaller prompt means a
+     faster answer from a slow model; files that do not fit are listed in the
+     review's coverage section instead of being reviewed.
+   - **Long calls (stdio):** a `pr_review` or `pr_ask` call that is still
+     running after `REVIEW_MCP_LLM_WAIT_SECONDS` (default 45) answers with a
+     `job_id`; ask the client to fetch the result and it calls `job_result`.
+     This keeps every call under typical client timeouts.
+
+   All settings, their defaults and the TOML equivalents are in the
+   [Setup guide](docs/setup.md) and [Reviewing pull requests](docs/review.md).
 
 3. Ask the client to call `server_info`, then to review a pull request without
    publishing it. The [Setup guide](docs/setup.md) walks through the first run,
-   keeps tokens out of files, and covers Bitbucket Server, release archives and
-   `go install`.
+   keeps tokens out of files, and covers release archives and `go install`.
 
 ## Tools
 

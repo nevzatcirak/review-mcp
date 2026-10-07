@@ -93,10 +93,14 @@ characters, occurs in the question as a whole token:
   letters, digits, `.`, `/`, `-` and `_`; everything else (spaces, backticks,
   quotes, brackets, `?`, `,`, `:`, `;`, `!`) is a boundary. Full stops right
   after the name are allowed, so a name at the end of a sentence counts.
-- So `Is src/app.go?`, `` `src/app.go` `` and `see src/app.go.` name
-  `src/app.go`, and `Why does main.go exit?` names `cmd/main.go` by its base
-  name. `xmain.go`, `main.go_old`, `main.go.bak`, `pkg/main.go` (for
-  `cmd/main.go`) and `./src/app.go` do not.
+- A full path may be written with a leading `./`; the `./` is skipped and the
+  same rule applies to the character before it. This is for full paths only,
+  not for base names.
+- So `Is src/app.go?`, `` `src/app.go` ``, `see src/app.go.`, `./src/app.go`
+  and `(./src/app.go)` name `src/app.go`, and `Why does main.go exit?` names
+  `cmd/main.go` by its base name. `xmain.go`, `main.go_old`, `main.go.bak`,
+  `pkg/main.go` (for `cmd/main.go`), `../src/app.go` and `x./src/app.go` do
+  not.
 - Base names shorter than 5 characters (`a.go`, `util`) do not name a file by
   themselves; write the full path.
 - When several changed files have the named base name, all of them are named.

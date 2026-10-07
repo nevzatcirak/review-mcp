@@ -49,7 +49,17 @@ func TestPinnedFilesRule(t *testing.T) {
 		{"Is pkg/main.go right?", nil},
 		{"Is xsrc/a.go right?", nil},
 		{"Is src/a.gox right?", nil},
-		{"Is ./src/a.go right?", nil},
+		// A leading "./" before a full path is accepted; the character
+		// before it follows the same rule.
+		{"Is ./src/a.go right?", []string{"src/a.go"}},
+		{"(./src/a.go)", []string{"src/a.go"}},
+		{"Look at `./src/a.go`.", []string{"src/a.go"}},
+		{"./src/a.go", []string{"src/a.go"}},
+		{"Is ../src/a.go right?", nil},
+		{"Is x./src/a.go right?", nil},
+		{"Is .//src/a.go right?", nil},
+		// Not before a base name.
+		{"Why does ./main.go exit?", nil},
 		// Case-sensitive.
 		{"Why does Main.go exit?", nil},
 		{"Is guide.md current?", nil},

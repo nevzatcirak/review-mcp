@@ -400,7 +400,7 @@ implementation must do or must not do).
 
 #### X-21 — `pr_ask` does not chunk (added v1.1, RC-15)
 - **Decision:** `pr_ask` keeps one model call. Merging several answers needs a further reduce call and its own honesty rules; that is backlog. Instead, the files the question names are admitted first:
-  - A changed file is named when its full path, or its base name of at least 5 characters, occurs in the question, case-sensitive, as a whole token: bounded by the start or end of the question or by a character that is not a path character (letters, digits, `.`, `/`, `-`, `_`), with full stops allowed right after the name.
+  - A changed file is named when its full path, or its base name of at least 5 characters, occurs in the question, case-sensitive, as a whole token: bounded by the start or end of the question or by a character that is not a path character (letters, digits, `.`, `/`, `-`, `_`), with full stops allowed right after the name. A full path may be written with a leading `./`, which is skipped before the same rule is applied (architect, on 11e2): `./src/a.go` names `src/a.go`, `../src/a.go` does not.
   - Named files keep their relative order and go before the ranked rest. Pinning never overrides filters: only the reviewable files after filtering are candidates.
   - Coverage and the X-18 banner are unchanged; `coverage.model_calls` is 1 (0 without a call) and `failed_parts` 0.
 - **Consequences:** a question about one file of a large PR is answered from that file when it fits the budget. `pr_ask` chunking stays in the backlog.

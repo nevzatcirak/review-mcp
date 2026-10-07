@@ -334,7 +334,7 @@ Secrets are environment-only (in `serve` mode, credentials come from request hea
 | `llm.temperature` | `REVIEW_MCP_LLM_TEMPERATURE` | — | Optional, sent only if set (DQ-26) |
 | `llm.seed` | `REVIEW_MCP_LLM_SEED` | — | Optional |
 | `llm.reasoning_effort` | `REVIEW_MCP_LLM_REASONING_EFFORT` | — | Optional pass-through |
-| `llm.timeout_seconds` | `REVIEW_MCP_LLM_TIMEOUT_SECONDS` | 120 | |
+| `llm.timeout_seconds` | `REVIEW_MCP_LLM_TIMEOUT_SECONDS` | 300 | |
 | `llm.max_retries` | `REVIEW_MCP_LLM_MAX_RETRIES` | 1 | Transport retries (DQ-9) |
 | `llm.token_estimate_factor` | `REVIEW_MCP_LLM_TOKEN_ESTIMATE_FACTOR` | 0.3 | DQ-5 |
 | `gitea.base_url` | `REVIEW_MCP_GITEA_BASE_URL` | — | Enables Gitea (X-2) |

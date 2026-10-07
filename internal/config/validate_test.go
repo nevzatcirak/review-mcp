@@ -21,6 +21,8 @@ func TestValidationRules(t *testing.T) {
 		{"temperature NaN", map[string]string{"REVIEW_MCP_LLM_TEMPERATURE": "NaN"}, "llm.temperature"},
 		{"timeout zero", map[string]string{"REVIEW_MCP_LLM_TIMEOUT_SECONDS": "0"}, "llm.timeout_seconds: 0 is out of range (1-3600)"},
 		{"timeout high", map[string]string{"REVIEW_MCP_LLM_TIMEOUT_SECONDS": "3601"}, "llm.timeout_seconds"},
+		{"diff max tokens below minimum", map[string]string{"REVIEW_MCP_DIFF_MAX_TOKENS": "999"}, "diff.max_tokens: 999 is below the minimum 1000"},
+		{"diff max tokens negative", map[string]string{"REVIEW_MCP_DIFF_MAX_TOKENS": "-5"}, "diff.max_tokens: -5 is below the minimum 1000"},
 		{"retries high", map[string]string{"REVIEW_MCP_LLM_MAX_RETRIES": "6"}, "llm.max_retries: 6 is out of range (0-5)"},
 		{"retries negative", map[string]string{"REVIEW_MCP_LLM_MAX_RETRIES": "-1"}, "llm.max_retries"},
 		{"wait negative", map[string]string{"REVIEW_MCP_LLM_WAIT_SECONDS": "-1"}, "llm.wait_seconds: -1 is out of range (0-600)"},
@@ -315,5 +317,23 @@ func TestGlobProblemDoesNotEchoPattern(t *testing.T) {
 		if strings.Contains(p, "secret-dir") {
 			t.Errorf("problem echoes the raw pattern: %q", p)
 		}
+	}
+}
+
+func TestDiffMaxTokens(t *testing.T) {
+	cfg, _ := mustLoad(t, MemSource{Env: minimalEnv()})
+	if cfg.Diff.MaxTokens != nil {
+		t.Errorf("diff.max_tokens is %d by default, want unset", *cfg.Diff.MaxTokens)
+	}
+	cfg, rep := mustLoad(t, MemSource{Env: envWith(map[string]string{"REVIEW_MCP_DIFF_MAX_TOKENS": "24000"})})
+	if cfg.Diff.MaxTokens == nil || *cfg.Diff.MaxTokens != 24000 {
+		t.Errorf("env REVIEW_MCP_DIFF_MAX_TOKENS: got %v, want 24000", cfg.Diff.MaxTokens)
+	}
+	if rep.Sources["diff.max_tokens"] != OriginEnv {
+		t.Errorf("origin = %v, want env", rep.Sources["diff.max_tokens"])
+	}
+	cfg, _ = mustLoad(t, MemSource{Env: envWith(map[string]string{"REVIEW_MCP_DIFF_MAX_TOKENS": "1000"})})
+	if cfg.Diff.MaxTokens == nil || *cfg.Diff.MaxTokens != 1000 {
+		t.Error("1000 is the minimum and must load")
 	}
 }

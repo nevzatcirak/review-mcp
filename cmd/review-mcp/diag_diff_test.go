@@ -18,6 +18,8 @@ type diffOut struct {
 		HardLimit     int     `json:"hard_limit"`
 		PromptTokens  int     `json:"prompt_tokens"`
 		Factor        float64 `json:"factor"`
+		Limit         string  `json:"limit"`
+		MaxDiffTokens int     `json:"max_diff_tokens"`
 	} `json:"budget"`
 	FastPath bool     `json:"fast_path"`
 	Tokens   int      `json:"tokens"`
@@ -319,5 +321,26 @@ func TestDiagDiffLeakInProcess(t *testing.T) {
 	}
 	if !strings.Contains(errs, "level=DEBUG") || strings.Contains(errs, diffBodyMarker) {
 		t.Errorf("stderr must carry debug logs but never the diff body:\n%s", errs)
+	}
+}
+
+func TestDiagDiffReportsTheBudgetLimit(t *testing.T) {
+	g := newFakeGitea(t)
+	d, _, _ := runDiff(t, diagEnv(g, nil), g, 8)
+	if d.Budget.Limit != "context_window" || d.Budget.MaxDiffTokens != 0 {
+		t.Errorf("unset cap: limit %q, max_diff_tokens %d", d.Budget.Limit, d.Budget.MaxDiffTokens)
+	}
+
+	env := diagEnv(g, nil)
+	env["REVIEW_MCP_DIFF_MAX_TOKENS"] = "1200"
+	d, _, _ = runDiff(t, env, g, 8)
+	if d.Budget.Limit != "diff.max_tokens" || d.Budget.MaxDiffTokens != 1200 || d.Budget.SoftLimit != 1200 || d.Budget.HardLimit != 1700 {
+		t.Errorf("cap below the budget: %+v", d.Budget)
+	}
+
+	env["REVIEW_MCP_DIFF_MAX_TOKENS"] = "100000"
+	d, _, _ = runDiff(t, env, g, 8)
+	if d.Budget.Limit != "context_window" || d.Budget.SoftLimit != 32000-1500-2205 {
+		t.Errorf("cap above the budget: %+v", d.Budget)
 	}
 }

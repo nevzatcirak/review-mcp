@@ -70,6 +70,7 @@ func TestServerInfoValid(t *testing.T) {
 func TestServerInfoListsPublishSettings(t *testing.T) {
 	env := validEnv()
 	env["REVIEW_MCP_REVIEW_INLINE_FINDINGS"] = "false"
+	env["REVIEW_MCP_DIFF_MAX_TOKENS"] = "24000"
 	cfg, rep, err := load(env)
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -82,6 +83,8 @@ func TestServerInfoListsPublishSettings(t *testing.T) {
 		{"review.max_discussion_tokens", "1500", "default"},
 		{"review.require_performance", "true", "default"},
 		{"llm.wait_seconds", "45", "default"},
+		{"diff.max_tokens", "24000", "env"},
+		{"llm.timeout_seconds", "300", "default"},
 	} {
 		if _, ok := r.Config.Values[w.key]; !ok {
 			t.Errorf("config values lack %s", w.key)

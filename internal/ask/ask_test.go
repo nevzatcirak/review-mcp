@@ -728,3 +728,28 @@ func TestMarkersReachTheModelButNeverLogsOrErrors(t *testing.T) {
 	_, err = Run(context.Background(), h2.deps, a2)
 	h2.checkNoLeaks(t, err)
 }
+
+// TestRunDiffMaxTokensAppliesToAsk: pr_ask prepares its diff against the same
+// budget, so diff.max_tokens (X-17) omits files there too.
+func TestRunDiffMaxTokensAppliesToAsk(t *testing.T) {
+	h := newHarness("ok")
+	var files []provider.FilePatch
+	for i := range 30 {
+		files = append(files, provider.FilePatch{
+			Path: fmt.Sprintf("src/f%02d.go", i), Type: provider.ChangeModified,
+			Patch:      "@@ -1,2 +1,60 @@\n a\n" + strings.Repeat("+some added line of code here\n", 60),
+			BaseStatus: provider.ContentNotFetchedSizeCap, HeadStatus: provider.ContentNotFetchedSizeCap,
+		})
+	}
+	h.prov.files = files
+	capTokens := 2000
+	h.deps.Config.Diff.MaxTokens = &capTokens
+	res, err := Run(context.Background(), h.deps, h.args())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := res.Coverage
+	if len(c.Omitted.Added)+len(c.Omitted.Modified)+len(c.Omitted.Deleted) == 0 || res.Metadata.FastPath {
+		t.Errorf("a cap of %d omitted nothing: %+v", capTokens, c)
+	}
+}

@@ -63,6 +63,7 @@ var table = []entry{
 	{"diff.max_files_full_content", "REVIEW_MCP_DIFF_MAX_FILES_FULL_CONTENT", func(c *Config) any { return &c.Diff.MaxFilesFullContent }},
 	{"diff.max_file_bytes", "REVIEW_MCP_DIFF_MAX_FILE_BYTES", func(c *Config) any { return &c.Diff.MaxFileBytes }},
 	{"diff.max_diff_bytes", "REVIEW_MCP_DIFF_MAX_DIFF_BYTES", func(c *Config) any { return &c.Diff.MaxDiffBytes }},
+	{"diff.max_tokens", "REVIEW_MCP_DIFF_MAX_TOKENS", func(c *Config) any { return &c.Diff.MaxTokens }},
 	{"diff.ignore_generated_frameworks", "REVIEW_MCP_DIFF_IGNORE_GENERATED_FRAMEWORKS", func(c *Config) any { return &c.Diff.IgnoreGeneratedFrameworks }},
 
 	{"ignore.glob", "REVIEW_MCP_IGNORE_GLOB", func(c *Config) any { return &c.Ignore.Glob }},

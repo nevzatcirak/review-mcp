@@ -15,7 +15,7 @@ func TestDefaultsAppliedWhenNothingSet(t *testing.T) {
 		name      string
 		got, want any
 	}{
-		{"llm.timeout_seconds", cfg.LLM.TimeoutSeconds, 120},
+		{"llm.timeout_seconds", cfg.LLM.TimeoutSeconds, 300},
 		{"llm.max_retries", cfg.LLM.MaxRetries, 1},
 		{"llm.token_estimate_factor", cfg.LLM.TokenEstimateFactor, 0.3},
 		{"llm.wait_seconds", cfg.LLM.WaitSeconds, 45},
@@ -165,7 +165,7 @@ func TestFilePartialLeavesDefaultsIntact(t *testing.T) {
 	if !reflect.DeepEqual(cfg.Ignore.Glob, []string{"dist/**"}) {
 		t.Errorf("glob = %v", cfg.Ignore.Glob)
 	}
-	if cfg.Diff.ExtraLinesBefore != 5 || cfg.Review.MaxFindings != 3 || cfg.LLM.TimeoutSeconds != 120 {
+	if cfg.Diff.ExtraLinesBefore != 5 || cfg.Review.MaxFindings != 3 || cfg.LLM.TimeoutSeconds != 300 {
 		t.Error("untouched keys lost their defaults")
 	}
 	if rep.Sources["diff.extra_lines_before"] != OriginDefault {

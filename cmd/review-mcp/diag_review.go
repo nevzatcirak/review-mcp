@@ -98,7 +98,7 @@ func buildDryRunReport(pl *review.Plan, elapsed time.Duration) dryRunReport {
 		Empty:  pl.Empty,
 		Budget: budgetJSON{
 			ContextWindow: b.ContextWindow, SoftLimit: b.SoftLimit(), HardLimit: b.HardLimit(),
-			PromptTokens: b.PromptTokens, Factor: b.Factor,
+			PromptTokens: b.PromptTokens, Factor: b.Factor, Limit: b.Limit(), MaxDiffTokens: b.MaxDiffTokens,
 		},
 		Tokens:    dryRunTokens{Prompt: m.PromptTokens, Diff: m.DiffTokens, Request: m.RequestTokens, ContextWindow: m.ContextWindow},
 		Fast:      m.FastPath,

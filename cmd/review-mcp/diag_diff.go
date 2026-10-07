@@ -110,6 +110,11 @@ type budgetJSON struct {
 	HardLimit     int     `json:"hard_limit"`
 	PromptTokens  int     `json:"prompt_tokens"`
 	Factor        float64 `json:"factor"`
+	// Limit is what bounds the soft limit: "context_window", or
+	// "diff.max_tokens" when that cap is set and lower.
+	Limit string `json:"limit"`
+	// MaxDiffTokens is diff.max_tokens; omitted when unset.
+	MaxDiffTokens int `json:"max_diff_tokens,omitempty"`
 }
 
 type omittedJSON struct {
@@ -149,7 +154,7 @@ func buildDiffReport(b tokens.Budget, f *filter.Filter, p *diffpipe.Prepared, el
 	r := diffReport{
 		Budget: budgetJSON{
 			ContextWindow: b.ContextWindow, SoftLimit: b.SoftLimit(), HardLimit: b.HardLimit(),
-			PromptTokens: b.PromptTokens, Factor: b.Factor,
+			PromptTokens: b.PromptTokens, Factor: b.Factor, Limit: b.Limit(), MaxDiffTokens: b.MaxDiffTokens,
 		},
 		FastPath: p.FastPath,
 		Tokens:   p.Tokens,
@@ -218,6 +223,7 @@ func diagDiff(ctx context.Context, cfg *config.Config, logger *slog.Logger, prUR
 		MaxOutputTokens: cfg.LLM.MaxOutputTokens,
 		PromptTokens:    promptTokens,
 		Factor:          cfg.LLM.TokenEstimateFactor,
+		MaxDiffTokens:   tokens.Cap(cfg.Diff.MaxTokens),
 	}
 	prep, err := diffpipe.Prepare(diffpipe.Input{
 		Files: d.Files, Skipped: d.Skipped, Mode: mode, Budget: budget, Diff: cfg.Diff,

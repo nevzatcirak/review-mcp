@@ -110,6 +110,8 @@ type Budget struct {
 	PromptTokens int
 	// Factor is llm.token_estimate_factor.
 	Factor float64
+	// MaxDiffTokens is diff.max_tokens (X-17); 0 means no cap.
+	MaxDiffTokens int
 }
 
 // HardReserve is max(MaxOutputTokens or 0, 1000).
@@ -126,14 +128,48 @@ func (b Budget) SoftReserve() int { return b.HardReserve() + softExtra }
 
 // SoftLimit is the diff-content budget for the fast path and per-file
 // admission: ContextWindow - SoftReserve - PromptTokens. It may be <= 0.
+//
+// diff.max_tokens, when set, lowers it: the limit is the smaller of the two.
 func (b Budget) SoftLimit() int {
-	return b.ContextWindow - b.SoftReserve() - b.PromptTokens
+	soft := b.ContextWindow - b.SoftReserve() - b.PromptTokens
+	if b.MaxDiffTokens > 0 {
+		return min(soft, b.MaxDiffTokens)
+	}
+	return soft
 }
+
+// Limit names what bounds SoftLimit: LimitContextWindow, or LimitDiffMaxTokens
+// when diff.max_tokens is set and lower than the context window allows.
+func (b Budget) Limit() string {
+	if b.MaxDiffTokens > 0 && b.MaxDiffTokens < b.ContextWindow-b.SoftReserve()-b.PromptTokens {
+		return LimitDiffMaxTokens
+	}
+	return LimitContextWindow
+}
+
+// Cap converts the optional diff.max_tokens to Budget.MaxDiffTokens.
+func Cap(p *int) int {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+// The values of Budget.Limit.
+const (
+	LimitContextWindow = "context_window"
+	LimitDiffMaxTokens = "diff.max_tokens" //nolint:gosec // G101 false positive: a config key name, not a credential
+)
 
 // HardLimit is the stop-adding ceiling: ContextWindow - HardReserve -
 // PromptTokens. It may be <= 0.
+// A diff.max_tokens cap lowers it too, keeping the soft-to-hard gap.
 func (b Budget) HardLimit() int {
-	return b.ContextWindow - b.HardReserve() - b.PromptTokens
+	hard := b.ContextWindow - b.HardReserve() - b.PromptTokens
+	if b.MaxDiffTokens > 0 {
+		return min(hard, b.MaxDiffTokens+softExtra)
+	}
+	return hard
 }
 
 // RequireCapacity returns ErrDoesNotFit when SoftLimit is <= 0.

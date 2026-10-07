@@ -258,6 +258,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		MaxOutputTokens: cfg.LLM.MaxOutputTokens,
 		PromptTokens:    promptTokens,
 		Factor:          factor,
+		MaxDiffTokens:   tokens.Cap(cfg.Diff.MaxTokens),
 	}
 	if err := budget.RequireCapacity(); err != nil {
 		return nil, llmrun.DoesNotFit(err)

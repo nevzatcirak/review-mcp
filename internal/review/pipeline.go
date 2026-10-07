@@ -324,6 +324,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		MaxOutputTokens: cfg.LLM.MaxOutputTokens,
 		PromptTokens:    promptTokens,
 		Factor:          factor,
+		MaxDiffTokens:   tokens.Cap(cfg.Diff.MaxTokens),
 	}
 	if budget.RequireCapacity() != nil && in.Discussion != "" {
 		// The discussion is optional: a context window too small for it

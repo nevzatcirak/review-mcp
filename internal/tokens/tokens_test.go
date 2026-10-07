@@ -347,3 +347,31 @@ func TestClipLargeInputIsFast(t *testing.T) {
 		t.Fatal("large clip exceeds cap")
 	}
 }
+
+func TestBudgetDiffCap(t *testing.T) {
+	// Without a cap: 10000 - 1500 - 500 = 8000 soft, 8500 hard.
+	base := Budget{ContextWindow: 10000, PromptTokens: 500}
+	tests := []struct {
+		name       string
+		cap        int
+		soft, hard int
+		limit      string
+	}{
+		{"unset", 0, 8000, 8500, LimitContextWindow},
+		{"cap below the budget wins", 3000, 3000, 3500, LimitDiffMaxTokens},
+		{"cap equal to the budget", 8000, 8000, 8500, LimitContextWindow},
+		{"cap above the budget has no effect", 20000, 8000, 8500, LimitContextWindow},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			b := base
+			b.MaxDiffTokens = tc.cap
+			if b.SoftLimit() != tc.soft || b.HardLimit() != tc.hard || b.Limit() != tc.limit {
+				t.Errorf("soft %d hard %d limit %q, want %d %d %q", b.SoftLimit(), b.HardLimit(), b.Limit(), tc.soft, tc.hard, tc.limit)
+			}
+		})
+	}
+	if Cap(nil) != 0 || Cap(intp(1234)) != 1234 {
+		t.Error("Cap does not convert the optional value")
+	}
+}

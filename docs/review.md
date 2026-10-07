@@ -132,7 +132,8 @@ then the enabled fields in a fixed order:
 - **Relevant tests** (`review.require_tests`): "PR contains tests" or "No
   relevant tests".
 - **Security** (`review.require_security`): "No security concerns
-  identified", or the text of the concern.
+  identified", or the text of the concern ("... identified in the reviewed
+  files" when the review is [partial](#partial-reviews)).
 - **Performance** (`review.require_performance`): "No performance concerns
   identified", or the text of the concern (for example unbounded work, N+1
   access or blocking I/O on a request path).
@@ -166,6 +167,53 @@ A review whose files are mostly omitted or filtered says little about the PR.
 Raise `llm.context_window`, narrow the PR, or adjust `ignore.*`. If nothing
 reviewable remains after filtering, the model is not called and the review
 says "No reviewable changes after filtering."
+
+The structured `coverage` object also carries the counts behind the
+[partial banner](#partial-reviews): `partial`, `reviewed_files`, `total_files`
+and `not_reviewed_files`.
+
+### Partial reviews
+
+A review is **partial** when at least one changed file with a reviewable text
+change was not fully seen by the model: it was omitted to fit the diff budget,
+clipped, skipped by the provider because it is too large (`size_limit`,
+`file_limit`) or could not be read (`fetch_failed`, `unparseable_patch`).
+Files excluded on purpose (the **Filtered** group) do not make a review
+partial, and neither do binary files and files without a text change (a pure
+rename), which have nothing to review. Deleted files that were left out do
+count: the coverage section lists them as left out, and the model saw at most
+their names.
+
+A partial review leads with this line, before everything else (in the MCP
+text it is the first line, before `## PR Review`):
+
+```text
+**Partial review: 2 of 5 changed files were reviewed. 3 files were not reviewed (see Coverage); nothing is concluded about them.**
+```
+
+The same sentence is directly under the heading of the published overview
+(on Gitea as a warning blockquote, on Bitbucket Server as a bold line), and it
+stays there when a later run edits the overview in place. A count of 1 takes
+the singular ("1 file was not reviewed ... nothing is concluded about it").
+
+In a partial review the "nothing found" statements are limited to what was
+read: "No security concerns identified in the reviewed files", "No performance
+concerns identified in the reviewed files" and "No key issues found in the
+reviewed files". A complete review keeps the plain sentences.
+
+The structured result has the counts: `coverage.partial`,
+`coverage.reviewed_files` (fully included files), `coverage.total_files` (the
+files with a reviewable change) and `coverage.not_reviewed_files`
+(omitted, clipped, skipped for size and unreadable files);
+`reviewed_files + not_reviewed_files == total_files`. `job_result` returns the
+same fields, because it returns the original result unchanged.
+
+To cover every file, see [the review says partial](troubleshooting.md#the-review-says-partial).
+The notes also say how: with `diff.max_tokens` as the limit that applied,
+"To review every file, raise or unset diff.max_tokens, or use a model with a
+larger context window."; otherwise "To review every file, use a model with a
+larger context window." The tool description tells the client model to report
+how many files were not reviewed and never to say that they have no issues.
 
 ### Notes
 

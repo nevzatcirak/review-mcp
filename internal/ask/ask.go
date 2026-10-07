@@ -291,6 +291,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	pl := &Plan{Result: res, Budget: budget, ref: ref, p: p, log: log}
 	if prep.Text == "" {
 		pl.Empty = true
+		res.Notes = append(res.Notes, llmrun.PartialNotes(&res.Coverage, budget)...)
 		return pl, nil
 	}
 
@@ -325,6 +326,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		res.Notes = append(res.Notes, fmt.Sprintf(llmrun.NoteClippedFormat,
 			llmrun.CountPhrase(n, "file was", "files were")))
 	}
+	res.Notes = append(res.Notes, llmrun.PartialNotes(&res.Coverage, budget)...)
 	return pl, nil
 }
 

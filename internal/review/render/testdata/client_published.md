@@ -1,11 +1,13 @@
+**Partial review: 2 of 5 changed files were reviewed. 3 files were not reviewed (see Coverage); nothing is concluded about them.**
+
 ## PR Review
 
 Pull request: Gitea #12 — Add retry to the fetcher (`https://your-gitea.example/org/repo/pulls/12`)
 
 - Estimated effort to review: 2/5 🔵🔵⚪⚪⚪
 - PR contains tests
-- No security concerns identified
-- No performance concerns identified
+- No security concerns identified in the reviewed files
+- No performance concerns identified in the reviewed files
 
 ### Key issues to review
 

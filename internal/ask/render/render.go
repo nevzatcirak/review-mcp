@@ -23,6 +23,7 @@ import (
 const (
 	emojiCoverage = "📂"
 	emojiNotes    = "📝"
+	emojiWarning  = "⚠️"
 )
 
 // Client renders res for the MCP client: "## Question" with the question in
@@ -36,6 +37,10 @@ func Client(res *ask.Result) string {
 		return ""
 	}
 	var b strings.Builder
+	// X-18: a partial result leads with the banner, before anything else.
+	if banner := llmrender.PartialBanner(&res.Coverage, true); banner != "" {
+		b.WriteString(banner + "\n\n")
+	}
 	b.WriteString("## Question\n\n")
 	mdutil.WriteFenced(&b, res.Question, "", "")
 	if a := strings.TrimSpace(res.Answer); a != "" {
@@ -72,6 +77,14 @@ func Provider(res *ask.Result, caps provider.Capabilities) string {
 		notesHead = "### " + emojiNotes + " " + llmrender.TextNotes
 	}
 	var b strings.Builder
+	// X-18: the comment has no title of its own, so the banner is its first
+	// line (a warning blockquote on Gitea, a bold line on Bitbucket Server).
+	if banner := llmrender.PartialBanner(&res.Coverage, true); banner != "" {
+		if caps.GFM {
+			banner = "> " + emojiWarning + " " + banner
+		}
+		b.WriteString(banner + "\n\n")
+	}
 	b.WriteString(askHead + "\n")
 	mdutil.WriteFenced(&b, sanitizeQuickActions(res.Question), "", "")
 	if a := strings.TrimSpace(res.Answer); a != "" {

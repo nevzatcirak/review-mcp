@@ -1,5 +1,7 @@
 ## PR Review 🔍
 
+**Partial review: 2 of 5 changed files were reviewed. 3 files were not reviewed (see Coverage); nothing is concluded about them.**
+
 Pull request: Bitbucket Server #5 — Yeniden deneme ekle (`https://bitbucket.example.com/projects/P/repos/r/pull-requests/5`)
 Reviewed on 2026-10-06 09:30 UTC.
 

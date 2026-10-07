@@ -1,5 +1,7 @@
 ## PR Review 🔍
 
+**Partial review: 2 of 5 changed files were reviewed. 3 files were not reviewed (see Coverage); nothing is concluded about them.**
+
 Pull request: Gitea #12 — Add retry to the fetcher (`https://your-gitea.example/org/repo/pulls/12`)
 Reviewed on 2026-10-06 09:30 UTC at commit `abc123d`.
 

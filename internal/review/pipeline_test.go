@@ -68,6 +68,8 @@ type fakeProvider struct {
 	// (inlineThreads), like a real server does.
 	threads       []provider.Thread
 	inlineThreads []provider.Thread
+	// skipped are files the provider reports as skipped (binary, too large).
+	skipped []provider.SkippedFile
 }
 
 type edit struct{ id, body string }
@@ -168,7 +170,7 @@ func (f *fakeProvider) GetPullRequest(context.Context, provider.PRRef) (*provide
 
 func (f *fakeProvider) GetDiff(_ context.Context, _ provider.PRRef, _ *provider.PullRequest, opts provider.DiffOptions) (*provider.Diff, error) {
 	f.calls++
-	d := &provider.Diff{}
+	d := &provider.Diff{Skipped: slices.Clone(f.skipped)}
 	for _, fp := range f.files {
 		if opts.Include != nil && !opts.Include(fp.Path) {
 			d.Skipped = append(d.Skipped, provider.SkippedFile{Path: fp.Path, Reason: provider.SkipFiltered})

@@ -326,7 +326,7 @@ func TestJobResultToolDefinition(t *testing.T) {
 	}
 
 	tl := byName["job_result"]
-	if tl.Description != "Returns the result of a long-running pr_review or pr_ask call that answered with a job_id, waiting up to wait_seconds for it to finish." {
+	if tl.Description != "Returns the result of a long-running pr_review or pr_ask call that answered with a job_id, waiting up to wait_seconds for it to finish. If the result says the review is partial, tell the user how many files were not reviewed and never state that those files have no issues." {
 		t.Errorf("description = %q", tl.Description)
 	}
 	a := tl.Annotations

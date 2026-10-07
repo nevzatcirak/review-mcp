@@ -13,7 +13,11 @@ import (
 // prReviewDescription is the tool description from spec P4 §6.1.
 //
 // In stdio mode the description gains prReviewJobSentence (X-16).
-const prReviewDescription = "Reviews a pull request with the configured LLM and returns a structured review (key issues, effort, tests, security, performance) with code excerpts. Set publish=true to also post it: one overview comment that later runs edit in place, and the findings on changed lines as inline comments. The PR's title, description, existing comments and diff are sent to the configured LLM endpoint."
+const prReviewDescription = "Reviews a pull request with the configured LLM and returns a structured review (key issues, effort, tests, security, performance) with code excerpts. Set publish=true to also post it: one overview comment that later runs edit in place, and the findings on changed lines as inline comments. The PR's title, description, existing comments and diff are sent to the configured LLM endpoint." + partialSentence
+
+// partialSentence ends the pr_review, pr_ask and job_result descriptions
+// (X-18). The job sentence of stdio mode follows it.
+const partialSentence = " If the result says the review is partial, tell the user how many files were not reviewed and never state that those files have no issues."
 
 // prReviewJobSentence ends the pr_review description in stdio mode, where a
 // slow review answers with a job id (P8 spec §2.4).

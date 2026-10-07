@@ -5,6 +5,46 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc.4]
+
+Fourth release candidate. It makes a partial review say so: a review that did
+not cover every changed file no longer reads like a clean bill of health. It is
+validated by the V1 acceptance run (section H4) before v1.0.0.
+
+### Added
+
+- Partial-coverage honesty (X-18). A result is partial when at least one
+  reviewable changed file was omitted by the diff budget, clipped, skipped by
+  the provider for size or file limit, or unreadable; files filtered by the
+  ignore rules, binary files and files without a text change do not count.
+  - `coverage` in `pr_review`, `pr_ask` and `job_result` (and in every output
+    schema) gains `partial`, `reviewed_files`, `total_files` and
+    `not_reviewed_files`, with `reviewed_files + not_reviewed_files ==
+    total_files`.
+  - A partial result leads with a fixed line, before everything else: "Partial
+    review: N of M changed files were reviewed. K files were not reviewed (see
+    Coverage); nothing is concluded about them." (`pr_ask`: "Partial answer: N of
+    M changed files were used for this answer. ..."). In the MCP text it is the
+    first line; in the published overview it is directly under the heading
+    (Gitea: a warning blockquote, Bitbucket Server: a bold line) and stays after
+    the overview is edited in place.
+  - Notes add how to cover every file: "To review every file, raise or unset
+    diff.max_tokens, or use a model with a larger context window." when
+    `diff.max_tokens` is the limit that applied, else "To review every file, use
+    a model with a larger context window."
+  - The tool descriptions of `pr_review`, `pr_ask` and `job_result` tell the
+    client model to report how many files were not reviewed and never to say
+    that they have no issues.
+- Docs: "Partial reviews" in the review and ask guides and "The review says
+  partial" in the troubleshooting guide.
+
+### Changed
+
+- In a partial result every "no concerns" statement is limited to what was
+  read: "No security concerns identified in the reviewed files", "No
+  performance concerns identified in the reviewed files" and "No key issues
+  found in the reviewed files". Complete results read as before.
+
 ## [1.0.0-rc.3]
 
 Third release candidate. It is for slow and local models: the context window can

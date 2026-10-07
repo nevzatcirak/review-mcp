@@ -379,6 +379,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	pl.Result, pl.Budget = res, budget
 	if prep.Text == "" {
 		pl.Empty = true
+		res.Notes = append(res.Notes, llmrun.PartialNotes(&res.Coverage, budget)...)
 		return pl, nil
 	}
 
@@ -405,6 +406,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	if n := len(res.Coverage.Clipped); n > 0 {
 		res.Notes = append(res.Notes, fmt.Sprintf(noteClippedFormat, countPhrase(n, "file was", "files were")))
 	}
+	res.Notes = append(res.Notes, llmrun.PartialNotes(&res.Coverage, budget)...)
 	return pl, nil
 }
 

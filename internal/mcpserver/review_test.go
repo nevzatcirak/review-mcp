@@ -85,6 +85,16 @@ type fakeServer struct {
 	comments    map[int64]giteaComment
 	nextComment int64
 	reviews     []map[string]any
+	// ghost lists a second changed file that the diff does not contain: the
+	// provider cannot read it, so the result is partial (X-18).
+	ghost bool
+}
+
+// setGhost makes the files endpoint list a file the provider cannot read.
+func (f *fakeServer) setGhost() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ghost = true
 }
 
 type giteaComment struct {
@@ -193,7 +203,13 @@ func newFakeGiteaHost(t *testing.T) *fakeServer {
 				_, _ = io.WriteString(w, "[]")
 				return
 			}
-			writeJ([]any{map[string]any{"filename": "src/app.go", "status": "changed", "additions": 1, "deletions": 1, "changes": 2}})
+			files := []any{map[string]any{"filename": "src/app.go", "status": "changed", "additions": 1, "deletions": 1, "changes": 2}}
+			f.mu.Lock()
+			if f.ghost {
+				files = append(files, map[string]any{"filename": "src/other.go", "status": "changed", "additions": 1, "deletions": 1, "changes": 2})
+			}
+			f.mu.Unlock()
+			writeJ(files)
 		case r.Method == "GET" && p == api+"/raw/src/app.go":
 			if r.URL.Query().Get("ref") == "headsha" {
 				_, _ = io.WriteString(w, "package main\nvar a = 2 // "+diffMarker+"\nfunc main() {}\n")
@@ -367,7 +383,7 @@ func TestPRReviewToolDefinition(t *testing.T) {
 	if tl == nil {
 		t.Fatal("pr_review is not registered")
 	}
-	const want = "Reviews a pull request with the configured LLM and returns a structured review (key issues, effort, tests, security, performance) with code excerpts. Set publish=true to also post it: one overview comment that later runs edit in place, and the findings on changed lines as inline comments. The PR's title, description, existing comments and diff are sent to the configured LLM endpoint."
+	const want = "Reviews a pull request with the configured LLM and returns a structured review (key issues, effort, tests, security, performance) with code excerpts. Set publish=true to also post it: one overview comment that later runs edit in place, and the findings on changed lines as inline comments. The PR's title, description, existing comments and diff are sent to the configured LLM endpoint. If the result says the review is partial, tell the user how many files were not reviewed and never state that those files have no issues."
 	if tl.Description != want {
 		t.Errorf("description = %q", tl.Description)
 	}

@@ -20,6 +20,77 @@ type Coverage struct {
 	Omitted  OmittedFiles  `json:"omitted"`
 	Skipped  []SkippedFile `json:"skipped"`
 	Filtered []SkippedFile `json:"filtered"`
+
+	// Partial and the three counts below are the X-18 summary of the lists
+	// above; Finalize sets them and Tally is their single definition.
+	// Partial is true when at least one reviewable changed file was not
+	// fully reviewed. ReviewedFiles + NotReviewedFiles == TotalFiles.
+	Partial          bool `json:"partial"`
+	ReviewedFiles    int  `json:"reviewed_files"`
+	TotalFiles       int  `json:"total_files"`
+	NotReviewedFiles int  `json:"not_reviewed_files"`
+}
+
+// Tally is the X-18 summary of a Coverage. Every changed file is in exactly
+// one of these places, and the mapping of the existing categories is:
+//
+//   - Included: reviewed.
+//   - Clipped: NOT reviewed. The model saw only part of the file, so
+//     nothing may be concluded about the rest of it.
+//   - Omitted (added, modified, deleted): NOT reviewed. Deleted files count
+//     too: X-3 reports them as left out to fit the context window, the
+//     coverage section lists them next to the others, and on the compressed
+//     path the model sees only their names. A banner that left them out
+//     would disagree with the section it points to.
+//   - Skipped for size (file_limit, size_limit), unreadable (fetch_failed,
+//     unparseable_patch) or for any reason not named here: NOT reviewed. A
+//     reviewable file was lost; an unknown reason counts as lost, never as
+//     fine.
+//   - Skipped as binary or as an empty diff (a pure rename, a mode change):
+//     outside the count, like Filtered. There is no text change to review,
+//     so nothing was lost; the coverage section still lists them.
+//   - Filtered (ignore rules, generated files): outside the count. They
+//     were excluded on purpose, and X-3 lists them with the rule.
+//
+// Providers truncate nothing: a file too large for a provider is skipped
+// whole (size_limit), which is counted above.
+type Tally struct {
+	Partial                           bool
+	Reviewed, NotReviewed, TotalFiles int
+}
+
+// Tally computes the X-18 summary from the file lists.
+func (c *Coverage) Tally() Tally {
+	t := Tally{
+		Reviewed: len(c.Included),
+		NotReviewed: len(c.Clipped) + len(c.Omitted.Added) + len(c.Omitted.Modified) +
+			len(c.Omitted.Deleted),
+	}
+	for _, s := range c.Skipped {
+		if skipLosesReviewableFile(s.Reason) {
+			t.NotReviewed++
+		}
+	}
+	t.TotalFiles = t.Reviewed + t.NotReviewed
+	t.Partial = t.NotReviewed > 0
+	return t
+}
+
+// skipLosesReviewableFile reports whether a skip reason means a file with
+// reviewable changes was lost (see Tally). Unknown reasons count as lost.
+func skipLosesReviewableFile(reason string) bool {
+	switch reason {
+	case provider.SkipBinary, diffpipe.SkipEmptyDiff:
+		return false
+	}
+	return true
+}
+
+// Finalize sets Partial and the counts from the lists. BuildCoverage and
+// TrimCoverage call it; nothing else changes the lists.
+func (c *Coverage) Finalize() {
+	t := c.Tally()
+	c.Partial, c.ReviewedFiles, c.TotalFiles, c.NotReviewedFiles = t.Partial, t.Reviewed, t.TotalFiles, t.NotReviewed
 }
 
 // OmittedFiles are the files left out of the diff for budget, by change
@@ -73,6 +144,7 @@ func BuildCoverage(p *diffpipe.Prepared, f *filter.Filter) Coverage {
 		}
 		c.Filtered = append(c.Filtered, SkippedFile{Path: s.Path, Reason: reason})
 	}
+	c.Finalize()
 	return c
 }
 
@@ -82,6 +154,7 @@ func BuildCoverage(p *diffpipe.Prepared, f *filter.Filter) Coverage {
 // change type. A file whose header cannot be found is reported as Clipped
 // (its content may be incomplete), never as complete.
 func TrimCoverage(c *Coverage, diff string, kept int, types map[string]provider.ChangeType) {
+	defer c.Finalize()
 	lines := strings.Split(diff, "\n")
 	order := append(slices.Clone(c.Included), c.Clipped...)
 	wasClipped := map[string]bool{}

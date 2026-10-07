@@ -24,7 +24,7 @@ const (
 )
 
 // jobResultDescription is the tool description from spec P8 §2.3.
-const jobResultDescription = "Returns the result of a long-running pr_review or pr_ask call that answered with a job_id, waiting up to wait_seconds for it to finish."
+const jobResultDescription = "Returns the result of a long-running pr_review or pr_ask call that answered with a job_id, waiting up to wait_seconds for it to finish." + partialSentence
 
 // Jobs is the background job store of stdio mode (X-16, P8 spec §2). A
 // pr_review or pr_ask call starts its run as a job and waits at most

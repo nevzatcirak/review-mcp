@@ -27,6 +27,7 @@ const (
 	emojiIssues    = "⚡"
 	emojiCoverage  = "📂"
 	emojiNotes     = "📝"
+	emojiWarning   = "⚠️"
 	titleSuffix    = " 🔍"
 )
 
@@ -50,6 +51,14 @@ func Provider(res *review.Result, caps provider.Capabilities) string {
 	v := newView(res)
 	var b strings.Builder
 	b.WriteString("## PR Review" + titleSuffix + "\n\n")
+	// X-18: right under the heading. Because the overview is edited in place
+	// (X-12) by rendering it again, every edit carries the banner too.
+	if banner := llmrender.PartialBanner(&res.Coverage, false); banner != "" {
+		if caps.GFM {
+			banner = "> " + emojiWarning + " " + banner
+		}
+		b.WriteString(banner + "\n\n")
+	}
 	b.WriteString(clientPRLine(&res.PR) + "\n")
 	if l := runLine(res); l != "" {
 		b.WriteString(l + "\n")
@@ -87,14 +96,14 @@ func writeGFM(b *strings.Builder, res *review.Result, v *view) {
 			gfmRow(b, emojiTests, testsText(*v.tests), "")
 		case k == review.KeySecurityConcerns && v.security != nil:
 			if !v.hasConcerns {
-				gfmRow(b, emojiSecurity, textNoSecurity, "")
+				gfmRow(b, emojiSecurity, v.noSecurity(), "")
 				continue
 			}
 			b.WriteString("<tr><td>" + emojiSecurity + "&nbsp;<strong>" + textSecurity + "</strong><br><br>\n\n" +
 				gfmText(*v.security) + "\n</td></tr>\n")
 		case k == review.KeyPerformanceConcerns && v.perf != nil:
 			if !v.hasPerf {
-				gfmRow(b, emojiPerf, textNoPerf, "")
+				gfmRow(b, emojiPerf, v.noPerf(), "")
 				continue
 			}
 			b.WriteString("<tr><td>" + emojiPerf + "&nbsp;<strong>" + textPerf + "</strong><br><br>\n\n" +
@@ -107,7 +116,7 @@ func writeGFM(b *strings.Builder, res *review.Result, v *view) {
 	if v.showIssues && v.hasReview {
 		b.WriteString("<tr><td>")
 		if len(v.issues) == 0 {
-			b.WriteString(emojiIssues + "&nbsp;<strong>" + textNoIssues + "</strong>")
+			b.WriteString(emojiIssues + "&nbsp;<strong>" + v.noIssues() + "</strong>")
 		} else {
 			b.WriteString(emojiIssues + "&nbsp;<strong>" + textFocusAreas + "</strong><br><br>\n\n")
 			for n := range v.issues {
@@ -171,9 +180,9 @@ func writePlain(b *strings.Builder, res *review.Result, v *view, tables bool) {
 		case k == review.KeyRelevantTests && v.tests != nil:
 			rows = append(rows, row{emojiTests + " Tests", testsText(*v.tests)})
 		case k == review.KeySecurityConcerns && v.security != nil && !v.hasConcerns:
-			rows = append(rows, row{emojiSecurity + " Security", textNoSecurity})
+			rows = append(rows, row{emojiSecurity + " Security", v.noSecurity()})
 		case k == review.KeyPerformanceConcerns && v.perf != nil && !v.hasPerf:
-			rows = append(rows, row{emojiPerf + " Performance", textNoPerf})
+			rows = append(rows, row{emojiPerf + " Performance", v.noPerf()})
 		}
 	}
 	if n := res.Metadata.AlreadyDiscussed; n > 0 {
@@ -202,7 +211,7 @@ func writePlain(b *strings.Builder, res *review.Result, v *view, tables bool) {
 		return
 	}
 	if len(v.issues) == 0 {
-		b.WriteString("### " + emojiIssues + " " + textNoIssues + "\n")
+		b.WriteString("### " + emojiIssues + " " + v.noIssues() + "\n")
 		return
 	}
 	b.WriteString("### " + emojiIssues + " " + textFocusAreas + "\n\n")

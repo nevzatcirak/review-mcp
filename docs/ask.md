@@ -14,9 +14,10 @@ posts the question and the answer as one PR-level comment.
 | `extra_instructions` | no | Extra guidance for the model for this call; replaces `ask.extra_instructions` (`REVIEW_MCP_ASK_EXTRA_INSTRUCTIONS`). An empty value means "not given". |
 | `output_language` | no | Locale code for the answer, such as `en-US` or `tr-TR`; replaces `output.language`. Same format as the config key. |
 | `publish` | no | `true` also posts the question and answer as a PR comment. Default `false`. |
+| `wait_seconds` | no | How long the call waits for the answer before it answers with a `job_id`, 0 to 600; replaces `llm.wait_seconds` (default 45). stdio only; see [Slow endpoints](#slow-endpoints). |
 
-An empty question, a question over 8000 characters and an invalid
-`output_language` are rejected with a fixed message before anything is sent
+An empty question, a question over 8000 characters, an invalid
+`output_language` and a `wait_seconds` outside 0 to 600 are rejected with a fixed message before anything is sent
 to the provider or the LLM. A too-long question is never truncated. The
 messages are "question must not be empty", "question is too long: at most
 8000 characters are allowed" and "output_language must be a locale code such
@@ -117,6 +118,29 @@ not changed.
 A failure to post never discards the answer: the result carries the answer and
 a `publish` object with `published: false` and the reason. Publishing is not
 idempotent; calling the tool twice posts two comments.
+
+## Slow endpoints
+
+`pr_ask` handles a slow model the way `pr_review` does; the details are in
+[Reviewing pull requests: Slow endpoints](review.md#slow-endpoints). In
+short, in stdio mode:
+
+- The call waits at most `wait_seconds` (the argument, or `llm.wait_seconds`,
+  default 45, 0 to 600). An answer that is ready in time is returned exactly
+  as before.
+- Otherwise the call answers at once, without an error, with
+  "The answer is still running (stage: …, … s so far). Call `job_result` with
+  job_id `job_…` to get the result." and the structured content
+  `{"status": "running", "job_id", "stage", "elapsed_seconds"}`.
+- `job_result` with that `job_id` waits again and returns the finished answer
+  exactly as `pr_ask` would have returned it, the answer's error as a tool
+  error, or the running status. `wait_seconds: 0` polls without waiting.
+- With `publish=true` the run itself posts the comment, so it appears even if
+  `job_result` is never called.
+
+Because every call answers within `wait_seconds`, the client's tool timeout
+no longer decides whether a slow model can answer. Serve mode has no
+background jobs and ignores `wait_seconds`.
 
 ## Checking the budget with `diag ask --dry-run`
 

@@ -132,7 +132,14 @@ func runStdio(stdin io.Reader, stdout, stderr io.Writer, load configLoader) int 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	srv := mcpserver.New(mcpserver.Deps{Config: cfg, Report: rep, LoadErr: loadErr, Logger: logger, NewResolver: wiring.NewResolver, NewLLM: wiring.NewLLM})
+	// Background jobs (X-16) live as long as this server. When it stops (a
+	// signal, or stdin EOF) Close cancels every running job; nothing waits
+	// for them, so a job never keeps the process alive.
+	jobStore := mcpserver.NewJobs(nil)
+	defer jobStore.Close()
+
+	srv := mcpserver.New(mcpserver.Deps{Config: cfg, Report: rep, LoadErr: loadErr, Logger: logger,
+		NewResolver: wiring.NewResolver, NewLLM: wiring.NewLLM, Jobs: jobStore})
 	err := mcpserver.RunIO(ctx, srv, io.NopCloser(stdin), nopWriteCloser{stdout})
 	switch {
 	case err == nil:

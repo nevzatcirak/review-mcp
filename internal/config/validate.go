@@ -22,6 +22,10 @@ func ValidLocale(s string) bool { return localeRE.MatchString(s) }
 
 const minContextWindow = 4096
 
+// MaxWaitSeconds is the upper bound of llm.wait_seconds and of the
+// wait_seconds tool argument (X-16): ten minutes.
+const MaxWaitSeconds = 600
+
 // validate checks the layered configuration, normalizes URLs in place and
 // records every problem and warning.
 func (l *loader) validate() {
@@ -95,6 +99,9 @@ func (l *loader) validateLLM() {
 	}
 	if !l.bad["llm.max_retries"] && (c.MaxRetries < 0 || c.MaxRetries > 5) {
 		l.problem("llm.max_retries: %d is out of range (0-5)", c.MaxRetries)
+	}
+	if !l.bad["llm.wait_seconds"] && (c.WaitSeconds < 0 || c.WaitSeconds > MaxWaitSeconds) {
+		l.problem("llm.wait_seconds: %d is out of range (0-%d)", c.WaitSeconds, MaxWaitSeconds)
 	}
 	if f := c.TokenEstimateFactor; !l.bad["llm.token_estimate_factor"] && !(f >= 0 && f <= 2) {
 		l.problem("llm.token_estimate_factor: %v is out of range (0-2)", f)

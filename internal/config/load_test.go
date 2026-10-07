@@ -18,6 +18,7 @@ func TestDefaultsAppliedWhenNothingSet(t *testing.T) {
 		{"llm.timeout_seconds", cfg.LLM.TimeoutSeconds, 120},
 		{"llm.max_retries", cfg.LLM.MaxRetries, 1},
 		{"llm.token_estimate_factor", cfg.LLM.TokenEstimateFactor, 0.3},
+		{"llm.wait_seconds", cfg.LLM.WaitSeconds, 45},
 		{"gitea.insecure_skip_verify", cfg.Gitea.InsecureSkipVerify, false},
 		{"bitbucket_server.insecure_skip_verify", cfg.BitbucketServer.InsecureSkipVerify, false},
 		{"output.language", cfg.Output.Language, "en-US"},

@@ -23,6 +23,8 @@ func TestValidationRules(t *testing.T) {
 		{"timeout high", map[string]string{"REVIEW_MCP_LLM_TIMEOUT_SECONDS": "3601"}, "llm.timeout_seconds"},
 		{"retries high", map[string]string{"REVIEW_MCP_LLM_MAX_RETRIES": "6"}, "llm.max_retries: 6 is out of range (0-5)"},
 		{"retries negative", map[string]string{"REVIEW_MCP_LLM_MAX_RETRIES": "-1"}, "llm.max_retries"},
+		{"wait negative", map[string]string{"REVIEW_MCP_LLM_WAIT_SECONDS": "-1"}, "llm.wait_seconds: -1 is out of range (0-600)"},
+		{"wait high", map[string]string{"REVIEW_MCP_LLM_WAIT_SECONDS": "601"}, "llm.wait_seconds: 601 is out of range (0-600)"},
 		{"estimate factor high", map[string]string{"REVIEW_MCP_LLM_TOKEN_ESTIMATE_FACTOR": "2.5"}, "llm.token_estimate_factor"},
 		{"locale bad", map[string]string{"REVIEW_MCP_OUTPUT_LANGUAGE": "english_US"}, "output.language"},
 		{"locale too short", map[string]string{"REVIEW_MCP_OUTPUT_LANGUAGE": "e"}, "output.language"},
@@ -92,6 +94,7 @@ func TestValidationBoundariesAccepted(t *testing.T) {
 		"REVIEW_MCP_LLM_TIMEOUT_SECONDS":              "3600",
 		"REVIEW_MCP_LLM_MAX_RETRIES":                  "0",
 		"REVIEW_MCP_LLM_TOKEN_ESTIMATE_FACTOR":        "0",
+		"REVIEW_MCP_LLM_WAIT_SECONDS":                 "600",
 		"REVIEW_MCP_OUTPUT_LANGUAGE":                  "zh-Hans-CN",
 		"REVIEW_MCP_DIFF_EXTRA_LINES_BEFORE":          "10",
 		"REVIEW_MCP_DIFF_EXTRA_LINES_AFTER":           "0",
@@ -103,6 +106,8 @@ func TestValidationBoundariesAccepted(t *testing.T) {
 		"REVIEW_MCP_DIFF_IGNORE_GENERATED_FRAMEWORKS": "protobuf",
 	})
 	mustLoad(t, MemSource{Env: env})
+	// wait_seconds 0 is valid: answer with a job id at once (X-16).
+	mustLoad(t, MemSource{Env: envWith(map[string]string{"REVIEW_MCP_LLM_WAIT_SECONDS": "0"})})
 }
 
 func TestEmptyStringsInFileListsRejected(t *testing.T) {

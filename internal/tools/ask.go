@@ -46,36 +46,68 @@ type AskDeps struct {
 	Progress func(stage string)
 }
 
-// PRAsk validates the arguments, builds the LLM client for this call, runs
-// the ask pipeline and renders the client-profile markdown. The error, if
-// any, is classified; use UserMessage for its text.
-func PRAsk(ctx context.Context, deps AskDeps, a PRAskArgs) (*ask.Result, string, error) {
+// AskCall is a pr_ask call that passed every check that needs no network
+// (see ReviewCall): the arguments, the LLM client construction and the URL
+// resolution.
+type AskCall struct {
+	deps   AskDeps
+	client review.Completer
+	args   ask.Args
+}
+
+// PreparePRAsk runs the checks of a pr_ask call that need no network. The
+// error, if any, is classified; use UserMessage for its text.
+func PreparePRAsk(deps AskDeps, a PRAskArgs) (*AskCall, error) {
 	if err := a.Validate(); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	client, err := deps.NewLLM(deps.Config, deps.Logger)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	res, err := ask.Run(ctx, ask.Deps{
-		Config:         deps.Config,
-		Logger:         deps.Logger,
-		Resolver:       deps.Resolver,
-		LLM:            client,
-		RenderProvider: askrender.Provider,
-		Progress:       deps.Progress,
-	}, ask.Args{
+	resolver, err := pinResolution(deps.Resolver, a.PRURL)
+	if err != nil {
+		return nil, err
+	}
+	deps.Resolver = resolver
+	return &AskCall{deps: deps, client: client, args: ask.Args{
 		PRURL:             a.PRURL,
 		Question:          a.Question,
 		ExtraInstructions: a.ExtraInstructions,
 		OutputLanguage:    a.OutputLanguage,
 		Publish:           a.Publish,
-	})
+	}}, nil
+}
+
+// Run runs the ask pipeline and renders the client-profile markdown.
+// progress receives the ask.Stage* words and review.StageRendering (nil is
+// ignored); it replaces AskDeps.Progress. The error, if any, is classified.
+func (c *AskCall) Run(ctx context.Context, progress func(stage string)) (*ask.Result, string, error) {
+	res, err := ask.Run(ctx, ask.Deps{
+		Config:         c.deps.Config,
+		Logger:         c.deps.Logger,
+		Resolver:       c.deps.Resolver,
+		LLM:            c.client,
+		RenderProvider: askrender.Provider,
+		Progress:       progress,
+	}, c.args)
 	if err != nil {
 		return nil, "", err
 	}
-	if deps.Progress != nil {
-		deps.Progress(review.StageRendering)
+	if progress != nil {
+		progress(review.StageRendering)
 	}
 	return res, askrender.Client(res), nil
+}
+
+// PRAsk validates the arguments, builds the LLM client for this call, runs
+// the ask pipeline and renders the client-profile markdown (PreparePRAsk,
+// then Run with AskDeps.Progress). The error, if any, is classified; use
+// UserMessage for its text.
+func PRAsk(ctx context.Context, deps AskDeps, a PRAskArgs) (*ask.Result, string, error) {
+	c, err := PreparePRAsk(deps, a)
+	if err != nil {
+		return nil, "", err
+	}
+	return c.Run(ctx, deps.Progress)
 }

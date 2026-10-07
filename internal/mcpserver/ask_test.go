@@ -87,7 +87,7 @@ func TestPRAskToolDefinition(t *testing.T) {
 		}
 	}
 	sort.Strings(props)
-	if got := strings.Join(props, ","); got != "extra_instructions,output_language,pr_url,publish,question" {
+	if got := strings.Join(props, ","); got != "extra_instructions,output_language,pr_url,publish,question,wait_seconds" {
 		t.Errorf("properties = %s", got)
 	}
 	sort.Strings(in.Required)

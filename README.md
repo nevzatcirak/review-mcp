@@ -101,12 +101,13 @@ see the [changelog](CHANGELOG.md).
 | `pr_comment_create` | Posts a new comment on a pull request, PR-level or on a changed line (`file` and `line`). A line outside the diff is refused, never posted at PR level instead. |
 | `pr_review` | Reviews a pull request with your LLM. The title, description, existing comments and diff are sent to your LLM endpoint. Optionally publishes the review: one overview comment, edited in place on later runs, and inline comments on the changed lines. |
 | `pr_ask` | Answers a free-text question about a pull request, grounded in its title, description and diff. Optionally publishes the question and answer as a PR comment. |
+| `job_result` | Returns the result of a `pr_review` or `pr_ask` call that took longer than `wait_seconds` and answered with a `job_id` instead. stdio only; see [Slow endpoints](docs/review.md#slow-endpoints). |
 
 ## Documentation
 
 - [Setup guide](docs/setup.md): install, token checklist, LLM endpoint, client configuration, first run.
 - [Serve mode](docs/serve.md): one shared HTTP server for a team, the header contract, TLS, the container.
-- [Reviewing pull requests](docs/review.md): what `pr_review` sends to the LLM, choosing `llm.context_window`, reading coverage and notes, `publish` (the overview and inline comments), discussion awareness, `diag review --dry-run`.
+- [Reviewing pull requests](docs/review.md): what `pr_review` sends to the LLM, choosing `llm.context_window`, reading coverage and notes, `publish` (the overview and inline comments), discussion awareness, slow endpoints and `job_result`, `diag review --dry-run`.
 - [Asking questions about a pull request](docs/ask.md): what `pr_ask` sends to the LLM, grounding and honesty, coverage, `publish` and the slash sanitization, `diag ask --dry-run`.
 - [Getting started](docs/getting-started.md): the minimal configuration and the diff budget in detail.
 - [Troubleshooting](docs/troubleshooting.md): the `diag` commands and every error sentence.

@@ -94,7 +94,9 @@ type RunFunc[R any] func(ctx context.Context, progress func(stage string)) (R, e
 
 // Snapshot is a copy of a job's state at one moment.
 type Snapshot[R any] struct {
-	ID    string
+	ID string
+	// Tag is the label the job was started with (the tool name).
+	Tag   string
 	State State
 	// Stage is the last progress stage the run reported ("" before the
 	// first one).
@@ -134,16 +136,18 @@ type Store[R any] struct {
 
 type job[R any] struct {
 	id       string
+	tag      string
 	started  time.Time
 	finished time.Time
 	state    State
-	stage    string
-	result   R
-	message  string
-	// changed is closed and replaced on every stage change and when the
-	// job finishes; done is closed once, when it finishes.
+	// stages are the distinct stages the run reported, in order; the
+	// last one is the current stage. A run has a handful of them.
+	stages  []string
+	result  R
+	message string
+	// changed is closed and replaced on every stage change, and closed for
+	// good when the job finishes.
 	changed chan struct{}
-	done    chan struct{}
 }
 
 // New returns an empty store. Close it at shutdown.
@@ -166,12 +170,14 @@ func (s *Store[R]) Close() {
 	s.cancel()
 }
 
-// Start starts run as a new job and returns its id. The job's context keeps
+// Start starts run as a new job and returns its id. tag is an opaque label
+// kept with the job and reported in its snapshots (the tool layer stores the
+// tool name). The job's context keeps
 // the values of ctx (the caller's request context) but not its cancellation
 // or deadline: it ends only when the store is closed. It fails with
 // ErrTooMany when MaxRunning jobs are running, and with ErrClosed after
 // Close.
-func (s *Store[R]) Start(ctx context.Context, run RunFunc[R]) (string, error) {
+func (s *Store[R]) Start(ctx context.Context, tag string, run RunFunc[R]) (string, error) {
 	s.mu.Lock()
 	s.sweepLocked()
 	if s.closed {
@@ -185,10 +191,10 @@ func (s *Store[R]) Start(ctx context.Context, run RunFunc[R]) (string, error) {
 	id := s.newIDLocked()
 	j := &job[R]{
 		id:      id,
+		tag:     tag,
 		started: s.now(),
 		state:   StateRunning,
 		changed: make(chan struct{}),
-		done:    make(chan struct{}),
 	}
 	s.jobs[id] = j
 	s.running++
@@ -225,10 +231,13 @@ func (s *Store[R]) Wait(ctx context.Context, id string, d time.Duration) (Snapsh
 	return s.WaitProgress(ctx, id, d, nil)
 }
 
-// WaitProgress is Wait that also calls onStage (when not nil) with the
-// job's stage when the wait starts and with every later stage change seen
-// while it waits, on the waiting goroutine and never with the store locked.
-// A stage is reported once even when it is set again.
+// WaitProgress is Wait that also calls onStage (when not nil) with every
+// stage the job has reached, in order: first the stages reached before the
+// wait started, then each new one as it is reported. It runs on the waiting
+// goroutine, never with the store locked, and only until WaitProgress
+// returns, so a caller that sends progress notifications sends them only
+// while its own request is open. No stage is lost to a fast run, and a stage
+// set twice in a row is reported once.
 func (s *Store[R]) WaitProgress(ctx context.Context, id string, d time.Duration, onStage func(stage string)) (Snapshot[R], error) {
 	s.mu.Lock()
 	s.sweepLocked()
@@ -244,27 +253,35 @@ func (s *Store[R]) WaitProgress(ctx context.Context, id string, d time.Duration,
 		defer t.Stop()
 		timeout = t.C
 	}
-	reported := ""
+	reported := 0
+	var ctxErr error
+	timedOut := false
 	for {
 		s.mu.Lock()
 		snap := s.snapshotLocked(j)
 		changed := j.changed
+		fresh := append([]string(nil), j.stages[reported:]...)
 		s.mu.Unlock()
-		if onStage != nil && snap.Stage != "" && snap.Stage != reported {
-			reported = snap.Stage
-			onStage(snap.Stage)
+		reported += len(fresh)
+		if onStage != nil {
+			for _, stage := range fresh {
+				onStage(stage)
+			}
 		}
-		if snap.State != StateRunning || timeout == nil {
+		// Every way out goes through the snapshot above, so the stages that
+		// came with the finish (or just before the timeout) are reported.
+		if ctxErr != nil {
+			return snap, ctxErr
+		}
+		if snap.State != StateRunning || timeout == nil || timedOut {
 			return snap, nil
 		}
 		select {
-		case <-j.done:
-			return s.snapshot(j), nil
+		case <-changed: // also closed when the job finishes
 		case <-timeout:
-			return s.snapshot(j), nil
+			timedOut = true
 		case <-ctx.Done():
-			return s.snapshot(j), ctx.Err()
-		case <-changed:
+			ctxErr = ctx.Err()
 		}
 	}
 }
@@ -272,10 +289,10 @@ func (s *Store[R]) WaitProgress(ctx context.Context, id string, d time.Duration,
 func (s *Store[R]) setStage(j *job[R], stage string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if j.state != StateRunning || j.stage == stage {
+	if j.state != StateRunning || (len(j.stages) > 0 && j.stages[len(j.stages)-1] == stage) {
 		return
 	}
-	j.stage = stage
+	j.stages = append(j.stages, stage)
 	close(j.changed)
 	j.changed = make(chan struct{})
 }
@@ -293,19 +310,15 @@ func (s *Store[R]) finish(j *job[R], result R, err error) {
 	}
 	s.running--
 	close(j.changed)
-	close(j.done)
 	s.sweepLocked()
 	s.evictLocked()
 }
 
-func (s *Store[R]) snapshot(j *job[R]) Snapshot[R] {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.snapshotLocked(j)
-}
-
 func (s *Store[R]) snapshotLocked(j *job[R]) Snapshot[R] {
-	snap := Snapshot[R]{ID: j.id, State: j.state, Stage: j.stage, Result: j.result, Message: j.message}
+	snap := Snapshot[R]{ID: j.id, Tag: j.tag, State: j.state, Result: j.result, Message: j.message}
+	if len(j.stages) > 0 {
+		snap.Stage = j.stages[len(j.stages)-1]
+	}
 	if j.state == StateRunning {
 		snap.Elapsed = s.now().Sub(j.started)
 	} else {

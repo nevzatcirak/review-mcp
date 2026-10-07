@@ -81,6 +81,7 @@ func TestServerInfoListsPublishSettings(t *testing.T) {
 		{"review.persistent_overview", "true", "default"},
 		{"review.max_discussion_tokens", "1500", "default"},
 		{"review.require_performance", "true", "default"},
+		{"llm.wait_seconds", "45", "default"},
 	} {
 		if _, ok := r.Config.Values[w.key]; !ok {
 			t.Errorf("config values lack %s", w.key)

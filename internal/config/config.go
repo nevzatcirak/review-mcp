@@ -38,6 +38,9 @@ type LLM struct {
 	TimeoutSeconds      int      `toml:"timeout_seconds" json:"timeout_seconds"`
 	MaxRetries          int      `toml:"max_retries" json:"max_retries"`
 	TokenEstimateFactor float64  `toml:"token_estimate_factor" json:"token_estimate_factor"`
+	// WaitSeconds is how long a stdio pr_review or pr_ask call waits for its
+	// result before it answers with a job id (X-16); serve mode ignores it.
+	WaitSeconds int `toml:"wait_seconds" json:"wait_seconds"`
 }
 
 // Gitea configures the Gitea provider; it is enabled iff BaseURL is set.
@@ -119,6 +122,7 @@ func Defaults() *Config {
 			TimeoutSeconds:      120,
 			MaxRetries:          1,
 			TokenEstimateFactor: 0.3,
+			WaitSeconds:         45,
 		},
 		Output: Output{Language: "en-US"},
 		Diff: Diff{

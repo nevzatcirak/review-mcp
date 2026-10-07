@@ -41,6 +41,7 @@ var table = []entry{
 	{"llm.timeout_seconds", "REVIEW_MCP_LLM_TIMEOUT_SECONDS", func(c *Config) any { return &c.LLM.TimeoutSeconds }},
 	{"llm.max_retries", "REVIEW_MCP_LLM_MAX_RETRIES", func(c *Config) any { return &c.LLM.MaxRetries }},
 	{"llm.token_estimate_factor", "REVIEW_MCP_LLM_TOKEN_ESTIMATE_FACTOR", func(c *Config) any { return &c.LLM.TokenEstimateFactor }},
+	{"llm.wait_seconds", "REVIEW_MCP_LLM_WAIT_SECONDS", func(c *Config) any { return &c.LLM.WaitSeconds }},
 
 	{"gitea.base_url", "REVIEW_MCP_GITEA_BASE_URL", func(c *Config) any { return &c.Gitea.BaseURL }},
 	{"gitea.web_url", "REVIEW_MCP_GITEA_WEB_URL", func(c *Config) any { return &c.Gitea.WebURL }},

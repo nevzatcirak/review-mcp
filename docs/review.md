@@ -17,9 +17,11 @@ edit in place, and an inline comment on each changed line a finding is about
 | `max_findings` | no | The most key issues to return, 1 to 20; replaces `review.max_findings` (default 3). |
 | `publish` | no | `true` also posts the review: the overview comment and, unless `inline_findings` is false, inline comments. Default `false`. |
 | `inline_findings` | no | With `publish`, post each finding that falls on a changed line as an inline comment. Replaces `review.inline_findings` (default `true`) for this call. |
+| `wait_seconds` | no | How long the call waits for the review before it answers with a `job_id`, 0 to 600; replaces `llm.wait_seconds` (default 45). stdio only; see [Slow endpoints](#slow-endpoints). |
 
-Invalid `output_language` or `max_findings` values are rejected with a fixed
-message before anything is sent to the provider or the LLM.
+Invalid `output_language`, `max_findings` or `wait_seconds` values are
+rejected with a fixed message before anything is sent to the provider or the
+LLM.
 
 The result has two parts: the review as portable markdown (the text content;
 no raw HTML, so terminal clients show it as is) and the same data as
@@ -288,6 +290,64 @@ never written to the logs.
 - `review.max_discussion_tokens = 0` turns the block off: the comments are then
   not sent to the LLM. With `publish` and inline comments on, the PR is still
   read to skip findings that were already posted.
+
+## Slow endpoints
+
+A review on a slow model, such as a local one or any model on a large diff,
+can take minutes. Many MCP clients give up on a tool call after about 60
+seconds, whatever the server is doing. In stdio mode `pr_review` therefore
+waits at most `wait_seconds` for the review: the argument, or
+`llm.wait_seconds` (`REVIEW_MCP_LLM_WAIT_SECONDS`, default 45, 0 to 600).
+
+- If the review finishes in time, the result is exactly the one described
+  above; nothing about it changes.
+- If not, the call answers at once with a running status. It is not an
+  error. The text is
+
+  ```text
+  The review is still running (stage: calling model, 45 s so far). Call `job_result` with job_id `job_…` to get the result.
+  ```
+
+  and the structured content is
+  `{"status": "running", "job_id": "job_…", "stage": "calling model", "elapsed_seconds": 45}`.
+  The stage is one of the progress stages, or `starting` before the first.
+
+The review keeps running in the server. Call `job_result` with that `job_id`
+and, optionally, its own `wait_seconds` (same range and default). It waits
+again and returns one of:
+
+- the finished review, exactly as `pr_review` would have returned it,
+  including the `publish` outcome;
+- the review's error, as a tool error with the usual fixed sentence;
+- the running status again, when the review is still not done.
+
+A client that prefers polling passes `wait_seconds: 0` and gets the running
+status at once.
+
+**Why the client timeout no longer matters.** Every call, `pr_review` and each
+`job_result`, answers within `wait_seconds`, however long the model takes. At
+the default of 45 that stays under a typical 60-second client timeout. If
+your client gives up sooner, lower `wait_seconds`. `llm.timeout_seconds` still
+bounds the model request itself. While a call waits, a client that sent a
+progress token keeps receiving the stages; a client that resets its timeout
+on progress may then never see the running status at all.
+
+Good to know:
+
+- With `publish=true` the run itself posts the comments, so they appear even
+  if `job_result` is never called.
+- At most 4 reviews and answers run in the background at once. A fifth call
+  gets "too many background jobs are running; wait for one to finish".
+- A finished result is kept for 30 minutes, and at most 64 results are kept
+  (the oldest goes first). After that, or for an id the server never issued,
+  `job_result` answers "unknown or expired job_id". Results live in the
+  server's memory only; nothing is written to disk.
+- Ending the server (the client closes it, or SIGINT or SIGTERM) cancels the
+  runs that are still going.
+- Argument errors, a pull request URL on no configured host and, in serve
+  mode, missing credentials still fail at once, before any run starts.
+- Serve mode has no background jobs: calls run in their request, and
+  `wait_seconds` is ignored. See [Serve mode](serve.md#long-calls).
 
 ## Tuning the budget with `diag review --dry-run`
 

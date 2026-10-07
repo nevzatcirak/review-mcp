@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -97,7 +99,7 @@ func TestIDFormatAndUniqueness(t *testing.T) {
 		seen[id] = true
 	}
 
-	id, err := s.Start(context.Background(), instant(&result{}))
+	id, err := s.Start(context.Background(), "test", instant(&result{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +115,7 @@ func TestFifthJobRefusedUntilOneFinishes(t *testing.T) {
 	var ids []string
 	for i := range MaxRunning {
 		b := newBlocker()
-		id, err := s.Start(context.Background(), b.run(&result{Text: fmt.Sprint(i)}))
+		id, err := s.Start(context.Background(), "test", b.run(&result{Text: fmt.Sprint(i)}))
 		if err != nil {
 			t.Fatalf("job %d: %v", i+1, err)
 		}
@@ -121,7 +123,7 @@ func TestFifthJobRefusedUntilOneFinishes(t *testing.T) {
 		ids = append(ids, id)
 	}
 
-	_, err := s.Start(context.Background(), instant(&result{}))
+	_, err := s.Start(context.Background(), "test", instant(&result{}))
 	if !errors.Is(err, ErrTooMany) {
 		t.Fatalf("5th Start error = %v, want ErrTooMany", err)
 	}
@@ -131,7 +133,7 @@ func TestFifthJobRefusedUntilOneFinishes(t *testing.T) {
 
 	close(blockers[0].release)
 	waitFinished(t, s, ids[0])
-	if _, err := s.Start(context.Background(), instant(&result{})); err != nil {
+	if _, err := s.Start(context.Background(), "test", instant(&result{})); err != nil {
 		t.Fatalf("Start after one finished: %v", err)
 	}
 	for _, b := range blockers[1:] {
@@ -145,7 +147,7 @@ func TestKeepsAtMost64ResultsAndNeverDropsARunningJob(t *testing.T) {
 	defer s.Close()
 
 	b := newBlocker()
-	runningID, err := s.Start(context.Background(), b.run(&result{}))
+	runningID, err := s.Start(context.Background(), "test", b.run(&result{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +155,7 @@ func TestKeepsAtMost64ResultsAndNeverDropsARunningJob(t *testing.T) {
 	var ids []string
 	for i := range total {
 		clock.Advance(time.Second)
-		id, err := s.Start(context.Background(), instant(&result{Text: fmt.Sprint(i)}))
+		id, err := s.Start(context.Background(), "test", instant(&result{Text: fmt.Sprint(i)}))
 		if err != nil {
 			t.Fatalf("job %d: %v", i, err)
 		}
@@ -185,7 +187,7 @@ func TestFinishedJobExpiresAfterTTL(t *testing.T) {
 	clock := newFakeClock()
 	s := New[*result](Options{Now: clock.Now})
 	defer s.Close()
-	id, err := s.Start(context.Background(), instant(&result{Text: "ok"}))
+	id, err := s.Start(context.Background(), "test", instant(&result{Text: "ok"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +212,7 @@ func TestRunningJobNeverExpires(t *testing.T) {
 	s := New[*result](Options{Now: clock.Now})
 	defer s.Close()
 	b := newBlocker()
-	id, err := s.Start(context.Background(), b.run(&result{}))
+	id, err := s.Start(context.Background(), "test", b.run(&result{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +251,7 @@ func TestWaitTimesOutWithARunningSnapshot(t *testing.T) {
 	defer s.Close()
 	release := make(chan struct{})
 	staged := make(chan struct{})
-	id, err := s.Start(context.Background(), func(ctx context.Context, progress func(string)) (*result, error) {
+	id, err := s.Start(context.Background(), "test", func(ctx context.Context, progress func(string)) (*result, error) {
 		progress("fetching")
 		progress("calling model")
 		close(staged)
@@ -287,7 +289,7 @@ func TestWaitReturnsWhenTheCallerContextEnds(t *testing.T) {
 	s := New[*result](Options{})
 	defer s.Close()
 	b := newBlocker()
-	id, err := s.Start(context.Background(), b.run(&result{}))
+	id, err := s.Start(context.Background(), "test", b.run(&result{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +309,7 @@ func TestWaitReturnsDone(t *testing.T) {
 	defer s.Close()
 	want := &result{Text: "the review", Structured: []byte(`{"findings":[],"summary":"ok"}`)}
 	b := newBlocker()
-	id, err := s.Start(context.Background(), b.run(want))
+	id, err := s.Start(context.Background(), "test", b.run(want))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,7 +344,7 @@ func TestFailedJobKeepsTheClassifiedMessage(t *testing.T) {
 	s := New[*result](Options{})
 	defer s.Close()
 	const sentence = "the LLM endpoint did not answer in time"
-	id, err := s.Start(context.Background(), func(context.Context, func(string)) (*result, error) {
+	id, err := s.Start(context.Background(), "test", func(context.Context, func(string)) (*result, error) {
 		return &result{Text: "partial"}, errors.New(sentence)
 	})
 	if err != nil {
@@ -361,39 +363,46 @@ func TestFailedJobKeepsTheClassifiedMessage(t *testing.T) {
 	}
 }
 
-func TestWaitProgressReportsEachStageOnce(t *testing.T) {
+func TestWaitProgressReportsEveryStageInOrder(t *testing.T) {
 	s := New[*result](Options{})
 	defer s.Close()
-	next := make(chan string)
-	id, err := s.Start(context.Background(), func(_ context.Context, progress func(string)) (*result, error) {
-		for stage := range next {
-			progress(stage)
-		}
+	release := make(chan struct{})
+	reached := make(chan struct{})
+	id, err := s.Start(context.Background(), "pr_review", func(_ context.Context, progress func(string)) (*result, error) {
+		// Two stages before anyone waits: they must not be lost.
+		progress("fetching")
+		progress("fetching")
+		progress("preparing diff")
+		close(reached)
+		<-release
+		progress("calling model")
+		progress("rendering")
 		return &result{}, nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	<-reached
 	go func() {
-		for _, stage := range []string{"fetching", "fetching", "preparing diff", "calling model", "rendering"} {
-			next <- stage
-		}
-		close(next)
+		time.Sleep(10 * time.Millisecond)
+		close(release)
 	}()
 	var got []string
 	snap, err := s.WaitProgress(context.Background(), id, 5*time.Second, func(stage string) { got = append(got, stage) })
-	if err != nil || snap.State != StateDone {
+	if err != nil || snap.State != StateDone || snap.Tag != "pr_review" {
 		t.Fatalf("WaitProgress = %+v, %v", snap, err)
 	}
-	seen := map[string]bool{}
-	for _, stage := range got {
-		if seen[stage] {
-			t.Errorf("stage %q reported twice: %v", stage, got)
-		}
-		seen[stage] = true
+	if strings.Join(got, "|") != "fetching|preparing diff|calling model|rendering" {
+		t.Errorf("stages = %v", got)
 	}
-	if len(got) == 0 || got[len(got)-1] != "rendering" {
-		t.Errorf("stages = %v, want them to end with rendering", got)
+
+	// A later wait replays the stages; a zero wait reports them too.
+	got = nil
+	if _, err := s.WaitProgress(context.Background(), id, 0, func(stage string) { got = append(got, stage) }); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 4 {
+		t.Errorf("replayed stages = %v", got)
 	}
 }
 
@@ -403,7 +412,7 @@ func TestCloseCancelsRunningJobs(t *testing.T) {
 	var ids []string
 	for range MaxRunning {
 		started := make(chan struct{})
-		id, err := s.Start(context.Background(), func(ctx context.Context, _ func(string)) (*result, error) {
+		id, err := s.Start(context.Background(), "test", func(ctx context.Context, _ func(string)) (*result, error) {
 			close(started)
 			<-ctx.Done()
 			cancelled <- ctx.Err()
@@ -431,7 +440,7 @@ func TestCloseCancelsRunningJobs(t *testing.T) {
 			t.Errorf("job %s = %+v, want failed", id, snap)
 		}
 	}
-	if _, err := s.Start(context.Background(), instant(&result{})); !errors.Is(err, ErrClosed) {
+	if _, err := s.Start(context.Background(), "test", instant(&result{})); !errors.Is(err, ErrClosed) {
 		t.Errorf("Start after Close error = %v, want ErrClosed", err)
 	}
 	s.Close() // idempotent
@@ -442,7 +451,7 @@ func TestJobContextIsNotCancelledWithTheCallerContext(t *testing.T) {
 	defer s.Close()
 	caller, cancelCaller := context.WithTimeout(context.Background(), time.Hour)
 	release := make(chan struct{})
-	id, err := s.Start(caller, func(ctx context.Context, _ func(string)) (*result, error) {
+	id, err := s.Start(caller, "test", func(ctx context.Context, _ func(string)) (*result, error) {
 		<-release
 		if err := ctx.Err(); err != nil {
 			return nil, fmt.Errorf("job context ended with the caller: %w", err)
@@ -479,7 +488,7 @@ func TestFinishedJobDropsItsRun(t *testing.T) {
 	// the only thing that could keep them reachable.
 	start := func() (string, weak.Pointer[callConfig]) {
 		cfg := &callConfig{Token: "FAKE-token-not-a-secret"}
-		id, err := s.Start(context.Background(), func(context.Context, func(string)) (*result, error) {
+		id, err := s.Start(context.Background(), "test", func(context.Context, func(string)) (*result, error) {
 			return &result{Text: "done with " + fmt.Sprint(len(cfg.Token))}, nil
 		})
 		if err != nil {
@@ -492,18 +501,33 @@ func TestFinishedJobDropsItsRun(t *testing.T) {
 	if snap.State != StateDone {
 		t.Fatalf("job = %+v", snap)
 	}
-	for range 10 {
+	// The run's goroutine may still be unwinding when Wait returns, and the
+	// collector needs a cycle after that; under CI load this can take a
+	// while, so the deadline is generous. The guarantee itself is strict.
+	deadline := time.Now().Add(10 * time.Second)
+	for ref.Value() != nil && time.Now().Before(deadline) {
 		runtime.GC()
-		if ref.Value() == nil {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
 	if ref.Value() != nil {
 		t.Fatal("the per-call config is still reachable after the run finished")
 	}
 	if _, err := s.Get(id); err != nil {
 		t.Fatalf("the finished job itself must stay: %v", err)
+	}
+}
+
+// TestJobHoldsNoFunction is the deterministic half of the check above: the
+// job record has no field that could keep the run closure (or the context
+// tree that ends with the run) reachable.
+func TestJobHoldsNoFunction(t *testing.T) {
+	typ := reflect.TypeFor[job[*result]]()
+	ctxType := reflect.TypeFor[context.Context]()
+	for i := range typ.NumField() {
+		f := typ.Field(i)
+		if f.Type.Kind() == reflect.Func || f.Type.Kind() == reflect.Interface || f.Type == ctxType {
+			t.Errorf("job.%s (%s) could keep the run or its context reachable", f.Name, f.Type)
+		}
 	}
 }
 
@@ -514,7 +538,7 @@ func TestConcurrentStartWaitGet(t *testing.T) {
 	for g := range 16 {
 		wg.Go(func() {
 			for i := range 25 {
-				id, err := s.Start(context.Background(), func(_ context.Context, progress func(string)) (*result, error) {
+				id, err := s.Start(context.Background(), "test", func(_ context.Context, progress func(string)) (*result, error) {
 					progress("fetching")
 					time.Sleep(time.Millisecond)
 					progress("calling model")

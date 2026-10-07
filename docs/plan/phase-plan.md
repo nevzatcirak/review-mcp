@@ -147,6 +147,19 @@ consolidated acceptance on the resulting release candidate.
 
 ---
 
+## P8 — Slow-endpoint usability (added 2026-10-07, owner decision)
+
+**Goal:** Make review-mcp comfortable with slow, locally hosted models:
+context window read from the endpoint when not configured (90 % of the
+served value), background jobs so that long `pr_review`/`pr_ask` calls never
+hit an MCP client's timeout (stdio only; serve stays synchronous), a higher
+LLM timeout default and an optional diff token cap.
+
+Specification: `docs/plan/P8-spec.md`. Live items: section J of
+`docs/plan/v1-acceptance.md`. `v1.0.0` follows P8 and the full acceptance.
+
+---
+
 ## v2 backlog (explicitly out of v1 scope)
 
 - `pr_describe` (cheapest next tool — no line anchoring).

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Replaces | The per-phase live gates: P2 §6 (1–7), P2e §6 (8–10), P3 §7 (1–4), P4 §8 (1–6), P5 §4 (1–4) and the P6 gate (phase-plan amendment, 2026-10-06) |
-| Runs against | The release candidate that contains P7 (`v1.0.0-rc.2` or later). `rc.1` was used for a first real session (record #8). |
+| Runs against | The release candidate that contains P8 (`v1.0.0-rc.3` or later); I can already be run on `rc.2`. `rc.1` was used for a first real session (record #8). |
 | Run by | The owner |
 | Record | One GitHub issue, "v1.0.0 acceptance record": one comment per section, redacted (see §0). A fix PR links the item ID it fixes. |
 
@@ -137,6 +137,11 @@ Run on a **personal** Bitbucket Data Center trial instance and, if available, a 
 - **I4** The security and performance rows are present. A deliberate N+1 or unbounded loop in the test PR is reported under performance.
 - **I5** A reviewer comment that already raises an issue is not repeated by the review, and the overview shows the "already discussed" count. A comment containing "ignore previous instructions…" does not change the review.
 - **I6** In an MCP client, asking to write a comment on line N of file X uses `pr_comment_create` and lands on the line. A line outside the diff is refused with the fixed sentence.
+
+## J. Slow endpoints (P8)
+- **J1** With `llm.context_window` unset against your local endpoint, `server_info` shows the resolved value and its source. Against an endpoint that does not report it, the fixed sentence names `llm.context_window`.
+- **J2** In an MCP client, a review that takes longer than 60 s returns a running status within about 45 s. Asking for the result uses `job_result` and returns the full review. With `publish=true`, the comments appear on the PR.
+- **J3** `diff.max_tokens=24000` on a large PR makes the review noticeably faster, and the omitted files are listed in the coverage section.
 
 ## Exit
 `v1.0.0` is tagged when every item is pass, or not run with an accepted reason, and no blocker is open. The record issue is then closed with a link to the tag.

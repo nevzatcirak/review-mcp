@@ -58,7 +58,7 @@ func (f *fakeProvider) ReplyToComment(_ context.Context, _ provider.PRRef, id, b
 		return nil, f.replyErr
 	}
 	return &provider.ReplyResult{
-		Comment:  provider.Comment{ID: "901", URL: prURL + "?access_token=" + fakeLLMKey + "#c901"},
+		Comment:  provider.Comment{ID: "901", URL: prURL + "#issuecomment-901"},
 		InThread: f.inThread,
 	}, nil
 }
@@ -290,8 +290,8 @@ func TestCallPRCommentReply(t *testing.T) {
 			if got.ID != "901" || got.InThread != inThread {
 				t.Errorf("structured = %+v", got)
 			}
-			if strings.Contains(got.URL, fakeLLMKey) || !strings.Contains(got.URL, "access_token=REDACTED") {
-				t.Errorf("url not redacted: %q", got.URL)
+			if got.URL != prURL+"#issuecomment-901" {
+				t.Errorf("url = %q, want the provider-built URL unredacted", got.URL)
 			}
 			if _, n := fp.calls(); n != 1 || fp.replies[0] != [2]string{"201", "thanks"} {
 				t.Errorf("provider got %v", fp.replies)

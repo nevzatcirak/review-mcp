@@ -5,7 +5,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 	"github.com/nevzatcirak/review-mcp/internal/review/anchor"
@@ -101,7 +100,7 @@ func PRCommentCreate(ctx context.Context, resolver PRResolver, a PRCommentCreate
 		if c == nil {
 			return PRCommentCreateResult{}, &provider.Error{Class: provider.ClassProtocol}
 		}
-		return PRCommentCreateResult{ID: c.ID, URL: logging.RedactURL(c.URL)}, nil
+		return PRCommentCreateResult{ID: c.ID, URL: c.URL}, nil
 	}
 
 	pr, err := p.GetPullRequest(ctx, ref)
@@ -136,7 +135,7 @@ func PRCommentCreate(ctx context.Context, resolver PRResolver, a PRCommentCreate
 	if !results[0].Posted {
 		return PRCommentCreateResult{}, &CommentError{results[0].Error}
 	}
-	return PRCommentCreateResult{ID: results[0].ID, URL: logging.RedactURL(results[0].URL), Inline: true}, nil
+	return PRCommentCreateResult{ID: results[0].ID, URL: results[0].URL, Inline: true}, nil
 }
 
 // RenderPRCommentCreateText renders the text content of pr_comment_create: a

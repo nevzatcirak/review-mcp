@@ -243,7 +243,7 @@ func TestDiagComment(t *testing.T) {
 	}
 	var res map[string]string
 	if err := json.Unmarshal([]byte(out), &res); err != nil || len(res) != 2 ||
-		res["id"] != "55" || res["url"] != "https://your-gitea.example/octo/demo/pulls/7" /* fragment dropped by RedactURL */ {
+		res["id"] != "55" || res["url"] != "https://your-gitea.example/octo/demo/pulls/7#issuecomment-55" {
 		t.Errorf("gitea result = %q (%v)", out, err)
 	}
 	if p := g.posts(); len(p) != 1 {

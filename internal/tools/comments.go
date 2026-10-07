@@ -336,7 +336,7 @@ func PRCommentReply(ctx context.Context, resolver PRResolver, prURL, commentID, 
 	if rr == nil {
 		return PRCommentReplyResult{}, &provider.Error{Class: provider.ClassProtocol}
 	}
-	return PRCommentReplyResult{ID: rr.Comment.ID, URL: logging.RedactURL(rr.Comment.URL), InThread: rr.InThread}, nil
+	return PRCommentReplyResult{ID: rr.Comment.ID, URL: rr.Comment.URL, InThread: rr.InThread}, nil
 }
 
 // Reply texts of pr_comment_reply.

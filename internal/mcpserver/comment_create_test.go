@@ -186,7 +186,7 @@ func TestPRCommentCreateGitea(t *testing.T) {
 		}
 		var got tools.PRCommentCreateResult
 		decodeStructured(t, res, &got)
-		if got.Inline || got.ID != "55" || got.URL != "https://your-gitea.example/octo/demo/pulls/7" {
+		if got.Inline || got.ID != "55" || got.URL != "https://your-gitea.example/octo/demo/pulls/7#issuecomment-55" {
 			t.Errorf("result = %+v", got)
 		}
 		if want := "Comment posted on the pull request.\n\nComment id: `55`\n"; textOf(t, res) != want {
@@ -315,7 +315,7 @@ func TestPRCommentCreateBitbucket(t *testing.T) {
 
 	t.Run("pr-level", func(t *testing.T) {
 		res, got := call(map[string]any{"body": "general comment"})
-		if res.IsError || got.Inline || got.ID != "701" || !strings.Contains(got.URL, "/pull-requests/7/overview?commentId=REDACTED") {
+		if res.IsError || got.Inline || got.ID != "701" || !strings.Contains(got.URL, "/pull-requests/7/overview?commentId=701") {
 			t.Fatalf("result = %+v (%v)", got, res.IsError)
 		}
 		if body := last(); body["text"] != "general comment" || body["anchor"] != nil {
@@ -392,7 +392,7 @@ func (c *createProvider) PostComment(_ context.Context, _ provider.PRRef, body s
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.posted = append(c.posted, body)
-	return &provider.Comment{ID: "9", URL: "https://your-gitea.example/octo/demo/pulls/7?access_token=" + fakeGitea}, nil
+	return &provider.Comment{ID: "9", URL: "https://your-gitea.example/octo/demo/pulls/7#issuecomment-9"}, nil
 }
 
 func (c *createProvider) PostInlineComments(_ context.Context, _ provider.PRRef, _ *provider.PullRequest, items []provider.InlineComment) ([]provider.InlineResult, error) {
@@ -473,11 +473,11 @@ func TestPRCommentCreateProviderOutcomes(t *testing.T) {
 			t.Errorf("inline items = %+v", cp.inlined)
 		}
 	})
-	t.Run("pr-level url is redacted", func(t *testing.T) {
+	t.Run("pr-level url is the provider-built url", func(t *testing.T) {
 		cp := &createProvider{}
 		deps, _ := withFake(depsFor(validEnv(), nil), cp)
 		res := callTool(t, connect(t, deps), "pr_comment_create", map[string]any{"pr_url": prURL, "body": "x"})
-		if res.IsError || strings.Contains(mustJSON(t, res), fakeGitea) || !strings.Contains(mustJSON(t, res), "access_token=REDACTED") {
+		if res.IsError || strings.Contains(mustJSON(t, res), fakeGitea) || !strings.Contains(mustJSON(t, res), `"url":"https://your-gitea.example/octo/demo/pulls/7#issuecomment-9"`) {
 			t.Errorf("result = %s", mustJSON(t, res))
 		}
 	})

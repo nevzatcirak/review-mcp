@@ -386,14 +386,14 @@ func diagComment(ctx context.Context, cfg *config.Config, logger *slog.Logger, p
 	if err != nil {
 		return reportError(stderr, err)
 	}
-	// Decision: the printed comment URL goes through logging.RedactURL, which
-	// drops the fragment and redacts query values (so deep links such as
-	// #issuecomment-55 are lost). Every printed URL passes through the
-	// redactor, and the comment itself is verified on the PR page.
+	// Decision: the comment URL is printed as the provider built it (the
+	// configured base URL plus the comment id, so it carries no credentials;
+	// config validation rejects userinfo), keeping deep links such as
+	// #issuecomment-55. Logs stay redacted.
 	out := struct {
 		ID  string `json:"id"`
 		URL string `json:"url"`
-	}{c.ID, logging.RedactURL(c.URL)}
+	}{c.ID, c.URL}
 	if err := writeJSON(stdout, out); err != nil {
 		_, _ = fmt.Fprintln(stderr, "could not write the result to stdout")
 		return 1

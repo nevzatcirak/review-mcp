@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type behavior struct {
@@ -23,6 +24,13 @@ type behavior struct {
 	FetchStderr string `json:"fetch_stderr"`
 	FetchExit   int    `json:"fetch_exit"`
 	SHA         string `json:"sha"`
+	// Search (WP-11b): what "grep" prints and exits with, its stderr, how
+	// long it takes, and what "rev-list" prints.
+	GrepOut     string `json:"grep_out"`
+	GrepExit    int    `json:"grep_exit"`
+	GrepStderr  string `json:"grep_stderr"`
+	GrepSleepMS int    `json:"grep_sleep_ms"`
+	RevListOut  string `json:"revlist_out"`
 }
 
 type call struct {
@@ -86,6 +94,15 @@ func run() int {
 	case "fetch":
 		_, _ = os.Stderr.WriteString(beh.FetchStderr)
 		return beh.FetchExit
+	case "grep":
+		if beh.GrepSleepMS > 0 {
+			time.Sleep(time.Duration(beh.GrepSleepMS) * time.Millisecond)
+		}
+		_, _ = os.Stderr.WriteString(beh.GrepStderr)
+		_, _ = os.Stdout.WriteString(beh.GrepOut)
+		return beh.GrepExit
+	case "rev-list":
+		_, _ = os.Stdout.WriteString(beh.RevListOut)
 	case "rev-parse":
 		_, _ = os.Stdout.WriteString(beh.SHA + "\n")
 	}

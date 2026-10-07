@@ -142,6 +142,10 @@ type ContextRepo struct {
 	MaxRepoMB int `toml:"max_repo_mb" json:"max_repo_mb"`
 	// FetchTimeoutSeconds limits the fetch of a pull request head.
 	FetchTimeoutSeconds int `toml:"fetch_timeout_seconds" json:"fetch_timeout_seconds"`
+	// MaxSymbols caps the symbols taken from the diff and searched for (RC-7).
+	MaxSymbols int `toml:"max_symbols" json:"max_symbols"`
+	// MaxHitsPerSymbol caps the uses kept per symbol (RC-7).
+	MaxHitsPerSymbol int `toml:"max_hits_per_symbol" json:"max_hits_per_symbol"`
 }
 
 // Log configures logging (stderr only).
@@ -194,6 +198,8 @@ func Defaults() *Config {
 			MaxCacheMB:          2048,
 			MaxRepoMB:           500,
 			FetchTimeoutSeconds: 60,
+			MaxSymbols:          20,
+			MaxHitsPerSymbol:    5,
 		}},
 		Log: Log{Level: "info"},
 		Serve: Serve{

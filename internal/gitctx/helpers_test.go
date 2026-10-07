@@ -77,6 +77,13 @@ type fakeBehavior struct {
 	FetchExit   int    `json:"fetch_exit"`
 	// SHA is what rev-parse prints.
 	SHA string `json:"sha"`
+	// What "git grep" prints (the NUL-separated records), exits with, writes
+	// to stderr, and how long it takes; what "git rev-list" prints.
+	GrepOut     string `json:"grep_out"`
+	GrepExit    int    `json:"grep_exit"`
+	GrepStderr  string `json:"grep_stderr"`
+	GrepSleepMS int    `json:"grep_sleep_ms"`
+	RevListOut  string `json:"revlist_out"`
 }
 
 // fakeCall is one recorded invocation of the fake git.
@@ -237,6 +244,20 @@ func gitOut(t *testing.T, dir, gitPath string, args ...string) string {
 	return string(out)
 }
 
+// writeFiles writes files (slash-separated names) under dir.
+func writeFiles(t *testing.T, dir string, files map[string]string) {
+	t.Helper()
+	for name, content := range files {
+		p := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // gitServer serves bare repositories through git http-backend. It records
 // the Authorization header of every request and answers 401 to any that
 // accept rejects.
@@ -259,6 +280,13 @@ type gitServer struct {
 // refs/pull-requests/7/from).
 func newGitServer(t *testing.T, kind provider.Kind) *gitServer {
 	t.Helper()
+	return newGitServerFiles(t, kind, nil)
+}
+
+// newGitServerFiles is newGitServer with the files of the one commit (nil
+// means a single main.go).
+func newGitServerFiles(t *testing.T, kind provider.Kind, files map[string]string) *gitServer {
+	t.Helper()
 	gitPath, backend := realGit(t)
 	isolateHome(t)
 	tmp := t.TempDir()
@@ -267,9 +295,10 @@ func newGitServer(t *testing.T, kind provider.Kind) *gitServer {
 		t.Fatal(err)
 	}
 	gitOut(t, src, gitPath, "init", "-q")
-	if err := os.WriteFile(filepath.Join(src, "main.go"), []byte("package main\n\nfunc Helper() int { return 1 }\n"), 0o600); err != nil {
-		t.Fatal(err)
+	if files == nil {
+		files = map[string]string{"main.go": "package main\n\nfunc Helper() int { return 1 }\n"}
 	}
+	writeFiles(t, src, files)
 	gitOut(t, src, gitPath, "add", ".")
 	gitOut(t, src, gitPath, "commit", "-q", "-m", "first")
 

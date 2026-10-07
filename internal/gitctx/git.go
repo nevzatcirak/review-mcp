@@ -41,7 +41,19 @@ type gitCmd struct {
 	// net is the network policy of the command (fetch); nil for local
 	// commands.
 	net *netPolicy
-	dir string
+	// offline marks a read of the cache (grep, cat-file, rev-list, ls-tree):
+	// no protocol may be used at all (protocol.allow=never with no https or
+	// http allow), and GIT_NO_LAZY_FETCH=1, so a blob the partial clone
+	// lacks fails locally and at once instead of being fetched. It never
+	// carries credentials (config is empty).
+	offline bool
+	// stdin is fed to git's standard input; nil means none.
+	stdin []byte
+	// maxStdout caps the output read; 0 means maxStdout. When the cap is
+	// reached git is stopped and result.truncated is set: that is not an
+	// error.
+	maxStdout int
+	dir       string
 	// home is the cache's empty home directory (<cache_dir>/.home), passed
 	// as HOME and XDG_CONFIG_HOME; "" passes neither (the version probe,
 	// which runs before the cache is known).
@@ -68,17 +80,28 @@ var testExtraConfig [][2]string
 // runtime.GOOS (a parameter so that the Windows settings can be tested
 // anywhere).
 func safetyArgs(np *netPolicy, goos string) []string {
+	return safetyArgsFor(np, goos, false)
+}
+
+// safetyArgsFor is safetyArgs; offline drops the https allowance, so that
+// protocol.allow=never leaves every transport forbidden (the lazy fetch of a
+// missing blob needs one).
+func safetyArgsFor(np *netPolicy, goos string, offline bool) []string {
 	a := []string{
 		"-c", "credential.helper=",
 		"-c", "core.askPass=",
 		"-c", "core.hooksPath=" + os.DevNull, // NUL on Windows
 		"-c", "core.fsmonitor=false",
 		"-c", "protocol.allow=never",
-		"-c", "protocol.https.allow=always",
+	}
+	if !offline {
+		a = append(a, "-c", "protocol.https.allow=always")
+	}
+	a = append(a,
 		"-c", "http.followRedirects=false",
 		"-c", "gc.auto=0",
 		"-c", "maintenance.auto=false",
-	}
+	)
 	if np == nil {
 		return a
 	}
@@ -176,17 +199,27 @@ func childEnv(home string, config [][2]string, goos string) []string {
 }
 
 // limitedBuffer keeps the first max bytes written to it and drops the rest.
+// onFull, when set, is called once when a write does not fit.
 type limitedBuffer struct {
-	buf bytes.Buffer
-	max int
+	buf    bytes.Buffer
+	max    int
+	full   bool
+	onFull func()
 }
 
 func (b *limitedBuffer) Write(p []byte) (int, error) {
-	if room := b.max - b.buf.Len(); room > 0 {
+	room := b.max - b.buf.Len()
+	if room > 0 {
 		if len(p) > room {
 			b.buf.Write(p[:room])
 		} else {
 			b.buf.Write(p)
+		}
+	}
+	if len(p) > room && !b.full {
+		b.full = true
+		if b.onFull != nil {
+			b.onFull()
 		}
 	}
 	return len(p), nil
@@ -198,28 +231,49 @@ type result struct {
 	stdout []byte
 	stderr string
 	err    error
+	// truncated: the output reached gitCmd.maxStdout and git was stopped; err
+	// is nil then.
+	truncated bool
 }
 
 // run executes git. It never uses a shell. A failure is reported in
 // result.err as the raw *exec.ExitError (or the context error); the caller
 // classifies it with failure.
 func run(ctx context.Context, gitPath string, c gitCmd) result {
-	argv := append(safetyArgs(c.net, runtime.GOOS), c.args...)
+	argv := append(safetyArgsFor(c.net, runtime.GOOS, c.offline), c.args...)
+	limit := c.maxStdout
+	if limit <= 0 {
+		limit = maxStdout
+	}
+	// A command with its own cap is stopped when the cap is reached.
+	stopCtx, stop := context.WithCancel(ctx)
+	defer stop()
 	//nolint:gosec // G204: the binary is the configured or looked-up git, and every argument is built here; no shell is involved.
-	cmd := exec.CommandContext(ctx, gitPath, argv...)
+	cmd := exec.CommandContext(stopCtx, gitPath, argv...)
 	cmd.Env = childEnv(c.home, append(append([][2]string(nil), testExtraConfig...), c.config...), runtime.GOOS)
+	if c.offline {
+		cmd.Env = append(cmd.Env, "GIT_NO_LAZY_FETCH=1")
+	}
 	cmd.Dir = c.dir
-	cmd.Stdin = nil
+	if c.stdin != nil {
+		cmd.Stdin = bytes.NewReader(c.stdin)
+	}
 	cmd.WaitDelay = waitDelay
 	killGroup(cmd)
-	stdout := &limitedBuffer{max: maxStdout}
+	stdout := &limitedBuffer{max: limit}
+	if c.maxStdout > 0 {
+		stdout.onFull = stop
+	}
 	stderr := &limitedBuffer{max: maxStderr}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	err := cmd.Run()
-	if err != nil && ctx.Err() != nil {
+	truncated := c.maxStdout > 0 && stdout.full
+	if truncated && ctx.Err() == nil {
+		err = nil // stopped by the cap, not a failure
+	} else if err != nil && ctx.Err() != nil {
 		err = ctx.Err()
 	}
-	return result{stdout: stdout.buf.Bytes(), stderr: stderr.buf.String(), err: err}
+	return result{stdout: stdout.buf.Bytes(), stderr: stderr.buf.String(), err: err, truncated: truncated}
 }
 
 // failure turns a failed result into an error with a fixed reason. The

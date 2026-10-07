@@ -1,0 +1,16 @@
+removed   legacyCleanup    src/main/java/com/example/OrderService.java
+signature findOrder        src/main/java/com/example/OrderService.java
+signature charge           src/main/java/com/example/Billing.java
+signature toDto            src/main/kotlin/com/example/Mapper.kt
+changed   OrderService     src/main/java/com/example/OrderService.java
+changed   Billing          src/main/java/com/example/Billing.java
+changed   Mapper           src/main/kotlin/com/example/Mapper.kt
+changed   refreshCache     src/main/java/com/example/OrderService.java new
+changed   MAX_RETRIES      src/main/java/com/example/OrderService.java new
+changed   names            src/main/java/com/example/OrderService.java new
+changed   refund           src/main/java/com/example/Billing.java new
+changed   loadAll          src/main/kotlin/com/example/Mapper.kt new
+changed   shout            src/main/kotlin/com/example/Mapper.kt new
+changed   DEFAULT_PAGE     src/main/kotlin/com/example/Mapper.kt new
+changed   PageInfo         src/main/kotlin/com/example/Mapper.kt new
+changed   Registry         src/main/kotlin/com/example/Mapper.kt new

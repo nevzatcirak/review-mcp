@@ -1,0 +1,9 @@
+removed   RemovedFunc      a/one.go
+removed   RenamedOld       a/one.go
+removed   DeletedWithFile  a/gone.go
+signature SigChanged       a/one.go
+changed   Anchor           a/one.go
+changed   MovedAway        a/one.go
+changed   RenamedNew       a/one.go new
+changed   BrandNew         a/one.go new
+changed   BodyOnly         a/two.go new

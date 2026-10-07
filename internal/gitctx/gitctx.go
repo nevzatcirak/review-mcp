@@ -33,12 +33,17 @@
 // Every failure is an *Error that carries a fixed reason and nothing else:
 // git's stderr is classified and dropped, never passed on.
 //
+// Search (WP-11b): ExtractSymbols reads the changed symbols from the diff
+// (RC-7) and Grep finds their uses with git grep on the fetched head SHA. A
+// search never touches the network: its git processes carry no credential,
+// forbid every protocol and set GIT_NO_LAZY_FETCH=1, so a blob the partial
+// clone lacks is skipped and counted, never fetched.
+//
 // The package does not depend on internal/review.
 package gitctx
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
@@ -105,44 +110,6 @@ type Checkout struct {
 	HeadSHA string
 	// Ref is the local ref that holds HeadSHA, refs/review-mcp/pr/<n>.
 	Ref string
-}
-
-// Query is a search for the uses of symbols in a Checkout (WP-11b).
-type Query struct {
-	// Symbols are the names to search for, in rank order.
-	Symbols []string
-	// Exclude are repository paths never to report (the pull request's own
-	// files, ignored and generated files).
-	Exclude []string
-	// MaxHitsPerSymbol caps the hits per symbol (context.repo.max_hits_per_symbol).
-	MaxHitsPerSymbol int
-	// ContextLines is the number of lines kept before and after each hit.
-	ContextLines int
-}
-
-// Hit is one use of a symbol found by Grep.
-type Hit struct {
-	Symbol string
-	Path   string
-	// Line is the 1-based line of the use.
-	Line int
-	// Snippet is the line with its context lines.
-	Snippet string
-}
-
-// ErrGrepNotImplemented is returned by Grep until WP-11b implements it.
-var ErrGrepNotImplemented = errors.New("gitctx: Grep is not implemented yet")
-
-// Grep finds the uses of q.Symbols in the tree of c.HeadSHA.
-//
-// WP-11a stub: it always returns no hits and ErrGrepNotImplemented. WP-11b
-// implements it with git grep on the head SHA (a tree-ish), never a working
-// tree, with the PR's files excluded through pathspecs and a post-filter.
-// Note for 11b: a blob above the fetch filter (1 MiB) is missing from the
-// partial clone; the grep must not trigger a lazy fetch (it runs without
-// credentials), for example with GIT_NO_LAZY_FETCH=1 where available.
-func (r *Runner) Grep(_ context.Context, _ Checkout, _ Query) ([]Hit, error) {
-	return nil, ErrGrepNotImplemented
 }
 
 // Options configure a Runner. Zero values select the defaults.

@@ -1,0 +1,8 @@
+removed   LegacyMigrate    src/Orders/OrderService.cs
+signature GetOrderAsync    src/Orders/OrderService.cs
+changed   Create           src/Orders/OrderService.cs new
+changed   MaxLines         src/Orders/OrderService.cs new
+changed   OrderSummary     src/Orders/OrderService.cs new
+changed   IOrderEvents     src/Orders/OrderService.cs new
+changed   OrderState       src/Orders/OrderService.cs new
+changed   OnCreated        src/Orders/OrderService.cs new

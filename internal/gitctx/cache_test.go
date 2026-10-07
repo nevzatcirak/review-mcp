@@ -598,11 +598,3 @@ func TestRepoFor(t *testing.T) {
 		t.Errorf("OptionsFromConfig = %+v", o)
 	}
 }
-
-// TestGrepStub: Grep is a stub until WP-11b.
-func TestGrepStub(t *testing.T) {
-	hits, err := New(Options{}).Grep(context.Background(), Checkout{}, Query{Symbols: []string{"Helper"}})
-	if hits != nil || !errors.Is(err, ErrGrepNotImplemented) {
-		t.Errorf("Grep = %v, %v", hits, err)
-	}
-}

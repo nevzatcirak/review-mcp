@@ -1,0 +1,24 @@
+=== app/service.py
+@@ -20,10 +20,10 @@ class UserService:
+     def __init__(self, repo):
+-    def get_user(self, user_id):
++    def get_user(self, user_id, include_inactive=False):
+         return self.repo.get(user_id)
+-    async def sync_users(self):
+-        pass
++    async def refresh_users(self):
++        pass
++    def _private_helper(self):
++        pass
++MAX_RETRIES = 5
++DEFAULT_NAME = "x"
++class AuditLog(Base):
++    result = compute_total(x)
++    if MAX_RETRIES == 3:
++    print render(x)
+=== app/models.py
+@@ -1,3 +1,3 @@
+-class Account:
+-    pass
++class Account(Base):
++    pass

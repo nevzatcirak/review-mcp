@@ -1,0 +1,12 @@
+removed   LegacyOptions    src/api/client.ts
+signature fetchUser        src/api/client.ts
+signature parseResponse    src/api/client.ts
+signature formatName       src/util.js
+changed   ApiClient        src/api/client.ts
+changed   ClientOptions    src/api/client.ts new
+changed   UserId           src/api/client.ts new
+changed   API_VERSION      src/api/client.ts new
+changed   buildUrl         src/api/client.ts new
+changed   Status           src/api/client.ts new
+changed   localHelper      src/api/client.ts new
+changed   retryRequest     src/api/client.ts new

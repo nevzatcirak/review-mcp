@@ -1,0 +1,9 @@
+removed   sync_users       app/service.py
+signature get_user         app/service.py
+signature Account          app/models.py
+changed   UserService      app/service.py
+changed   refresh_users    app/service.py new
+changed   _private_helper  app/service.py new
+changed   MAX_RETRIES      app/service.py new
+changed   DEFAULT_NAME     app/service.py new
+changed   AuditLog         app/service.py new

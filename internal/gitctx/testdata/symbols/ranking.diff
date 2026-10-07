@@ -1,0 +1,19 @@
+=== a/one.go
+@@ -1,4 +1,4 @@ func Anchor() {
+-func RemovedFunc() {}
+-func RenamedOld() {}
++func RenamedNew() {}
+-func SigChanged(a int) {}
++func SigChanged(a int, b int) {}
+-func MovedAway() {}
++func BrandNew() {}
++func Anchor() {}
+=== a/two.go
+@@ -1,4 +1,4 @@ func Anchor() {
++func MovedAway() {}
++func BodyOnly() {}
+ func Untouched() {}
+=== a/gone.go
+@@ -1,2 +0,0 @@
+-func DeletedWithFile() {}
+-func SigChanged(a int) {}

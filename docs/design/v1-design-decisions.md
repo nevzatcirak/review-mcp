@@ -481,6 +481,8 @@ Secrets are environment-only (in `serve` mode, credentials come from request hea
 | `context.repo.max_cache_mb` | `REVIEW_MCP_CONTEXT_REPO_MAX_CACHE_MB` | 2048 | X-22; 1 to 1048576 |
 | `context.repo.max_repo_mb` | `REVIEW_MCP_CONTEXT_REPO_MAX_REPO_MB` | 500 | X-22; 1 to 1048576, at most `max_cache_mb`; measured after the fetch |
 | `context.repo.fetch_timeout_seconds` | `REVIEW_MCP_CONTEXT_REPO_FETCH_TIMEOUT_SECONDS` | 60 | X-22; 1 to 600; covers the lock wait and the fetch, including the auth retry |
+| `context.repo.max_symbols` | `REVIEW_MCP_CONTEXT_REPO_MAX_SYMBOLS` | 20 | X-22; 1 to 50; symbols taken from the diff, ranked (removed or renamed, changed signature, other changed) |
+| `context.repo.max_hits_per_symbol` | `REVIEW_MCP_CONTEXT_REPO_MAX_HITS_PER_SYMBOL` | 5 | X-22; 1 to 20; uses kept per symbol, distinct files and the definition's language group first |
 | `log.level` | `REVIEW_MCP_LOG_LEVEL` | `info` | stderr only (X-8) |
 | `serve.listen` | `REVIEW_MCP_SERVE_LISTEN` | `127.0.0.1:8787` | serve only (X-10); `host:port`; `--listen` overrides |
 | `serve.tls_cert` | `REVIEW_MCP_SERVE_TLS_CERT` | — | serve only; PEM path, set together with `tls_key` |

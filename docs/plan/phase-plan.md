@@ -177,7 +177,12 @@ capped), symbols extracted from the diff, their uses found with `git grep`,
 and a budgeted "related code" prompt block. A code graph follows only if
 measurement shows a clear gain.
 
-Design note and spec draft: `docs/design/v1.1-repo-context.md`.
+Also: large pull requests are reviewed in several model calls ("parts")
+and the results merged, so coverage no longer ends at one context window.
+
+Binding spec: `docs/plan/v1.1-spec.md` (track A chunked review first, then
+track B repository context; both PRs stay unmerged until `v1.0.0` is
+tagged). Design note: `docs/design/v1.1-repo-context.md`.
 
 ---
 

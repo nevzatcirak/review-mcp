@@ -52,7 +52,10 @@ func compress(in Input, c *counter, groups []group) (*Prepared, error) {
 	var sorted []*file
 	for _, g := range groups {
 		fs := slices.Clone(g.files)
-		slices.SortStableFunc(fs, func(a, b *file) int { return b.fastTokens - a.fastTokens })
+		if !g.pinned {
+			// Pinned files (Input.Pinned) keep their input order.
+			slices.SortStableFunc(fs, func(a, b *file) int { return b.fastTokens - a.fastTokens })
+		}
 		sorted = append(sorted, fs...)
 	}
 

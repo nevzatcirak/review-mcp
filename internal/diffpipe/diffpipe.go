@@ -77,6 +77,13 @@ type Input struct {
 	Mode    Mode
 	Budget  tokens.Budget
 	Diff    config.Diff
+	// Pinned lists paths of Files that go before the ranked rest, in the
+	// order they have in Files (pr_ask's question-named files, X-21): they
+	// are rendered and admitted first, and are not reordered by size. A
+	// path that is not in Files is ignored, so pinning can never add a file
+	// (a filtered or provider-skipped one stays where it is). Empty keeps
+	// the ranking unchanged.
+	Pinned []string
 }
 
 // Omitted lists the files left out of the diff body, by change type, in
@@ -215,6 +222,9 @@ func prepareRanked(in Input, c *counter, langOrder []string) (*Prepared, error) 
 	groups := rank(files)
 	if langOrder != nil {
 		orderGroups(groups, langOrder)
+	}
+	if len(in.Pinned) > 0 {
+		groups = pinFirst(groups, files, in.Pinned)
 	}
 
 	p, err := assemble(in, c, groups)

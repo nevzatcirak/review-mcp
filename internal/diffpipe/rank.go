@@ -28,6 +28,38 @@ type group struct {
 	lang   string
 	weight int
 	files  []*file
+	// pinned marks the group of Input.Pinned files (pinFirst): it comes
+	// first and the compressed path keeps its order instead of sorting it
+	// by size.
+	pinned bool
+}
+
+// pinFirst moves the files whose path is in pinned out of their language
+// groups into one leading pinned group, in input order (files is the input
+// order). Groups left empty are dropped; the other groups and their files
+// keep their order. Paths of pinned that no file has are ignored.
+func pinFirst(groups []group, files []*file, pinned []string) []group {
+	want := make(map[string]bool, len(pinned))
+	for _, p := range pinned {
+		want[p] = true
+	}
+	head := group{pinned: true}
+	for _, f := range files {
+		if want[f.fp.Path] {
+			head.files = append(head.files, f)
+		}
+	}
+	if len(head.files) == 0 {
+		return groups
+	}
+	out := []group{head}
+	for _, g := range groups {
+		g.files = slices.DeleteFunc(slices.Clone(g.files), func(f *file) bool { return want[f.fp.Path] })
+		if len(g.files) > 0 {
+			out = append(out, g)
+		}
+	}
+	return out
 }
 
 // rank groups files by language (spec §4.2).

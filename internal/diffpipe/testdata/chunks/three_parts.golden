@@ -1,0 +1,281 @@
+=== part 1 of 3 (fast_path false, tokens 847)
+included: c.go, e.go
+clipped: 
+deleted_listed: gone.go
+omitted.added: a.go, b.go, d.go, f.go
+omitted.modified: 
+omitted.deleted: 
+skipped: logo.png (binary), moved.go (empty_diff)
+--- text
+
+
+## File: 'c.go'
+
+@@ -1 +1 @@
+__new hunk__
+1 +    changed_0 = compute(1)
+__old hunk__
+-    value_0 = compute(0)
+
+@@ -5 +5 @@
+__new hunk__
+5 +    changed_4 = compute(5)
+__old hunk__
+-    value_4 = compute(4)
+
+@@ -9 +9 @@
+__new hunk__
+9 +    changed_8 = compute(9)
+__old hunk__
+-    value_8 = compute(8)
+
+@@ -13 +13 @@
+__new hunk__
+13 +    changed_12 = compute(13)
+__old hunk__
+-    value_12 = compute(12)
+
+@@ -17 +17 @@
+__new hunk__
+17 +    changed_16 = compute(17)
+__old hunk__
+-    value_16 = compute(16)
+
+@@ -21 +21 @@
+__new hunk__
+21 +    changed_20 = compute(21)
+__old hunk__
+-    value_20 = compute(20)
+
+@@ -25 +25 @@
+__new hunk__
+25 +    changed_24 = compute(25)
+__old hunk__
+-    value_24 = compute(24)
+
+@@ -29 +29 @@
+__new hunk__
+29 +    changed_28 = compute(29)
+__old hunk__
+-    value_28 = compute(28)
+
+
+## File: 'e.go'
+
+@@ -1 +1 @@
+__new hunk__
+1 +    changed_0 = compute(1)
+__old hunk__
+-    value_0 = compute(0)
+
+@@ -5 +5 @@
+__new hunk__
+5 +    changed_4 = compute(5)
+__old hunk__
+-    value_4 = compute(4)
+
+@@ -9 +9 @@
+__new hunk__
+9 +    changed_8 = compute(9)
+__old hunk__
+-    value_8 = compute(8)
+
+@@ -13 +13 @@
+__new hunk__
+13 +    changed_12 = compute(13)
+__old hunk__
+-    value_12 = compute(12)
+
+@@ -17 +17 @@
+__new hunk__
+17 +    changed_16 = compute(17)
+__old hunk__
+-    value_16 = compute(16)
+
+@@ -21 +21 @@
+__new hunk__
+21 +    changed_20 = compute(21)
+__old hunk__
+-    value_20 = compute(20)
+
+@@ -25 +25 @@
+__new hunk__
+25 +    changed_24 = compute(25)
+__old hunk__
+-    value_24 = compute(24)
+
+@@ -29 +29 @@
+__new hunk__
+29 +    changed_28 = compute(29)
+__old hunk__
+-    value_28 = compute(28)
+
+Additional added files (insufficient token budget to process):
+
+a.go
+b.go
+d.go
+f.go
+
+Deleted files:
+
+gone.go
+=== part 2 of 3 (fast_path false, tokens 869)
+included: a.go, b.go
+clipped: 
+deleted_listed: 
+omitted.added: d.go, f.go
+omitted.modified: 
+omitted.deleted: 
+skipped: 
+--- text
+
+
+## File: 'a.go'
+
+@@ -0,0 +1,28 @@
+__new hunk__
+1 +    value_0 = compute(0)
+2 +    value_1 = compute(1)
+3 +    value_2 = compute(2)
+4 +    value_3 = compute(3)
+5 +    value_4 = compute(4)
+6 +    value_5 = compute(5)
+7 +    value_6 = compute(6)
+8 +    value_7 = compute(7)
+9 +    value_8 = compute(8)
+10 +    value_9 = compute(9)
+11 +    value_10 = compute(10)
+12 +    value_11 = compute(11)
+13 +    value_12 = compute(12)
+14 +    value_13 = compute(13)
+15 +    value_14 = compute(14)
+16 +    value_15 = compute(15)
+17 +    value_16 = compute(16)
+18 +    value_17 = compute(17)
+19 +    value_18 = compute(18)
+20 +    value_19 = compute(19)
+21 +    value_20 = compute(20)
+22 +    value_21 = compute(21)
+23 +    value_22 = compute(22)
+24 +    value_23 = compute(23)
+25 +    value_24 = compute(24)
+26 +    value_25 = compute(25)
+27 +    value_26 = compute(26)
+28 +    value_27 = compute(27)
+
+
+## File: 'b.go'
+
+@@ -0,0 +1,27 @@
+__new hunk__
+1 +    value_0 = compute(0)
+2 +    value_1 = compute(1)
+3 +    value_2 = compute(2)
+4 +    value_3 = compute(3)
+5 +    value_4 = compute(4)
+6 +    value_5 = compute(5)
+7 +    value_6 = compute(6)
+8 +    value_7 = compute(7)
+9 +    value_8 = compute(8)
+10 +    value_9 = compute(9)
+11 +    value_10 = compute(10)
+12 +    value_11 = compute(11)
+13 +    value_12 = compute(12)
+14 +    value_13 = compute(13)
+15 +    value_14 = compute(14)
+16 +    value_15 = compute(15)
+17 +    value_16 = compute(16)
+18 +    value_17 = compute(17)
+19 +    value_18 = compute(18)
+20 +    value_19 = compute(19)
+21 +    value_20 = compute(20)
+22 +    value_21 = compute(21)
+23 +    value_22 = compute(22)
+24 +    value_23 = compute(23)
+25 +    value_24 = compute(24)
+26 +    value_25 = compute(25)
+27 +    value_26 = compute(26)
+
+Additional added files (insufficient token budget to process):
+
+d.go
+f.go
+=== part 3 of 3 (fast_path true, tokens 748)
+included: d.go, f.go
+clipped: 
+deleted_listed: 
+omitted.added: 
+omitted.modified: 
+omitted.deleted: 
+skipped: 
+--- text
+
+
+## File: 'd.go'
+
+@@ -0,0 +1,25 @@
+__new hunk__
+1 +    value_0 = compute(0)
+2 +    value_1 = compute(1)
+3 +    value_2 = compute(2)
+4 +    value_3 = compute(3)
+5 +    value_4 = compute(4)
+6 +    value_5 = compute(5)
+7 +    value_6 = compute(6)
+8 +    value_7 = compute(7)
+9 +    value_8 = compute(8)
+10 +    value_9 = compute(9)
+11 +    value_10 = compute(10)
+12 +    value_11 = compute(11)
+13 +    value_12 = compute(12)
+14 +    value_13 = compute(13)
+15 +    value_14 = compute(14)
+16 +    value_15 = compute(15)
+17 +    value_16 = compute(16)
+18 +    value_17 = compute(17)
+19 +    value_18 = compute(18)
+20 +    value_19 = compute(19)
+21 +    value_20 = compute(20)
+22 +    value_21 = compute(21)
+23 +    value_22 = compute(22)
+24 +    value_23 = compute(23)
+25 +    value_24 = compute(24)
+
+
+## File: 'f.go'
+
+@@ -0,0 +1,23 @@
+__new hunk__
+1 +    value_0 = compute(0)
+2 +    value_1 = compute(1)
+3 +    value_2 = compute(2)
+4 +    value_3 = compute(3)
+5 +    value_4 = compute(4)
+6 +    value_5 = compute(5)
+7 +    value_6 = compute(6)
+8 +    value_7 = compute(7)
+9 +    value_8 = compute(8)
+10 +    value_9 = compute(9)
+11 +    value_10 = compute(10)
+12 +    value_11 = compute(11)
+13 +    value_12 = compute(12)
+14 +    value_13 = compute(13)
+15 +    value_14 = compute(14)
+16 +    value_15 = compute(15)
+17 +    value_16 = compute(16)
+18 +    value_17 = compute(17)
+19 +    value_18 = compute(18)
+20 +    value_19 = compute(19)
+21 +    value_20 = compute(20)
+22 +    value_21 = compute(21)
+23 +    value_22 = compute(22)
+=== overall
+included: c.go, e.go, a.go, b.go, d.go, f.go
+clipped: 
+deleted_listed: gone.go
+too_large: 
+omitted.added: 
+omitted.modified: 
+omitted.deleted: 
+skipped: logo.png (binary), moved.go (empty_diff)

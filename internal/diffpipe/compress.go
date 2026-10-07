@@ -134,8 +134,9 @@ func compress(in Input, c *counter, groups []group) (*Prepared, error) {
 				clipped = clipToFit(c, entries[top].text, soft, in.Budget.Factor)
 			}
 			if clipped == "" {
-				return nil, fmt.Errorf("diffpipe: no file fits the diff budget (soft limit %d, large_patch_policy %q): %w",
-					soft, policy, tokens.ErrDoesNotFit)
+				return nil, &tooLargeError{path: entries[top].f.fp.Path,
+					err: fmt.Errorf("diffpipe: no file fits the diff budget (soft limit %d, large_patch_policy %q): %w",
+						soft, policy, tokens.ErrDoesNotFit)}
 			}
 			body = []string{clipped}
 			inBody[top] = true
@@ -147,13 +148,14 @@ func compress(in Input, c *counter, groups []group) (*Prepared, error) {
 	// order; the deleted files dropped by handle_patch_deletions come first
 	// in the deleted list, as in upstream's section.
 	//
-	// Decision (lead; architect may override on PR #4): a deleted file on the compressed path has its patch
-	// dropped by design (handle_patch_deletions) and is shown only by name
-	// under "Deleted files:"; is it Included or Omitted? — chose
-	// Omitted.Deleted because its content is not in the text (Included means
-	// "content in Text"), it is listed exactly where upstream lists it, and
-	// P4's coverage section (X-3) then reports it as deleted, whether or not
-	// the budget left room for the section.
+	// X-20 (v1.1 spec WP-11e1) replaces the earlier decision (PR #4) that
+	// put every such file in Omitted.Deleted: a deleted file whose patch
+	// handle_patch_deletions drops is shown only by name under "Deleted
+	// files:". When its name is in the text, the model was shown the
+	// deletion and the file moves to DeletedListed below; when the section
+	// did not fit (or was clipped before its name), it stays in
+	// Omitted.Deleted. The text is built from the full list either way, so
+	// it is upstream's byte for byte.
 	p.Omitted.Deleted = append(p.Omitted.Deleted, deletedNames...)
 	for k, e := range entries {
 		if inBody[k] {
@@ -174,7 +176,20 @@ func compress(in Input, c *counter, groups []group) (*Prepared, error) {
 		}
 	}
 
-	p.Text = appendSections(c, strings.Join(body, separator), hard, p.Omitted)
+	var listed int
+	p.Text, listed = appendSections(c, strings.Join(body, separator), hard, p.Omitted)
+	// The deleted section lists deletedNames first, so the names that made
+	// it into the text are a prefix of the list. Only files dropped by the
+	// deletion handling move to DeletedListed; a deleted file that has a
+	// patch and was cut by the budget stays in Omitted.Deleted even when
+	// its name is listed, since its patch was not shown.
+	if n := min(listed, len(deletedNames)); n > 0 {
+		p.DeletedListed = slices.Clone(p.Omitted.Deleted[:n])
+		p.Omitted.Deleted = slices.Clip(p.Omitted.Deleted[n:])
+		if len(p.Omitted.Deleted) == 0 {
+			p.Omitted.Deleted = nil
+		}
+	}
 	if p.Text == "" {
 		return nil, fmt.Errorf("diffpipe: nothing fits the diff budget (hard limit %d): %w", hard, tokens.ErrDoesNotFit)
 	}
@@ -279,17 +294,21 @@ func clipToFit(c *counter, text string, soft int, factor float64) string {
 // appendSections is the omitted-file part of get_pr_diff: when more than
 // sectionHeadroom tokens remain below the hard limit, it builds the added,
 // modified and deleted sections (in that order) and appends each one, via
-// appendSection, while it still fits.
+// appendSection, while it still fits. It also returns how many names of
+// o.Deleted, from the start, are in the text in full (X-20): all of them
+// when the deleted section was appended whole, the complete lines before
+// the cut when it was clipped, none when it was not appended.
 //
 // Upstream's test is "remaining > delta_tokens" (strictly more than 10),
 // reproduced as such; spec §4.4.6 paraphrases it as "at least 10". With one
 // call the hard limit is always 500 above the soft one, so the test cannot
 // fail in v1; it is kept for parity.
-func appendSections(c *counter, diff string, hard int, o Omitted) string {
+func appendSections(c *counter, diff string, hard int, o Omitted) (string, int) {
 	cur := c.count(diff)
 	if hard-cur <= sectionHeadroom {
-		return diff
+		return diff, 0
 	}
+	deletedListed := 0
 	for _, s := range []struct {
 		header string
 		names  []string
@@ -304,19 +323,42 @@ func appendSections(c *counter, diff string, hard int, o Omitted) string {
 		// Upstream's format: the header (which ends in "\n"), then "\n"
 		// before every name, so the names follow one blank line.
 		section := s.header + "\n" + strings.Join(s.names, "\n")
-		diff, cur = appendSection(c, diff, cur, section, hard)
+		var appended string
+		diff, cur, appended = appendSection(c, diff, cur, section, hard)
+		if s.header == patch.DeletedFilesHeader && appended != "" {
+			deletedListed = namesListed(appended, s.header, s.names)
+		}
 	}
-	return diff
+	return diff, deletedListed
+}
+
+// namesListed counts the names, from the start, whose line is complete in
+// an appended section (whole or clipped by tokens.Clip). A clipped section
+// ends in tokens.TruncationMarker; the line before the marker counts only
+// when it equals its name, so a name cut in the middle is not listed.
+func namesListed(appended, header string, names []string) int {
+	body, ok := strings.CutPrefix(strings.TrimSuffix(appended, tokens.TruncationMarker), header+"\n")
+	if !ok {
+		return 0
+	}
+	lines := strings.Split(body, "\n")
+	n := 0
+	for n < len(names) && n < len(lines) && lines[n] == names[n] {
+		n++
+	}
+	return n
 }
 
 // appendSection is upstream's _append_metadata_section: the section is
 // clipped to the room left below the hard limit (minus the separator) and
 // appended only when the exact recount of the whole text (raw and
-// stripped) still fits. The running count becomes that recount.
-func appendSection(c *counter, diff string, cur int, section string, hard int) (string, int) {
+// stripped) still fits. The running count becomes that recount. The third
+// result is the section as appended (possibly clipped), or "" when it was
+// not appended.
+func appendSection(c *counter, diff string, cur int, section string, hard int) (string, int, string) {
 	budget := hard - cur - c.count(sectionSeparator)
 	if budget <= 0 {
-		return diff, cur
+		return diff, cur, ""
 	}
 	// Decision (lead; architect may override on PR #4): upstream's clip_tokens returns its first heuristic
 	// cut unverified, so a clipped section may estimate above budget and
@@ -327,11 +369,11 @@ func appendSection(c *counter, diff string, cur int, section string, hard int) (
 	// overshoots; the whole-text recount below is upstream's either way.
 	clipped := tokens.Clip(section, budget, c.factor, false)
 	if clipped == "" {
-		return diff, cur
+		return diff, cur, ""
 	}
 	candidate := diff + sectionSeparator + clipped
 	if c.fitsWithin(candidate, hard) {
-		return candidate, c.rawAndStripped(candidate)
+		return candidate, c.rawAndStripped(candidate), clipped
 	}
-	return diff, cur
+	return diff, cur, ""
 }

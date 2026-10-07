@@ -2,6 +2,7 @@ package llmrun
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -13,8 +14,9 @@ import (
 // prepared is a diff with every coverage category present once or twice.
 func prepared() *diffpipe.Prepared {
 	return &diffpipe.Prepared{
-		Included: []string{"a.go", "b.go"},
-		Clipped:  []string{"c.go"},
+		Included:      []string{"a.go", "b.go"},
+		Clipped:       []string{"c.go"},
+		DeletedListed: []string{"g.go", "h.go"},
 		Omitted: diffpipe.Omitted{
 			Added: []string{"d.go"}, Modified: []string{"e.go"}, Deleted: []string{"f.go"},
 		},
@@ -25,6 +27,7 @@ func prepared() *diffpipe.Prepared {
 			{Path: "gone.go", Reason: provider.SkipFetchFailed},
 			{Path: "renamed.go", Reason: diffpipe.SkipEmptyDiff},
 			{Path: "odd.patch", Reason: diffpipe.SkipUnparseablePatch},
+			{Path: "huge.go", Reason: diffpipe.SkipTooLarge},
 			{Path: "go.sum", Reason: provider.SkipFiltered},
 			{Path: "vendor/x.js", Reason: provider.SkipFiltered},
 		},
@@ -35,12 +38,13 @@ func prepared() *diffpipe.Prepared {
 // category, and reviewed + not reviewed == total.
 func TestCoverageAccounting(t *testing.T) {
 	c := BuildCoverage(prepared(), nil)
-	// reviewed: a, b. Not reviewed: clipped c; omitted d, e, f; skipped for
-	// size (big.sql), limit (many1.go), unreadable (gone.go, odd.patch).
-	// Outside the count: img.png (binary), renamed.go (empty diff) and the
-	// two filtered files.
+	// reviewed: a, b and the deletions listed by name g, h (X-20). Not
+	// reviewed: clipped c; omitted d, e, f; skipped for size (big.sql),
+	// limit (many1.go), too large for a chunk (huge.go), unreadable
+	// (gone.go, odd.patch). Outside the count: img.png (binary), renamed.go
+	// (empty diff) and the two filtered files.
 	want := Coverage{}
-	want.Partial, want.ReviewedFiles, want.NotReviewedFiles, want.TotalFiles = true, 2, 8, 10
+	want.Partial, want.ReviewedFiles, want.NotReviewedFiles, want.TotalFiles = true, 4, 9, 13
 	if c.Partial != want.Partial || c.ReviewedFiles != want.ReviewedFiles ||
 		c.NotReviewedFiles != want.NotReviewedFiles || c.TotalFiles != want.TotalFiles {
 		t.Errorf("counts = partial %v, reviewed %d, not reviewed %d, total %d; want %v, %d, %d, %d",
@@ -52,6 +56,70 @@ func TestCoverageAccounting(t *testing.T) {
 	}
 	if len(c.Filtered) != 2 {
 		t.Errorf("filtered = %v", c.Filtered)
+	}
+}
+
+// TestCoverageDeletedListedIsReviewed: X-20. A PR whose only deletions are
+// listed by name is complete; the JSON carries them as deleted_listed.
+func TestCoverageDeletedListedIsReviewed(t *testing.T) {
+	c := BuildCoverage(&diffpipe.Prepared{Included: []string{"a.go"}, DeletedListed: []string{"gone.go"}}, nil)
+	if c.Partial || c.ReviewedFiles != 2 || c.NotReviewedFiles != 0 || c.TotalFiles != 2 {
+		t.Errorf("listed deletion: %+v", c)
+	}
+	raw, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"deleted_listed":["gone.go"]`) {
+		t.Errorf("JSON lacks deleted_listed: %s", raw)
+	}
+	raw, _ = json.Marshal(BuildCoverage(&diffpipe.Prepared{}, nil))
+	if !strings.Contains(string(raw), `"deleted_listed":[]`) {
+		t.Errorf("empty deleted_listed is not an empty array: %s", raw)
+	}
+}
+
+// TestTrimCoverageDeletedListed: a listed deletion stays reviewed only while
+// its name is in the lines the guard kept; the others move to the front of
+// Omitted.Deleted, in the section's order.
+func TestTrimCoverageDeletedListed(t *testing.T) {
+	text := "\n\n## File: 'a.go'\n\n@@ -1 +1 @@\n__new hunk__\n1 +x\n\n\nDeleted files:\n\ng1.go\ng2.go\ng3.go"
+	lines := strings.Split(text, "\n")
+	at := func(name string) int {
+		for i, l := range lines {
+			if l == name {
+				return i
+			}
+		}
+		t.Fatalf("no line %q", name)
+		return 0
+	}
+	for _, tc := range []struct {
+		name         string
+		kept         int
+		listed, left []string
+	}{
+		{"all kept", len(lines), []string{"g1.go", "g2.go", "g3.go"}, []string{"cut.go"}},
+		{"cut after g2", at("g2.go") + 1, []string{"g1.go", "g2.go"}, []string{"g3.go", "cut.go"}},
+		{"cut at g1", at("g1.go"), []string{}, []string{"g1.go", "g2.go", "g3.go", "cut.go"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := Coverage{Included: []string{"a.go"}, Clipped: []string{}, DeletedListed: []string{"g1.go", "g2.go", "g3.go"},
+				Omitted: OmittedFiles{Deleted: []string{"cut.go"}}}
+			TrimCoverage(&c, text, tc.kept, map[string]provider.ChangeType{"a.go": provider.ChangeModified})
+			if !slices.Equal(c.DeletedListed, tc.listed) || !slices.Equal(c.Omitted.Deleted, tc.left) {
+				t.Errorf("DeletedListed %q, Omitted.Deleted %q; want %q, %q", c.DeletedListed, c.Omitted.Deleted, tc.listed, tc.left)
+			}
+			if c.ReviewedFiles != 1+len(tc.listed) || c.ReviewedFiles+c.NotReviewedFiles != c.TotalFiles {
+				t.Errorf("summary: reviewed %d, not reviewed %d, total %d", c.ReviewedFiles, c.NotReviewedFiles, c.TotalFiles)
+			}
+		})
+	}
+	// Without the section in the text no name is reported as listed.
+	c := Coverage{Included: []string{}, Clipped: []string{}, DeletedListed: []string{"g1.go"}}
+	TrimCoverage(&c, "\n\n## File: 'a.go'\n", 2, nil)
+	if len(c.DeletedListed) != 0 || !slices.Equal(c.Omitted.Deleted, []string{"g1.go"}) {
+		t.Errorf("no section: %+v", c)
 	}
 }
 

@@ -74,3 +74,36 @@ func rank(files []*file) []group {
 	})
 	return groups
 }
+
+// rankOrder returns the language order of the DQ-2 ranking of files.
+func rankOrder(files []provider.FilePatch) []string {
+	fs := make([]*file, len(files))
+	for i := range files {
+		fs[i] = &file{fp: &files[i]}
+	}
+	groups := rank(fs)
+	order := make([]string, len(groups))
+	for i, g := range groups {
+		order[i] = g.lang
+	}
+	return order
+}
+
+// orderGroups sorts groups into the language order given (the ranking of a
+// larger file set, see PrepareChunks). A subset of the files can weigh
+// differently from the whole, so rank alone could reorder the groups of a
+// later chunk. A language missing from order (not expected) goes last, in
+// rank order.
+func orderGroups(groups []group, order []string) {
+	pos := make(map[string]int, len(order))
+	for i, lang := range order {
+		pos[lang] = i
+	}
+	at := func(lang string) int {
+		if i, ok := pos[lang]; ok {
+			return i
+		}
+		return len(order)
+	}
+	slices.SortStableFunc(groups, func(a, b group) int { return at(a.lang) - at(b.lang) })
+}

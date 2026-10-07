@@ -23,6 +23,10 @@ const (
 	reasonBudgetAdded = "Left out to fit the context window (added files)"
 	reasonBudgetMod   = "Left out to fit the context window (modified files)"
 	reasonBudgetDel   = "Left out to fit the context window (deleted files)"
+	// textDeletedListed heads the deleted files whose patch the diff drops
+	// by design and whose names the model was shown (X-20); they count as
+	// reviewed.
+	textDeletedListed = "Deleted (listed by name)"
 )
 
 // PartialBanner returns the X-18 banner of a partial result, or "" for a
@@ -68,10 +72,11 @@ type coverageGroup struct {
 }
 
 // Coverage writes the coverage section (X-3), which is always present:
-// the included and omitted counts, then the files that are clipped or
-// omitted, grouped by reason. At most MaxListedFiles files are listed
-// across all groups; the rest are counted ("and N more"). Everything is
-// plain markdown (no HTML).
+// the included and omitted counts (and the count of deletions listed by
+// name, when there are any), then the files that are clipped, listed by
+// name or omitted, grouped by reason. At most MaxListedFiles files are
+// listed across all groups; the rest are counted ("and N more").
+// Everything is plain markdown (no HTML).
 func Coverage(b *strings.Builder, heading string, c *llmrun.Coverage) {
 	included := len(c.Included) + len(c.Clipped)
 	budget := len(c.Omitted.Added) + len(c.Omitted.Modified) + len(c.Omitted.Deleted)
@@ -82,12 +87,16 @@ func Coverage(b *strings.Builder, heading string, c *llmrun.Coverage) {
 	if n := len(c.Clipped); n > 0 {
 		b.WriteString(" (" + strconv.Itoa(n) + " in part only, clipped to fit the context window)")
 	}
+	if n := len(c.DeletedListed); n > 0 {
+		b.WriteString("\n- " + textDeletedListed + ": " + strconv.Itoa(n) + " " + plural(n))
+	}
 	b.WriteString("\n- Omitted: " + strconv.Itoa(omitted) + " " + plural(omitted) + "\n")
 
 	var groups []coverageGroup
 	if len(c.Clipped) > 0 {
 		groups = append(groups, coverageGroup{"Included in part only (clipped to fit the context window)", c.Clipped})
 	}
+	groups = appendGroup(groups, textDeletedListed, c.DeletedListed)
 	groups = appendGroup(groups, reasonBudgetAdded, c.Omitted.Added)
 	groups = appendGroup(groups, reasonBudgetMod, c.Omitted.Modified)
 	groups = appendGroup(groups, reasonBudgetDel, c.Omitted.Deleted)

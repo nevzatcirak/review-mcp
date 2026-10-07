@@ -154,6 +154,10 @@ did **not** see. Every changed file appears in exactly one group:
 
 - **Included**: the diff was sent in full.
 - **Clipped**: only part of the diff was sent (a very large file was cut to fit).
+- **Deleted (listed by name)**: a deleted file whose patch was left out on
+  purpose (the compressed diff drops the removed lines of deleted files) and
+  whose name was sent in the diff's list of deleted files. The model was told
+  the file is deleted, so it counts as reviewed.
 - **Omitted**: left out to fit the context window; grouped as added, modified
   and deleted files. If many, only the first 50 are listed, then "and N more".
 - **Skipped**: not reviewable, with a reason: `binary`, `file_limit`
@@ -168,7 +172,8 @@ Raise `llm.context_window`, narrow the PR, or adjust `ignore.*`. If nothing
 reviewable remains after filtering, the model is not called and the review
 says "No reviewable changes after filtering."
 
-The structured `coverage` object also carries the counts behind the
+The structured `coverage` object also carries `deleted_listed` (the deleted
+files listed by name) and the counts behind the
 [partial banner](#partial-reviews): `partial`, `reviewed_files`, `total_files`
 and `not_reviewed_files`.
 
@@ -180,9 +185,9 @@ clipped, skipped by the provider because it is too large (`size_limit`,
 `file_limit`) or could not be read (`fetch_failed`, `unparseable_patch`).
 Files excluded on purpose (the **Filtered** group) do not make a review
 partial, and neither do binary files and files without a text change (a pure
-rename), which have nothing to review. Deleted files that were left out do
-count: the coverage section lists them as left out, and the model saw at most
-their names.
+rename), which have nothing to review. A deleted file listed by name counts as
+reviewed; a deleted file that was left out (its name did not fit either) does
+count as not reviewed.
 
 A partial review leads with this line, before everything else (in the MCP
 text it is the first line, before `## PR Review`):
@@ -202,7 +207,8 @@ concerns identified in the reviewed files" and "No key issues found in the
 reviewed files". A complete review keeps the plain sentences.
 
 The structured result has the counts: `coverage.partial`,
-`coverage.reviewed_files` (fully included files), `coverage.total_files` (the
+`coverage.reviewed_files` (fully included files and deleted files listed by
+name), `coverage.total_files` (the
 files with a reviewable change) and `coverage.not_reviewed_files`
 (omitted, clipped, skipped for size and unreadable files);
 `reviewed_files + not_reviewed_files == total_files`. `job_result` returns the

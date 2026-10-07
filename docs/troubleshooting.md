@@ -147,8 +147,9 @@ Flags (they may come before or after the URL):
   "fast_path": false,
   "tokens": 1454,
   "included": ["server/app.go", "server/util.go", "server/fresh.go"],
-  "omitted": { "added": [], "modified": ["server/renamed.go", "web/index.ts"], "deleted": ["server/gone.go"] },
+  "omitted": { "added": [], "modified": ["server/renamed.go", "web/index.ts"], "deleted": [] },
   "clipped": [],
+  "deleted_listed": ["server/gone.go"],
   "skipped": [],
   "filtered": [
     { "path": "package-lock.json", "reason": "lockfile_or_minified" },
@@ -185,8 +186,9 @@ Every changed file appears in exactly one of these lists:
 | List | Meaning |
 |---|---|
 | `included` | The file's full diff is in the text, in output order. |
-| `omitted.added`, `omitted.modified`, `omitted.deleted` | The file's diff is not in the text because of the budget (renamed files count as modified). On the compressed path every deleted file is listed here, because its patch is dropped on purpose. |
+| `omitted.added`, `omitted.modified`, `omitted.deleted` | The file's diff is not in the text because of the budget (renamed files count as modified). A deleted file is here only when its name is not in the text either. |
 | `clipped` | The file is in the text but cut short with `...(truncated)` (see `large_patch_policy` below). |
+| `deleted_listed` | A deleted file whose patch the compressed path drops on purpose and whose name is in the "Deleted files" section of the text. It counts as reviewed. |
 | `skipped` | The file was not processed for a reason other than the budget (table below). |
 | `filtered` | The file filter excluded it before it was fetched. `reason` says which rule matched. |
 

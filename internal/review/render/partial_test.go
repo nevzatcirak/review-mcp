@@ -179,3 +179,29 @@ func TestPartialBannerIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// TestCoverageDeletedListed: X-20. Deleted files listed by name are counted
+// as reviewed (no banner) and listed under their own heading, apart from
+// the files left out.
+func TestCoverageDeletedListed(t *testing.T) {
+	cov := completeCoverage()
+	cov.DeletedListed = []string{"old/gone.go", "old/removed.go"}
+	cov.Finalize()
+	for name, render := range profiles() {
+		out := render(noFindingsResult(cov))
+		if strings.Contains(out, "Partial review") {
+			t.Errorf("%s: listed deletions made the review partial\n%s", name, out)
+		}
+		for _, want := range []string{
+			"- Included: 2 files\n- Deleted (listed by name): 2 files\n- Omitted: 2 files\n",
+			"Deleted (listed by name) (2):\n\n- `old/gone.go`\n- `old/removed.go`\n",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("%s: want %q in\n%s", name, want, out)
+			}
+		}
+		if strings.Contains(out, "deleted files)") {
+			t.Errorf("%s: listed deletions shown as left out\n%s", name, out)
+		}
+	}
+}

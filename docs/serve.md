@@ -1,6 +1,6 @@
 # Serve mode
 
-`review-mcp serve` runs the same tools over HTTP, for a team that shares one
+`review-mcp serve` runs the same tools over HTTP (six: everything stdio has except `job_result`, see [Long calls](#long-calls)), for a team that shares one
 server instead of everyone running a local process. The default transport,
 stdio, is described in the [Setup guide](setup.md).
 
@@ -302,7 +302,8 @@ In stdio mode a slow `pr_review` or `pr_ask` answers with a `job_id` after
 A background job would outlive its request, and with it the credentials the
 request carried. Serve mode never keeps those beyond the request. Give your
 client a tool timeout that fits your model, and set `llm.timeout_seconds` to
-match.
+match. A client that reports `-32001 Request timed out` gave up on its own
+timeout: raise that timeout in the client.
 
 ## Errors specific to serve mode
 

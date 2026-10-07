@@ -217,6 +217,41 @@ no built-in default for the URL or the model; the window size is read from the e
 The pull request's title, description and diff are sent to this endpoint when
 you call `pr_review` or `pr_ask`. Use an endpoint you trust with that code.
 
+### Context window auto-detection
+
+Leave `REVIEW_MCP_LLM_CONTEXT_WINDOW` unset and review-mcp asks the endpoint
+once per process: `GET {llm.base_url}/models`, then the entry whose `id` is
+exactly `llm.model`. It reads the first of these fields that holds a positive
+integer, in this order: `max_model_len`, `context_length`, `context_window`,
+`max_context_length`. It uses 90 % of that value, rounded down, with a floor of
+4096. Training-size fields such as `n_ctx_train` are never used: a server often
+serves a smaller context than the model was trained with. `server_info` shows
+the resolved value and where it came from.
+
+If the endpoint does not list the model, or lists it without any of those
+fields, the call fails with a sentence that names the key to change (see
+[Troubleshooting](troubleshooting.md#every-error-sentence)); review-mcp never
+guesses. Then set `REVIEW_MCP_LLM_CONTEXT_WINDOW` yourself. A value you set
+always wins, and the endpoint is not asked.
+
+Ollama's `/v1/models` does not report the served context. Set
+`llm.context_window` to the `num_ctx` you run the model with.
+
+### Local models and slow endpoints
+
+A local model can take minutes on a large prompt. Two settings help:
+
+- `diff.max_tokens` (`REVIEW_MCP_DIFF_MAX_TOKENS`, at least 1000, unset by
+  default) caps the diff below what the context window allows, for example
+  `24000`. Reviews get snappier; the files that no longer fit are listed as
+  omitted in the coverage section.
+- Leave `llm.wait_seconds` (`REVIEW_MCP_LLM_WAIT_SECONDS`, default 45) at its
+  default. A call that is not done after that long answers with a `job_id` and
+  the review continues in the background; `job_result` collects it
+  ([Slow endpoints](review.md#slow-endpoints)).
+
+`llm.timeout_seconds` (default 300) bounds one request to the model.
+
 ### `context_window` and `max_output_tokens`
 
 - Set `context_window` to the window your server really runs, not the largest
@@ -227,7 +262,8 @@ you call `pr_review` or `pr_ask`. Use an endpoint you trust with that code.
   `context_window - (max(max_output_tokens, 1000) + 500) - prompt tokens`.
   When you set it, it is also sent to the endpoint as the completion limit.
 - Too small a window is not an error until nothing is left for the diff; large
-  pull requests then lose files, which the review lists as omitted.
+  pull requests then lose files, which the review lists as omitted. `diff.max_tokens` can lower the diff
+  budget further.
 
 The derivation is in [Getting started](getting-started.md#how-the-context-window-shapes-the-diff-budget)
 and [Reviewing pull requests](review.md).

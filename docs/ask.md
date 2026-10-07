@@ -157,7 +157,7 @@ call (the LLM API key must be set, but it is not used).
 {
   "dry_run": true,
   "empty": false,
-  "budget": { "context_window": 32000, "soft_limit": 28300, "hard_limit": 28800, "prompt_tokens": 2200, "factor": 0.3 },
+  "budget": { "context_window": 32000, "soft_limit": 28300, "hard_limit": 28800, "prompt_tokens": 2200, "factor": 0.3, "limit": "context_window" },
   "tokens": { "prompt": 2200, "diff": 5120, "request": 7380, "context_window": 32000 },
   "fast_path": true,
   "coverage": { "included": ["src/app.go"], "clipped": [], "omitted": { "added": [], "modified": [], "deleted": [] }, "skipped": [], "filtered": [] },

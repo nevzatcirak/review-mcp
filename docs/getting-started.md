@@ -61,6 +61,7 @@ The room left for the pull request's diff is computed from them:
 | soft reserve | hard reserve + 500 |
 | soft limit | `context_window` - soft reserve - prompt tokens |
 | hard limit | `context_window` - hard reserve - prompt tokens |
+| cap (optional) | `diff.max_tokens`: when set, the soft limit is the smaller of the formula above and this value, and the hard limit is at most the cap + 500 |
 
 "Prompt tokens" is the size of the review instructions, title and
 description around the diff (about 1600 to 2200 tokens for the instructions
@@ -70,6 +71,17 @@ admitted largest-first until it is reached). The hard limit is a ceiling that
 stops further additions. For example, with a 32000-token window, no
 `max_output_tokens` and 2205 prompt tokens, the soft limit is
 32000 - 1500 - 2205 = 28295 tokens.
+
+`llm.timeout_seconds` (default 300) bounds one request to the model. A large
+context window does not make a request faster: a local model that takes minutes
+on a 100000-token prompt answers sooner on a smaller one. Set `diff.max_tokens`
+(`REVIEW_MCP_DIFF_MAX_TOKENS`, at least 1000, unset by default) to cap the diff
+below what the window allows, for example `24000`. The prompt scaffolding and
+the reserves are unchanged, and the files that no longer fit are listed as
+omitted in the coverage section, as with a small window. `diag diff` and
+`diag review --dry-run` print `budget.limit`, which is `context_window` or
+`diff.max_tokens`, whichever bounds the soft limit, and `budget.max_diff_tokens`
+when the cap is set.
 
 Token counts come from a built-in estimator that works offline. It is exact
 only for OpenAI-style tokenizers, so every count is multiplied by
@@ -134,6 +146,7 @@ If `command` is not found, use the absolute path to the binary.
 | `pr_comment_create` | Posts a new comment on a pull request, PR-level or on a changed line (`file` and `line`). |
 | `pr_review` | Reviews a pull request with your LLM; see [Reviewing pull requests](review.md). The PR's title, description, existing comments and diff are sent to `llm.base_url`. |
 | `pr_ask` | Answers a question about a pull request with your LLM, grounded in its title, description and diff; see [Asking questions](ask.md). The PR content and the question are sent to `llm.base_url`. |
+| `job_result` | stdio only. Returns the result of a `pr_review` or `pr_ask` call that answered with a `job_id` because it took longer than `wait_seconds`; see [Slow endpoints](review.md#slow-endpoints). |
 
 For reviews, the recommended sampling setting is `REVIEW_MCP_LLM_TEMPERATURE=0.2`
 (it is not sent unless you set it).

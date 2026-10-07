@@ -5,6 +5,47 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc.3]
+
+Third release candidate. It is for slow and local models: the context window can
+come from the endpoint, long reviews no longer hit the client timeout, and the
+diff can be capped. It is validated by the V1 acceptance run (section J) before
+v1.0.0.
+
+### Added
+
+- The context window from the endpoint: `llm.context_window` is now optional.
+  When it is unset, review-mcp asks `GET {llm.base_url}/models` once per
+  process and uses 90 % of the window the entry for `llm.model` reports (the
+  first of `max_model_len`, `context_length`, `context_window`,
+  `max_context_length`; 4096 at least). Training-size fields are never used. A
+  set value always wins, and when the endpoint reports no window the call fails
+  with a sentence naming `llm.context_window`. Ollama does not report the served
+  context, so set it there. `server_info` shows the resolved value and its
+  source, and `diag diff --context-window N` works without an LLM.
+- Background jobs for long calls (stdio only). `pr_review` and `pr_ask` wait at
+  most `wait_seconds` (argument or `llm.wait_seconds`,
+  `REVIEW_MCP_LLM_WAIT_SECONDS`, default 45, 0 to 600) and then answer with a
+  running status and a `job_id`; the run continues in the server, and
+  `publish=true` still posts. The new seventh tool `job_result` returns the
+  finished result exactly as the original tool would have, or the running status
+  again. At most 4 jobs run at once; results are kept for 30 minutes, at most
+  64, in memory only. A fast run returns exactly what it did before. Serve mode
+  has no jobs and ignores `wait_seconds`.
+- `diff.max_tokens` (`REVIEW_MCP_DIFF_MAX_TOKENS`, at least 1000, unset by
+  default) caps the diff budget below the context window, for `pr_review` and
+  `pr_ask`. Files that no longer fit are listed in the coverage section. `diag
+  diff` and `diag review --dry-run` report which limit applied
+  (`budget.limit`).
+
+### Changed
+
+- `llm.timeout_seconds` defaults to 300 (was 120), which local models need on
+  large prompts.
+- `pr_review`, `pr_ask` and `job_result` declare a root `oneOf` output schema
+  (the result or the running status). If a client rejects it, a later candidate
+  drops the schema in stdio and keeps the structured content (acceptance J2).
+
 ## [1.0.0-rc.2]
 
 Second release candidate. It adds conversation-aware reviews: findings on their
@@ -114,5 +155,6 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[1.0.0-rc.3]: https://github.com/nevzatcirak/review-mcp/releases/tag/v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/nevzatcirak/review-mcp/releases/tag/v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v1.0.0-rc.1

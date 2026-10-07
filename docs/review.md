@@ -76,7 +76,13 @@ soft limit = context_window - max(max_output_tokens, 1000) - 500 - prompt tokens
 
 `llm.max_output_tokens` is optional. If you set it, make it generous enough for
 a review with all fields enabled and several findings (a few thousand tokens);
-an answer cut off by the limit is reported in the notes. See
+an answer cut off by the limit is reported in the notes.
+
+`diff.max_tokens` (`REVIEW_MCP_DIFF_MAX_TOKENS`, at least 1000, unset by
+default) caps the diff budget below that: the soft limit is the smaller of the
+formula and the cap. Use it when a large window makes requests slow (for a
+local model, `24000` is a reasonable start). Files that no longer fit are
+listed under Omitted, as with a small window; `pr_ask` uses the same cap. See
 [Getting started](getting-started.md#how-the-context-window-shapes-the-diff-budget)
 for the full table.
 
@@ -364,7 +370,7 @@ review (the LLM API key must be set, but it is not used).
   "dry_run": true,
   "pr": { "kind": "gitea", "url": "https://your-gitea.example/octo/demo/pulls/7", "number": 7, "title": "Add feature" },
   "empty": false,
-  "budget": { "context_window": 32000, "soft_limit": 28200, "hard_limit": 28700, "prompt_tokens": 2300, "factor": 0.3 },
+  "budget": { "context_window": 32000, "soft_limit": 28200, "hard_limit": 28700, "prompt_tokens": 2300, "factor": 0.3, "limit": "context_window" },
   "tokens": { "prompt": 2300, "diff": 5120, "request": 7480, "context_window": 32000 },
   "fast_path": true,
   "coverage": { "included": ["src/app.go"], "clipped": [], "omitted": { "added": [], "modified": [], "deleted": [] }, "skipped": [], "filtered": [] },
@@ -373,8 +379,10 @@ review (the LLM API key must be set, but it is not used).
 }
 ```
 
-`tokens.request` is the estimate of the whole request; compare it with
-`context_window`. If `fast_path` is false, the diff did not fit whole and the
+`budget.limit` says what bounds the soft limit: `context_window`, or
+`diff.max_tokens` when that cap is set and lower (the report then also has
+`budget.max_diff_tokens`). `tokens.request` is the estimate of the whole
+request; compare it with `context_window`. If `fast_path` is false, the diff did not fit whole and the
 coverage lists what was clipped or omitted. To see the effect of a smaller
 window, set `REVIEW_MCP_LLM_CONTEXT_WINDOW` for one run.
 

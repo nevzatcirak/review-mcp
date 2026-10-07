@@ -19,6 +19,10 @@ type fakeLLM struct {
 	hits   atomic.Int64
 	status int
 	answer string
+	// modelsBody is the answer to GET .../models (the context-window
+	// probe); modelsStatus, when non-zero, fails it with that status.
+	modelsBody   string
+	modelsStatus int
 
 	mu     sync.Mutex
 	bodies []string
@@ -35,6 +39,15 @@ func newFakeLLM(t *testing.T, status int, answer string) *fakeLLM {
 		f.bodies = append(f.bodies, string(b))
 		f.auths = append(f.auths, r.Header.Get("Authorization"))
 		f.mu.Unlock()
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/models") {
+			if f.modelsStatus != 0 {
+				http.Error(w, "denied "+diagMarker+" "+fakeLLMKey, f.modelsStatus)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(f.modelsBody))
+			return
+		}
 		if f.status != http.StatusOK {
 			http.Error(w, "denied "+diagMarker+" "+fakeLLMKey, f.status)
 			return

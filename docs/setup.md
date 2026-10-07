@@ -204,14 +204,14 @@ enabled. More about base URLs, CA certificates and the context path is in
 ## 3. Choose the LLM endpoint
 
 review-mcp works with any OpenAI-compatible chat-completions endpoint. It has
-no built-in default for the URL, the model or the window size.
+no built-in default for the URL or the model; the window size is read from the endpoint unless you set it.
 
 | Variable | Example | Notes |
 |---|---|---|
 | `REVIEW_MCP_LLM_BASE_URL` | `https://llm.example.com/v1` | `/chat/completions` is appended to it |
 | `REVIEW_MCP_LLM_MODEL` | `your-model-name` | the model name your endpoint expects |
 | `REVIEW_MCP_LLM_API_KEY` | (secret) | sent as a bearer token |
-| `REVIEW_MCP_LLM_CONTEXT_WINDOW` | `32000` | the real size of the window, in tokens (at least 4096) |
+| `REVIEW_MCP_LLM_CONTEXT_WINDOW` | `32000` | optional; the real size of the window, in tokens (at least 4096). Unset: read from the endpoint's model list |
 | `REVIEW_MCP_LLM_MAX_OUTPUT_TOKENS` | `2000` | optional; how long an answer you allow |
 
 The pull request's title, description and diff are sent to this endpoint when

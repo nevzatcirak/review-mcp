@@ -59,9 +59,11 @@ with that code.
 
 ## Choosing `llm.context_window`
 
-review-mcp has no model registry: tell it the real context window, in tokens,
-with `llm.context_window` (`REVIEW_MCP_LLM_CONTEXT_WINDOW`, at least 4096).
-Use the limit your server actually runs the model with; some servers start a
+review-mcp has no model registry. When `llm.context_window` is unset it reads
+the window from the endpoint (`GET {llm.base_url}/models`, 90 % of the value
+reported for `llm.model`); to set it yourself, give the real context window,
+in tokens, with `llm.context_window` (`REVIEW_MCP_LLM_CONTEXT_WINDOW`, at least
+4096), which always wins. Use the limit your server actually runs the model with; some servers start a
 model with less than it supports.
 
 The diff gets what is left after the output reserve and the prompt:

@@ -30,7 +30,7 @@ type Config struct {
 type LLM struct {
 	BaseURL             string   `toml:"base_url" json:"base_url"`
 	Model               string   `toml:"model" json:"model"`
-	ContextWindow       int      `toml:"context_window" json:"context_window"` // required; 0 means unset
+	ContextWindow       int      `toml:"context_window" json:"context_window"` // optional (X-15); 0 means unset, resolved from the endpoint
 	MaxOutputTokens     *int     `toml:"max_output_tokens" json:"max_output_tokens"`
 	Temperature         *float64 `toml:"temperature" json:"temperature"`
 	Seed                *int64   `toml:"seed" json:"seed"`

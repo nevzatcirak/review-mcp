@@ -26,6 +26,7 @@ const diagUsageText = `usage:
   review-mcp diag comments <PR_URL> [--include-resolved]
   review-mcp diag reply <PR_URL> --comment-id <ID> --body <TEXT>
   review-mcp diag diff <PR_URL> [--mode plain|numbered] [--prompt-tokens N]
+                       [--context-window N]
   review-mcp diag review <PR_URL> [--dry-run] [--show-prompt] [--publish]
   review-mcp diag ask <PR_URL> --question <TEXT> [--dry-run] [--show-prompt] [--publish]
 
@@ -43,12 +44,17 @@ diag diff     run the diff pipeline (provider, file filter, token budget) and
               exact diff text a review would embed; --mode picks the render
               format (default plain); --prompt-tokens N is the estimated size
               of the prompt scaffolding in tokens (default 2205, the measured
-              maximum of the review prompts)
+              maximum of the review prompts); --context-window N overrides
+              llm.context_window and needs no LLM access (without it and
+              without llm.context_window, the window is read from the
+              endpoint)
 diag review   review the pull request with the configured LLM and print the
               client markdown; --publish also posts it as a PR comment.
               --dry-run runs everything up to the model call, prints a JSON
               report (prompt, diff and request tokens, budget, coverage) and
-              sends nothing to the model; it cannot be combined with
+              sends no completion to the model (with llm.context_window
+              unset it still lists the endpoint's models once to read the
+              window); it cannot be combined with
               --publish. --show-prompt prints the rendered system and user
               prompts to stdout after the output, under separator lines
               (they are never logged)

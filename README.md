@@ -81,9 +81,10 @@ see the [changelog](CHANGELOG.md).
    **Local OpenAI-compatible endpoint.** For a locally hosted server (for
    example `REVIEW_MCP_LLM_BASE_URL=http://localhost:8080/v1`), the API key is
    still required but may be any non-empty placeholder if your server ignores
-   it. Set `REVIEW_MCP_LLM_CONTEXT_WINDOW` (`llm.context_window`) to the
-   context size your server is actually configured with, not the model's
-   maximum.
+   it. The context window is read from the endpoint's model list when
+   `REVIEW_MCP_LLM_CONTEXT_WINDOW` (`llm.context_window`) is unset; set it to
+   the context size your server is actually configured with, not the model's
+   maximum, when the endpoint does not report it.
 
 3. Ask the client to call `server_info`, then to review a pull request without
    publishing it. The [Setup guide](docs/setup.md) walks through the first run,

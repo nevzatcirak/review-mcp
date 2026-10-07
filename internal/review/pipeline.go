@@ -12,6 +12,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/diffpipe"
 	"github.com/nevzatcirak/review-mcp/internal/filter"
 	"github.com/nevzatcirak/review-mcp/internal/llm"
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/prompt"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
@@ -274,6 +275,13 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The context window comes from llm.context_window or, when unset, from
+	// the endpoint (X-15). The probe runs before any provider request, so a
+	// failing probe sends nothing to the provider.
+	window, _, err := llmrun.ContextWindow(ctx, cfg, deps.LLM)
+	if err != nil {
+		return nil, err
+	}
 	pr, err := p.GetPullRequest(ctx, ref)
 	if err != nil {
 		return nil, err
@@ -312,7 +320,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		return nil, err
 	}
 	budget := tokens.Budget{
-		ContextWindow:   cfg.LLM.ContextWindow,
+		ContextWindow:   window,
 		MaxOutputTokens: cfg.LLM.MaxOutputTokens,
 		PromptTokens:    promptTokens,
 		Factor:          factor,
@@ -348,7 +356,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		Notes:         []string{},
 		EnabledFields: []string{},
 		Metadata: Metadata{
-			Model: cfg.LLM.Model, ContextWindow: cfg.LLM.ContextWindow, PromptTokens: promptTokens,
+			Model: cfg.LLM.Model, ContextWindow: window, PromptTokens: promptTokens,
 			DiffTokens: prep.Tokens, FastPath: prep.FastPath, ReviewedAt: reviewedAt(deps.Clock),
 			// The threads shown to the model: the review cannot know which
 			// of its findings the discussion made it drop.

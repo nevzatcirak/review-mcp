@@ -34,7 +34,7 @@ named by `REVIEW_MCP_CONFIG`). Secrets are read from the environment only.
 |---|---|---|
 | `REVIEW_MCP_LLM_BASE_URL` | `https://llm.example.com/v1` | OpenAI-compatible endpoint |
 | `REVIEW_MCP_LLM_MODEL` | `your-model-name` | |
-| `REVIEW_MCP_LLM_CONTEXT_WINDOW` | `32000` | at least 4096 |
+| `REVIEW_MCP_LLM_CONTEXT_WINDOW` | `32000` | optional, at least 4096; when unset, read from the endpoint |
 | `REVIEW_MCP_LLM_API_KEY` | (secret) | required |
 | `REVIEW_MCP_GITEA_BASE_URL` | `https://your-gitea.example` | enables the Gitea provider |
 | `REVIEW_MCP_GITEA_TOKEN` | (secret) | required when Gitea is enabled |
@@ -47,9 +47,11 @@ profile, a secret manager, or the client's own secret mechanism.
 
 ## How the context window shapes the diff budget
 
-review-mcp has no model registry, so it does not know how large your model's
-window is: you tell it with `llm.context_window` (`REVIEW_MCP_LLM_CONTEXT_WINDOW`,
-at least 4096). Optionally, `llm.max_output_tokens`
+review-mcp has no model registry. It reads the window from your endpoint
+(`GET {llm.base_url}/models`, 90 % of the value the entry for `llm.model`
+reports), or you set it with `llm.context_window` (`REVIEW_MCP_LLM_CONTEXT_WINDOW`,
+at least 4096), which always wins. If the endpoint does not report a window,
+a call fails and asks you to set `llm.context_window`. Optionally, `llm.max_output_tokens`
 (`REVIEW_MCP_LLM_MAX_OUTPUT_TOKENS`) says how many tokens you allow the answer.
 The room left for the pull request's diff is computed from them:
 

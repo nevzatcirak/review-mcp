@@ -15,8 +15,11 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/diffpipe"
 	"github.com/nevzatcirak/review-mcp/internal/filter"
+	"github.com/nevzatcirak/review-mcp/internal/llm"
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/review"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 	"github.com/nevzatcirak/review-mcp/internal/wiring"
 )
@@ -60,6 +63,7 @@ func runDiagDiff(rest []string, stdout, stderr io.Writer, load configLoader) int
 	fs.Usage = func() { diagUsage(stderr) }
 	modeStr := fs.String("mode", "plain", "render `mode`: plain or numbered")
 	promptStr := fs.String("prompt-tokens", strconv.Itoa(defaultPromptTokens), "estimated prompt scaffolding `N` in tokens (default: the measured maximum of the review prompts)")
+	windowStr := fs.String("context-window", "", "context window `N` in tokens; overrides llm.context_window and needs no LLM access (default: llm.context_window, else the endpoint's)")
 	prURL, ok := parseDiagArgs(fs, rest, stderr)
 	if !ok {
 		return 2
@@ -76,9 +80,24 @@ func runDiagDiff(rest []string, stdout, stderr io.Writer, load configLoader) int
 		diagUsage(stderr)
 		return 2
 	}
+	window := 0
+	if *windowStr != "" {
+		n, err := strconv.Atoi(*windowStr)
+		if err != nil || n < llm.MinContextWindow {
+			_, _ = fmt.Fprintf(stderr, "diag diff: --context-window must be an integer >= %d\n", llm.MinContextWindow)
+			diagUsage(stderr)
+			return 2
+		}
+		window = n
+	}
 	cfg, logger, code := diagSetup(load, stderr)
 	if cfg == nil {
 		return code
+	}
+	if window > 0 {
+		// The flag overrides llm.context_window; with it no LLM request is
+		// made.
+		cfg.LLM.ContextWindow = window
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -172,6 +191,20 @@ func diagDiff(ctx context.Context, cfg *config.Config, logger *slog.Logger, prUR
 	if err != nil {
 		return reportError(stderr, err)
 	}
+	// An unset llm.context_window is resolved from the endpoint before any
+	// provider request (X-15); a set one, or --context-window, needs no
+	// LLM access.
+	var client review.Completer
+	if cfg.LLM.ContextWindow == 0 {
+		if client, err = wiring.NewLLM(cfg, logger); err != nil {
+			return reportError(stderr, err)
+		}
+		defer closeIdle(client)
+	}
+	window, _, err := llmrun.ContextWindow(ctx, cfg, client)
+	if err != nil {
+		return reportError(stderr, err)
+	}
 	pr, err := p.GetPullRequest(ctx, ref)
 	if err != nil {
 		return reportError(stderr, err)
@@ -181,7 +214,7 @@ func diagDiff(ctx context.Context, cfg *config.Config, logger *slog.Logger, prUR
 		return reportError(stderr, err)
 	}
 	budget := tokens.Budget{
-		ContextWindow:   cfg.LLM.ContextWindow,
+		ContextWindow:   window,
 		MaxOutputTokens: cfg.LLM.MaxOutputTokens,
 		PromptTokens:    promptTokens,
 		Factor:          cfg.LLM.TokenEstimateFactor,

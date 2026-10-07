@@ -84,7 +84,6 @@ func TestRequiredMissingListsAllInOneError(t *testing.T) {
 	for _, want := range []string{
 		"llm.base_url is required",
 		"llm.model is required",
-		"llm.context_window is required",
 		"REVIEW_MCP_LLM_API_KEY is required",
 		"no provider enabled",
 	} {
@@ -92,8 +91,12 @@ func TestRequiredMissingListsAllInOneError(t *testing.T) {
 			t.Errorf("missing problem %q in %v", want, probs)
 		}
 	}
-	if len(probs) != 5 {
-		t.Errorf("got %d problems, want exactly 5: %v", len(probs), probs)
+	if len(probs) != 4 {
+		t.Errorf("got %d problems, want exactly 4: %v", len(probs), probs)
+	}
+	// X-15: llm.context_window is optional, so its absence is not a problem.
+	if hasProblem(probs, "llm.context_window") {
+		t.Errorf("an unset llm.context_window must be valid: %v", probs)
 	}
 	if !strings.Contains(err.Error(), "llm.model is required") || !strings.Contains(err.Error(), "no provider enabled") {
 		t.Errorf("Error() must join all problems: %v", err)

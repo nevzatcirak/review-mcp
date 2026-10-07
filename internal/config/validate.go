@@ -68,7 +68,7 @@ func (l *loader) validateLLM() {
 	switch {
 	case l.bad["llm.context_window"]:
 	case c.ContextWindow == 0:
-		l.problem("llm.context_window is required (integer >= %d; %s)", minContextWindow, keyToEnv["llm.context_window"])
+		// Optional (X-15): unset means the endpoint is asked at the first use.
 	case c.ContextWindow < minContextWindow:
 		l.problem("llm.context_window: %d is below the minimum %d", c.ContextWindow, minContextWindow)
 	}

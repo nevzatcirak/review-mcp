@@ -13,7 +13,7 @@ func TestValidationRules(t *testing.T) {
 		want string // substring of one problem
 	}{
 		{"context window too small", map[string]string{"REVIEW_MCP_LLM_CONTEXT_WINDOW": "4095"}, "llm.context_window: 4095 is below the minimum 4096"},
-		{"context window zero", map[string]string{"REVIEW_MCP_LLM_CONTEXT_WINDOW": "0"}, "llm.context_window is required"},
+		{"context window negative", map[string]string{"REVIEW_MCP_LLM_CONTEXT_WINDOW": "-1"}, "llm.context_window: -1 is below the minimum 4096"},
 		{"max output zero", map[string]string{"REVIEW_MCP_LLM_MAX_OUTPUT_TOKENS": "0"}, "llm.max_output_tokens: 0 must be greater than 0"},
 		{"max output >= window", map[string]string{"REVIEW_MCP_LLM_MAX_OUTPUT_TOKENS": "32000"}, "must be less than llm.context_window"},
 		{"temperature high", map[string]string{"REVIEW_MCP_LLM_TEMPERATURE": "2.1"}, "llm.temperature: 2.1 is out of range (0-2)"},
@@ -58,6 +58,27 @@ func TestValidationRules(t *testing.T) {
 			}
 			if len(probs) != 1 {
 				t.Errorf("want exactly one problem, got %v", probs)
+			}
+		})
+	}
+}
+
+// X-15: llm.context_window is optional; unset (absent or 0) is valid and
+// leaves the value to be resolved from the endpoint.
+func TestContextWindowUnsetIsValid(t *testing.T) {
+	for name, set := range map[string]string{"absent": "", "zero": "0"} {
+		t.Run(name, func(t *testing.T) {
+			env := envWith(nil)
+			delete(env, "REVIEW_MCP_LLM_CONTEXT_WINDOW")
+			if set != "" {
+				env["REVIEW_MCP_LLM_CONTEXT_WINDOW"] = set
+			}
+			cfg, _, err := Load(MemSource{Env: env})
+			if err != nil {
+				t.Fatalf("unset llm.context_window must validate: %v", err)
+			}
+			if cfg.LLM.ContextWindow != 0 {
+				t.Errorf("ContextWindow = %d, want 0 (unset)", cfg.LLM.ContextWindow)
 			}
 		})
 	}

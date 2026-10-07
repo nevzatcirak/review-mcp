@@ -38,6 +38,9 @@ func (l *loader) validate() {
 	if !l.bad["review.max_findings"] && (c.Review.MaxFindings < 1 || c.Review.MaxFindings > 20) {
 		l.problem("review.max_findings: %d is out of range (1-20)", c.Review.MaxFindings)
 	}
+	if !l.bad["review.max_discussion_tokens"] && c.Review.MaxDiscussionTokens < 0 {
+		l.problem("review.max_discussion_tokens: %d must not be negative (0 turns the discussion off)", c.Review.MaxDiscussionTokens)
+	}
 	if _, err := logging.ParseLevel(c.Log.Level); err != nil {
 		l.problem("log.level: %v", err)
 	}

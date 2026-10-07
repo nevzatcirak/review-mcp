@@ -3,7 +3,7 @@
 `review-mcp` is a standalone, open-source (MIT) MCP server written in Go that
 brings AI-powered pull-request tools to any MCP client, such as Claude Code and
 opencode. It reviews a pull request with `pr_review`, answers questions about
-one with `pr_ask`, and reads and replies to comment threads. It targets Gitea
+one with `pr_ask`, and reads, answers and writes comments on pull requests. It targets Gitea
 and Bitbucket Server (Data Center) first, with GitHub planned for later, and
 works with any OpenAI-compatible LLM endpoint. Identity is per user: provider
 tokens and the LLM API key come from the MCP client configuration (as
@@ -57,6 +57,34 @@ see the [changelog](CHANGELOG.md).
    }
    ```
 
+   Both providers can be enabled together: add the Bitbucket Server pair next
+   to the Gitea one. Each provider is enabled by its base URL; the Bitbucket
+   one includes any context path.
+
+   ```sh
+   claude mcp add review-mcp \
+     --env REVIEW_MCP_LLM_BASE_URL=https://llm.example.com/v1 \
+     --env REVIEW_MCP_LLM_MODEL=your-model-name \
+     --env REVIEW_MCP_LLM_CONTEXT_WINDOW=32000 \
+     --env REVIEW_MCP_GITEA_BASE_URL=https://your-gitea.example \
+     --env REVIEW_MCP_BITBUCKET_SERVER_BASE_URL=https://bitbucket.example.com \
+     --env REVIEW_MCP_LLM_API_KEY="$REVIEW_MCP_LLM_API_KEY" \
+     --env REVIEW_MCP_GITEA_TOKEN="$REVIEW_MCP_GITEA_TOKEN" \
+     --env REVIEW_MCP_BITBUCKET_SERVER_TOKEN="$REVIEW_MCP_BITBUCKET_SERVER_TOKEN" \
+     -- npx -y @nevzatcirak/review-mcp
+   ```
+
+   Release candidates are published under the npm dist-tag `next`; use
+   `npx -y @nevzatcirak/review-mcp@next` to run one. Stable releases are
+   published as `latest`, which is what the commands above use.
+
+   **Local OpenAI-compatible endpoint.** For a locally hosted server (for
+   example `REVIEW_MCP_LLM_BASE_URL=http://localhost:8080/v1`), the API key is
+   still required but may be any non-empty placeholder if your server ignores
+   it. Set `REVIEW_MCP_LLM_CONTEXT_WINDOW` (`llm.context_window`) to the
+   context size your server is actually configured with, not the model's
+   maximum.
+
 3. Ask the client to call `server_info`, then to review a pull request without
    publishing it. The [Setup guide](docs/setup.md) walks through the first run,
    keeps tokens out of files, and covers Bitbucket Server, release archives and
@@ -69,14 +97,15 @@ see the [changelog](CHANGELOG.md).
 | `server_info` | Version, enabled providers and the effective non-secret configuration; secrets show only as set or unset. |
 | `pr_comments` | Lists a pull request's comment threads. |
 | `pr_comment_reply` | Replies to a pull request comment (inside the thread on Bitbucket Server; as a quoting PR-level comment on Gitea). |
-| `pr_review` | Reviews a pull request with your LLM. The title, description and diff are sent to your LLM endpoint. Optionally publishes the review as a PR comment. |
+| `pr_comment_create` | Posts a new comment on a pull request, PR-level or on a changed line (`file` and `line`). A line outside the diff is refused, never posted at PR level instead. |
+| `pr_review` | Reviews a pull request with your LLM. The title, description, existing comments and diff are sent to your LLM endpoint. Optionally publishes the review: one overview comment, edited in place on later runs, and inline comments on the changed lines. |
 | `pr_ask` | Answers a free-text question about a pull request, grounded in its title, description and diff. Optionally publishes the question and answer as a PR comment. |
 
 ## Documentation
 
 - [Setup guide](docs/setup.md): install, token checklist, LLM endpoint, client configuration, first run.
 - [Serve mode](docs/serve.md): one shared HTTP server for a team, the header contract, TLS, the container.
-- [Reviewing pull requests](docs/review.md): what `pr_review` sends to the LLM, choosing `llm.context_window`, reading coverage and notes, `publish`, `diag review --dry-run`.
+- [Reviewing pull requests](docs/review.md): what `pr_review` sends to the LLM, choosing `llm.context_window`, reading coverage and notes, `publish` (the overview and inline comments), discussion awareness, `diag review --dry-run`.
 - [Asking questions about a pull request](docs/ask.md): what `pr_ask` sends to the LLM, grounding and honesty, coverage, `publish` and the slash sanitization, `diag ask --dry-run`.
 - [Getting started](docs/getting-started.md): the minimal configuration and the diff budget in detail.
 - [Troubleshooting](docs/troubleshooting.md): the `diag` commands and every error sentence.

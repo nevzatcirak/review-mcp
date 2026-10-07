@@ -149,7 +149,7 @@ func TestDiagReplyGitea(t *testing.T) {
 	}
 	checkCommentStreams(t, out, errs)
 	m := decodeReply(t, out)
-	if m["id"] != "55" || m["in_thread"] != false || m["url"] != "https://your-gitea.example/octo/demo/pulls/7" {
+	if m["id"] != "55" || m["in_thread"] != false || m["url"] != "https://your-gitea.example/octo/demo/pulls/7#issuecomment-55" {
 		t.Errorf("result = %v", m)
 	}
 	posts := g.posts()

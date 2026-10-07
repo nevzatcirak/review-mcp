@@ -1,6 +1,7 @@
 ## PR Review 🔍
 
 Pull request: Bitbucket Server #5 — Yeniden deneme ekle (`https://bitbucket.example.com/projects/P/repos/r/pull-requests/5`)
+Reviewed on 2026-10-06 09:30 UTC.
 
 | Check | Result |
 |---|---|
@@ -11,20 +12,19 @@ Pull request: Bitbucket Server #5 — Yeniden deneme ekle (`https://bitbucket.ex
 
 Hassas bilgi ifşası: şifre günlüğe yazılıyor.
 
+### 🐢 Performance concerns
+
+src/main.py: her istekte dosya yeniden okunuyor.
+
 ### ⚡ Recommended focus areas for review
 
-| # | Issue | Location |
-|---|---|---|
-| 1 | Olası hata 🐞 | `src/main.py` L3-4 |
+1. **Olası hata 🐞** — `src/main.py` L3-4
+   - Döngü, \`sınır\` sıfır olduğunda sonsuza kadar sürer. 日本語のテスト。
 
-#### 1. Olası hata 🐞
-
-Döngü, \`sınır\` sıfır olduğunda sonsuza kadar sürer. 日本語のテスト。
-
-```python
-while True:
-    pass
-```
+     ```python
+     while True:
+         pass
+     ```
 
 ### 📂 Coverage
 

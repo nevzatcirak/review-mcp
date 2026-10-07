@@ -13,6 +13,7 @@ import (
 )
 
 type apiAuthor struct {
+	ID          int64  `json:"id"`
 	Name        string `json:"name"`
 	DisplayName string `json:"displayName"`
 }
@@ -63,9 +64,16 @@ func (c *apiComment) item() provider.CommentItem {
 	if author == "" {
 		author = c.Author.DisplayName
 	}
+	// AuthorID and AuthorLogin are what EditComment compares: the numeric
+	// id ("" when absent) and the user name, never the display name.
+	authorID := ""
+	if c.Author.ID != 0 {
+		authorID = strconv.FormatInt(c.Author.ID, 10)
+	}
 	return provider.CommentItem{
 		ID: strconv.FormatInt(c.ID, 10), Author: author, Body: c.Text,
 		CreatedAt: millis(c.CreatedDate), UpdatedAt: millis(c.UpdatedDate),
+		AuthorID: authorID, AuthorLogin: c.Author.Name,
 	}
 }
 
@@ -163,6 +171,7 @@ func (p *Provider) ListThreads(ctx context.Context, ref provider.PRRef) ([]provi
 			ReplyInThread: true,
 			Comments:      []provider.CommentItem{root.item()},
 		}
+		t.Comments[0].URL = p.newComment(ref, root.ID).URL
 		if anchor != nil && anchor.Path != "" {
 			t.Kind, t.Path, t.Outdated = provider.ThreadInline, anchor.Path, anchor.Orphaned
 			if anchor.FileType == "TO" {

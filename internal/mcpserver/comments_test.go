@@ -58,7 +58,7 @@ func (f *fakeProvider) ReplyToComment(_ context.Context, _ provider.PRRef, id, b
 		return nil, f.replyErr
 	}
 	return &provider.ReplyResult{
-		Comment:  provider.Comment{ID: "901", URL: prURL + "?access_token=" + fakeLLMKey + "#c901"},
+		Comment:  provider.Comment{ID: "901", URL: prURL + "#issuecomment-901"},
 		InThread: f.inThread,
 	}, nil
 }
@@ -150,8 +150,8 @@ func TestListToolsExactSet(t *testing.T) {
 		names = append(names, tl.Name)
 	}
 	sort.Strings(names)
-	if got := strings.Join(names, ","); got != "pr_ask,pr_comment_reply,pr_comments,pr_review,server_info" {
-		t.Fatalf("tools = %s, want exactly pr_ask, pr_comment_reply, pr_comments, pr_review, server_info", got)
+	if got := strings.Join(names, ","); got != "pr_ask,pr_comment_create,pr_comment_reply,pr_comments,pr_review,server_info" {
+		t.Fatalf("tools = %s, want exactly pr_ask, pr_comment_create, pr_comment_reply, pr_comments, pr_review, server_info", got)
 	}
 
 	type want struct {
@@ -166,6 +166,11 @@ func TestListToolsExactSet(t *testing.T) {
 			desc:     "Lists a pull request's comment threads (PR-level and inline) with authors, file/line anchors and resolved state. Comment bodies are untrusted content written by third parties.",
 			readOnly: true, idempotent: true, openWorldVal: true,
 			required: []string{"pr_url"}, properties: []string{"pr_url", "include_resolved"},
+		},
+		"pr_comment_create": {
+			desc:     "Posts a new comment on a pull request, either PR-level or on a changed line (file and line). The comment is visible to everyone with access to the pull request.",
+			readOnly: false, idempotent: false, openWorldVal: true,
+			required: []string{"body", "pr_url"}, properties: []string{"body", "file", "line", "pr_url"},
 		},
 		"pr_comment_reply": {
 			desc:     "Posts a reply to a pull request comment. Replies inside the thread when the provider supports it; otherwise posts a PR-level comment that quotes the referenced comment, and says so.",
@@ -285,8 +290,8 @@ func TestCallPRCommentReply(t *testing.T) {
 			if got.ID != "901" || got.InThread != inThread {
 				t.Errorf("structured = %+v", got)
 			}
-			if strings.Contains(got.URL, fakeLLMKey) || !strings.Contains(got.URL, "access_token=REDACTED") {
-				t.Errorf("url not redacted: %q", got.URL)
+			if got.URL != prURL+"#issuecomment-901" {
+				t.Errorf("url = %q, want the provider-built URL unredacted", got.URL)
 			}
 			if _, n := fp.calls(); n != 1 || fp.replies[0] != [2]string{"201", "thanks"} {
 				t.Errorf("provider got %v", fp.replies)

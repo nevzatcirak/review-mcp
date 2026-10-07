@@ -65,17 +65,20 @@ jobs:
 
   # Publishes the npm packages (six platform packages, then the main package).
   # It runs only after the GitHub release and the provenance attestation
-  # succeeded. NPM_TOKEN reaches npm through the .npmrc that actions/setup-node
-  # writes (registry-url) and the NODE_AUTH_TOKEN variable; it is never echoed
-  # and never appears on a command line. A version that already exists on the
-  # registry fails the publish step and stops the job: there is no force and no
-  # unpublish logic.
+  # succeeded. Authentication is npm trusted publishing: the npm CLI exchanges
+  # this job's GitHub OIDC token for a short-lived publish credential, so no
+  # npm token is stored anywhere. Each of the seven packages has a trusted
+  # publisher configured on npmjs.com (see docs/release.md). setup-node needs
+  # no registry-url and the job sets no NODE_AUTH_TOKEN: npm defaults to
+  # registry.npmjs.org and obtains its credential through OIDC. A version that
+  # already exists on the registry fails the publish step and stops the job:
+  # there is no force and no unpublish logic.
   npm-publish:
     needs: release
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # npm --provenance
+      id-token: write # npm trusted publishing (OIDC) and --provenance
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -84,7 +87,10 @@ jobs:
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: "22"
-          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm 11.5.1 or later; the version is pinned.
+      - name: Install npm 11.21.0
+        run: npm install -g npm@11.21.0 && npm --version
 
       - name: Download dist from the release job
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -100,5 +106,3 @@ jobs:
 
       - name: Publish (platform packages first, then the main package)
         run: node npm/scripts/publish-packages.mjs npm/build
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

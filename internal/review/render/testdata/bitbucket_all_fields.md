@@ -1,6 +1,7 @@
 ## PR Review 🔍
 
 Pull request: Gitea #12 — Add retry to the fetcher (`https://your-gitea.example/org/repo/pulls/12`)
+Reviewed on 2026-10-06 09:30 UTC at commit `abc123d`.
 
 | Check | Result |
 |---|---|
@@ -12,36 +13,34 @@ Pull request: Gitea #12 — Add retry to the fetcher (`https://your-gitea.exampl
 SQL injection: the query is built by string concatenation.
 Use bound parameters instead.
 
+### 🐢 Performance concerns
+
+N+1 access: cmd/app/main.go loads each item with its own query.
+Batch the \<ids\> instead.
+
 ### ⚡ Recommended focus areas for review
 
-| # | Issue | Location |
-|---|---|---|
-| 1 | Possible Issue | [`cmd/app/main.go` L10-12](https://your-gitea.example/org/repo/src/commit/abc123/cmd/app/main.go#L10-L12) |
-| 2 | Resource leak | `internal/util/strings_util.go` L40 |
+1. **Possible Issue** — [`cmd/app/main.go` L10-12](https://your-gitea.example/org/repo/src/commit/abc123/cmd/app/main.go#L10-L12)
+   - The retry loop never stops when \`max\` is 0, so it spins forever.
+     See the \`for\` loop.
 
-#### 1. Possible Issue
+     ```go
+     for {
+     	if try() {
+     		break
+     	}
+     }
+     ```
 
-The retry loop never stops when \`max\` is 0, so it spins forever.
-See the \`for\` loop.
+2. **Resource leak** — `internal/util/strings_util.go` L40
+   - The response body is not closed on the error path.
 
-```go
-for {
-	if try() {
-		break
-	}
-}
-```
-
-#### 2. Resource leak
-
-The response body is not closed on the error path.
-
-```go
-resp, err := http.Get(u)
-if err != nil {
-	return err
-}
-```
+     ```go
+     resp, err := http.Get(u)
+     if err != nil {
+     	return err
+     }
+     ```
 
 ### 📂 Coverage
 

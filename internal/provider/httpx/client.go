@@ -202,18 +202,24 @@ func (c *Client) checkRedirect(req *http.Request, via []*http.Request) error {
 // errors.Is(err, provider.ErrNotFound). The returned status is set whenever
 // a response was received.
 func (c *Client) Do(ctx context.Context, method, pathAndQuery string, body io.Reader, contentType string, maxBytes int64, capKey string) ([]byte, int, error) {
+	data, status, _, err := c.do(ctx, method, pathAndQuery, body, contentType, maxBytes, capKey)
+	return data, status, err
+}
+
+// do is Do that also returns the response headers of a 2xx response.
+func (c *Client) do(ctx context.Context, method, pathAndQuery string, body io.Reader, contentType string, maxBytes int64, capKey string) ([]byte, int, http.Header, error) {
 	if !strings.HasPrefix(pathAndQuery, "/") {
-		return nil, 0, &provider.Error{Class: provider.ClassProtocol, Hint: "invalid request path"}
+		return nil, 0, nil, &provider.Error{Class: provider.ClassProtocol, Hint: "invalid request path"}
 	}
 	full := c.baseStr + pathAndQuery
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, method, full, body)
 	if err != nil {
-		return nil, 0, &provider.Error{Class: provider.ClassProtocol, Hint: "invalid request"}
+		return nil, 0, nil, &provider.Error{Class: provider.ClassProtocol, Hint: "invalid request"}
 	}
 	if req.URL.Host != c.base.Host {
-		return nil, 0, &provider.Error{Class: provider.ClassProtocol, Hint: "invalid request path"}
+		return nil, 0, nil, &provider.Error{Class: provider.ClassProtocol, Hint: "invalid request path"}
 	}
 	if c.ua != "" {
 		req.Header.Set("User-Agent", c.ua)
@@ -238,7 +244,7 @@ func (c *Client) Do(ctx context.Context, method, pathAndQuery string, body io.Re
 		}
 		c.logger.Debug("http request failed", "method", method, "url", logging.RedactURL(full),
 			"class", string(perr.Class), "duration_ms", time.Since(start).Milliseconds())
-		return nil, 0, perr
+		return nil, 0, nil, perr
 	}
 	defer func() { _ = resp.Body.Close() }()
 	status := resp.StatusCode
@@ -250,24 +256,24 @@ func (c *Client) Do(ctx context.Context, method, pathAndQuery string, body io.Re
 	if perr := provider.StatusError(status); perr != nil {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, drainBytes))
 		logDone(string(perr.Class))
-		return nil, status, perr
+		return nil, status, nil, perr
 	}
 	if resp.ContentLength > maxBytes {
 		logDone(string(provider.ClassTooLarge))
-		return nil, status, &provider.Error{Class: provider.ClassTooLarge, Hint: capKey}
+		return nil, status, nil, &provider.Error{Class: provider.ClassTooLarge, Hint: capKey}
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
 		perr := provider.TransportError(err)
 		logDone(string(perr.Class))
-		return nil, status, perr
+		return nil, status, nil, perr
 	}
 	if int64(len(data)) > maxBytes {
 		logDone(string(provider.ClassTooLarge))
-		return nil, status, &provider.Error{Class: provider.ClassTooLarge, Hint: capKey}
+		return nil, status, nil, &provider.Error{Class: provider.ClassTooLarge, Hint: capKey}
 	}
 	logDone("ok")
-	return data, status, nil
+	return data, status, resp.Header, nil
 }
 
 // Get is Do with GET and no request body.
@@ -282,6 +288,22 @@ func (c *Client) GetJSON(ctx context.Context, pathAndQuery string, out any) erro
 		return err
 	}
 	return decodeJSON(data, out)
+}
+
+// GetHeaders GETs pathAndQuery (10 MiB cap) and returns the first value of
+// each named response header, "" when absent. The body is read and
+// discarded. Header values are returned to the caller only and never
+// logged.
+func (c *Client) GetHeaders(ctx context.Context, pathAndQuery string, names ...string) (map[string]string, error) {
+	_, _, h, err := c.do(ctx, http.MethodGet, pathAndQuery, nil, "", MaxJSONBytes, JSONCapKey)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(names))
+	for _, n := range names {
+		out[n] = h.Get(n)
+	}
+	return out, nil
 }
 
 // SendJSON sends in (JSON-encoded, may be nil) with method and decodes the

@@ -16,6 +16,11 @@ Changes from upstream (spec P4 §4.2):
   estimated_effort_to_review;
 - the schema classes and the example come from the field-descriptor table
   (.schema, .example; internal/review/fields.go);
+- intentional deviation (X-12, spec P7 §4.1): a performance_concerns field,
+  which upstream does not have, follows security_concerns in the Review
+  class and in the example when review.require_performance is on; its
+  description is ours: the spec wording plus security's no-translation
+  sentence (lead decision, reported to the architect as a DESIGN-QUESTION);
 - diff_hunk_format is the rendered numbered variant, without the
   AI-metadata parts.
 Kept verbatim: the role, the diff-format notes, "Determining what to flag",

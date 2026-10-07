@@ -41,6 +41,121 @@ type fakeProvider struct {
 	calls    int
 	posted   []string
 	postedTo []provider.PRRef
+
+	// seq records the write calls in order: "post", "inline", "edit".
+	seq []string
+	// inline holds the items of each PostInlineComments call; inlineErr
+	// fails the call and inlineResult, when set, decides each item.
+	inline       [][]provider.InlineComment
+	inlineErr    error
+	inlineResult func(i int, it provider.InlineComment) provider.InlineResult
+	// edits holds each EditComment call; editErr fails it.
+	edits   []edit
+	editErr error
+
+	// comments are the PR's general comments: those PostComment added and
+	// any a test plants. ListThreads lists them (listErr fails it, lists
+	// counts the calls); EditComment edits them after the ownership check
+	// the real providers make. me is CurrentUser (meErr fails it).
+	comments []fakeComment
+	listErr  error
+	lists    int
+	me       provider.User
+	meErr    error
+	// threads are further threads a test plants (inline ones, replies,
+	// resolved ones); ListThreads lists them after the general comments, and
+	// then the inline comments PostInlineComments recorded as the token's own
+	// (inlineThreads), like a real server does.
+	threads       []provider.Thread
+	inlineThreads []provider.Thread
+}
+
+type edit struct{ id, body string }
+
+// fakeComment is a general comment of the fake PR.
+type fakeComment struct {
+	id, body string
+	author   provider.User
+	created  time.Time
+}
+
+func (f *fakeProvider) addComment(author provider.User, body string) string {
+	id := strconv.Itoa(42 + len(f.comments))
+	f.comments = append(f.comments, fakeComment{id: id, body: body, author: author,
+		created: time.Date(2026, 10, 1, 0, len(f.comments), 0, 0, time.UTC)})
+	return id
+}
+
+func (f *fakeProvider) ListThreads(context.Context, provider.PRRef) ([]provider.Thread, error) {
+	f.calls++
+	f.lists++
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	out := []provider.Thread{}
+	for _, c := range f.comments {
+		out = append(out, provider.Thread{ID: c.id, Kind: provider.ThreadGeneral, Comments: []provider.CommentItem{{
+			ID: c.id, Author: c.author.Name, Body: c.body, CreatedAt: c.created, UpdatedAt: c.created,
+			AuthorID: c.author.ID, AuthorLogin: c.author.Name, URL: "https://your-gitea.example/octo/demo/pulls/7#issuecomment-" + c.id,
+		}}})
+	}
+	out = append(out, f.threads...)
+	return append(out, f.inlineThreads...), nil
+}
+
+func (f *fakeProvider) CurrentUser(context.Context) (provider.User, error) {
+	f.calls++
+	return f.me, f.meErr
+}
+
+func (f *fakeProvider) PostInlineComments(_ context.Context, _ provider.PRRef, pr *provider.PullRequest, items []provider.InlineComment) ([]provider.InlineResult, error) {
+	f.calls++
+	f.seq = append(f.seq, "inline")
+	f.inline = append(f.inline, items)
+	if pr == nil || pr.HeadSHA == "" {
+		return nil, &provider.Error{Class: provider.ClassProtocol, Hint: "no head"}
+	}
+	if err := provider.ValidateInlineComments(items); err != nil {
+		return nil, err
+	}
+	if f.inlineErr != nil {
+		return nil, f.inlineErr
+	}
+	out := make([]provider.InlineResult, len(items))
+	for i, it := range items {
+		if f.inlineResult != nil {
+			out[i] = f.inlineResult(i, it)
+			continue
+		}
+		id := strconv.Itoa(900 + len(f.inlineThreads))
+		f.inlineThreads = append(f.inlineThreads, provider.Thread{ID: id, Kind: provider.ThreadInline, Path: it.Path,
+			Line: it.Line, Resolved: new(bool), Comments: []provider.CommentItem{{ID: id, Author: f.me.Name, Body: it.Body,
+				CreatedAt: time.Date(2026, 10, 2, 0, len(f.inlineThreads), 0, 0, time.UTC),
+				AuthorID:  f.me.ID, AuthorLogin: f.me.Name}}})
+		out[i] = provider.InlineResult{Posted: true, ID: id, URL: "https://your-gitea.example/octo/demo/pulls/7/files#issuecomment-" + id}
+	}
+	return out, nil
+}
+
+func (f *fakeProvider) EditComment(_ context.Context, _ provider.PRRef, id, body string) error {
+	f.calls++
+	f.seq = append(f.seq, "edit")
+	f.edits = append(f.edits, edit{id, body})
+	if f.editErr != nil {
+		return f.editErr
+	}
+	for i := range f.comments {
+		c := &f.comments[i]
+		if c.id != id {
+			continue
+		}
+		if !provider.IsUser(f.me, c.author.ID, c.author.Name) {
+			return &provider.Error{Class: provider.ClassNotOwner}
+		}
+		c.body = body
+		return nil
+	}
+	return &provider.Error{Class: provider.ClassNotFound, Status: 404}
 }
 
 func (f *fakeProvider) Capabilities() provider.Capabilities { return provider.Capabilities{GFM: true} }
@@ -66,12 +181,14 @@ func (f *fakeProvider) GetDiff(_ context.Context, _ provider.PRRef, _ *provider.
 
 func (f *fakeProvider) PostComment(_ context.Context, ref provider.PRRef, body string) (*provider.Comment, error) {
 	f.calls++
+	f.seq = append(f.seq, "post")
 	f.posted = append(f.posted, body)
 	f.postedTo = append(f.postedTo, ref)
 	if f.postErr != nil {
 		return nil, f.postErr
 	}
-	return &provider.Comment{ID: "42", URL: "https://your-gitea.example/octo/demo/pulls/7#issuecomment-42"}, nil
+	id := f.addComment(f.me, body)
+	return &provider.Comment{ID: id, URL: "https://your-gitea.example/octo/demo/pulls/7#issuecomment-" + id}, nil
 }
 
 func (f *fakeProvider) FileLineURL(_ provider.PRRef, _ *provider.PullRequest, path string, line int) string {
@@ -171,7 +288,8 @@ const goodAnswer = "```yaml\nreview:\n" +
 	"      start_line: 10\n      end_line: 12\n" +
 	"    - relevant_file: src/util.go\n      issue_header: Style\n      issue_content: The range is partly outside the diff.\n" +
 	"      start_line: 2\n      end_line: 5\n" +
-	"  security_concerns: |\n    No\n```\n"
+	"  security_concerns: |\n    No\n" +
+	"  performance_concerns: |\n    No\n```\n"
 
 func testConfig() *config.Config {
 	cfg := config.Defaults()
@@ -197,6 +315,7 @@ func newHarness(answers ...string) *harness {
 		pr: provider.PullRequest{Title: "Retry " + titleMarker, Description: "Adds a retry. " + descMarker,
 			SourceBranch: "feature/retry", HeadSHA: "abc"},
 		files: sampleFiles(),
+		me:    provider.User{ID: "5", Name: "review-bot"},
 	}
 	h.resolver = &fakeResolver{p: h.prov}
 	h.llm = &fakeLLM{answers: answers}
@@ -209,6 +328,9 @@ func newHarness(answers ...string) *harness {
 		RenderProvider: func(r *Result, caps provider.Capabilities) string {
 			h.rendered = append(h.rendered, r)
 			return fmt.Sprintf("rendered %d findings gfm=%v", len(r.Review.KeyIssuesToReview), caps.GFM)
+		},
+		RenderInline: func(ki *KeyIssue, caps provider.Capabilities) string {
+			return fmt.Sprintf("inline %s gfm=%v\n", ki.IssueHeader, caps.GFM)
 		},
 	}
 	return h
@@ -255,7 +377,7 @@ func TestRunReview(t *testing.T) {
 
 	r := res.Review
 	if r.EstimatedEffortToReview == nil || *r.EstimatedEffortToReview != 2 || r.RelevantTests == nil || *r.RelevantTests ||
-		r.HasSecurityConcerns() || len(r.KeyIssuesToReview) != 2 {
+		r.HasSecurityConcerns() || r.PerformanceConcerns == nil || r.HasPerformanceConcerns() || len(r.KeyIssuesToReview) != 2 {
 		t.Fatalf("review = %+v", r)
 	}
 	app, util := r.KeyIssuesToReview[0], r.KeyIssuesToReview[1]
@@ -268,7 +390,7 @@ func TestRunReview(t *testing.T) {
 	if util.Snippet != "" || util.SnippetNote != SnippetNoteUnverified || util.Link == "" {
 		t.Errorf("util finding = %+v", util)
 	}
-	if !slices.Equal(res.EnabledFields, []string{KeyEffort, KeyRelevantTests, KeyKeyIssues, KeySecurityConcerns}) {
+	if !slices.Equal(res.EnabledFields, []string{KeyEffort, KeyRelevantTests, KeyKeyIssues, KeySecurityConcerns, KeyPerformanceConcerns}) {
 		t.Errorf("enabled fields = %v", res.EnabledFields)
 	}
 	c := res.Coverage
@@ -536,9 +658,15 @@ func TestRunPublish(t *testing.T) {
 	if res.Publish == nil || !res.Publish.Published || res.Publish.CommentID != "42" || res.Publish.Error != "" {
 		t.Errorf("publish = %+v", res.Publish)
 	}
-	if len(h.prov.posted) != 1 || h.prov.posted[0] != "rendered 2 findings gfm=true" || len(h.rendered) != 1 ||
-		h.rendered[0] != res {
+	if len(h.prov.posted) != 1 || h.prov.posted[0] != "rendered 2 findings gfm=true\n\n"+OverviewMarker || len(h.rendered) != 2 ||
+		h.rendered[0] != res || h.rendered[1] != res {
 		t.Errorf("posted %q", h.prov.posted)
+	}
+	if !slices.Equal(h.prov.seq, []string{"post", "inline", "edit"}) || len(h.prov.edits) != 1 || h.prov.edits[0].id != "42" {
+		t.Errorf("write calls %v, edits %+v", h.prov.seq, h.prov.edits)
+	}
+	if in := res.Publish.Inline; in == nil || *in != (InlineSummary{Posted: 2}) {
+		t.Errorf("inline = %+v", res.Publish.Inline)
 	}
 }
 

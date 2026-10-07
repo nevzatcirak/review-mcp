@@ -16,6 +16,14 @@ Every `golden.json` is **oracle-generated**. The only expectations that are
 not are the eight `deviation.json` files, which are **hand-derived** (see
 [Hand-derived expectations](#hand-derived-expectations)).
 
+Directory names under `cases/` must be unique when case is ignored, so they
+check out on macOS and Windows and the module stays valid for the Go module
+proxy. Cases that differ only by letter case encode it in the name instead:
+`up_fence_label_{yaml_upper,yaml_title,yml_upper,yml_mixed}` (the info
+string `YAML`, `Yaml`, `YML`, `yMl`) and
+`up_tf_closing_{yaml_lower,yaml_upper,yml_lower,yml_upper}` (the closing
+fence label). `scripts/check-case-collisions.sh` enforces this in CI.
+
 ## Layout
 
 | File | Written by | Meaning |

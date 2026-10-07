@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/diffpipe"
 	"github.com/nevzatcirak/review-mcp/internal/filter"
 	"github.com/nevzatcirak/review-mcp/internal/llm"
-	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/prompt"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
@@ -36,6 +36,11 @@ type Completer interface {
 // provider's capabilities (DQ-16 provider profile; WP-PR-4d).
 type ProviderRenderer func(res *Result, caps provider.Capabilities) string
 
+// InlineRenderer renders the body of a finding's inline comment for a
+// provider's capabilities (spec P7 §3.2), without the fingerprint marker:
+// the pipeline appends the marker as the body's last line.
+type InlineRenderer func(ki *KeyIssue, caps provider.Capabilities) string
+
 // Deps are the injectable dependencies of Run.
 type Deps struct {
 	// Config is the effective configuration and ConfigErr its load error;
@@ -47,10 +52,15 @@ type Deps struct {
 	Logger   *slog.Logger
 	Resolver Resolver
 	LLM      Completer
-	// Clock supplies the prompt date; nil is the wall clock.
+	// Clock supplies the prompt date and the run time shown in the
+	// published overview (Metadata.ReviewedAt); nil is the wall clock.
 	Clock prompt.Clock
-	// RenderProvider renders the comment published with Args.Publish.
+	// RenderProvider renders the overview comment published with
+	// Args.Publish.
 	RenderProvider ProviderRenderer
+	// RenderInline renders the inline comment of an anchorable finding
+	// published with Args.Publish. Nil posts no inline comments.
+	RenderInline InlineRenderer
 	// Progress, when set, is called with a Stage* word as the pipeline
 	// advances (the pr_review tool turns them into MCP progress
 	// notifications). Nil is ignored. It must not block.
@@ -73,8 +83,58 @@ type Args struct {
 	OutputLanguage string
 	// MaxFindings replaces review.max_findings when positive.
 	MaxFindings int
-	// Publish also posts the review as a PR comment.
+	// Publish also posts the review as a PR comment, and its anchorable
+	// findings as inline comments (X-11).
 	Publish bool
+	// InlineFindings turns the inline comments of a publish on or off; nil
+	// means on.
+	//
+	// DESIGN-QUESTION: where does review.inline_findings live before
+	// WP-PR-7f adds the config row and the pr_review argument (spec P7
+	// §6.2)? — chose a per-call option whose nil value is the documented
+	// default (true), so that 7f only adds the row as the nil fallback and
+	// maps the tool argument here; adding the row now would split one
+	// config change over two packages.
+	InlineFindings *bool
+	// PersistentOverview looks up the overview of an earlier run and edits
+	// it in place instead of posting a new one (X-12); nil means on.
+	// Like InlineFindings, it is a per-call option until WP-PR-7f adds
+	// review.persistent_overview as its nil fallback and the tool argument.
+	PersistentOverview *bool
+	// MaxDiscussionTokens is the token budget of the existing-discussion
+	// block of the prompt (spec P7 §5.2): nil means
+	// DefaultMaxDiscussionTokens, 0 or less turns the block off.
+	//
+	// DESIGN-QUESTION: where does review.max_discussion_tokens live before
+	// WP-PR-7f adds its config row (spec P7 §6.2 lists it there)? — chose a
+	// per-call option, as for InlineFindings and PersistentOverview: its nil
+	// value is the compiled default, and 7f adds the row and the
+	// REVIEW_MCP_REVIEW_MAX_DISCUSSION_TOKENS variable as the value mapped
+	// here, in the one package that owns the config table.
+	MaxDiscussionTokens *int
+}
+
+// WithConfigDefaults returns a with every option the call left unset (nil)
+// taken from cfg: review.inline_findings, review.persistent_overview and
+// review.max_discussion_tokens. A value the call set wins. Without it, nil
+// keeps the documented defaults (on, on, DefaultMaxDiscussionTokens).
+func (a Args) WithConfigDefaults(cfg *config.Config) Args {
+	if cfg == nil {
+		return a
+	}
+	if a.InlineFindings == nil {
+		v := cfg.Review.InlineFindings
+		a.InlineFindings = &v
+	}
+	if a.PersistentOverview == nil {
+		v := cfg.Review.PersistentOverview
+		a.PersistentOverview = &v
+	}
+	if a.MaxDiscussionTokens == nil {
+		v := cfg.Review.MaxDiscussionTokens
+		a.MaxDiscussionTokens = &v
+	}
+	return a
 }
 
 // errNoWiring reports a caller bug: Run needs a resolver and an LLM.
@@ -112,6 +172,29 @@ type Plan struct {
 	toggles     Toggles
 	maxFindings int
 	log         *slog.Logger
+	// postedFingerprints are the fingerprints of the review's inline
+	// comments already on the PR (spec P7 §5.3); a finding with one of them
+	// is not posted again. Prepare fills it from the PR's threads when the
+	// run will publish inline comments.
+	postedFingerprints map[string]bool
+
+	// The PR's threads and the token's user, each read at most once per
+	// run (listThreads, currentUser).
+	threadsRead bool
+	threads     []provider.Thread
+	threadsErr  error
+	meRead      bool
+	me          provider.User
+	meErr       error
+}
+
+// reviewedAt is the run time for Metadata.ReviewedAt: RFC 3339 in UTC, to
+// the second.
+func reviewedAt(c prompt.Clock) string {
+	if c == nil {
+		c = prompt.SystemClock{}
+	}
+	return c.Now().UTC().Truncate(time.Second).Format(time.RFC3339)
 }
 
 func progress(deps Deps, stage string) {
@@ -134,7 +217,7 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	res, log := pl.Result, pl.log
+	res := pl.Result
 	if pl.Empty {
 		// Nothing to review: no LLM call (P3 review, 3d DESIGN-QUESTION 4).
 		// DESIGN-QUESTION: is this empty review published when publish is
@@ -142,7 +225,7 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 		// review and the comment then shows the coverage and the note.
 		res.Review = &Review{KeyIssuesToReview: []KeyIssue{}}
 		res.Notes = append(res.Notes, NoteNoReviewableChanges)
-		publish(ctx, deps, log, args, pl.ref, pl.p, res)
+		publish(ctx, deps, args, pl)
 		return res, nil
 	}
 	progress(deps, StageCallingModel)
@@ -201,6 +284,15 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 	progress(deps, StagePreparingDiff)
 
+	// The PR's discussion, for the prompt and for the duplicate check; a
+	// failure never fails the review.
+	pl := &Plan{ref: ref, p: p, pr: pr, d: d, toggles: toggles, maxFindings: maxFindings, log: log}
+	maxDisc := DefaultMaxDiscussionTokens
+	if args.MaxDiscussionTokens != nil {
+		maxDisc = *args.MaxDiscussionTokens
+	}
+	disc, discNotes := pl.readDiscussion(ctx, maxDisc, args.Publish && inlineEnabled(deps, args), factor)
+
 	// Step 3: description.
 	in := PromptInput{
 		Toggles:           toggles,
@@ -210,6 +302,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		Title:             pr.Title,
 		Branch:            pr.SourceBranch,
 		Description:       tokens.ClipDescription(pr.Description, cfg.Diff.MaxDescriptionTokens, factor),
+		Discussion:        disc.Block,
 		Date:              prompt.Date(deps.Clock),
 	}
 
@@ -223,6 +316,16 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		MaxOutputTokens: cfg.LLM.MaxOutputTokens,
 		PromptTokens:    promptTokens,
 		Factor:          factor,
+	}
+	if budget.RequireCapacity() != nil && in.Discussion != "" {
+		// The discussion is optional: a context window too small for it
+		// still reviews the diff, without it.
+		disc = discussion{Omitted: disc.Included + disc.Omitted}
+		in.Discussion = ""
+		if promptTokens, err = ScaffoldingTokens(in, factor); err != nil {
+			return nil, err
+		}
+		budget.PromptTokens = promptTokens
 	}
 	if err := budget.RequireCapacity(); err != nil {
 		return nil, doesNotFit(err)
@@ -239,24 +342,32 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		return nil, err
 	}
 	res := &Result{
-		PR:            PRInfo{Kind: string(ref.Kind), URL: logging.RedactURL(ref.URL), Number: ref.Number, Title: pr.Title},
+		PR: PRInfo{Kind: string(ref.Kind), URL: logging.RedactURL(ref.URL), Number: ref.Number, Title: pr.Title,
+			HeadSHA: pr.HeadSHA},
 		Coverage:      buildCoverage(prep, flt),
 		Notes:         []string{},
 		EnabledFields: []string{},
 		Metadata: Metadata{
 			Model: cfg.LLM.Model, ContextWindow: cfg.LLM.ContextWindow, PromptTokens: promptTokens,
-			DiffTokens: prep.Tokens, FastPath: prep.FastPath,
+			DiffTokens: prep.Tokens, FastPath: prep.FastPath, ReviewedAt: reviewedAt(deps.Clock),
+			// The threads shown to the model: the review cannot know which
+			// of its findings the discussion made it drop.
+			AlreadyDiscussed: disc.Included,
 		},
+	}
+	res.Notes = append(res.Notes, discNotes...)
+	if disc.Omitted > 0 {
+		res.Notes = append(res.Notes, noteDiscussionLeftOut(disc.Omitted))
 	}
 	for _, f := range enabledFields(toggles) {
 		res.EnabledFields = append(res.EnabledFields, f.key)
 	}
 	log.Debug("review: diff prepared", "url", logging.RedactURL(ref.URL), "files", len(d.Files),
 		"provider_skipped", len(d.Skipped), "included", len(prep.Included), "clipped", len(prep.Clipped),
-		"fast_path", prep.FastPath, "prompt_tokens", promptTokens, "diff_tokens", prep.Tokens)
+		"fast_path", prep.FastPath, "prompt_tokens", promptTokens, "diff_tokens", prep.Tokens,
+		"discussion_threads", disc.Included, "discussion_omitted", disc.Omitted)
 
-	pl := &Plan{Result: res, Budget: budget, ref: ref, p: p, pr: pr, d: d, toggles: toggles,
-		maxFindings: maxFindings, log: log}
+	pl.Result, pl.Budget = res, budget
 	if prep.Text == "" {
 		pl.Empty = true
 		return pl, nil
@@ -368,24 +479,6 @@ func (pl *Plan) finish(ctx context.Context, deps Deps, args Args) (*Result, erro
 		"llm_calls", res.Metadata.LLMCalls, "reasked", res.Metadata.Reasked)
 
 	// Step 13: publish.
-	publish(ctx, deps, log, args, ref, p, res)
+	publish(ctx, deps, args, pl)
 	return res, nil
-}
-
-// publishFailedMessage is shown for a publish error that is not a
-// classified provider error.
-const publishFailedMessage = "the review could not be posted as a PR comment"
-
-// publish posts the provider-profile rendering when requested (step 13) and
-// records the outcome in res. It never fails the review.
-func publish(ctx context.Context, deps Deps, log *slog.Logger, args Args, ref provider.PRRef, p provider.Provider, res *Result) {
-	if !args.Publish {
-		return
-	}
-	res.Publish = &PublishResult{}
-	var render func(provider.Capabilities) string
-	if deps.RenderProvider != nil {
-		render = func(caps provider.Capabilities) string { return deps.RenderProvider(res, caps) }
-	}
-	llmrun.PostResult(ctx, log, ref, p, res.Publish, publishFailedMessage, render)
 }

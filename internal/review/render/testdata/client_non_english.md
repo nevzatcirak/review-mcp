@@ -9,6 +9,10 @@ Pull request: Bitbucket Server #5 — Yeniden deneme ekle (`https://bitbucket.ex
 
 Hassas bilgi ifşası: şifre günlüğe yazılıyor.
 
+### Performance concerns
+
+src/main.py: her istekte dosya yeniden okunuyor.
+
 ### Key issues to review
 
 1. **Olası hata 🐞** — `src/main.py` L3-4

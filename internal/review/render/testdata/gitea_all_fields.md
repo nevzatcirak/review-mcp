@@ -1,6 +1,7 @@
 ## PR Review 🔍
 
 Pull request: Gitea #12 — Add retry to the fetcher (`https://your-gitea.example/org/repo/pulls/12`)
+Reviewed on 2026-10-06 09:30 UTC at commit `abc123d`.
 
 <table>
 <tr><td>⏱️&nbsp;<strong>Estimated effort to review</strong>: 3/5 🔵🔵🔵⚪⚪</td></tr>
@@ -10,13 +11,17 @@ Pull request: Gitea #12 — Add retry to the fetcher (`https://your-gitea.exampl
 SQL injection: the query is built by string concatenation.
 Use bound parameters instead.
 </td></tr>
+<tr><td>🐢&nbsp;<strong>Performance concerns</strong><br><br>
+
+N+1 access: cmd/app/main.go loads each item with its own query.
+Batch the &lt;ids&gt; instead.
+</td></tr>
 <tr><td>⚡&nbsp;<strong>Recommended focus areas for review</strong><br><br>
 
-<details><summary><a href='https://your-gitea.example/org/repo/src/commit/abc123/cmd/app/main.go#L10-L12'><strong>Possible Issue</strong></a> <code>cmd/app/main.go L10-12</code>
+<details><summary>1. <a href='https://your-gitea.example/org/repo/src/commit/abc123/cmd/app/main.go#L10-L12'><strong>Possible Issue</strong></a> <code>cmd/app/main.go L10-12</code></summary>
 
 The retry loop never stops when \`max\` is 0, so it spins forever.
 See the \`for\` loop.
-</summary>
 
 ```go
 for {
@@ -28,10 +33,9 @@ for {
 
 </details>
 
-<details><summary><strong>Resource leak</strong> <code>internal/util/strings_util.go L40</code>
+<details><summary>2. <strong>Resource leak</strong> <code>internal/util/strings_util.go L40</code></summary>
 
 The response body is not closed on the error path.
-</summary>
 
 ```go
 resp, err := http.Get(u)

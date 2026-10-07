@@ -21,6 +21,8 @@ type promptCase struct {
 		Effort   bool `json:"effort"`
 		Tests    bool `json:"tests"`
 		Security bool `json:"security"`
+		// Performance is ours (X-12); the upstream oracle ignores it.
+		Performance bool `json:"performance"`
 	} `json:"toggles"`
 	MaxFindings       int    `json:"max_findings"`
 	ExtraInstructions string `json:"extra_instructions"`
@@ -30,17 +32,22 @@ type promptCase struct {
 	Description       string `json:"description"`
 	Date              string `json:"date"`
 	Diff              string `json:"diff"`
+	// Discussion is the rendered existing-discussion block (ours, X-13;
+	// the oracle ignores it).
+	Discussion string `json:"discussion"`
 }
 
 func (c *promptCase) input() PromptInput {
 	return PromptInput{
-		Toggles:           Toggles{EffortEstimate: c.Toggles.Effort, Tests: c.Toggles.Tests, Security: c.Toggles.Security},
+		Toggles: Toggles{EffortEstimate: c.Toggles.Effort, Tests: c.Toggles.Tests, Security: c.Toggles.Security,
+			Performance: c.Toggles.Performance},
 		MaxFindings:       c.MaxFindings,
 		ExtraInstructions: c.ExtraInstructions,
 		Language:          c.Language,
 		Title:             c.Title,
 		Branch:            c.Branch,
 		Description:       c.Description,
+		Discussion:        c.Discussion,
 		Date:              c.Date,
 		Diff:              c.Diff,
 	}
@@ -118,6 +125,14 @@ func TestPromptGoldens(t *testing.T) {
 				"upstream.user.txt", "user.txt"))
 			checkGolden(t, filepath.Join(dir, "upstream.diff"), d.String())
 		})
+	}
+	// The with_discussion case embeds the block of the discussion golden.
+	var c promptCase
+	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(promptCasesDir, "with_discussion", "case.json"))), &c); err != nil {
+		t.Fatal(err)
+	}
+	if want := strings.TrimSuffix(readFile(t, "testdata/discussion/sample.txt"), "\n"); c.Discussion != want {
+		t.Errorf("with_discussion/case.json holds a different block than testdata/discussion/sample.txt (regenerate the cases)")
 	}
 	if n < 6 {
 		t.Fatalf("found %d prompt cases, want at least 6", n)

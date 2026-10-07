@@ -139,7 +139,7 @@ Flags (they may come before or after the URL):
 | Flag | Default | Meaning |
 |---|---|---|
 | `--mode plain\|numbered` | `plain` | `plain` is the format for questions; `numbered` is the line-numbered format for reviews (`__new hunk__` / `__old hunk__` blocks). |
-| `--prompt-tokens N` | `2056` | The estimated size of the prompt around the diff. The default is the measured maximum of the review prompts (all fields on, a non-English language, extra instructions; see [Reviewing pull requests](review.md#prompt-tokens)), without the PR's own title and description. Raise it to see how a longer prompt squeezes the diff; `diag review --dry-run` reports the exact figure for a PR. |
+| `--prompt-tokens N` | `2205` | The estimated size of the prompt around the diff. The default is the measured maximum of the review prompts (all fields on, a non-English language, extra instructions; see [Reviewing pull requests](review.md#prompt-tokens)), without the PR's own title and description. Raise it to see how a longer prompt squeezes the diff; `diag review --dry-run` reports the exact figure for a PR. |
 
 ```json
 {
@@ -407,10 +407,14 @@ is the short version and the place to look when a call fails with
 `authentication failed`. All scopes are unconfirmed until V1 acceptance (item
 A3) has verified them.
 
-- **Gitea:** read access to the repository (`read:repository`) and to issues
-  (`read:issue`, for PR-level comments), plus write access to issues
-  (`write:issue`). The write part is needed only for publishing (`publish`),
-  `pr_comment_reply` and `diag comment`; reading a PR needs only read access.
+- **Gitea:** read access to the repository (`read:repository`), to issues
+  (`read:issue`, for PR-level comments) and to your user (`read:user`, to
+  identify the token's own comments), plus write access to issues
+  (`write:issue`, for posting and editing PR comments) and to the repository
+  (`write:repository`, for inline comments, which are posted as a review).
+  The write part is needed only for publishing (`publish`),
+  `pr_comment_reply`, `pr_comment_create` and `diag comment`; reading a PR needs
+  only read access.
 - **Bitbucket Server / Data Center:** an HTTP access token with repository
   read permission, plus write permission only for comments. The token is sent
   as `Authorization: Bearer ...`; basic authentication is not supported.

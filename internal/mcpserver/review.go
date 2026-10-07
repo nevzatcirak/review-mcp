@@ -11,14 +11,15 @@ import (
 )
 
 // prReviewDescription is the tool description from spec P4 §6.1.
-const prReviewDescription = "Reviews a pull request with the configured LLM and returns a structured review (key issues, effort, tests, security) with code excerpts. Set publish=true to also post it as a PR comment. The PR's title, description and diff are sent to the configured LLM endpoint."
+const prReviewDescription = "Reviews a pull request with the configured LLM and returns a structured review (key issues, effort, tests, security, performance) with code excerpts. Set publish=true to also post it: one overview comment that later runs edit in place, and the findings on changed lines as inline comments. The PR's title, description, existing comments and diff are sent to the configured LLM endpoint."
 
 type prReviewInput struct {
 	PRURL             string `json:"pr_url" jsonschema:"URL of the pull request, on a configured Gitea or Bitbucket Server host"`
 	ExtraInstructions string `json:"extra_instructions,omitempty" jsonschema:"extra review instructions for the model; replaces review.extra_instructions for this call"`
 	OutputLanguage    string `json:"output_language,omitempty" jsonschema:"locale code for the review text, for example en-US or tr-TR; replaces output.language for this call"`
 	MaxFindings       *int   `json:"max_findings,omitempty" jsonschema:"most key issues to return, 1 to 20; replaces review.max_findings for this call"`
-	Publish           bool   `json:"publish,omitempty" jsonschema:"also post the review as a PR comment (default false)"`
+	Publish           bool   `json:"publish,omitempty" jsonschema:"also post the review: the overview comment, and with inline_findings the findings on changed lines as inline comments (default false)"`
+	InlineFindings    *bool  `json:"inline_findings,omitempty" jsonschema:"with publish, post each finding that falls on a changed line as an inline comment; replaces review.inline_findings for this call"`
 }
 
 // progressTotal is the number of stages of a review or an answer.
@@ -77,7 +78,7 @@ func registerPRReview(s *mcp.Server, deps Deps) {
 			Progress: progressFunc(ctx, req, log, "pr_review"),
 		}, tools.PRReviewArgs{
 			PRURL: in.PRURL, ExtraInstructions: in.ExtraInstructions, OutputLanguage: in.OutputLanguage,
-			MaxFindings: in.MaxFindings, Publish: in.Publish,
+			MaxFindings: in.MaxFindings, Publish: in.Publish, InlineFindings: in.InlineFindings,
 		})
 		if err != nil {
 			msg := tools.UserMessage(err)

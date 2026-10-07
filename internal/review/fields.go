@@ -26,12 +26,14 @@ import (
 // RootKey is the root mapping of a review answer (upstream first_key).
 const RootKey = "review"
 
-// Field keys, in upstream order.
+// Field keys, in upstream order; performance_concerns, which upstream does
+// not have (X-12), comes last.
 const (
-	KeyEffort           = "estimated_effort_to_review"
-	KeyRelevantTests    = "relevant_tests"
-	KeyKeyIssues        = "key_issues_to_review"
-	KeySecurityConcerns = "security_concerns"
+	KeyEffort              = "estimated_effort_to_review"
+	KeyRelevantTests       = "relevant_tests"
+	KeyKeyIssues           = "key_issues_to_review"
+	KeySecurityConcerns    = "security_concerns"
+	KeyPerformanceConcerns = "performance_concerns"
 )
 
 // Key-issue element keys, in upstream order.
@@ -47,6 +49,10 @@ const (
 // no security concerns (the No-detector matched).
 const SecurityNo = "No"
 
+// PerformanceNo is the value of Review.PerformanceConcerns when the model
+// reported no performance concerns (the No-detector matched).
+const PerformanceNo = "No"
+
 // Effort bounds (X-4).
 const (
 	MinEffort = 1
@@ -56,16 +62,18 @@ const (
 // errNoReview is the validation gate's failure (§4.1).
 var errNoReview = fmt.Errorf("review: the answer has no non-empty %q mapping: %w", RootKey, ErrFallbackEligible)
 
-// Toggles selects the optional review fields (X-4).
+// Toggles selects the optional review fields (X-4, X-12).
 type Toggles struct {
 	EffortEstimate bool
 	Tests          bool
 	Security       bool
+	Performance    bool
 }
 
 // TogglesFrom reads the toggles from the review configuration.
 func TogglesFrom(r config.Review) Toggles {
-	return Toggles{EffortEstimate: r.RequireEffortEstimate, Tests: r.RequireTests, Security: r.RequireSecurity}
+	return Toggles{EffortEstimate: r.RequireEffortEstimate, Tests: r.RequireTests, Security: r.RequireSecurity,
+		Performance: r.RequirePerformance}
 }
 
 // Review is the validated review. Optional fields are nil when disabled,
@@ -75,12 +83,19 @@ type Review struct {
 	RelevantTests           *bool      `json:"relevant_tests,omitempty"`
 	KeyIssuesToReview       []KeyIssue `json:"key_issues_to_review"`
 	SecurityConcerns        *string    `json:"security_concerns,omitempty"`
+	PerformanceConcerns     *string    `json:"performance_concerns,omitempty"`
 }
 
 // HasSecurityConcerns reports whether the security field is enabled, present
 // and not "No".
 func (r *Review) HasSecurityConcerns() bool {
 	return r.SecurityConcerns != nil && *r.SecurityConcerns != SecurityNo
+}
+
+// HasPerformanceConcerns reports whether the performance field is enabled,
+// present and not "No".
+func (r *Review) HasPerformanceConcerns() bool {
+	return r.PerformanceConcerns != nil && *r.PerformanceConcerns != PerformanceNo
 }
 
 // KeyIssue is one finding. The first five fields come from the model; the
@@ -102,7 +117,22 @@ type KeyIssue struct {
 	SnippetNote string `json:"snippet_note,omitempty"`
 	// Link is the provider URL of the file at StartLine, when available.
 	Link string `json:"link,omitempty"`
+	// InlineURL is the URL of the finding's inline comment, when one was
+	// posted and the server reported its URL.
+	InlineURL string `json:"inline_url,omitempty"`
+	// InlineStatus is what happened to the finding in an inline publish
+	// (one of the Inline* values); empty when inline findings were not
+	// considered.
+	InlineStatus string `json:"inline_status,omitempty"`
 }
+
+// InlineStatus values: the counts of InlineSummary, per finding.
+const (
+	InlinePosted           = "posted"
+	InlineSkippedDuplicate = "skipped_duplicate"
+	InlineUnanchorable     = "unanchorable"
+	InlineFailed           = "failed"
+)
 
 // field describes one review field (X-4). Its prompt text reproduces
 // upstream's Pydantic-style schema and example.
@@ -139,7 +169,11 @@ type keyIssueField struct {
 
 // Upstream's prompt descriptions, verbatim except the effort key, which X-4
 // renames from upstream's estimated_effort_to_review_[1-5] (the range stays
-// in the description).
+// in the description). descPerformance is ours (X-12, spec P7 §4.1): an
+// intentional deviation, since upstream has no performance field. It is the
+// spec wording plus security's no-translation sentence (descEnglishNo; lead
+// decision, reported to the architect as a DESIGN-QUESTION), so that the
+// No-detector also works for it under any output language.
 const (
 	descEffort = "Estimate, on a scale of 1-5 (inclusive), the time and effort required to review this PR by an " +
 		"experienced and knowledgeable developer. 1 means short and easy review, 5 means long and hard review. " +
@@ -152,11 +186,18 @@ const (
 		"An empty list is acceptable if no clear issues are found."
 	descSecurity = "Does this PR code introduce vulnerabilities such as exposure of sensitive information " +
 		"(e.g., API keys, secrets, passwords), or security concerns like SQL injection, XSS, CSRF, and others? " +
-		"Answer 'No' (without explaining why) if there are no possible issues. Answer with the exact English " +
-		"literal 'No', and do not translate it into another language, even if extra instructions ask you to " +
-		"write your response in another language. If there are security concerns or issues, start your answer " +
+		"Answer 'No' (without explaining why) if there are no possible issues. " + descEnglishNo +
+		" If there are security concerns or issues, start your answer " +
 		"with a short header, such as: 'Sensitive information exposure: ...', 'SQL injection: ...', etc. " +
 		"Explain your answer. Be specific and give examples if possible"
+	descPerformance = "Does this PR introduce code with a likely performance problem (for example unbounded work, " +
+		"needless allocation in a hot path, blocking I/O on a request path, N+1 access, missing timeouts or " +
+		"resource cleanup)? Answer 'No' if there are none, otherwise describe each one briefly with its file. " +
+		descEnglishNo
+	// descEnglishNo is upstream's no-translation sentence of the security
+	// description, shared with the performance description.
+	descEnglishNo = "Answer with the exact English literal 'No', and do not translate it into another language, " +
+		"even if extra instructions ask you to write your response in another language."
 )
 
 // keyIssueFields is upstream's KeyIssuesComponentLink, in upstream order.
@@ -179,9 +220,13 @@ var keyIssueExtraSchema = map[string]map[string]any{
 	"snippet":      {"type": "string", "description": "the verified code lines start_line to end_line (at most 30), joined by newlines"},
 	"snippet_note": {"type": "string", "description": "why the snippet is missing or shortened"},
 	"link":         {"type": "string", "description": "provider URL of the file at start_line"},
+	"inline_url":   {"type": "string", "description": "URL of the inline comment posted for this finding"},
+	"inline_status": {"type": "string", "enum": []any{InlinePosted, InlineSkippedDuplicate, InlineUnanchorable, InlineFailed},
+		"description": "what happened to the finding in an inline publish; absent when inline findings were not considered"},
 }
 
-// fields is the review descriptor table, in upstream order (X-4).
+// fields is the review descriptor table, in upstream order (X-4), with the
+// performance field (X-12) appended after security_concerns.
 var fields = []field{
 	{
 		key:         KeyEffort,
@@ -230,6 +275,19 @@ var fields = []field{
 				"description": "\"No\" when no security concerns were found; otherwise the concerns, starting with a short header"}
 		},
 		convert: convertSecurity,
+	},
+	{
+		key:         KeyPerformanceConcerns,
+		enabled:     func(t Toggles) bool { return t.Performance },
+		pyType:      "str",
+		description: func(int) string { return descPerformance },
+		example:     " |\n    No",
+		leafKeys:    []string{KeyPerformanceConcerns},
+		schema: func() map[string]any {
+			return map[string]any{"type": "string",
+				"description": "\"No\" when no performance concerns were found; otherwise each concern, briefly, with its file"}
+		},
+		convert: convertPerformance,
 	},
 }
 
@@ -502,9 +560,20 @@ func convertTests(v any, r *Review, _ *Conversion, _ int) string {
 }
 
 func convertSecurity(v any, r *Review, _ *Conversion, _ int) string {
+	return convertConcerns(v, &r.SecurityConcerns, SecurityNo)
+}
+
+func convertPerformance(v any, r *Review, _ *Conversion, _ int) string {
+	return convertConcerns(v, &r.PerformanceConcerns, PerformanceNo)
+}
+
+// convertConcerns converts a No-or-text field (security_concerns,
+// performance_concerns): no is stored when the No-detector matches, the
+// trimmed text otherwise.
+func convertConcerns(v any, dst **string, no string) string {
 	if yamlrepair.IsNo(v) {
-		s := SecurityNo
-		r.SecurityConcerns = &s
+		s := no
+		*dst = &s
 		return ""
 	}
 	s, ok := toText(v)
@@ -516,7 +585,7 @@ func convertSecurity(v any, r *Review, _ *Conversion, _ int) string {
 		// a usable answer.
 		return "empty"
 	}
-	r.SecurityConcerns = &s
+	*dst = &s
 	return ""
 }
 

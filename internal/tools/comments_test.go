@@ -506,14 +506,14 @@ func TestFenceLen(t *testing.T) {
 func TestPRCommentReply(t *testing.T) {
 	for _, inThread := range []bool{true, false} {
 		fp := &fakeProvider{reply: &provider.ReplyResult{
-			Comment:  provider.Comment{ID: "55", URL: "https://x.example/pr/7?token=FAKE-q#c55"},
+			Comment:  provider.Comment{ID: "55", URL: "https://x.example/pr/7#issuecomment-55"},
 			InThread: inThread,
 		}}
 		res, err := PRCommentReply(context.Background(), &fakeResolver{p: fp}, testPRURL, "12", "thanks")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if res.ID != "55" || res.InThread != inThread || strings.Contains(res.URL, "FAKE-q") {
+		if res.ID != "55" || res.InThread != inThread || res.URL != "https://x.example/pr/7#issuecomment-55" {
 			t.Errorf("result = %+v", res)
 		}
 		if fp.gotComment != "12" || fp.gotBody != "thanks" {

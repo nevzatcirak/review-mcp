@@ -77,6 +77,7 @@ class Review(BaseModel):
     relevant_tests: Literal["Yes", "No"] = Field(description="Does this PR have relevant tests added or updated? Answer exactly Yes or No.")
     key_issues_to_review: List[KeyIssuesComponentLink] = Field("A concise list (0-3 issues) of bugs, security vulnerabilities, or significant performance concerns introduced in this PR. Only include issues you are confident about. If confidence is limited but the potential impact is high (e.g., data loss, security), you may include it only if you explicitly note what remains uncertain. Each issue must identify a concrete problem with a realistic trigger scenario. An empty list is acceptable if no clear issues are found.")
     security_concerns: str = Field(description="Does this PR code introduce vulnerabilities such as exposure of sensitive information (e.g., API keys, secrets, passwords), or security concerns like SQL injection, XSS, CSRF, and others? Answer 'No' (without explaining why) if there are no possible issues. Answer with the exact English literal 'No', and do not translate it into another language, even if extra instructions ask you to write your response in another language. If there are security concerns or issues, start your answer with a short header, such as: 'Sensitive information exposure: ...', 'SQL injection: ...', etc. Explain your answer. Be specific and give examples if possible")
+    performance_concerns: str = Field(description="Does this PR introduce code with a likely performance problem (for example unbounded work, needless allocation in a hot path, blocking I/O on a request path, N+1 access, missing timeouts or resource cleanup)? Answer 'No' if there are none, otherwise describe each one briefly with its file. Answer with the exact English literal 'No', and do not translate it into another language, even if extra instructions ask you to write your response in another language.")
 
 class PRReview(BaseModel):
     review: Review
@@ -100,6 +101,8 @@ review:
       end_line: 14
     - ...
   security_concerns: |
+    No
+  performance_concerns: |
     No
 ```
 

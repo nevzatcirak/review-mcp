@@ -6,7 +6,10 @@ differences). The oracle is not run by the tests; its outputs are
 committed.
 
 - `make_cases.py` writes every case's `case.json` (synthetic PR sample,
-  toggles, language, extra instructions).
+  toggles, language, extra instructions; for `with_discussion` also our
+  discussion block, read from `../discussion/sample.txt`; the upstream
+  renderer ignores it, and that case's `upstream.*` files are a copy of
+  `all_fields`', because upstream has no such block).
 - `render_upstream.py` renders upstream's `[pr_review_prompt]` system and
   user templates for each case and writes `upstream.system.txt` and
   `upstream.user.txt`. It uses upstream's own settings loader and

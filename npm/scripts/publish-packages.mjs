@@ -5,9 +5,9 @@
 //
 // Usage: node npm/scripts/publish-packages.mjs <build-dir>
 //
-// Authentication is left to npm: the release workflow's actions/setup-node
-// step writes an .npmrc that reads NODE_AUTH_TOKEN from the environment. This
-// script never reads, prints or passes the token.
+// Authentication is left to npm: the release workflow uses npm trusted
+// publishing (GitHub OIDC), so the npm CLI obtains its own short-lived
+// credential. This script never reads, prints or passes a token.
 //
 // Republishing guard: before each publish the registry is asked whether
 // <name>@<version> already exists. If it does, the script stops with a

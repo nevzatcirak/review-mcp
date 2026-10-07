@@ -64,6 +64,33 @@ func TestServerInfoValid(t *testing.T) {
 	}
 }
 
+// TestServerInfoListsPublishSettings: the effective configuration carries
+// the review.* rows of WP-PR-7f with their values and origins, in the
+// structured result and in the markdown.
+func TestServerInfoListsPublishSettings(t *testing.T) {
+	env := validEnv()
+	env["REVIEW_MCP_REVIEW_INLINE_FINDINGS"] = "false"
+	cfg, rep, err := load(env)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	r := ServerInfo(cfg, rep, nil)
+	md := RenderServerInfoMarkdown(r)
+	for _, w := range []struct{ key, value, origin string }{
+		{"review.inline_findings", "false", "env"},
+		{"review.persistent_overview", "true", "default"},
+		{"review.max_discussion_tokens", "1500", "default"},
+		{"review.require_performance", "true", "default"},
+	} {
+		if _, ok := r.Config.Values[w.key]; !ok {
+			t.Errorf("config values lack %s", w.key)
+		}
+		if line := "- `" + w.key + "` = `" + w.value + "` (" + w.origin + ")"; !strings.Contains(md, line) {
+			t.Errorf("markdown lacks %q", line)
+		}
+	}
+}
+
 func TestServerInfoInvalidConfig(t *testing.T) {
 	env := map[string]string{
 		"REVIEW_MCP_LLM_API_KEY": testLLMKey,

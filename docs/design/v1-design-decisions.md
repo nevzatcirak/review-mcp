@@ -29,12 +29,12 @@ code must not anticipate them beyond the seams named here.
 | DQ-10 | Diff representation | One parsed hunk model, multiple renderers (decided now); `/improve` view choice deferred | Partly decided |
 | DQ-11 | Anchor acquisition for `/improve` | — | Deferred to v2 |
 | DQ-12 | Verification source of truth | Hybrid (head file if complete, else patch walk) — applies to v1 finding snippets | Decided |
-| DQ-13 | Gitea inline granularity (`/improve`) | — | Deferred to v2 |
-| DQ-14 | Bitbucket Server `lineType` | — | Deferred to v2 |
-| DQ-15 | Cross-run inline dedup | — | Deferred to v2 |
+| DQ-13 | Gitea inline granularity | One `COMMENT` review per run, pinned to the head commit (decided in P7, X-11) | Decided (P7) |
+| DQ-14 | Bitbucket Server `lineType` | Computed from the hunk model (`ADDED` or `CONTEXT`), never hardcoded (decided in P7, X-11) | Decided (P7) |
+| DQ-15 | Cross-run inline dedup | Fingerprint marker on each inline comment; a finding already on the PR from the same identity is skipped (decided in P7, X-13) | Decided (P7) |
 | DQ-16 | Capability surface | Typed `Capabilities` struct; renderer takes an output *target profile* | Decided |
 | DQ-17 | Gitea per-file patch source | Whole-PR `.diff` + real unified-diff parser + response-size cap | Decided |
-| DQ-18 | Gitea inline publish granularity | — | Deferred to v2 |
+| DQ-18 | Gitea inline publish granularity | One review per run; an unanchorable finding is listed in the overview only (decided in P7, X-11) | Decided (P7) |
 | DQ-19 | Bitbucket Server diff acquisition | Full base/head files + local unified diff (upstream approach) | Decided |
 | DQ-20 | Minimum Bitbucket DC version | ≥ 7.0; feature-detect merge-base, fall back to ancestor walk; honest error below 7.0 | Decided |
 | DQ-21 | Bitbucket Basic auth | Bearer (HTTP access token) only in v1 | Decided |
@@ -43,7 +43,7 @@ code must not anticipate them beyond the seams named here.
 | DQ-24 | Env naming | Fixed table, `REVIEW_MCP_` prefix, unknown-variable warnings | Decided |
 | DQ-25 | Per-call overrides | Curated tool arguments only | Decided |
 | DQ-26 | Sampling-parameter defaults | Send only explicitly configured sampling parameters | Decided |
-| X-1 | Publishing to the PR in v1 | Opt-in `publish` argument, PR-level comment only | Decided |
+| X-1 | Publishing to the PR in v1 | Opt-in `publish` argument; PR-level comment only in rc.1, amended by X-11 and X-12 | Decided (amended) |
 | X-2 | Provider selection | By PR-URL match against configured base URLs (no global `provider.kind`) | Decided |
 | X-3 | Large-PR handling | Single call + mandatory coverage footer; review chunking deferred | Decided |
 | X-4 | v1 review schema | Key issues (always) + tests / security / effort toggles | Decided |
@@ -53,6 +53,10 @@ code must not anticipate them beyond the seams named here.
 | X-8 | Logging | `log/slog` to stderr only; never prompt/response bodies, never secrets | Decided |
 | X-9 | PR conversation tools (added 2026-10-06) | `pr_comments` (read threads) + `pr_comment_reply` (reply in thread, honest fallback) in v1 | Decided |
 | X-10 | `serve` identity (added 2026-10-06) | Credentials per HTTP request in headers; provider tokens in the server env are refused in serve mode; stateless transport | Decided |
+| X-11 | Inline findings (P7, amends X-1) | `publish=true` posts an overview and each anchorable finding as an inline comment; Gitea one `COMMENT` review per run, Bitbucket one comment per finding with a computed `lineType`; single-line anchors | Decided |
+| X-12 | Persistent overview (P7, amends X-1, extends X-4) | One overview per PR per token user, found by marker and author, edited in place; new `performance_concerns` field | Decided |
+| X-13 | Discussion awareness (P7) | The PR's threads go into the prompt as untrusted, budgeted data; inline findings carry a fingerprint and are not posted twice | Decided |
+| X-14 | `pr_comment_create` (P7, extends X-9) | Sixth tool: a new PR-level or inline comment; an unanchorable line is refused, never downgraded | Decided |
 
 ---
 
@@ -149,7 +153,7 @@ implementation must do or must not do).
 - **Consequences:** The same resolver becomes v2's anchor validator.
 
 #### DQ-13, DQ-14, DQ-15 — Gitea inline granularity, Bitbucket Server `lineType`, cross-run dedup
-- **Deferred to v2** (all concern inline publication, which v1 does not do — see X-1). Recorded leanings: one Gitea review per run with multi-line suggestions demoted to plain comments; compute Bitbucket `lineType` (ADDED vs CONTEXT) from the hunk model instead of hardcoding; port fingerprint markers and wire them into both providers if committable inline mode ships.
+- **Decided in P7** (X-11, X-13); originally deferred to v2. Kept below: the leanings recorded then, which P7 adopted. Recorded leanings: one Gitea review per run with multi-line suggestions demoted to plain comments; compute Bitbucket `lineType` (ADDED vs CONTEXT) from the hunk model instead of hardcoding; port fingerprint markers and wire them into both providers if committable inline mode ships.
 
 ### Area F — Providers
 
@@ -166,7 +170,7 @@ implementation must do or must not do).
 - **Consequences:** `old_filename` is populated for renames. The `/files.patch` field is evaluated only as a later optimization, after live acceptance.
 
 #### DQ-18 — Gitea inline publish granularity
-- **Deferred to v2** (no inline publication in v1). Recorded leaning: single review with every anchor pre-validated; unanchorable findings appended to the PR-level comment.
+- **Decided in P7** (X-11); originally deferred to v2. Recorded leaning, adopted: single review with every anchor pre-validated; unanchorable findings appended to the PR-level comment.
 
 #### DQ-19 — Bitbucket Server diff acquisition
 - **Decision:** Port upstream's approach: list changes, download base and head contents via the raw endpoint, generate a hunk-only unified diff locally with 3 context lines (difflib-compatible output).
@@ -212,7 +216,7 @@ implementation must do or must not do).
 ## 4. Additional decisions (surfaced while resolving the DQs)
 
 #### X-1 — Publishing to the PR in v1
-- **Decision:** Both tools always return their result to the MCP client. An optional `publish` argument (default `false`) additionally posts the result as a **new PR-level comment** (rendered with the `provider` profile). No inline comments, no persistent-comment editing, no labels in v1.
+- **Decision:** Both tools always return their result to the MCP client. An optional `publish` argument (default `false`) additionally posts the result as a **new PR-level comment** (rendered with the `provider` profile). No inline comments, no persistent-comment editing, no labels in v1. **Amended in P7 (rc.2):** `pr_review` with `publish=true` posts an overview and inline comments, and edits its overview in place (X-11, X-12); `pr_ask` still posts one new PR-level comment. Labels remain out.
 - **Rationale:** Returning text is the MCP-native path; opt-in publishing satisfies the P2 acceptance gate (comment posted and visible) without importing upstream's comment-lifecycle machinery.
 - **Consequences:** `pr_ask` publishing applies the leading-`/` sanitization. Persistent-comment update is a v1.x candidate.
 
@@ -227,7 +231,7 @@ implementation must do or must not do).
 - **Consequences:** The coverage section is always on — no config key.
 
 #### X-4 — v1 review schema
-- **Decision:** Fields: `key_issues_to_review` (always; elements `relevant_file`, `issue_header`, `issue_content`, `start_line`, `end_line`), `security_concerns` (`review.require_security`, default true), `relevant_tests` (`review.require_tests`, default true), `estimated_effort_to_review` (`review.require_effort_estimate`, default true; renamed from upstream's bracketed key, range 1–5 in its description). `review.max_findings` default 3.
+- **Decision:** (P7 adds `performance_concerns`, X-12.) Fields: `key_issues_to_review` (always; elements `relevant_file`, `issue_header`, `issue_content`, `start_line`, `end_line`), `security_concerns` (`review.require_security`, default true), `relevant_tests` (`review.require_tests`, default true), `estimated_effort_to_review` (`review.require_effort_estimate`, default true; renamed from upstream's bracketed key, range 1–5 in its description). `review.max_findings` default 3.
 - **Rationale:** The core value with the smallest prompt/validation surface; the descriptor table makes later fields (score, risk, merge recommendation, can-be-split, todo scan) cheap additions.
 - **Consequences:** Ticket compliance is out (needs a tracker integration). The `security_concerns` "literal English `No`" instruction is kept so No-detection works under any output language; the No-detector accepts `false`, `no`, `none` (case-insensitive).
 
@@ -263,6 +267,53 @@ implementation must do or must not do).
 - **Decision:** In `serve` mode every credential arrives with the HTTP request (`X-Review-MCP-Gitea-Token`, `X-Review-MCP-Bitbucket-Server-Token`, `X-Review-MCP-LLM-API-Key`). Provider tokens set in the server's environment are a startup error in serve mode. The LLM key comes either from the request header or, by explicit choice (`serve.llm_key_source = server`), from the server environment, in which case an access token is mandatory. The MCP transport runs stateless, so no session outlives a request.
 - **Rationale:** Keeps the per-user token model of stdio on a shared server: one person's identity is never used for another person's call, and nothing secret persists between requests.
 - **Consequences:** One credential read point (`Config.WithSecrets` per call). Non-loopback binds require TLS or an explicit opt-out for TLS-terminating proxies. Details and canaries: `docs/plan/P6-spec.md` §1.
+
+#### X-11 — Inline findings (added P7, amends X-1)
+- **Decision:**
+  - With `publish=true`, `pr_review` posts one **overview** comment (X-12) and each **anchorable** finding as an **inline comment** on its file and line, when `review.inline_findings` is true (default true; per-call `inline_findings` argument).
+  - A finding is anchorable when its line resolves inside the provider's own diff hunks: an added or a context line of a changed file (`internal/review/anchor`). Hunks are the provider's, never the extended context the prompt uses.
+  - Unanchorable findings appear only in the overview, with a note that counts them.
+  - DQ-13/DQ-14/DQ-18: Gitea posts **one review per run**, event `COMMENT`, pinned to the head commit; Bitbucket Server posts one comment per finding with `lineType` **computed** from the hunk model (`ADDED` or `CONTEXT`) and never hardcoded. Anchors are single-line on both providers.
+- **Rationale:** Findings belong on their lines; a flat comment buries them. Computing the line type and resolving on the server's own hunks is what the servers accept.
+- **Consequences:**
+  - The overview is posted first, so a failed inline batch never leaves the PR without it; an inline failure never fails the review.
+  - Gitea: no PENDING review is ever left behind; a failed post deletes the draft, and an outcome-unknown failure is never reposted.
+  - Gitea posting is refused (class `conflict`) when the token's user already has a PENDING review on the PR, because the server would submit that draft with our comments. (Decided in 7b; confirmed by architect review on PR #9 (2026-10-07).)
+  - Error classes `not_owner` (an edit of a comment the token's user did not write) and `conflict` (a request that conflicts with the server's state) are new allowlist classes in X-6. (Decided in 7b; confirmed by architect review on PR #9 (2026-10-07).)
+
+#### X-12 — Persistent overview (added P7, amends X-1, extends X-4)
+- **Decision:**
+  - The overview is **one comment per PR per review-mcp identity** (the token's user). It ends with the marker `[//]: # (review-mcp:overview:v1)` and is found again by that marker **and** by being authored by the token's own user, then **edited in place** on later runs (`review.persistent_overview`, default true).
+  - A marker in anyone else's comment is ignored, never adopted or edited. If several of ours match, the newest is edited and a note counts the older ones.
+  - A failed lookup or edit posts a new overview with a note; it never fails the review.
+  - It carries the enabled X-4 fields, the new **`performance_concerns`** field (`review.require_performance`, default true; the model answers "No" or text, like `security_concerns`), the run time and head SHA, a findings index and the coverage.
+- **Rationale:** One living summary instead of a pile of comments, and security and performance covered.
+- **Consequences:**
+  - The overview is posted, then edited once to link each finding to its inline comment. (7c; decided, architect review on PR #9 (2026-10-07): it costs one extra edit per first publish and relies on `EditComment`.)
+  - The performance field description is the spec wording plus the security field's no-translation sentence, so a non-English review still answers the literal English "No" that the No-detector reads. This deviates from upstream and is recorded in the template header. (7d; decided, architect review on PR #9 (2026-10-07).)
+  - Identity: `CurrentUser` is Gitea's `GET /api/v1/user` and, for Bitbucket Server, the `X-AUSERNAME` and `X-AUSERID` headers of `GET /rest/api/1.0/application-properties`. Ownership is checked by id when both sides carry one and by case-insensitive name otherwise, before every edit and for the overview lookup. (7b; decided, architect review on PR #9 (2026-10-07); acceptance I1 verifies it live, including with project and repository tokens.)
+  - The Gitea token needs `read:user` for it (setup guide; "verify at A3"). (7b; decided, architect review on PR #9 (2026-10-07).)
+
+#### X-13 — Discussion awareness (added P7, decides DQ-15 for review)
+- **Decision:**
+  - Before the model call, `pr_review` reads the PR's comment threads, excludes its own comments (marker and author) and renders the rest into the prompt as **untrusted data**; the model is told not to repeat what is already raised.
+  - The block is fenced adaptively, bodies are sanitized and capped at 600 characters, at most two replies per thread, and the block is budgeted by `review.max_discussion_tokens` (default 1500, 0 disables), clipped by whole threads with the newest first, counted before the diff budget. Comment text is never logged (X-8).
+  - Inline findings carry a fingerprint marker; a finding whose fingerprint is already on the PR from the same identity is not posted again (`skipped_duplicate`).
+- **Rationale:** A review that repeats the humans' points is noise; reviewers' comments are the best signal of what is already known.
+- **Consequences:**
+  - A failed read adds a note and the review continues.
+  - The discussion yields to the diff: when the context window is too small for both, the discussion is dropped. (7e; decided, architect review on PR #9 (2026-10-07).)
+  - Prompt injection through comments cannot be excluded by construction; acceptance I5 observes the model live.
+
+#### X-14 — `pr_comment_create` (added P7, extends X-9)
+- **Decision:**
+  - A sixth tool posts a new comment for the client: PR-level, or inline at `file` + `line`. `body` is required (at most 20000 characters, counted in runes as `pr_ask` counts its question).
+  - An inline request whose line is not on the new side of the file's diff hunks is **refused** with a fixed sentence, "the line is not part of the pull request diff; use a changed or context line of a changed file", and is never silently downgraded to a PR-level comment. The anchor is the same resolver as the review's.
+  - Serve mode: `RequireCredentials` and the per-call scope as for the other tools; the call needs the provider token and no LLM key.
+- **Consequences:**
+  - **Marker lines refused (decided, architect review on PR #9 (2026-10-07)):** `pr_comment_create` and `pr_comment_reply` refuse a body with a line that, trimmed, starts with `[//]:` and contains `review-mcp:`, before any request. A marker in a comment of ours would be adopted by the overview or the duplicate lookup, because the author matches; Gitea's reply is a new PR-level comment of ours, so it is affected as well.
+  - **URL redaction (decided, architect review on PR #9 (2026-10-07)):** the URLs in the `pr_comment_create` and `pr_comment_reply` results are built by the provider from the configured base URL plus the comment id (Gitea `...#issuecomment-N`, Bitbucket Server `...?commentId=N`). Config validation forbids credentials in a base URL, so they are returned unredacted and the deep link works. `logging.RedactURL` is for logs only, and every log line stays redacted.
+  - The tool is not read-only, not destructive, not idempotent, open-world.
 
 ---
 
@@ -309,8 +360,12 @@ Secrets are environment-only (in `serve` mode, credentials come from request hea
 | `review.max_findings` | `REVIEW_MCP_REVIEW_MAX_FINDINGS` | 3 | Per-call override (DQ-25) |
 | `review.require_tests` | `REVIEW_MCP_REVIEW_REQUIRE_TESTS` | true | X-4 |
 | `review.require_security` | `REVIEW_MCP_REVIEW_REQUIRE_SECURITY` | true | X-4 |
+| `review.require_performance` | `REVIEW_MCP_REVIEW_REQUIRE_PERFORMANCE` | true | X-12 (extends X-4) |
 | `review.require_effort_estimate` | `REVIEW_MCP_REVIEW_REQUIRE_EFFORT_ESTIMATE` | true | X-4 |
 | `review.extra_instructions` | `REVIEW_MCP_REVIEW_EXTRA_INSTRUCTIONS` | (empty) | Per-call override |
+| `review.inline_findings` | `REVIEW_MCP_REVIEW_INLINE_FINDINGS` | true | X-11; per-call `inline_findings` argument |
+| `review.persistent_overview` | `REVIEW_MCP_REVIEW_PERSISTENT_OVERVIEW` | true | X-12 |
+| `review.max_discussion_tokens` | `REVIEW_MCP_REVIEW_MAX_DISCUSSION_TOKENS` | 1500 | X-13; 0 disables the discussion block; must not be negative |
 | `ask.extra_instructions` | `REVIEW_MCP_ASK_EXTRA_INSTRUCTIONS` | (empty) | Per-call override |
 | `log.level` | `REVIEW_MCP_LOG_LEVEL` | `info` | stderr only (X-8) |
 | `serve.listen` | `REVIEW_MCP_SERVE_LISTEN` | `127.0.0.1:8787` | serve only (X-10); `host:port`; `--listen` overrides |
@@ -331,10 +386,11 @@ violations are reported together in one token-free startup error.
 | Tool | Arguments | Result |
 |---|---|---|
 | `server_info` (P1 diagnostic) | — | Version, enabled providers, effective non-secret config (secrets shown as set/unset only) |
-| `pr_review` | `pr_url` (required), `extra_instructions`, `output_language`, `max_findings`, `publish` | Markdown (`client` profile) + `structuredContent` (DQ-6) |
+| `pr_review` | `pr_url` (required), `extra_instructions`, `output_language`, `max_findings`, `publish`, `inline_findings` (P7) | Markdown (`client` profile) + `structuredContent` (DQ-6) |
 | `pr_ask` | `pr_url` (required), `question` (required), `extra_instructions`, `output_language`, `publish` | Markdown answer |
 | `pr_comments` (X-9) | `pr_url` (required), `include_resolved` (default false) | Markdown thread listing + `structuredContent` |
 | `pr_comment_reply` (X-9) | `pr_url` (required), `comment_id` (required), `body` (required) | Posted comment id/URL + whether it landed in-thread or as a PR-level fallback |
+| `pr_comment_create` (X-14) | `pr_url` (required), `body` (required), `file`, `line` (together) | Posted comment id/URL + `inline` true or false |
 
 ## 7. Items deferred beyond v1 (with seams)
 
@@ -345,6 +401,8 @@ violations are reported together in one token-free startup error.
 | Review chunking | Pipeline already produces `remaining_files` |
 | Repo-local config | Layered loader with explicit layer list |
 | Basic auth (Bitbucket Server) | Auth as a provider-level strategy, not a hardcoded header |
-| Inline comments, persistent comments, labels | Typed `Capabilities` struct; DQ-12 resolver |
-| `/improve` (DQ-11, 13, 14, 15, 18) | Hunk model with multiple renderers (DQ-10) |
+| Labels | Typed `Capabilities` struct (inline and persistent comments shipped in P7, X-11, X-12) |
+| Duplicate-skipped finding links to its earlier inline comment (v1.0.x) | `CommentItem.URL` filled for inline comments |
+| Shared package for the P2e sanitizers duplicated in `internal/review` (v1.0.x) | None; a refactor |
+| `/improve` (DQ-11; DQ-13, 14, 15, 18 were decided in P7) | Hunk model with multiple renderers (DQ-10) |
 | Additional review fields | Field-descriptor table (X-4, DQ-6) |

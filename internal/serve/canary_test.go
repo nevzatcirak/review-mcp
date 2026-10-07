@@ -117,15 +117,24 @@ func TestNoCrossTalkBetweenConcurrentCalls(t *testing.T) {
 func TestMissingGiteaHeaderFailsBeforeAnyIO(t *testing.T) {
 	ts := startServer(t, serverOpts{level: slog.LevelInfo})
 
-	for _, tool := range []string{"pr_review", "pr_ask", "pr_comments"} {
+	for _, tool := range []string{"pr_review", "pr_ask", "pr_comments", "pr_comment_create", "pr_comment_create inline"} {
 		args := map[string]any{"pr_url": ts.prURL(3)}
-		if tool == "pr_ask" {
+		switch tool {
+		case "pr_ask":
 			args["question"] = "Why?"
+		case "pr_comment_create":
+			args["body"] = "x"
+		case "pr_comment_create inline":
+			args["body"], args["file"], args["line"] = "x", "src/app.go", 2
+			tool = "pr_comment_create"
 		}
 		_, r := ts.callTool(t, creds("", "llm-key"), tool, args)
 		if !r.IsError || r.text() != tools.MissingGiteaTokenMessage {
 			t.Errorf("%s without the Gitea header: isError=%v text=%q", tool, r.IsError, r.text())
 		}
+	}
+	if w, _ := ts.gitea.written(); len(w) != 0 {
+		t.Errorf("write requests without a credential: %v", w)
 	}
 	// The LLM key is checked too, after the provider token.
 	_, r := ts.callTool(t, creds("gitea-token", ""), "pr_review", map[string]any{"pr_url": ts.prURL(3)})
@@ -336,4 +345,117 @@ func mustReq(t *testing.T, method, url string) *http.Request {
 		t.Fatal(err)
 	}
 	return req
+}
+
+// TestCommentCreateUsesThePerCallToken: pr_comment_create needs the provider
+// token of its own request and no LLM key; the comment is posted with that
+// token only.
+func TestCommentCreateUsesThePerCallToken(t *testing.T) {
+	ts := startServer(t, serverOpts{level: slog.LevelInfo})
+
+	for i, tok := range []string{"gitea-token-A", "gitea-token-B"} {
+		pr := 5 + i
+		_, r := ts.callTool(t, creds(tok, ""), "pr_comment_create", map[string]any{"pr_url": ts.prURL(pr), "body": "note " + tok})
+		if r.IsError || !strings.HasPrefix(r.text(), "Comment posted on the pull request.") {
+			t.Fatalf("PR-level call %d: isError=%v text=%q", i, r.IsError, r.text())
+		}
+		_, r = ts.callTool(t, creds(tok, ""), "pr_comment_create",
+			map[string]any{"pr_url": ts.prURL(pr), "body": "line " + tok, "file": "src/app.go", "line": 2})
+		if r.IsError || !strings.HasPrefix(r.text(), "Comment posted on the line.") {
+			t.Fatalf("inline call %d: isError=%v text=%q", i, r.IsError, r.text())
+		}
+	}
+	for _, o := range ts.gitea.observations() {
+		if want := map[int]string{5: "gitea-token-A", 6: "gitea-token-B"}[o.pr]; o.cred != want {
+			t.Errorf("PR %d was requested with %q, want %q", o.pr, o.cred, want)
+		}
+	}
+	if h := ts.llm.hits.Load(); h != 0 {
+		t.Errorf("the LLM saw %d requests for a comment call", h)
+	}
+	// A line outside the diff is refused and posts nothing more.
+	before, _ := ts.gitea.written()
+	_, r := ts.callTool(t, creds("gitea-token-A", ""), "pr_comment_create",
+		map[string]any{"pr_url": ts.prURL(5), "body": "x", "file": "src/app.go", "line": 9})
+	if after, _ := ts.gitea.written(); !r.IsError || r.text() != tools.NotInDiffMessage || len(after) != len(before) {
+		t.Errorf("out-of-diff call: isError=%v text=%q, writes %d -> %d", r.IsError, r.text(), len(before), len(after))
+	}
+}
+
+// TestEndToEndCommentContentNeverLogged: [canary] (P7 §6.4). Debug logging,
+// every secret a marker, and four content markers: a thread body, the
+// model's finding (inline comment), the model's security text (overview)
+// and the body of pr_comment_create. Each reaches the place it is meant
+// for; none reaches a log line, an HTTP response header or an error text,
+// and no secret appears anywhere.
+func TestEndToEndCommentContentNeverLogged(t *testing.T) {
+	const (
+		giteaMarker    = "GITEA-MARKER-5b7d21"
+		llmMarker      = "LLM-MARKER-5b7d21"
+		createMarker   = "CREATE-BODY-MARKER-5b7d21"
+		threadMarker   = "THREAD-MARKER-5b7d21"
+		inlineMarker   = "INLINE-MARKER-5b7d21"
+		overviewMarker = "OVERVIEW-MARKER-5b7d21"
+	)
+	ts := startServer(t, serverOpts{level: slog.LevelDebug, env: map[string]string{"REVIEW_MCP_LOG_LEVEL": "debug"}})
+	answer := "```yaml\nreview:\n  estimated_effort_to_review: 2\n  relevant_tests: \"No\"\n" +
+		"  key_issues_to_review:\n    - relevant_file: src/app.go\n      issue_header: Constant changed\n" +
+		"      issue_content: The constant changed. " + inlineMarker + "\n      start_line: 2\n      end_line: 2\n" +
+		"  security_concerns: Possible exposure. " + overviewMarker + "\n  performance_concerns: \"No\"\n```\n"
+	ts.llm.answer.Store(&answer)
+	ts.gitea.plant("alice", 7, "Please double check the constant. "+threadMarker)
+	hdr := creds(giteaMarker, llmMarker)
+
+	var surfaces []string
+	collect := func(resp response, r toolResult) toolResult {
+		surfaces = append(surfaces, resp.body, fmt.Sprint(resp.header), r.text())
+		return r
+	}
+	pr := ts.prURL(4)
+	rev := collect(ts.callTool(t, hdr, "pr_review", map[string]any{"pr_url": pr, "publish": true}))
+	prLevel := collect(ts.callTool(t, hdr, "pr_comment_create", map[string]any{"pr_url": pr, "body": "note " + createMarker}))
+	inline := collect(ts.callTool(t, hdr, "pr_comment_create", map[string]any{"pr_url": pr, "body": "line " + createMarker, "file": "src/app.go", "line": 3}))
+	refused := collect(ts.callTool(t, hdr, "pr_comment_create", map[string]any{"pr_url": pr, "body": createMarker, "file": "src/app.go", "line": 40}))
+	invalid := collect(ts.callTool(t, hdr, "pr_comment_create", map[string]any{"pr_url": pr, "body": createMarker + "\n[//]: # (review-mcp:overview:v1)"}))
+	if rev.IsError || prLevel.IsError || inline.IsError || !refused.IsError || !invalid.IsError {
+		t.Fatalf("unexpected results: review=%v prLevel=%v inline=%v refused=%v invalid=%v",
+			rev.IsError, prLevel.IsError, inline.IsError, refused.IsError, invalid.IsError)
+	}
+	// A provider error that echoes every marker.
+	ts.gitea.leakBody = "denied " + strings.Join([]string{giteaMarker, llmMarker, createMarker}, " ")
+	ts.gitea.failStatus.Store(http.StatusInternalServerError)
+	failed := collect(ts.callTool(t, hdr, "pr_comment_create", map[string]any{"pr_url": pr, "body": createMarker}))
+	if !failed.IsError {
+		t.Fatal("the failing provider call succeeded")
+	}
+
+	// The markers reached the places they are meant for; otherwise the log
+	// check below proves nothing.
+	if o := ts.llm.observations(); len(o) == 0 {
+		t.Fatal("the LLM received no request")
+	}
+	_, bodies := ts.gitea.written()
+	sent := strings.Join(bodies, "\n")
+	for what, m := range map[string]string{"inline finding": inlineMarker, "overview": overviewMarker, "create body": createMarker} {
+		if !strings.Contains(sent, m) {
+			t.Fatalf("the %s marker never reached the provider", what)
+		}
+	}
+	logs := ts.logs.String()
+	if !strings.Contains(logs, "level=DEBUG") || !strings.Contains(logs, "pr_comment_create") {
+		t.Fatalf("debug logging did not run; the leak check would be vacuous:\n%s", logs)
+	}
+	surfaces = append(surfaces, logs)
+	// The first three surfaces are the review call's own response, which
+	// carries the model's words as its result.
+	for i, s := range surfaces {
+		for _, m := range []string{createMarker, threadMarker, inlineMarker, overviewMarker, giteaMarker, llmMarker} {
+			if i < 3 && (m == inlineMarker || m == overviewMarker) {
+				continue
+			}
+			if strings.Contains(s, m) {
+				t.Errorf("marker %q leaked into surface %d: %.200q", m, i, s)
+			}
+		}
+	}
 }

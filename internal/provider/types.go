@@ -154,6 +154,18 @@ type CommentItem struct {
 	Body      string    `json:"body"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+
+	// AuthorID and AuthorLogin identify the author exactly as the ownership
+	// check of EditComment does, for IsUser(CurrentUser(), AuthorID,
+	// AuthorLogin): the numeric user id in decimal ("" when the server sent
+	// none) and the login or user name, without the display-name fallback
+	// that Author may use. A comment that passes IsUser here therefore
+	// passes EditComment's check too.
+	AuthorID    string `json:"-"`
+	AuthorLogin string `json:"-"`
+	// URL is the comment's web URL when the provider knows it; set for the
+	// comments a PR-level comment can be edited through (general threads).
+	URL string `json:"-"`
 }
 
 // Thread is a comment thread of a pull request.
@@ -182,4 +194,44 @@ type Thread struct {
 type ReplyResult struct {
 	Comment  Comment
 	InThread bool
+}
+
+// User is the identity of a provider account. ID is the provider's numeric
+// user id in decimal, or "" when the provider did not report one; Name is
+// the login (Gitea) or user name (Bitbucket Server).
+type User struct {
+	ID, Name string
+}
+
+// LineType says which kind of diff line an inline comment is anchored to.
+type LineType string
+
+// Line types. Both are new-side lines.
+const (
+	// LineAdded is a "+" line of a hunk.
+	LineAdded LineType = "added"
+	// LineContext is an unchanged line inside a hunk.
+	LineContext LineType = "context"
+)
+
+// InlineComment is one comment to post on a changed file's line.
+type InlineComment struct {
+	// Path is the file's new path.
+	Path string
+	// OldPath is the file's old path for a rename, and "" otherwise.
+	// Bitbucket Server sends it as the anchor's srcPath; Gitea ignores it.
+	OldPath string
+	// Line is the absolute new-side line number.
+	Line     int
+	LineType LineType
+	Body     string
+}
+
+// InlineResult is the outcome of one InlineComment. When Posted is false,
+// Error is a fixed sentence (X-6) and ID and URL are empty. When Posted is
+// true, ID or URL may still be empty if the server did not report them.
+type InlineResult struct {
+	Posted  bool
+	ID, URL string
+	Error   string
 }

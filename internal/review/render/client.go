@@ -3,8 +3,8 @@
 // provider comment (Gitea: GFM with HTML; Bitbucket Server: headings and
 // pipe tables).
 //
-// Language: the review text (finding headers and contents, security text,
-// notes) is model-authored in the requested output language. The fixed
+// Language: the review text (finding headers and contents, security and
+// performance text, notes) is model-authored in the requested output language. The fixed
 // headings and labels of the renderers stay English; translating them is out
 // of scope.
 package render
@@ -24,8 +24,9 @@ import (
 // backtick fences longer than any backtick run inside them.
 //
 // Layout: header and PR reference; the enabled fields in descriptor order
-// with the key issues last; the coverage section (always); the notes section
-// when there are notes.
+// with the key issues last; the publish summary when publishing was
+// requested; the coverage section (always); the notes section when there
+// are notes.
 func Client(res *review.Result) string {
 	if res == nil {
 		return ""
@@ -35,7 +36,8 @@ func Client(res *review.Result) string {
 	b.WriteString("## PR Review\n\n")
 	b.WriteString(clientPRLine(&res.PR) + "\n")
 
-	// Short facts as a list; the security text is a section of its own.
+	// Short facts as a list; the security and performance texts are
+	// sections of their own.
 	var facts []string
 	for _, k := range res.EnabledFields {
 		switch {
@@ -45,6 +47,8 @@ func Client(res *review.Result) string {
 			facts = append(facts, testsText(*v.tests))
 		case k == review.KeySecurityConcerns && v.security != nil && !v.hasConcerns:
 			facts = append(facts, textNoSecurity)
+		case k == review.KeyPerformanceConcerns && v.perf != nil && !v.hasPerf:
+			facts = append(facts, textNoPerf)
 		}
 	}
 	if len(facts) > 0 {
@@ -56,9 +60,13 @@ func Client(res *review.Result) string {
 	if v.showSec && v.hasConcerns {
 		b.WriteString("\n### " + textSecurity + "\n\n" + mdutil.Escape(strings.TrimSpace(*v.security)) + "\n")
 	}
+	if v.showPerf && v.hasPerf {
+		b.WriteString("\n### " + textPerf + "\n\n" + mdutil.Escape(strings.TrimSpace(*v.perf)) + "\n")
+	}
 	if v.showIssues && v.hasReview {
 		writeClientIssues(&b, v.issues)
 	}
+	writePublishSummary(&b, res.Publish)
 	llmrender.Coverage(&b, "### "+textCoverage, &res.Coverage)
 	llmrender.Notes(&b, "### "+textNotes, res.Notes)
 	return b.String()
@@ -127,8 +135,51 @@ func clientLocation(i *review.KeyIssue) string {
 	if lr := lineRange(i); lr != "" {
 		text += " " + lr
 	}
-	if l := safeLink(i.Link); l != "" {
+	if l := findingLink(i); l != "" {
 		return "[" + text + "](" + l + ")"
 	}
 	return text
+}
+
+// writePublishSummary writes what publishing did (spec P7 §4.3): the
+// overview posted, updated in place or not posted, and the inline counts.
+// Every value is a fixed sentence, a count or a URL; nothing is
+// model-authored.
+func writePublishSummary(b *strings.Builder, p *review.PublishResult) {
+	if p == nil {
+		return
+	}
+	b.WriteString("\n### " + textPublish + "\n\n")
+	line := "- Overview: "
+	switch {
+	case p.Published && p.Updated:
+		line += "updated in place"
+	case p.Published:
+		line += "posted"
+	default:
+		line += "not posted"
+		if e := strings.TrimSpace(p.Error); e != "" {
+			line += ": " + mdutil.Inline(e)
+		}
+	}
+	if p.Published && p.URL != "" {
+		line += " (" + literal(p.URL) + ")"
+	}
+	b.WriteString(line + "\n")
+	if in := p.Inline; in != nil {
+		parts := []string{strconv.Itoa(in.Posted) + " posted"}
+		for _, c := range []struct {
+			n    int
+			text string
+		}{
+			{in.Failed, "failed"},
+			{in.Unanchorable, "not on a changed line"},
+			{in.SkippedDuplicate, "already on the pull request"},
+		} {
+			if c.n > 0 {
+				parts = append(parts, strconv.Itoa(c.n)+" "+c.text)
+			}
+		}
+		b.WriteString("- Inline comments: " + strings.Join(parts, ", ") + "\n")
+	}
 }

@@ -37,6 +37,9 @@ type PRReviewArgs struct {
 	// MaxFindings is nil when the argument was not given.
 	MaxFindings *int
 	Publish     bool
+	// InlineFindings is nil when the argument was not given; review.
+	// inline_findings then decides.
+	InlineFindings *bool
 }
 
 // Validate checks the optional arguments before any network call. It returns
@@ -83,12 +86,17 @@ func PRReview(ctx context.Context, deps ReviewDeps, a PRReviewArgs) (*review.Res
 	if a.MaxFindings != nil {
 		args.MaxFindings = *a.MaxFindings
 	}
+	args.InlineFindings = a.InlineFindings
+	// The options the call leaves unset come from the configuration; the
+	// persistent overview and the discussion budget have no tool argument.
+	args = args.WithConfigDefaults(deps.Config)
 	res, err := review.Run(ctx, review.Deps{
 		Config:         deps.Config,
 		Logger:         deps.Logger,
 		Resolver:       deps.Resolver,
 		LLM:            client,
 		RenderProvider: render.Provider,
+		RenderInline:   render.Inline,
 		Progress:       deps.Progress,
 	}, args)
 	if err != nil {

@@ -127,7 +127,7 @@ func TestE2EStdio(t *testing.T) {
 				names = append(names, tl.Name)
 			}
 			sort.Strings(names)
-			if strings.Join(names, ",") != "pr_ask,pr_comment_reply,pr_comments,pr_review,server_info" {
+			if strings.Join(names, ",") != "pr_ask,pr_comment_create,pr_comment_reply,pr_comments,pr_review,server_info" {
 				t.Errorf("tools = %v", names)
 			}
 

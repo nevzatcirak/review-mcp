@@ -1,6 +1,7 @@
 package gitea
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -34,6 +35,7 @@ func (t *lenientTime) UnmarshalJSON(b []byte) error {
 }
 
 type apiUser struct {
+	ID    int64  `json:"id"`
 	Login string `json:"login"`
 }
 
@@ -66,6 +68,7 @@ type apiReviewComment struct {
 	OriginalPosition int         `json:"original_position"`
 	Line             int         `json:"line"`
 	OriginalLine     int         `json:"original_line"`
+	HTMLURL          string      `json:"html_url"`
 	CreatedAt        lenientTime `json:"created_at"`
 	UpdatedAt        lenientTime `json:"updated_at"`
 	Resolver         *struct {
@@ -131,6 +134,7 @@ func (c *apiReviewComment) item() provider.CommentItem {
 	return provider.CommentItem{
 		ID: strconv.FormatInt(c.ID, 10), Author: login(c.User), Body: c.Body,
 		CreatedAt: c.CreatedAt.Time, UpdatedAt: c.UpdatedAt.Time,
+		AuthorID: userID(c.User), AuthorLogin: login(c.User),
 	}
 }
 
@@ -232,6 +236,8 @@ func (p *Provider) ListThreads(ctx context.Context, ref provider.PRRef) ([]provi
 			Comments: []provider.CommentItem{{
 				ID: strconv.FormatInt(c.ID, 10), Author: login(c.User), Body: c.Body,
 				CreatedAt: c.CreatedAt.Time, UpdatedAt: c.UpdatedAt.Time,
+				// The same id and login EditComment compares (userID, login).
+				AuthorID: userID(c.User), AuthorLogin: login(c.User), URL: c.HTMLURL,
 			}},
 		})
 	}
@@ -352,7 +358,15 @@ func (p *Provider) ReplyToComment(ctx context.Context, ref provider.PRRef, comme
 	var author, path string
 	var line int
 	var ic apiIssueComment
-	err = p.client.GetJSON(ctx, rp+"/issues/comments/"+strconv.FormatInt(id, 10), &ic)
+	// Gitea answers this lookup with 204 and no body for a review (code)
+	// comment; that is treated like a 404 and falls through to the review
+	// comment search.
+	data, status, err := p.client.Get(ctx, rp+"/issues/comments/"+strconv.FormatInt(id, 10), httpx.MaxJSONBytes, httpx.JSONCapKey)
+	if err == nil && (status == http.StatusNoContent || len(bytes.TrimSpace(data)) == 0) {
+		err = provider.ErrNotFound
+	} else if err == nil && json.Unmarshal(data, &ic) != nil {
+		return nil, protocolErr("response is not valid JSON of the expected shape")
+	}
 	switch {
 	case err == nil:
 		if !issueCommentBelongsToPR(&ic, ref) {

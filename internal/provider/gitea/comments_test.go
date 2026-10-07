@@ -71,9 +71,12 @@ func (f *fakeGitea) commentsFixture() {
 	sys := icomment(102, "bob", "pushed 1 commit", 2)
 	sys["type"] = "pull_push"
 	// Page 1 is short (3 < limit 50) and is still followed by page 2.
+	// Comment 104 carries its author's numeric id, the others a login only.
+	withID := icomment(104, "bob", "page two general", 40)
+	withID["user"] = map[string]any{"id": 7, "login": "bob"}
 	f.handlePages(issueComments,
 		[]any{icomment(103, "alice", "later general", 30), icomment(101, "alice", "first general "+testMarker, 1), sys},
-		[]any{icomment(104, "bob", "page two general", 40)},
+		[]any{withID},
 	)
 	f.handlePages(reviewsAPI, []any{reviewJSON(11, "COMMENT"), reviewJSON(13, "PENDING")}, []any{reviewJSON(12, "APPROVED")})
 	f.handlePages(reviewCommentsAPI(11), []any{
@@ -98,18 +101,18 @@ func TestListThreads(t *testing.T) {
 	tr := true
 	want := []provider.Thread{
 		{ID: "101", Kind: provider.ThreadGeneral, Comments: []provider.CommentItem{
-			{ID: "101", Author: "alice", Body: "first general " + testMarker, CreatedAt: at(1), UpdatedAt: at(2)}}},
+			{ID: "101", Author: "alice", Body: "first general " + testMarker, CreatedAt: at(1), UpdatedAt: at(2), AuthorLogin: "alice", URL: "https://your-gitea.example/octo/demo/pulls/7#issuecomment-101"}}},
 		{ID: "103", Kind: provider.ThreadGeneral, Comments: []provider.CommentItem{
-			{ID: "103", Author: "alice", Body: "later general", CreatedAt: at(30), UpdatedAt: at(31)}}},
+			{ID: "103", Author: "alice", Body: "later general", CreatedAt: at(30), UpdatedAt: at(31), AuthorLogin: "alice", URL: "https://your-gitea.example/octo/demo/pulls/7#issuecomment-103"}}},
 		{ID: "104", Kind: provider.ThreadGeneral, Comments: []provider.CommentItem{
-			{ID: "104", Author: "bob", Body: "page two general", CreatedAt: at(40), UpdatedAt: at(41)}}},
+			{ID: "104", Author: "bob", Body: "page two general", CreatedAt: at(40), UpdatedAt: at(41), AuthorLogin: "bob", URL: "https://your-gitea.example/octo/demo/pulls/7#issuecomment-104", AuthorID: "7"}}},
 		{ID: "202", Kind: provider.ThreadInline, Path: "src/app.go", Line: 3, Resolved: &tr, Comments: []provider.CommentItem{
-			{ID: "202", Author: "alice", Body: "resolved thread", CreatedAt: at(110), UpdatedAt: at(111)}}},
+			{ID: "202", Author: "alice", Body: "resolved thread", CreatedAt: at(110), UpdatedAt: at(111), AuthorLogin: "alice"}}},
 		{ID: "201", Kind: provider.ThreadInline, Path: "src/app.go", Line: 10, Resolved: &f1, Comments: []provider.CommentItem{
-			{ID: "201", Author: "alice", Body: "root of line 10 " + testMarker, CreatedAt: at(100), UpdatedAt: at(101)},
-			{ID: "203", Author: "bob", Body: "reply across reviews", CreatedAt: at(105), UpdatedAt: at(106)}}},
+			{ID: "201", Author: "alice", Body: "root of line 10 " + testMarker, CreatedAt: at(100), UpdatedAt: at(101), AuthorLogin: "alice"},
+			{ID: "203", Author: "bob", Body: "reply across reviews", CreatedAt: at(105), UpdatedAt: at(106), AuthorLogin: "bob"}}},
 		{ID: "205", Kind: provider.ThreadInline, Path: "src/old.go", Line: 0, Outdated: true, Resolved: &f1, Comments: []provider.CommentItem{
-			{ID: "205", Author: "bob", Body: "outdated", CreatedAt: at(120), UpdatedAt: at(121)}}},
+			{ID: "205", Author: "bob", Body: "outdated", CreatedAt: at(120), UpdatedAt: at(121), AuthorLogin: "bob"}}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		gj, _ := json.MarshalIndent(got, "", " ")
@@ -288,6 +291,26 @@ func TestReplyToInlineComment(t *testing.T) {
 	}
 	ps = posts(f)
 	if want := "> Replying to @bob on src/old.go\n\nok"; len(ps) != 2 || postedBody(t, ps[1]) != want {
+		t.Fatalf("posts = %+v", ps)
+	}
+}
+
+// Gitea 1.24 answers GET /issues/comments/{id} with 204 and no body for a
+// review comment; the reply must still land through the review-comment search.
+func TestReplyToInlineCommentWhenLookupAnswers204(t *testing.T) {
+	f := newFake(t, "/gitea")
+	f.commentsFixture()
+	f.handle("GET", repoAPI+"/issues/comments/201", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	f.registerPost(300)
+	res, err := f.provider(t, nil).ReplyToComment(context.Background(), ref(), "201", "Thanks!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.InThread || res.Comment.ID != "300" {
+		t.Fatalf("result = %+v", res)
+	}
+	ps := posts(f)
+	if want := "> Replying to @alice on src/app.go:10\n\nThanks!"; len(ps) != 1 || postedBody(t, ps[0]) != want {
 		t.Fatalf("posts = %+v", ps)
 	}
 }

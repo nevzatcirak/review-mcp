@@ -319,6 +319,12 @@ type PRCommentReplyResult struct {
 // request at prURL. Argument validation (empty body, non-numeric id) is done
 // by the provider before any request is sent.
 func PRCommentReply(ctx context.Context, resolver PRResolver, prURL, commentID, body string) (PRCommentReplyResult, error) {
+	// A reply can land as a new PR-level comment of our own user (Gitea), so
+	// a marker line in it could be adopted by the overview or the duplicate
+	// lookup. Refused before any request, as for pr_comment_create.
+	if review.ContainsMarkerLine(body) {
+		return PRCommentReplyResult{}, &ArgumentError{CreateBodyMarkerMessage}
+	}
 	ref, p, err := resolver.Resolve(prURL)
 	if err != nil {
 		return PRCommentReplyResult{}, err
@@ -330,7 +336,7 @@ func PRCommentReply(ctx context.Context, resolver PRResolver, prURL, commentID, 
 	if rr == nil {
 		return PRCommentReplyResult{}, &provider.Error{Class: provider.ClassProtocol}
 	}
-	return PRCommentReplyResult{ID: rr.Comment.ID, URL: logging.RedactURL(rr.Comment.URL), InThread: rr.InThread}, nil
+	return PRCommentReplyResult{ID: rr.Comment.ID, URL: rr.Comment.URL, InThread: rr.InThread}, nil
 }
 
 // Reply texts of pr_comment_reply.
@@ -364,6 +370,10 @@ func UserMessage(err error) string {
 	var ae *ArgumentError
 	if errors.As(err, &ae) {
 		return ae.Error()
+	}
+	var ce *CommentError
+	if errors.As(err, &ce) {
+		return ce.Error()
 	}
 	var rqe *RequestError
 	if errors.As(err, &rqe) {

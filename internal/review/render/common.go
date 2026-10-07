@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/nevzatcirak/review-mcp/internal/filter"
 	llmrender "github.com/nevzatcirak/review-mcp/internal/llmrun/render"
@@ -20,7 +21,7 @@ const MaxListedFiles = llmrender.MaxListedFiles
 func literal(s string) string { return mdutil.Literal(s) }
 
 // Fixed English texts. The review text itself (headers, finding contents,
-// security text, notes) is model-authored in the requested output language;
+// security and performance text, notes) is model-authored in the requested output language;
 // these headings and labels stay English.
 const (
 	textEffort      = "Estimated effort to review"
@@ -28,12 +29,18 @@ const (
 	textNoTests     = "No relevant tests"
 	textNoSecurity  = "No security concerns identified"
 	textSecurity    = "Security concerns"
+	textNoPerf      = "No performance concerns identified"
+	textPerf        = "Performance concerns"
 	textKeyIssues   = "Key issues to review"
 	textNoIssues    = "No major issues detected"
 	textFocusAreas  = "Recommended focus areas for review"
 	textCoverage    = llmrender.TextCoverage
 	textNotes       = llmrender.TextNotes
 	textSnippetNote = "Snippet note: "
+	textListedHere  = "(listed here only)"
+	textDiscussed   = "Already discussed"
+	textCode        = "Code:"
+	textPublish     = "Publishing"
 	possibleBug     = "possible bug"
 	possibleIssue   = "Possible Issue"
 	defaultHeader   = "Issue"
@@ -50,13 +57,16 @@ type view struct {
 	effort      *int
 	tests       *bool
 	security    *string
+	perf        *string
 	showEffort  bool
 	showTests   bool
 	showSec     bool
+	showPerf    bool
 	showIssues  bool
 	issues      []review.KeyIssue
 	hasReview   bool
 	hasConcerns bool
+	hasPerf     bool
 }
 
 func newView(res *review.Result) view {
@@ -69,6 +79,8 @@ func newView(res *review.Result) view {
 			v.showTests = true
 		case review.KeySecurityConcerns:
 			v.showSec = true
+		case review.KeyPerformanceConcerns:
+			v.showPerf = true
 		case review.KeyKeyIssues:
 			v.showIssues = true
 		}
@@ -80,8 +92,50 @@ func newView(res *review.Result) view {
 			v.security = nil // an empty answer says nothing; do not claim "no concerns"
 		}
 		v.hasConcerns = v.security != nil && r.HasSecurityConcerns()
+		v.perf = r.PerformanceConcerns
+		if v.perf != nil && strings.TrimSpace(*v.perf) == "" {
+			v.perf = nil // as for security: an empty answer claims nothing
+		}
+		v.hasPerf = v.perf != nil && r.HasPerformanceConcerns()
 	}
 	return v
+}
+
+// listedHereOnly reports a finding of an inline publish that has no inline
+// comment because it is not on a changed line or its comment failed.
+func listedHereOnly(i *review.KeyIssue) bool {
+	return i.InlineStatus == review.InlineUnanchorable || i.InlineStatus == review.InlineFailed
+}
+
+// runLine is the overview's second header line (spec P7 §4.3): the run time
+// in UTC and the head commit's short SHA, or "" when neither is known.
+func runLine(res *review.Result) string {
+	var parts []string
+	if t, err := time.Parse(time.RFC3339, res.Metadata.ReviewedAt); err == nil {
+		parts = append(parts, "on "+t.UTC().Format("2006-01-02 15:04")+" UTC")
+	}
+	if sha := shortSHA(res.PR.HeadSHA); sha != "" {
+		parts = append(parts, "at commit `"+sha+"`")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "Reviewed " + strings.Join(parts, " ") + "."
+}
+
+// shortSHA is the first 7 characters of a hexadecimal commit id, or ""
+// when sha is not one (it is then not shown).
+func shortSHA(sha string) string {
+	if len(sha) < 7 {
+		return ""
+	}
+	for i := 0; i < len(sha); i++ {
+		c := sha[i]
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
+			return ""
+		}
+	}
+	return strings.ToLower(sha[:7])
 }
 
 // effortValue clamps the effort to 1..5 and renders "N/5" with the bars.
@@ -125,6 +179,15 @@ func lineRange(i *review.KeyIssue) string {
 		return "L" + strconv.Itoa(i.StartLine)
 	}
 	return "L" + strconv.Itoa(i.StartLine) + "-" + strconv.Itoa(i.EndLine)
+}
+
+// findingLink is where a finding links to: its inline comment when one was
+// posted (spec P7 §3.3), else its file line.
+func findingLink(i *review.KeyIssue) string {
+	if l := safeLink(i.InlineURL); l != "" {
+		return l
+	}
+	return safeLink(i.Link)
 }
 
 var linkEscaper = strings.NewReplacer(

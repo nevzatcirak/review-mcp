@@ -2,7 +2,8 @@
   "toggles": {
     "effort": false,
     "tests": false,
-    "security": false
+    "security": false,
+    "performance": false
   },
   "max_findings": 3,
   "extra_instructions": "",

@@ -76,6 +76,7 @@ jobs:
   npm-publish:
     needs: release
     runs-on: ubuntu-latest
+    timeout-minutes: 45 # a hung step must not run for the 6-hour default
     permissions:
       contents: read
       id-token: write # npm trusted publishing (OIDC) and --provenance

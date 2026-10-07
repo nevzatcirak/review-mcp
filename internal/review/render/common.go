@@ -24,27 +24,32 @@ func literal(s string) string { return mdutil.Literal(s) }
 // security and performance text, notes) is model-authored in the requested output language;
 // these headings and labels stay English.
 const (
-	textEffort      = "Estimated effort to review"
-	textTests       = "PR contains tests"
-	textNoTests     = "No relevant tests"
-	textNoSecurity  = "No security concerns identified"
-	textSecurity    = "Security concerns"
-	textNoPerf      = "No performance concerns identified"
-	textPerf        = "Performance concerns"
-	textKeyIssues   = "Key issues to review"
-	textNoIssues    = "No major issues detected"
-	textFocusAreas  = "Recommended focus areas for review"
-	textCoverage    = llmrender.TextCoverage
-	textNotes       = llmrender.TextNotes
-	textSnippetNote = "Snippet note: "
-	textListedHere  = "(listed here only)"
-	textDiscussed   = "Already discussed"
-	textCode        = "Code:"
-	textPublish     = "Publishing"
-	possibleBug     = "possible bug"
-	possibleIssue   = "Possible Issue"
-	defaultHeader   = "Issue"
-	noLangTag       = "other"
+	textEffort     = "Estimated effort to review"
+	textTests      = "PR contains tests"
+	textNoTests    = "No relevant tests"
+	textNoSecurity = "No security concerns identified"
+	textSecurity   = "Security concerns"
+	textNoPerf     = "No performance concerns identified"
+	// The same statements for a partial result (X-18): they claim nothing
+	// about the files that were not reviewed.
+	textNoSecurityScoped = "No security concerns identified in the reviewed files"
+	textNoPerfScoped     = "No performance concerns identified in the reviewed files"
+	textNoIssuesScoped   = "No key issues found in the reviewed files"
+	textPerf             = "Performance concerns"
+	textKeyIssues        = "Key issues to review"
+	textNoIssues         = "No major issues detected"
+	textFocusAreas       = "Recommended focus areas for review"
+	textCoverage         = llmrender.TextCoverage
+	textNotes            = llmrender.TextNotes
+	textSnippetNote      = "Snippet note: "
+	textListedHere       = "(listed here only)"
+	textDiscussed        = "Already discussed"
+	textCode             = "Code:"
+	textPublish          = "Publishing"
+	possibleBug          = "possible bug"
+	possibleIssue        = "Possible Issue"
+	defaultHeader        = "Issue"
+	noLangTag            = "other"
 )
 
 const (
@@ -67,10 +72,37 @@ type view struct {
 	hasReview   bool
 	hasConcerns bool
 	hasPerf     bool
+	// partial is the X-18 state of the coverage: "no concerns" statements
+	// are scoped to the reviewed files.
+	partial bool
+}
+
+// noSecurity, noPerf and noIssues are the "nothing found" statements, scoped
+// to the reviewed files when the result is partial.
+func (v *view) noSecurity() string {
+	if v.partial {
+		return textNoSecurityScoped
+	}
+	return textNoSecurity
+}
+
+func (v *view) noPerf() string {
+	if v.partial {
+		return textNoPerfScoped
+	}
+	return textNoPerf
+}
+
+func (v *view) noIssues() string {
+	if v.partial {
+		return textNoIssuesScoped
+	}
+	return textNoIssues
 }
 
 func newView(res *review.Result) view {
 	var v view
+	v.partial = res.Coverage.Tally().Partial
 	for _, k := range res.EnabledFields {
 		switch k {
 		case review.KeyEffort:

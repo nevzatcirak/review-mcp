@@ -60,6 +60,7 @@ code must not anticipate them beyond the seams named here.
 | X-15 | Context window from the endpoint (P8, amends DQ-3) | `llm.context_window` is optional; unset, the endpoint's model list is asked once per process and 90 % of the reported window is used; training-size fields are never used | Decided |
 | X-16 | Background jobs for long calls (P8) | stdio only: `pr_review` and `pr_ask` wait at most `wait_seconds`, then return a `job_id`; the new tool `job_result` collects the result; serve mode stays synchronous | Decided |
 | X-17 | Latency controls (P8) | `llm.timeout_seconds` default 300; optional `diff.max_tokens` caps the diff budget | Decided |
+| X-18 | Partial-coverage honesty (P9, extends X-3) | A result is partial when a reviewable file was omitted, clipped, skipped for size or unreadable; it leads with a fixed banner in every rendering, carries counts in `coverage`, and every "no concerns" statement is scoped to the reviewed files | Decided |
 
 ---
 
@@ -351,6 +352,25 @@ implementation must do or must not do).
 - **Decision:**
   - `llm.timeout_seconds` rises to **300**. 120 is too short for local models on large prompts.
   - A new optional cap, `diff.max_tokens` (at least 1000, unset by default), caps the diff budget below the context window, so that large windows do not imply very slow requests. The budget is `min(the context-window budget, diff.max_tokens)`; the prompt scaffolding and the reserve rules are unchanged, and `pr_ask` uses the same budget. Files left out are reported in the coverage section as usual (X-3). `diag diff` and `diag review --dry-run` report which limit applied.
+
+#### X-18 — A partial review says so first (added P9, extends X-3)
+- **Origin:** on `rc.3` a review of a large PR covered 5 of 62 changed files because of a diff budget, and the client model summarised it as "no major issues". The coverage section (X-3) was correct but last, and nothing told the reader that the "no concerns" statements covered only part of the PR. Owner priority: completeness and correctness come before speed.
+- **Decision:**
+  - A result is **partial** when at least one reviewable changed file was omitted by the budget, clipped, skipped by the provider because of its size or file limit, or unreadable. Files filtered by ignore rules or generated-file rules do **not** make a result partial: they were excluded on purpose and the coverage section lists them.
+  - `coverage` gains `partial` (bool), `reviewed_files` (fully included), `total_files` and `not_reviewed_files`, with `reviewed_files + not_reviewed_files == total_files`. They are in `pr_review`, `pr_ask` and `job_result` and in every output schema.
+  - A partial result leads, in every rendering and before anything else, with a fixed banner: `**Partial review: R of T changed files were reviewed. N files were not reviewed (see Coverage); nothing is concluded about them.**` (`pr_ask`: `Partial answer: R of T changed files were used for this answer. …`). Numbers of 1 take the singular form, as the notes do. In the client text it is the first line, before `## PR Review`; in the published overview it sits directly under the heading (Gitea: a `> ⚠️` blockquote, Bitbucket Server: a bold line), and because the overview is edited in place by rendering it again (X-12), every edit carries it. The published `pr_ask` comment has no title, so the banner is its first line.
+  - When partial, "no concerns" is scoped: "No security concerns identified in the reviewed files", "No performance concerns identified in the reviewed files", and a run without findings reads "No key issues found in the reviewed files". A complete run keeps the unscoped sentences ("No major issues detected" for an empty findings list).
+  - The tool descriptions of `pr_review`, `pr_ask` and `job_result` tell the client model to report how many files were not reviewed and never to say they have no issues.
+  - A partial result adds a note: "To review every file, raise or unset diff.max_tokens, or use a model with a larger context window." when `diff.max_tokens` is the limit that applied (`Budget.Limit()`), else "To review every file, use a model with a larger context window." Files lost for a reason the budget does not change (too large for the provider, unreadable) get their own note instead.
+- **Mapping of the coverage categories** (one definition, `llmrun.Coverage.Tally`):
+  - Included: reviewed.
+  - Clipped: not reviewed (the model saw only part of the file).
+  - Omitted (added, modified, deleted): not reviewed. Deleted files count: X-3 reports them as left out to fit the context window, and on the compressed path the model sees only their names; a banner that excluded them would disagree with the coverage section it points to.
+  - Skipped `size_limit`, `file_limit`, `fetch_failed`, `unparseable_patch`, and any reason not known: not reviewed (a reviewable file was lost; an unknown reason is never treated as fine).
+  - Skipped `binary` and `empty_diff` (a pure rename or mode change): outside the count, like Filtered. There is no text change to review. They stay listed in the coverage section.
+  - Filtered: outside the count.
+  - Providers truncate nothing; a file too large for a provider is skipped whole (`size_limit`).
+- **Consequences:** `total_files` is the number of changed files that carry a reviewable text change, not the number of files in the PR. The diff-trimming guard (`diff_trimmed`) recomputes the counts after it moves files.
 
 ---
 

@@ -166,6 +166,12 @@ func TestTrimCoverage(t *testing.T) {
 				!slices.Equal(cov.Omitted.Added, nonNil(tc.added)) || !slices.Equal(cov.Omitted.Modified, nonNil(tc.mod)) {
 				t.Errorf("coverage = %+v", cov)
 			}
+			// X-18: trimming recomputes the summary from the lists.
+			if cov.TotalFiles != 3 || cov.ReviewedFiles != len(tc.included) ||
+				cov.ReviewedFiles+cov.NotReviewedFiles != cov.TotalFiles || cov.Partial != (len(tc.included) != 3) {
+				t.Errorf("summary after trim: partial %v, reviewed %d, not reviewed %d, total %d",
+					cov.Partial, cov.ReviewedFiles, cov.NotReviewedFiles, cov.TotalFiles)
+			}
 		})
 	}
 

@@ -62,7 +62,7 @@ func TestPRAskToolDefinition(t *testing.T) {
 	if tl == nil {
 		t.Fatal("pr_ask is not registered")
 	}
-	const want = "Answers a question about a pull request using the configured LLM, grounded in the PR's title, description and diff. Set publish=true to also post the question and answer as a PR comment. The PR content and the question are sent to the configured LLM endpoint."
+	const want = "Answers a question about a pull request using the configured LLM, grounded in the PR's title, description and diff. Set publish=true to also post the question and answer as a PR comment. The PR content and the question are sent to the configured LLM endpoint. If the result says the review is partial, tell the user how many files were not reviewed and never state that those files have no issues."
 	if tl.Description != want {
 		t.Errorf("description = %q", tl.Description)
 	}

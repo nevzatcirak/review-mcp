@@ -18,6 +18,11 @@ var (
 	capsBB    = provider.Capabilities{GFM: false, MarkdownTables: true, InlineComments: true}
 )
 
+// bannerAsk is the banner of sample(): 1 of 2 reviewable files used.
+const bannerAsk = "**Partial answer: 1 of 2 changed files was used for this answer. 1 file was not reviewed (see Coverage); nothing is concluded about it.**"
+
+// sample is a partial result (one file left out for the budget); the
+// filtered file does not count.
 func sample() *ask.Result {
 	return &ask.Result{
 		Question: "Which files change the request validation?",
@@ -35,7 +40,7 @@ func sample() *ask.Result {
 
 func TestClientLayout(t *testing.T) {
 	got := Client(sample())
-	want := "## Question\n\n```\nWhich files change the request validation?\n```\n\n" +
+	want := bannerAsk + "\n\n## Question\n\n```\nWhich files change the request validation?\n```\n\n" +
 		"## Answer\n\nOnly `src/app.go` changes it.\n\n- one\n- two\n\n" +
 		"## Coverage\n\n- Included: 1 file\n- Omitted: 2 files\n\n" +
 		"Left out to fit the context window (modified files) (1):\n\n- `src/big.go`\n\n" +
@@ -80,14 +85,14 @@ func TestClientWithoutAnswerAndWithoutNotes(t *testing.T) {
 
 func TestProviderLayouts(t *testing.T) {
 	gitea := Provider(sample(), capsGitea)
-	wantGitea := "### **Ask** ❓\n```\nWhich files change the request validation?\n```\n\n" +
+	wantGitea := "> ⚠️ " + bannerAsk + "\n\n### **Ask** ❓\n```\nWhich files change the request validation?\n```\n\n" +
 		"### **Answer:**\nOnly `src/app.go` changes it.\n\n- one\n- two\n\n" +
 		"### 📂 Coverage\n"
 	if !strings.HasPrefix(gitea, wantGitea) || !strings.Contains(gitea, "\n### 📝 Notes\n") {
 		t.Errorf("gitea comment:\n%s", gitea)
 	}
 	bb := Provider(sample(), capsBB)
-	wantBB := "### Question\n```\nWhich files change the request validation?\n```\n\n" +
+	wantBB := bannerAsk + "\n\n### Question\n```\nWhich files change the request validation?\n```\n\n" +
 		"### Answer\nOnly `src/app.go` changes it.\n\n- one\n- two\n\n" +
 		"### Coverage\n"
 	if !strings.HasPrefix(bb, wantBB) || !strings.Contains(bb, "\n### Notes\n") {
@@ -195,5 +200,62 @@ func TestNoYAMLInDependencyClosure(t *testing.T) {
 		if slices.Contains(listed, f) {
 			t.Errorf("internal/ask/render depends on %s", f)
 		}
+	}
+}
+
+// completeSample is sample() with nothing left out: the filtered file still
+// does not count.
+func completeSample() *ask.Result {
+	r := sample()
+	r.Coverage.Omitted.Modified = []string{}
+	return r
+}
+
+// TestPartialBannerIsFirstLine: the pr_ask banner leads every rendering.
+func TestPartialBannerIsFirstLine(t *testing.T) {
+	r := sample()
+	for name, got := range map[string]string{
+		"client":    Client(r),
+		"gitea":     Provider(r, capsGitea),
+		"bitbucket": Provider(r, capsBB),
+	} {
+		first, rest, _ := strings.Cut(got, "\n")
+		want := bannerAsk
+		if name == "gitea" {
+			want = "> ⚠️ " + bannerAsk
+		}
+		if first != want || !strings.HasPrefix(rest, "\n") {
+			t.Errorf("%s: first line = %q", name, first)
+		}
+	}
+}
+
+// TestCompleteAnswerHasNoBanner: a complete run, with a filtered file only,
+// is not partial.
+func TestCompleteAnswerHasNoBanner(t *testing.T) {
+	r := completeSample()
+	for name, got := range map[string]string{
+		"client":    Client(r),
+		"gitea":     Provider(r, capsGitea),
+		"bitbucket": Provider(r, capsBB),
+	} {
+		if strings.Contains(got, "Partial") || strings.Contains(got, "⚠️") {
+			t.Errorf("%s: a complete answer has a banner:\n%s", name, got)
+		}
+	}
+	// A clipped file alone makes it partial.
+	r.Coverage.Clipped = []string{"src/big.go"}
+	if got := Client(r); !strings.HasPrefix(got, "**Partial answer: 1 of 2 changed files was used for this answer.") {
+		t.Errorf("clipped file: no banner:\n%s", got)
+	}
+}
+
+// TestAnswerBannerWording pins the plural forms.
+func TestAnswerBannerWording(t *testing.T) {
+	cov := llmrun.Coverage{Included: []string{"a.go", "b.go", "c.go"}, Clipped: []string{}, Omitted: llmrun.OmittedFiles{
+		Added: []string{"d.go", "e.go"}, Modified: []string{}, Deleted: []string{}}}
+	want := "**Partial answer: 3 of 5 changed files were used for this answer. 2 files were not reviewed (see Coverage); nothing is concluded about them.**"
+	if got := Client(&ask.Result{Question: "q", Coverage: cov}); !strings.HasPrefix(got, want+"\n\n") {
+		t.Errorf("banner:\n%s", got)
 	}
 }

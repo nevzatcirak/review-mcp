@@ -92,6 +92,28 @@ grounded in the diff. Raise `llm.context_window`, narrow the PR, or adjust
 model is not called, the answer is empty, and the notes say "No reviewable
 changes after filtering."
 
+### Partial answers
+
+An answer is **partial** under the same rule as a
+[partial review](review.md#partial-reviews): a changed file with a reviewable
+text change was omitted to fit the budget, clipped, skipped by the provider
+for size or unreadable. Filtered files, binary files and files without a text
+change do not count. A partial answer leads with this line, before everything
+else (in the MCP text it is the first line, before `## Question`):
+
+```text
+**Partial answer: 2 of 5 changed files were used for this answer. 3 files were not reviewed (see Coverage); nothing is concluded about them.**
+```
+
+The published comment has no title of its own, so the line is its first line
+(a warning blockquote on Gitea, a bold line on Bitbucket Server). The
+structured `coverage` object carries `partial`, `reviewed_files`,
+`total_files` and `not_reviewed_files`, as for a review, and the notes say
+how to cover every file (raise or unset `diff.max_tokens` when that cap
+applied, or use a model with a larger context window). Read the answer as
+being about the files that were used, and ask again after widening the budget
+if the question concerns one of the others.
+
 The **notes** section appears when something deserves attention: the answer
 was cut off by the output limit ("The answer was cut off by the model's output
 limit."; raise `llm.max_output_tokens`), files were clipped, or the diff was

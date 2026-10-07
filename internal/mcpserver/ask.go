@@ -10,7 +10,7 @@ import (
 )
 
 // prAskDescription is the tool description from spec P5 §2.1.
-const prAskDescription = "Answers a question about a pull request using the configured LLM, grounded in the PR's title, description and diff. Set publish=true to also post the question and answer as a PR comment. The PR content and the question are sent to the configured LLM endpoint."
+const prAskDescription = "Answers a question about a pull request using the configured LLM, grounded in the PR's title, description and diff. Set publish=true to also post the question and answer as a PR comment. The PR content and the question are sent to the configured LLM endpoint." + partialSentence
 
 // prAskJobSentence ends the pr_ask description in stdio mode (see
 // prReviewJobSentence).

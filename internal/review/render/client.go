@@ -23,16 +23,20 @@ import (
 // markdown control characters and HTML angle brackets; snippets go in
 // backtick fences longer than any backtick run inside them.
 //
-// Layout: header and PR reference; the enabled fields in descriptor order
-// with the key issues last; the publish summary when publishing was
-// requested; the coverage section (always); the notes section when there
-// are notes.
+// Layout: the partial banner when the result is partial (X-18); header and
+// PR reference; the enabled fields in descriptor order with the key issues
+// last; the publish summary when publishing was requested; the coverage
+// section (always); the notes section when there are notes.
 func Client(res *review.Result) string {
 	if res == nil {
 		return ""
 	}
 	v := newView(res)
 	var b strings.Builder
+	// X-18: a partial result leads with the banner, before anything else.
+	if banner := llmrender.PartialBanner(&res.Coverage, false); banner != "" {
+		b.WriteString(banner + "\n\n")
+	}
 	b.WriteString("## PR Review\n\n")
 	b.WriteString(clientPRLine(&res.PR) + "\n")
 
@@ -46,9 +50,9 @@ func Client(res *review.Result) string {
 		case k == review.KeyRelevantTests && v.tests != nil:
 			facts = append(facts, testsText(*v.tests))
 		case k == review.KeySecurityConcerns && v.security != nil && !v.hasConcerns:
-			facts = append(facts, textNoSecurity)
+			facts = append(facts, v.noSecurity())
 		case k == review.KeyPerformanceConcerns && v.perf != nil && !v.hasPerf:
-			facts = append(facts, textNoPerf)
+			facts = append(facts, v.noPerf())
 		}
 	}
 	if len(facts) > 0 {
@@ -64,7 +68,7 @@ func Client(res *review.Result) string {
 		b.WriteString("\n### " + textPerf + "\n\n" + mdutil.Escape(strings.TrimSpace(*v.perf)) + "\n")
 	}
 	if v.showIssues && v.hasReview {
-		writeClientIssues(&b, v.issues)
+		writeClientIssues(&b, v.issues, v.noIssues())
 	}
 	writePublishSummary(&b, res.Publish)
 	llmrender.Coverage(&b, "### "+textCoverage, &res.Coverage)
@@ -93,10 +97,10 @@ func clientPRLine(pr *review.PRInfo) string {
 	return line
 }
 
-func writeClientIssues(b *strings.Builder, issues []review.KeyIssue) {
+func writeClientIssues(b *strings.Builder, issues []review.KeyIssue, none string) {
 	b.WriteString("\n### " + textKeyIssues + "\n\n")
 	if len(issues) == 0 {
-		b.WriteString(textNoIssues + "\n")
+		b.WriteString(none + "\n")
 		return
 	}
 	for n := range issues {

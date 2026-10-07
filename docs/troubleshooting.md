@@ -255,6 +255,28 @@ It applies only when no file at all fits the budget:
 If at least one file fits, the policy has no effect: the files that do not fit
 are listed in `omitted`.
 
+## The review says partial
+
+A review or answer that starts with "Partial review: N of M changed files were
+reviewed" (or "Partial answer") tells you that some changed files were not
+fully seen by the model, and that nothing is concluded about them. The
+coverage section lists each of them with its reason. What limits coverage
+depends on that reason:
+
+| Reason in the coverage section | What limits it | What to do |
+|---|---|---|
+| "Left out to fit the context window" (added, modified, deleted), or "Included in part only (clipped ...)" | The diff budget: `diff.max_tokens` when it is set and lower, otherwise the context window (`llm.context_window`, or the window the endpoint reports, at 90 %). The note at the end of the result says which one applied: "raise or unset diff.max_tokens" means the cap, "use a model with a larger context window" means the window. | Raise or unset `diff.max_tokens`, raise `llm.context_window` to the real window of the model, or use a model with a larger window. `diag review --dry-run` and `diag diff` report `budget.limit` and the files that would be left out. Narrowing the pull request also works. |
+| `size_limit` | The provider's size limits: `diff.max_file_bytes` and `diff.max_diff_bytes`. | Raise those keys, or review the file by hand. A larger context window does not help. |
+| `file_limit` | `diff.max_files_full_content`: Bitbucket Server skips the files beyond that count. | Raise the key, or split the pull request. |
+| `fetch_failed`, `unparseable_patch` | The provider did not return the file's content or patch, or the patch was not a plain unified diff. | Run `diag pr` and `diag diff` to see the provider's answer; check the token scopes. |
+
+Files in the **Filtered** group (ignore rules, generated files) and binary
+files do not make a review partial. If the banner is present although you
+expected a complete review, compare `coverage.reviewed_files`,
+`coverage.not_reviewed_files` and `coverage.total_files` with the lists in the
+coverage section. The same applies to `job_result`: it returns the original
+result, banner included.
+
 ## Review a pull request with `diag review`
 
 ```sh

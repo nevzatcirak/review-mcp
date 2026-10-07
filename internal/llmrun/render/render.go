@@ -25,6 +25,42 @@ const (
 	reasonBudgetDel   = "Left out to fit the context window (deleted files)"
 )
 
+// PartialBanner returns the X-18 banner of a partial result, or "" for a
+// complete one: one bold sentence that leads every rendering. answer selects
+// the pr_ask wording. The counts come from c.Tally, the single definition of
+// "partial", so the banner cannot disagree with the coverage section.
+//
+// The sentence is fixed and deterministic. Numbers take the singular form
+// where they are 1 (as the notes do: "1 file was", "2 files were").
+func PartialBanner(c *llmrun.Coverage, answer bool) string {
+	t := c.Tally()
+	if !t.Partial {
+		return ""
+	}
+	lead := "Partial review: " + strconv.Itoa(t.Reviewed) + " of " + strconv.Itoa(t.TotalFiles) +
+		" changed " + plural(t.TotalFiles) + " " + was(t.Reviewed, t.TotalFiles) + " reviewed."
+	if answer {
+		lead = "Partial answer: " + strconv.Itoa(t.Reviewed) + " of " + strconv.Itoa(t.TotalFiles) +
+			" changed " + plural(t.TotalFiles) + " " + was(t.Reviewed, t.TotalFiles) + " used for this answer."
+	}
+	them := "them"
+	if t.NotReviewed == 1 {
+		them = "it"
+	}
+	return "**" + lead + " " + strconv.Itoa(t.NotReviewed) + " " + plural(t.NotReviewed) + " " +
+		was(t.NotReviewed, t.NotReviewed) + " not reviewed (see " + TextCoverage + "); nothing is concluded about " +
+		them + ".**"
+}
+
+// was is "was" for a count of 1 (or when the file total is 1, as in "0 of 1
+// changed file was reviewed") and "were" otherwise.
+func was(n, total int) string {
+	if n == 1 || total == 1 {
+		return "was"
+	}
+	return "were"
+}
+
 // coverageGroup is one list of files in the coverage section.
 type coverageGroup struct {
 	title string // already markdown-safe

@@ -1,3 +1,5 @@
+**Partial review: 2 of 5 changed files were reviewed. 3 files were not reviewed (see Coverage); nothing is concluded about them.**
+
 ## PR Review
 
 Pull request: Bitbucket Server #5 — Yeniden deneme ekle (`https://bitbucket.example.com/projects/P/repos/r/pull-requests/5`)

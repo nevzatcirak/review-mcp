@@ -158,9 +158,14 @@ func fixtures() map[string]*review.Result {
 			URL:    "https://your-gitea.example/org/repo/pulls/12#issuecomment-55",
 			Inline: &review.InlineSummary{Posted: 1, Unanchorable: 1, Failed: 1}},
 	}
+	// complete is the run without findings whose coverage has nothing
+	// partial (filtered, binary and empty-diff files do not count, X-18):
+	// no banner, the unscoped "nothing found" sentences.
+	complete := noFindingsResult(completeCoverage())
 	all := map[string]*review.Result{
 		"all_fields": allFields, "no_findings": noFindings, "no_snippet": noSnippet,
 		"non_english": nonEnglish, "coverage_many": coverageMany, "published": published,
+		"complete": complete,
 	}
 	for _, r := range all {
 		r.Metadata.ReviewedAt = "2026-10-06T09:30:15Z"

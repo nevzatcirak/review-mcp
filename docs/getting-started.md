@@ -77,8 +77,11 @@ context window does not make a request faster: a local model that takes minutes
 on a 100000-token prompt answers sooner on a smaller one. Set `diff.max_tokens`
 (`REVIEW_MCP_DIFF_MAX_TOKENS`, at least 1000, unset by default) to cap the diff
 below what the window allows, for example `24000`. The prompt scaffolding and
-the reserves are unchanged, and the files that no longer fit are listed as
-omitted in the coverage section, as with a small window. `diag diff` and
+the reserves are unchanged. The files that no longer fit are reviewed in
+further model calls ("parts", up to `review.max_chunks`, default 8; see
+[Large pull requests](review.md#large-pull-requests)), so the cap makes each
+call smaller, not the review shorter; files left after the last part are
+listed as omitted in the coverage section, as with a small window. `diag diff` and
 `diag review --dry-run` print `budget.limit`, which is `context_window` or
 `diff.max_tokens`, whichever bounds the soft limit, and `budget.max_diff_tokens`
 when the cap is set.
@@ -97,7 +100,8 @@ Choosing the window:
 - Set `llm.max_output_tokens` to what you want the answer to be allowed, not
   to the window. It must be smaller than the window.
 - A small window is not an error until the reserves leave nothing for the diff.
-  Large pull requests then lose files (they are listed as omitted).
+  Large pull requests are then reviewed in several parts, and files left after
+  `review.max_chunks` parts are listed as omitted.
 
 Check the result before you rely on it: `review-mcp diag diff <PR_URL>` prints
 the limits, the estimated size and which files made it in. To simulate a

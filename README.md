@@ -95,9 +95,15 @@ dist-tag `latest`; release candidates of the next version under `next`. See the
      (Ollama, for example), set it to the context size your server actually
      runs with, not the model's maximum.
    - **`REVIEW_MCP_DIFF_MAX_TOKENS`** (optional) caps how much of the diff is
-     sent, independently of the context window. A smaller prompt means a
-     faster answer from a slow model; files that do not fit are listed in the
-     review's coverage section instead of being reviewed.
+     sent in one model call, independently of the context window. A smaller
+     prompt means a faster answer from a slow model. A pull request that does
+     not fit is reviewed in several parts, one call each
+     (`REVIEW_MCP_REVIEW_MAX_CHUNKS`, default 8, 1 to 32), so the cap now makes
+     each part smaller, not the review shorter. Files left after the last part
+     are listed in the review's coverage section instead of being reviewed.
+     The merged review shows at most `REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS`
+     findings (default 10, up to 50; when you set it, at least
+     `review.max_findings`).
    - **Long calls (stdio):** a `pr_review` or `pr_ask` call that is still
      running after `REVIEW_MCP_LLM_WAIT_SECONDS` (default 45) answers with a
      `job_id`; ask the client to fetch the result and it calls `job_result`.
@@ -126,8 +132,8 @@ dist-tag `latest`; release candidates of the next version under `next`. See the
 
 - [Setup guide](docs/setup.md): install, token checklist, LLM endpoint, client configuration, first run.
 - [Serve mode](docs/serve.md): one shared HTTP server for a team, the header contract, TLS, the container.
-- [Reviewing pull requests](docs/review.md): what `pr_review` sends to the LLM, choosing `llm.context_window`, reading coverage and notes, `publish` (the overview and inline comments), discussion awareness, slow endpoints and `job_result`, `diag review --dry-run`.
-- [Asking questions about a pull request](docs/ask.md): what `pr_ask` sends to the LLM, grounding and honesty, coverage, `publish` and the slash sanitization, `diag ask --dry-run`.
+- [Reviewing pull requests](docs/review.md): what `pr_review` sends to the LLM, choosing `llm.context_window`, reading coverage and notes, large pull requests reviewed in parts, `publish` (the overview and inline comments), discussion awareness, slow endpoints and `job_result`, `diag review --dry-run`.
+- [Asking questions about a pull request](docs/ask.md): what `pr_ask` sends to the LLM, files the question names, grounding and honesty, coverage, `publish` and the slash sanitization, `diag ask --dry-run`.
 - [Getting started](docs/getting-started.md): the minimal configuration and the diff budget in detail.
 - [Troubleshooting](docs/troubleshooting.md): the `diag` commands and every error sentence.
 - [Changelog](CHANGELOG.md).

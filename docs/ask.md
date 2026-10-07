@@ -78,6 +78,35 @@ is an instruction to the model, not a guarantee: models can still be wrong.
 Read answers about code the way you would read a colleague's guess, and check
 the file and line it names.
 
+## Files the question names go first
+
+`pr_ask` makes one model call; unlike `pr_review` it does not use parts. When
+the diff does not fit, the files your question names are admitted first, so a
+question about one file of a large pull request is answered from that file.
+
+A changed file is **named** when its full path, or its base name of at least 5
+characters, occurs in the question as a whole token:
+
+- The match is case-sensitive: `Main.go` does not name `cmd/main.go`.
+- A whole token is bounded on both sides by the start or end of the question,
+  or by a character that cannot be part of a path. Path characters are
+  letters, digits, `.`, `/`, `-` and `_`; everything else (spaces, backticks,
+  quotes, brackets, `?`, `,`, `:`, `;`, `!`) is a boundary. Full stops right
+  after the name are allowed, so a name at the end of a sentence counts.
+- So `Is src/app.go?`, `` `src/app.go` `` and `see src/app.go.` name
+  `src/app.go`, and `Why does main.go exit?` names `cmd/main.go` by its base
+  name. `xmain.go`, `main.go_old`, `main.go.bak`, `pkg/main.go` (for
+  `cmd/main.go`) and `./src/app.go` do not.
+- Base names shorter than 5 characters (`a.go`, `util`) do not name a file by
+  themselves; write the full path.
+- When several changed files have the named base name, all of them are named.
+
+Named files go before the rest in their original order; the rest keep the
+usual ranking. Naming a file never overrides the filters: a file excluded by
+`ignore.*`, a lockfile or a binary stays out. Naming a file does not change the
+budget either: a named file that is too large is handled like any other. The
+coverage section and the partial line work exactly as without named files.
+
 ## Coverage: what the model did not see
 
 Every answer ends with the same **coverage** section as a review (see
@@ -87,8 +116,9 @@ clipped, omitted to fit the context window, skipped, or filtered, and why.
 Read it together with the answer. If your question is about a file listed as
 omitted, skipped or filtered, the model did not see that file's diff, and a
 good answer says so; an answer that sounds confident about such a file is not
-grounded in the diff. Raise `llm.context_window`, narrow the PR, or adjust
-`ignore.*`, then ask again. If nothing reviewable remains after filtering, the
+grounded in the diff. Name the file in the question (see
+[above](#files-the-question-names-go-first)), raise `llm.context_window`,
+narrow the PR, or adjust `ignore.*`, then ask again. If nothing reviewable remains after filtering, the
 model is not called, the answer is empty, and the notes say "No reviewable
 changes after filtering."
 
@@ -108,7 +138,8 @@ else (in the MCP text it is the first line, before `## Question`):
 The published comment has no title of its own, so the line is its first line
 (a warning blockquote on Gitea, a bold line on Bitbucket Server). The
 structured `coverage` object carries `partial`, `reviewed_files`,
-`total_files` and `not_reviewed_files`, as for a review, and the notes say
+`total_files` and `not_reviewed_files`, as for a review (`model_calls` is 1, or
+0 when the model was not called, and `failed_parts` is 0), and the notes say
 how to cover every file (raise or unset `diff.max_tokens` when that cap
 applied, or use a model with a larger context window). Read the answer as
 being about the files that were used, and ask again after widening the budget

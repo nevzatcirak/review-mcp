@@ -271,6 +271,9 @@ depends on that reason:
 | `size_limit` | The provider's size limits: `diff.max_file_bytes` and `diff.max_diff_bytes`. | Raise those keys, or review the file by hand. A larger context window does not help. |
 | `file_limit` | `diff.max_files_full_content`: Bitbucket Server skips the files beyond that count. | Raise the key, or split the pull request. |
 | `fetch_failed`, `unparseable_patch` | The provider did not return the file's content or patch, or the patch was not a plain unified diff. | Run `diag pr` and `diag diff` to see the provider's answer; check the token scopes. |
+| Left out after `review.max_chunks` parts (the note says "raise review.max_chunks") | The number of parts of a [review in parts](review.md#large-pull-requests). | Raise `review.max_chunks` (up to 32); each part adds one model call. The budget of each part follows the first row. |
+| `too_large` | In a review in parts with `diff.large_patch_policy = "skip"`, the file does not fit a part of its own. | Use the `clip` policy (the default) to review its beginning, raise the diff budget as in the first row, or review the file by hand. |
+| `model_call_failed` | The model call of the part that held the file failed; see [Part I of N failed](#part-i-of-n-failed). | Run the review again. |
 
 Files in the **Filtered** group (ignore rules, generated files) and binary
 files do not make a review partial. If the banner is present although you
@@ -278,6 +281,44 @@ expected a complete review, compare `coverage.reviewed_files`,
 `coverage.not_reviewed_files` and `coverage.total_files` with the lists in the
 coverage section. The same applies to `job_result`: it returns the original
 result, banner included.
+
+## The review took several minutes
+
+A large pull request is reviewed in several parts, one model call after
+another ([Large pull requests](review.md#large-pull-requests)), so a review in
+N parts takes about N times as long as one call. The coverage section says
+"Reviewed in N model calls." and `coverage.model_calls` has N.
+
+- **stdio:** the call answers with a `job_id` after `wait_seconds`, and
+  `job_result` collects the review; progress shows `calling model (part I of
+  N)`. Nothing needs changing unless the total time is too long for you.
+- **serve:** the call runs in its request; raise the client's tool timeout
+  ([Serve mode](serve.md#long-calls)).
+- To make it shorter: lower `review.max_chunks` (with `1` a review is one call
+  again, and the files that do not fit are listed as omitted), or use a faster
+  model. `diff.max_tokens` makes each part smaller and faster, but there are
+  then more parts, so the review as a whole is not shorter.
+- `llm.timeout_seconds` bounds each part's call, not the whole review.
+
+## Part I of N failed
+
+A note such as "Part 2 of 3 failed (llm_timeout); its files were not
+reviewed." means the model call of one part of a
+[review in parts](review.md#large-pull-requests) failed. The other parts were
+reviewed and merged; the failed part's files are listed under Skipped with
+reason `model_call_failed`, `coverage.failed_parts` counts the failed parts,
+and the review is partial. The class in parentheses is fixed and never contains
+the error text:
+
+| Class | Meaning |
+|---|---|
+| `llm_timeout` | The part's call took longer than `llm.timeout_seconds`. Raise it, or lower `diff.max_tokens` so each part is smaller. |
+| `review_unparseable` | The answer could not be parsed as a review, also after one retry. Run again; check that the model follows YAML output instructions. |
+| other `llm_*` classes | The LLM error of [LLM and review errors](#llm-and-review-errors), for example `llm_rate_limited` or `llm_upstream`. |
+| `unclassified` | Any other failure; rerun with `REVIEW_MCP_LOG_LEVEL=debug` (the log names the part and the class, never content). |
+
+Run the review again to cover those files. When every part fails, the review
+fails with the first part's error sentence, as a review in one call does.
 
 ## Review a pull request with `diag review`
 
@@ -446,7 +487,9 @@ The MCP client gave up waiting for the tool call; the server did not fail.
 - **serve:** there are no background jobs, so the call runs until the review is
   done. The client sets its own tool timeout: raise it to fit your model, and
   set `llm.timeout_seconds` to match ([Serve mode](serve.md#long-calls)).
-- Either way, a smaller `diff.max_tokens` or a faster model shortens the run.
+- Either way, a faster model shortens the run. A smaller `diff.max_tokens`
+  shortens one model call; a large pull request then takes more parts
+  ([The review took several minutes](#the-review-took-several-minutes)).
 
 ## Token scopes
 

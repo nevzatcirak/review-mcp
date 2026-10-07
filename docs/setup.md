@@ -243,8 +243,11 @@ A local model can take minutes on a large prompt. Two settings help:
 
 - `diff.max_tokens` (`REVIEW_MCP_DIFF_MAX_TOKENS`, at least 1000, unset by
   default) caps the diff below what the context window allows, for example
-  `24000`. Reviews get snappier; the files that no longer fit are listed as
-  omitted in the coverage section.
+  `24000`. Each model call gets snappier. A pull request that no longer fits
+  one call is reviewed in several parts (`review.max_chunks`, default 8), so
+  the cap makes each part smaller, not the review shorter; files left after
+  the last part are listed as omitted in the coverage section
+  ([Large pull requests](review.md#large-pull-requests)).
 - Leave `llm.wait_seconds` (`REVIEW_MCP_LLM_WAIT_SECONDS`, default 45) at its
   default. A call that is not done after that long answers with a `job_id` and
   the review continues in the background; `job_result` collects it
@@ -262,8 +265,9 @@ A local model can take minutes on a large prompt. Two settings help:
   `context_window - (max(max_output_tokens, 1000) + 500) - prompt tokens`.
   When you set it, it is also sent to the endpoint as the completion limit.
 - Too small a window is not an error until nothing is left for the diff; large
-  pull requests then lose files, which the review lists as omitted. `diff.max_tokens` can lower the diff
-  budget further.
+  pull requests are then reviewed in several parts, and files left after
+  `review.max_chunks` parts are listed as omitted. `diff.max_tokens` can lower
+  the diff budget further.
 
 The derivation is in [Getting started](getting-started.md#how-the-context-window-shapes-the-diff-budget)
 and [Reviewing pull requests](review.md).

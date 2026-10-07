@@ -5,6 +5,66 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0-rc.1] - Unreleased
+
+First v1.1 release candidate. Large pull requests no longer lose most of
+their files: the files that do not fit one model call are reviewed in further
+calls, up to a configurable number, and the answers are merged into one
+review. It ships after v1.0.0 is tagged.
+
+### Added
+
+- Reviews in parts (X-19). When the diff does not hold every reviewable file,
+  `pr_review` reviews the rest in further model calls ("parts") and merges the
+  answers.
+  - `review.max_chunks` (`REVIEW_MCP_REVIEW_MAX_CHUNKS`, default 8, 1 to 32)
+    sets the most parts; `1` reviews in one call, as in v1.0.
+  - `review.max_total_findings` (`REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS`,
+    default 10, at most 50) caps the merged findings; when set it must be at
+    least `review.max_findings`, and the cap is the larger of the two. Findings
+    beyond it are counted in a note.
+  - The parts run one after another. Each has its own timeout, YAML repair and
+    re-ask, and a line in the prompt that says which part it is; a part that
+    fits in full is sent with extended context. Progress reports
+    `calling model (part I of N)`; in stdio mode a long review becomes a
+    background job as before.
+  - Merging: a finding an earlier part already returned is dropped (by its
+    fingerprint); the effort is the highest; tests count if any part found
+    them; security and performance concerns are joined, prefixed with the part
+    when more than one part has one.
+  - A part whose model call fails does not fail the review: its files are
+    skipped with reason `model_call_failed`, the review is partial and
+    publishable, and a note says "Part I of N failed (<class>); its files were
+    not reviewed." with a fixed class, never the error text. Only when every
+    part fails does the review fail, with the first part's error.
+  - A file too large for a part of its own under `diff.large_patch_policy =
+    "skip"` is skipped with reason `too_large`.
+  - `coverage` in `pr_review`, `pr_ask` and `job_result` (and in every output
+    schema) gains `model_calls` and `failed_parts`. The coverage section says
+    "Reviewed in N model calls." when there was more than one, in the tool
+    text and the published overview.
+  - The partial hint names `review.max_chunks` when every allowed part was
+    used and files were still left.
+- `pr_ask` admits the files the question names first (X-21): a changed file
+  whose full path, or base name of at least 5 characters, appears in the
+  question as a whole word (case-sensitive) goes before the others. Filters
+  still apply. `pr_ask` keeps one model call.
+- `server_info` lists the two new `review.*` settings.
+- Docs: "Large pull requests" in the review guide, files the question names in
+  the ask guide, long reviews in serve mode, and "The review took several
+  minutes" and "Part I of N failed" in the troubleshooting guide.
+
+### Changed
+
+- A deleted file whose removed lines are left out by design and whose name is
+  in the diff's list of deleted files now counts as reviewed (X-20): the model
+  was told it is deleted. It is listed under "Deleted (listed by name)" and in
+  `coverage.deleted_listed` (every output schema). Only deletions the budget
+  cut count as not reviewed, so such pull requests are no longer reported as
+  partial because of them.
+- `diff.max_tokens` now makes each part smaller rather than leaving the files
+  out: the files that no longer fit go to further parts.
+
 ## [1.0.0]
 
 First stable release. The code is the same as `1.0.0-rc.4`; the release

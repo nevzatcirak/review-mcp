@@ -160,7 +160,16 @@ Specification: `docs/plan/P8-spec.md`. Live items: section J of
 
 ---
 
-## v1.1 — Repository context (planned, after v1.0.0)
+## P9 — Partial-coverage honesty (added 2026-10-07, owner decision)
+
+**Goal:** A review that could not cover every changed file says so first,
+in every rendering, and never states "no issues" about unreviewed files
+(X-18). Also: the npm publish job verifies every package version on the
+registry. Ships as `v1.0.0-rc.4`. Specification: `docs/plan/P9-spec.md`.
+
+---
+
+## v1.1 — Repository context and chunked review (planned, after v1.0.0)
 
 **Goal:** Reviews that see beyond the diff: an opt-in, stdio-only cache of
 shallow PR-head clones (idle repositories deleted after 7 days, total size

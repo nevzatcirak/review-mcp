@@ -124,6 +124,11 @@
 - **H2** Force each error you can (bad token, wrong host, unreachable LLM, tiny context window). Each message is a fixed sentence with no raw server text.
 - **H3** Record any friction from the whole run (see §0). Watch in particular how model-authored inline code (backticks) reads in the client profile, where it is escaped (P4 review, point 4).
 
+- **H4** (P9) With `diff.max_tokens` low enough to omit files:
+  - the tool text begins with the partial-review banner;
+  - the published overview carries it;
+  - the client model's reply mentions the files that were not reviewed and does not claim they have no issues.
+
 ## I. Conversation-aware review (P7)
 Run on a **personal** Bitbucket Data Center trial instance and, if available, a personal Gitea.
 - **I1** `server_info` and a `pr_review` publish identify the token's user correctly. Record which Bitbucket identity mechanism was used.

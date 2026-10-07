@@ -295,6 +295,26 @@ func TestReplyToInlineComment(t *testing.T) {
 	}
 }
 
+// Gitea 1.24 answers GET /issues/comments/{id} with 204 and no body for a
+// review comment; the reply must still land through the review-comment search.
+func TestReplyToInlineCommentWhenLookupAnswers204(t *testing.T) {
+	f := newFake(t, "/gitea")
+	f.commentsFixture()
+	f.handle("GET", repoAPI+"/issues/comments/201", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	f.registerPost(300)
+	res, err := f.provider(t, nil).ReplyToComment(context.Background(), ref(), "201", "Thanks!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.InThread || res.Comment.ID != "300" {
+		t.Fatalf("result = %+v", res)
+	}
+	ps := posts(f)
+	if want := "> Replying to @alice on src/app.go:10\n\nThanks!"; len(ps) != 1 || postedBody(t, ps[0]) != want {
+		t.Fatalf("posts = %+v", ps)
+	}
+}
+
 func TestReplyToGeneralComment(t *testing.T) {
 	f := newFake(t, "")
 	f.handleJSON("GET", repoAPI+"/issues/comments/101", icomment(101, "alice", "hi", 1))

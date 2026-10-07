@@ -1,6 +1,7 @@
 package gitea
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -357,7 +358,15 @@ func (p *Provider) ReplyToComment(ctx context.Context, ref provider.PRRef, comme
 	var author, path string
 	var line int
 	var ic apiIssueComment
-	err = p.client.GetJSON(ctx, rp+"/issues/comments/"+strconv.FormatInt(id, 10), &ic)
+	// Gitea answers this lookup with 204 and no body for a review (code)
+	// comment; that is treated like a 404 and falls through to the review
+	// comment search.
+	data, status, err := p.client.Get(ctx, rp+"/issues/comments/"+strconv.FormatInt(id, 10), httpx.MaxJSONBytes, httpx.JSONCapKey)
+	if err == nil && (status == http.StatusNoContent || len(bytes.TrimSpace(data)) == 0) {
+		err = provider.ErrNotFound
+	} else if err == nil && json.Unmarshal(data, &ic) != nil {
+		return nil, protocolErr("response is not valid JSON of the expected shape")
+	}
 	switch {
 	case err == nil:
 		if !issueCommentBelongsToPR(&ic, ref) {

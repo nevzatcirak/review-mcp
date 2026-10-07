@@ -31,7 +31,9 @@ review. It ships after v1.0.0 is tagged.
   - Merging: a finding an earlier part already returned is dropped (by its
     fingerprint); the effort is the highest; tests count if any part found
     them; security and performance concerns are joined, prefixed with the part
-    when more than one part has one.
+    when more than one part has one. "No concerns" is shown only when every
+    part said so: a part that did not answer leaves the field empty, with a
+    note naming the part.
   - A part whose model call fails does not fail the review: its files are
     skipped with reason `model_call_failed`, the review is partial and
     publishable, and a note says "Part I of N failed (<class>); its files were

@@ -313,8 +313,15 @@ How the answers are merged:
   stay in the overview and are not posted again.
 - **Effort**: the highest of the parts.
 - **Tests**: "PR contains tests" if any part says so.
-- **Security and performance**: "No ..." when every part says no; otherwise
-  the concerns, each prefixed with `Part I:` when more than one part has one.
+- **Security and performance**: the concerns when at least one part has one,
+  each prefixed with `Part I:` when more than one part has one. "No ..." only
+  when every part that answered says no and no part left the question
+  unanswered. When some parts say no and another part did not answer, the
+  field stays empty, because "no concerns" would also cover that part's files,
+  and a note says so for each such part: "Part 2 did not answer the security
+  question; nothing is concluded about its files." (or "the performance
+  question"). When no part answers, the field stays empty without a note, as
+  in a review in one call.
 
 `review.max_total_findings` must be at least `review.max_findings` when you
 set it. When you leave it at its default, a `review.max_findings` above 10 is
@@ -333,9 +340,11 @@ first part's error.
 **What the result says.** The coverage counts the files of every part. The
 coverage section ends its counts with "Reviewed in N model calls." when N is
 more than 1, in the tool text and in the published overview. The structured
-`coverage` has `model_calls` (the parts sent to the model: 1 for a review in
-one call, 0 when the model was not called; a re-ask is not counted, see
-`metadata.llm_calls`) and `failed_parts`. In `metadata`, `diff_tokens` is the
+`coverage` has `model_calls` (the parts sent to the model, failed ones
+included: 1 for a review in one call, 0 when the model was not called) and
+`failed_parts`. `model_calls` counts parts attempted, while
+`metadata.llm_calls` counts every chat completion, re-asks included, so a
+review in 3 parts with one re-ask has `model_calls` 3 and `llm_calls` 4. In `metadata`, `diff_tokens` is the
 sum over the parts and `request_tokens` the largest part's request.
 `diag review --dry-run` shows the planned parts the same way, with
 `coverage.model_calls` as the number of parts it would send.

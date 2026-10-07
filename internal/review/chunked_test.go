@@ -488,3 +488,76 @@ func TestMaxChunksOneIsOneCall(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// TestChunkedSilentPartIsNotNo: "No" never covers files whose part said
+// nothing (architect, DQ-6 on 11e2). For both concerns fields: a concern in
+// one part gives the concern; "No" from every part gives "No"; "No" from
+// some parts and no answer from another gives no value and one note per
+// silent part.
+func TestChunkedSilentPartIsNotNo(t *testing.T) {
+	const (
+		secNote  = "Part 2 did not answer the security question; nothing is concluded about its files."
+		perfNote = "Part 2 did not answer the performance question; nothing is concluded about its files."
+	)
+	for _, tc := range []struct {
+		name               string
+		answers            map[int]string
+		security, perf     string
+		wantNotes, noNotes []string
+	}{
+		{
+			name: "a concern in one part",
+			answers: map[int]string{1: partAnswerYAML("", "", "No", "No"),
+				2: partAnswerYAML("", "", "", ""),
+				3: partAnswerYAML("", "", "XSS: the name is not escaped.", "Unbounded loop.")},
+			security: "XSS: the name is not escaped.", perf: "Unbounded loop.",
+			noNotes: []string{secNote, perfNote},
+		},
+		{
+			name: "every part says no",
+			answers: map[int]string{1: partAnswerYAML("", "", "No", "No"), 2: partAnswerYAML("", "", "No", "No"),
+				3: partAnswerYAML("", "", "No", "No")},
+			security: "No", perf: "No",
+			noNotes: []string{secNote, perfNote},
+		},
+		{
+			name: "no from some parts, silence from another",
+			answers: map[int]string{1: partAnswerYAML("", "", "No", "No"), 2: partAnswerYAML("", "", "", ""),
+				3: partAnswerYAML("", "", "No", "No")},
+			security: "<nil>", perf: "<nil>",
+			wantNotes: []string{secNote, perfNote},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _ := chunkHarness(t, tc.answers)
+			res := runChunked(t, h, Args{})
+			r := res.Review
+			if deref(r.SecurityConcerns) != tc.security || deref(r.PerformanceConcerns) != tc.perf {
+				t.Errorf("security %q, performance %q; want %q, %q", deref(r.SecurityConcerns),
+					deref(r.PerformanceConcerns), tc.security, tc.perf)
+			}
+			for _, n := range tc.wantNotes {
+				if !slices.Contains(res.Notes, n) {
+					t.Errorf("notes %q lack %q", res.Notes, n)
+				}
+			}
+			for _, n := range tc.noNotes {
+				if slices.Contains(res.Notes, n) {
+					t.Errorf("notes %q have %q", res.Notes, n)
+				}
+			}
+		})
+	}
+
+	// A field the toggles switch off gets no value and no note.
+	h, _ := chunkHarness(t, map[int]string{1: partAnswerYAML("", "", "No", "No"), 2: partAnswerYAML("", "", "", ""),
+		3: partAnswerYAML("", "", "No", "No")})
+	h.deps.Config.Review.RequireSecurity = false
+	h.deps.Config.Review.RequirePerformance = false
+	res := runChunked(t, h, Args{})
+	if res.Review.SecurityConcerns != nil || res.Review.PerformanceConcerns != nil ||
+		slices.Contains(res.Notes, secNote) || slices.Contains(res.Notes, perfNote) {
+		t.Errorf("disabled fields: security %q performance %q notes %q", deref(res.Review.SecurityConcerns),
+			deref(res.Review.PerformanceConcerns), res.Notes)
+	}
+}

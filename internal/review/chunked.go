@@ -252,10 +252,11 @@ func concat(lists ...[]string) []string {
 //   - Effort: the largest of the parts that returned one.
 //   - Tests: true if any part says true; false if every part that answered
 //     says false; nil if none answered.
-//   - Security and performance concerns: "No" when every part that
-//     answered says "No"; otherwise the other texts, joined by a blank
-//     line, each prefixed with "Part I: " only when more than one part has
-//     a concern.
+//   - Security and performance concerns (mergeConcerns): the concern texts
+//     when at least one part has a concern; "No" only when every
+//     successful part said "No"; otherwise nil, with a note for each part
+//     that left the field out, so that "No" never covers files whose part
+//     said nothing (architect, DQ-6 on 11e2).
 func (pl *Plan) mergeParts(answers []*partAnswer, classes []string) *Review {
 	res := pl.Result
 	n := len(answers)
@@ -273,6 +274,7 @@ func (pl *Plan) mergeParts(answers []*partAnswer, classes []string) *Review {
 	merged := &Review{KeyIssuesToReview: []KeyIssue{}}
 	seen := map[string]bool{}
 	var security, performance []partText
+	var securityMissing, performanceMissing []int
 	truncated, reasked, tactic, dups := false, false, "", 0
 	var partNotes []string
 	for i, a := range answers {
@@ -313,13 +315,26 @@ func (pl *Plan) mergeParts(answers []*partAnswer, classes []string) *Review {
 		}
 		if s := r.SecurityConcerns; s != nil {
 			security = append(security, partText{i + 1, *s})
+		} else {
+			securityMissing = append(securityMissing, i+1)
 		}
 		if s := r.PerformanceConcerns; s != nil {
 			performance = append(performance, partText{i + 1, *s})
+		} else {
+			performanceMissing = append(performanceMissing, i+1)
 		}
 	}
-	merged.SecurityConcerns = mergeConcerns(security, SecurityNo)
-	merged.PerformanceConcerns = mergeConcerns(performance, PerformanceNo)
+	var concernNotes []string
+	if pl.toggles.Security {
+		var notes []string
+		merged.SecurityConcerns, notes = mergeConcerns(security, securityMissing, SecurityNo, "security")
+		concernNotes = append(concernNotes, notes...)
+	}
+	if pl.toggles.Performance {
+		var notes []string
+		merged.PerformanceConcerns, notes = mergeConcerns(performance, performanceMissing, PerformanceNo, "performance")
+		concernNotes = append(concernNotes, notes...)
+	}
 
 	m := &res.Metadata
 	m.Truncated, m.Reasked, m.RepairTactic = truncated, reasked, tactic
@@ -330,6 +345,7 @@ func (pl *Plan) mergeParts(answers []*partAnswer, classes []string) *Review {
 		res.Notes = append(res.Notes, NoteReasked)
 	}
 	res.Notes = append(res.Notes, partNotes...)
+	res.Notes = append(res.Notes, concernNotes...)
 	if extra := len(merged.KeyIssuesToReview) - pl.maxTotal; pl.maxTotal > 0 && extra > 0 {
 		merged.KeyIssuesToReview = merged.KeyIssuesToReview[:pl.maxTotal]
 		res.Notes = append(res.Notes, noteTotalCap(extra))
@@ -345,11 +361,29 @@ type partText struct {
 	text string
 }
 
-// mergeConcerns merges the parts' answers to a No-or-text field: nil when no
-// part answered, no when every answer is no, otherwise the non-no texts.
-func mergeConcerns(answers []partText, no string) *string {
+// noteUnanswered: a successful part left a concerns field out while the
+// other parts said "No" (mergeConcerns). question is "security" or
+// "performance"; the sentence is fixed and carries no model text.
+func noteUnanswered(part int, question string) string {
+	return fmt.Sprintf("Part %d did not answer the %s question; nothing is concluded about its files.", part, question)
+}
+
+// mergeConcerns merges the successful parts' answers to a No-or-text field
+// (security_concerns, performance_concerns). answers are the parts that
+// answered, missing the numbers of the parts that left the field out.
+//
+//   - At least one part has a concern: the concern texts (true statements
+//     about their parts), joined by a blank line, each prefixed with
+//     "Part I: " only when more than one part has one.
+//   - Every successful part said no: no.
+//   - Some parts said no and others left the field out: nil, and one note
+//     per silent part (noteUnanswered). "No" would claim something about
+//     files whose part said nothing.
+//   - No part answered: nil without a note, as a review in one call leaves
+//     an unanswered field (a warning in the debug log only).
+func mergeConcerns(answers []partText, missing []int, no, question string) (*string, []string) {
 	if len(answers) == 0 {
-		return nil
+		return nil, nil
 	}
 	var concerns []partText
 	for _, a := range answers {
@@ -357,18 +391,25 @@ func mergeConcerns(answers []partText, no string) *string {
 			concerns = append(concerns, a)
 		}
 	}
-	if len(concerns) == 0 {
-		s := no
-		return &s
-	}
-	if len(concerns) == 1 {
+	switch len(concerns) {
+	case 0:
+		if len(missing) == 0 {
+			s := no
+			return &s, nil
+		}
+		notes := make([]string, len(missing))
+		for i, part := range missing {
+			notes[i] = noteUnanswered(part, question)
+		}
+		return nil, notes
+	case 1:
 		s := concerns[0].text
-		return &s
+		return &s, nil
 	}
 	texts := make([]string, len(concerns))
 	for i, c := range concerns {
 		texts[i] = "Part " + strconv.Itoa(c.part) + ": " + c.text
 	}
 	s := strings.Join(texts, "\n\n")
-	return &s
+	return &s, nil
 }

@@ -60,8 +60,11 @@ func TestDiagCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	old := makeCacheEntry(t, dir, "your-gitea.example/owner/old", 300, now.Add(-10*24*time.Hour))
-	makeCacheEntry(t, dir, "your-gitea.example/owner/fresh", 200, now.Add(-time.Hour))
+	old := makeCacheEntry(t, dir, "your-gitea.example/_/owner/old", 300, now.Add(-10*24*time.Hour))
+	makeCacheEntry(t, dir, "your-gitea.example/_/owner/fresh", 200, now.Add(-time.Hour))
+	// git's empty home (<cache_dir>/.home) is never a repository, even when
+	// something in it looks like one.
+	home := makeCacheEntry(t, dir, ".home/h/_/o/r", 100, now.Add(-30*24*time.Hour))
 
 	code, out, errs = diag(env, "cache")
 	if code != 0 {
@@ -70,7 +73,7 @@ func TestDiagCache(t *testing.T) {
 	t.Logf("sample diag cache output:\n%s", out)
 	m, _ = decodeReport(t, out)
 	repos := asMaps(t, m["repos"])
-	if len(repos) != 2 || repos[1]["repo"] != "your-gitea.example/owner/old" || repos[1]["idle_days"] != float64(10) ||
+	if len(repos) != 2 || repos[1]["repo"] != "your-gitea.example/_/owner/old" || repos[1]["idle_days"] != float64(10) ||
 		repos[1]["size_bytes"] != float64(300) || m["total_bytes"] != float64(500) {
 		t.Errorf("report = %v", m)
 	}
@@ -84,12 +87,15 @@ func TestDiagCache(t *testing.T) {
 	}
 	m, _ = decodeReport(t, out)
 	pruned, repos := asMaps(t, m["pruned"]), asMaps(t, m["repos"])
-	if len(pruned) != 1 || pruned[0]["repo"] != "your-gitea.example/owner/old" ||
-		len(repos) != 1 || repos[0]["repo"] != "your-gitea.example/owner/fresh" {
+	if len(pruned) != 1 || pruned[0]["repo"] != "your-gitea.example/_/owner/old" ||
+		len(repos) != 1 || repos[0]["repo"] != "your-gitea.example/_/owner/fresh" {
 		t.Errorf("after --prune: %v", m)
 	}
 	if _, err := os.Stat(old); !os.IsNotExist(err) {
 		t.Error("the idle repository is still there")
+	}
+	if _, err := os.Stat(home); err != nil {
+		t.Error("--prune entered .home")
 	}
 
 	code, out, _ = diag(env, "cache", "--prune")

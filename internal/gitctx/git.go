@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -41,19 +42,32 @@ type gitCmd struct {
 	// commands.
 	net *netPolicy
 	dir string
+	// home is the cache's empty home directory (<cache_dir>/.home), passed
+	// as HOME and XDG_CONFIG_HOME; "" passes neither (the version probe,
+	// which runs before the cache is known).
+	home string
 }
 
 // netPolicy are the non-secret settings of a command that talks to the
-// provider.
+// provider. They mirror the provider's HTTP client: the same CA file and
+// the same (explicit, warned) insecure_skip_verify opt-in, so git is never
+// stricter or looser than it.
 type netPolicy struct {
 	allowHTTP          bool
 	caCert             string
 	insecureSkipVerify bool
 }
 
+// testExtraConfig are configuration entries a test adds to every git
+// command, ahead of the command's own (the redirect-guard test injects a
+// url.<other>.insteadOf with it). It is always empty outside tests.
+var testExtraConfig [][2]string
+
 // safetyArgs are the "-c" settings of every git command (RC-3, RC-4). They
-// are not secret, so they are arguments, where a test can see them.
-func safetyArgs(np *netPolicy) []string {
+// are not secret, so they are arguments, where a test can see them. goos is
+// runtime.GOOS (a parameter so that the Windows settings can be tested
+// anywhere).
+func safetyArgs(np *netPolicy, goos string) []string {
 	a := []string{
 		"-c", "credential.helper=",
 		"-c", "core.askPass=",
@@ -73,6 +87,11 @@ func safetyArgs(np *netPolicy) []string {
 	}
 	if np.caCert != "" {
 		a = append(a, "-c", "http.sslCAInfo="+np.caCert)
+		if goos == "windows" {
+			// Git for Windows defaults to schannel, which ignores
+			// http.sslCAInfo; openssl honours the file.
+			a = append(a, "-c", "http.sslBackend=openssl")
+		}
 	}
 	if np.insecureSkipVerify {
 		a = append(a, "-c", "http.sslVerify=false")
@@ -80,22 +99,65 @@ func safetyArgs(np *netPolicy) []string {
 	return a
 }
 
+// proxyVars are passed to git when set, in both cases, like the provider's
+// HTTP client honours them. Their values go to the child only and are never
+// logged.
+var proxyVars = []string{
+	"http_proxy", "https_proxy", "no_proxy", "all_proxy",
+	"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY",
+}
+
 // childEnv builds the environment of a git process from an allowlist (§3
-// WP-11a): PATH, HOME (USERPROFILE and SYSTEMROOT on Windows), LANG=C, the
-// prompt guards and the configuration entries. The parent's environment is
-// never passed on: it may hold other tokens.
-func childEnv(config [][2]string) []string {
+// WP-11a and its review): PATH, the proxy variables, SYSTEMROOT on Windows,
+// HOME and XDG_CONFIG_HOME pointing at the cache's empty home directory
+// (USERPROFILE too on Windows), GIT_CONFIG_NOSYSTEM=1 except on Windows,
+// LANG=C, the prompt guards and the configuration entries. The parent's
+// environment is never passed on (it may hold other tokens), and neither is
+// the user's real home: git must not read the user's global configuration
+// (url.*.insteadOf, http.*, include.path and the like).
+//
+// Git for Windows keeps its TLS backend and CA settings in the system
+// configuration, so it is read there; the ls-remote --get-url guard of
+// Ensure catches a url.*.insteadOf in it.
+func childEnv(home string, config [][2]string, goos string) []string {
 	var env []string
+	parent := os.Environ()
 	pass := func(name string) {
-		if v, ok := os.LookupEnv(name); ok {
-			env = append(env, name+"="+v)
+		for _, kv := range parent {
+			k, _, ok := strings.Cut(kv, "=")
+			if !ok || k == "" {
+				continue
+			}
+			// Windows names are case-insensitive: one entry per variable.
+			if k == name || (goos == "windows" && strings.EqualFold(k, name)) {
+				env = append(env, kv)
+				return
+			}
 		}
 	}
 	pass("PATH")
-	pass("HOME")
-	if runtime.GOOS == "windows" {
-		pass("USERPROFILE")
+	if goos == "windows" {
 		pass("SYSTEMROOT")
+	}
+	seen := map[string]bool{}
+	for _, name := range proxyVars {
+		key := name
+		if goos == "windows" {
+			key = strings.ToUpper(name)
+		}
+		if !seen[key] {
+			seen[key] = true
+			pass(name)
+		}
+	}
+	if home != "" {
+		env = append(env, "HOME="+home, "XDG_CONFIG_HOME="+home)
+		if goos == "windows" {
+			env = append(env, "USERPROFILE="+home)
+		}
+	}
+	if goos != "windows" {
+		env = append(env, "GIT_CONFIG_NOSYSTEM=1")
 	}
 	env = append(env,
 		"LANG=C",
@@ -142,10 +204,10 @@ type result struct {
 // result.err as the raw *exec.ExitError (or the context error); the caller
 // classifies it with failure.
 func run(ctx context.Context, gitPath string, c gitCmd) result {
-	argv := append(safetyArgs(c.net), c.args...)
+	argv := append(safetyArgs(c.net, runtime.GOOS), c.args...)
 	//nolint:gosec // G204: the binary is the configured or looked-up git, and every argument is built here; no shell is involved.
 	cmd := exec.CommandContext(ctx, gitPath, argv...)
-	cmd.Env = childEnv(c.config)
+	cmd.Env = childEnv(c.home, append(append([][2]string(nil), testExtraConfig...), c.config...), runtime.GOOS)
 	cmd.Dir = c.dir
 	cmd.Stdin = nil
 	cmd.WaitDelay = waitDelay

@@ -101,13 +101,14 @@ func (c fakeCall) subcommand() string {
 }
 
 // fakeGit is the fake git of one test: a link to the built binary under a
-// path of its own (so its version check is its own), configured and
-// recording through the test's HOME.
+// directory of its own (so its version check is its own), configured and
+// recording through files in that directory.
 type fakeGit struct {
-	home, path string
+	dir, path string
 }
 
-// newFakeGit points HOME at a fresh directory and installs the fake git.
+// newFakeGit points HOME at a fresh directory (the user's home, which git
+// must never get) and installs the fake git.
 func newFakeGit(t *testing.T, beh fakeBehavior) *fakeGit {
 	t.Helper()
 	if fakeGitErr != nil {
@@ -119,7 +120,7 @@ func newFakeGit(t *testing.T, beh fakeBehavior) *fakeGit {
 	if err := os.Link(bin, dst); err != nil {
 		copyFile(t, bin, dst)
 	}
-	f := &fakeGit{home: os.Getenv("HOME"), path: dst}
+	f := &fakeGit{dir: filepath.Dir(dst), path: dst}
 	f.set(t, beh)
 	return f
 }
@@ -127,14 +128,14 @@ func newFakeGit(t *testing.T, beh fakeBehavior) *fakeGit {
 func (f *fakeGit) set(t *testing.T, beh fakeBehavior) {
 	t.Helper()
 	b, _ := json.Marshal(beh)
-	if err := os.WriteFile(filepath.Join(f.home, "fake.json"), b, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(f.dir, "fake.json"), b, 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func (f *fakeGit) calls(t *testing.T) []fakeCall {
 	t.Helper()
-	fh, err := os.Open(filepath.Join(f.home, "calls.jsonl"))
+	fh, err := os.Open(filepath.Join(f.dir, "calls.jsonl"))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}

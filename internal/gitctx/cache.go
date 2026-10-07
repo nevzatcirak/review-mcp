@@ -15,14 +15,24 @@ import (
 
 // Cache layout (RC-6):
 //
-//	<cache_dir>/CACHEDIR.TAG                  review-mcp's cache tag
-//	<cache_dir>/<host>/<namespace>/<repo>/    one entry per repository
-//	    last-used                             touched on every use
-//	    .lock                                 O_CREATE|O_EXCL lock file
-//	    git/                                  the bare repository
+//	<cache_dir>/CACHEDIR.TAG                         review-mcp's cache tag
+//	<cache_dir>/.home/                               empty HOME of every git child (0700)
+//	<cache_dir>/<host>/<base>/<namespace>/<repo>/    one entry per repository
+//	    last-used                                    touched on every use
+//	    .lock                                        O_CREATE|O_EXCL lock file
+//	    git/                                         the bare repository
+//
+// <host> is the lower-case host name, with "_<port>" for an explicit port.
+// <base> is the base URL's path (the Bitbucket context path or a Gitea
+// sub-path) escaped by baseSegment, "_" when there is none: two instances on
+// one host never share an entry. The depth is fixed, so an entry can never
+// lie inside another one's directory.
 //
 // Only directories at exactly that depth that hold a regular last-used file
-// are entries. Removing an entry removes its git directory, its marker and
+// are entries; names starting with "." (the home directory) are never hosts.
+// Entries of the pre-release three-level layout (<host>/<namespace>/<repo>,
+// WP-11a before its review) are not recognised, listed or swept: remove them
+// by hand. Removing an entry removes its git directory, its marker and
 // its lock, then the entry and parent directories only if they are empty:
 // nothing else is ever deleted, so a cache_dir pointed at the wrong place
 // cannot lose foreign files. A non-empty cache_dir without review-mcp's tag
@@ -37,6 +47,9 @@ const (
 	tagSignature  = "Signature: 8a477f597d28d172789f06886806bc55"
 	tagContent    = tagSignature + "\n# This file is a cache directory tag created by review-mcp (repository context).\n# For information about cache directory tags see https://bford.info/cachedir/\n"
 	tagOwnerProbe = "review-mcp"
+	// homeName is the empty directory git gets as HOME and XDG_CONFIG_HOME,
+	// so that it never reads the user's global configuration.
+	homeName = ".home"
 
 	// lockStaleAfter is the age after which a lock counts as abandoned. A
 	// held lock is refreshed every lockHeartbeat, so only a dead holder's
@@ -86,20 +99,46 @@ func (r *Runner) openRoot(create bool) (string, error) {
 	case !fi.IsDir():
 		return "", fail(ReasonCache)
 	}
-	if hasTag(root) {
-		return root, nil
+	if !hasTag(root) {
+		ents, err := os.ReadDir(root)
+		if err != nil || len(ents) > 0 || !create {
+			return "", fail(ReasonCache)
+		}
+		if err := os.Chmod(root, 0o700); err != nil { //nolint:gosec // G302: a directory; 0700 is owner-only
+			return "", fail(ReasonCache)
+		}
+		if err := os.WriteFile(filepath.Join(root, tagName), []byte(tagContent), 0o600); err != nil {
+			return "", fail(ReasonCache)
+		}
 	}
-	ents, err := os.ReadDir(root)
-	if err != nil || len(ents) > 0 || !create {
-		return "", fail(ReasonCache)
-	}
-	if err := os.Chmod(root, 0o700); err != nil { //nolint:gosec // G302: a directory; 0700 is owner-only
-		return "", fail(ReasonCache)
-	}
-	if err := os.WriteFile(filepath.Join(root, tagName), []byte(tagContent), 0o600); err != nil {
-		return "", fail(ReasonCache)
+	if create {
+		if err := ensureHome(root); err != nil {
+			return "", err
+		}
 	}
 	return root, nil
+}
+
+// homeDir is the empty home directory of the git children under root.
+func homeDir(root string) string { return filepath.Join(root, homeName) }
+
+// ensureHome creates <root>/.home with mode 0700, or checks that it is a
+// real directory (not a symlink, not a file) and makes it 0700 again.
+func ensureHome(root string) error {
+	h := homeDir(root)
+	if err := os.Mkdir(h, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
+		return fail(ReasonCache)
+	}
+	fi, err := os.Lstat(h)
+	if err != nil || !fi.IsDir() || fi.Mode()&fs.ModeSymlink != 0 {
+		return fail(ReasonCache)
+	}
+	if fi.Mode().Perm() != 0o700 {
+		if err := os.Chmod(h, 0o700); err != nil { //nolint:gosec // G302: a directory; 0700 is owner-only
+			return fail(ReasonCache)
+		}
+	}
+	return nil
 }
 
 func hasTag(root string) bool {
@@ -247,7 +286,7 @@ func touch(path string) error {
 
 // Entry is one cached repository.
 type Entry struct {
-	// Repo is "<host>/<namespace>/<repo>" as laid out in the cache.
+	// Repo is "<host>/<base>/<namespace>/<repo>" as laid out in the cache.
 	Repo string `json:"repo"`
 	// Path is the entry directory.
 	Path string `json:"path"`
@@ -280,26 +319,31 @@ func scan(root string) []Entry {
 	}
 	now := time.Now()
 	for _, host := range dirs(root) {
-		for _, ns := range dirs(filepath.Join(root, host)) {
-			for _, name := range dirs(filepath.Join(root, host, ns)) {
-				p := filepath.Join(root, host, ns, name)
-				fi, err := os.Lstat(filepath.Join(p, markerName))
-				if err != nil || !fi.Mode().IsRegular() {
-					continue
+		if strings.HasPrefix(host, ".") { // .home, never a host
+			continue
+		}
+		for _, base := range dirs(filepath.Join(root, host)) {
+			for _, ns := range dirs(filepath.Join(root, host, base)) {
+				for _, name := range dirs(filepath.Join(root, host, base, ns)) {
+					p := filepath.Join(root, host, base, ns, name)
+					fi, err := os.Lstat(filepath.Join(p, markerName))
+					if err != nil || !fi.Mode().IsRegular() {
+						continue
+					}
+					e := Entry{
+						Repo:      host + "/" + base + "/" + ns + "/" + name,
+						Path:      p,
+						SizeBytes: treeSize(filepath.Join(p, gitDirName)),
+						LastUsed:  fi.ModTime(),
+					}
+					if idle := now.Sub(e.LastUsed); idle > 0 {
+						e.IdleDays = int(idle / (24 * time.Hour))
+					}
+					if lf, err := os.Lstat(filepath.Join(p, lockName)); err == nil && now.Sub(lf.ModTime()) <= lockStaleAfter {
+						e.InUse = true
+					}
+					out = append(out, e)
 				}
-				e := Entry{
-					Repo:      host + "/" + ns + "/" + name,
-					Path:      p,
-					SizeBytes: treeSize(filepath.Join(p, gitDirName)),
-					LastUsed:  fi.ModTime(),
-				}
-				if idle := now.Sub(e.LastUsed); idle > 0 {
-					e.IdleDays = int(idle / (24 * time.Hour))
-				}
-				if lf, err := os.Lstat(filepath.Join(p, lockName)); err == nil && now.Sub(lf.ModTime()) <= lockStaleAfter {
-					e.InUse = true
-				}
-				out = append(out, e)
 			}
 		}
 	}
@@ -339,10 +383,13 @@ func removeEntry(root, p string) bool {
 	removed := removeEntryLocked(root, p)
 	l.release()
 	if removed {
-		// Only empty directories go: anything else in them stays.
-		_ = os.Remove(p)
-		_ = os.Remove(filepath.Dir(p))
-		_ = os.Remove(filepath.Dir(filepath.Dir(p)))
+		// Only empty directories go, up to the host: anything else in them
+		// stays.
+		d := p
+		for i := 0; i < 4 && within(root, d); i++ {
+			_ = os.Remove(d)
+			d = filepath.Dir(d)
+		}
 	}
 	return removed
 }

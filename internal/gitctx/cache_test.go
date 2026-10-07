@@ -66,14 +66,14 @@ func repoNames(es []Entry) string {
 func TestIdleSweep(t *testing.T) {
 	r, root := cacheRunner(t, Options{IdleDays: 7})
 	now := time.Now()
-	old := makeEntry(t, root, "your-gitea.example/owner/old", 100, now.Add(-8*24*time.Hour))
-	keep := makeEntry(t, root, "bitbucket.example.com/PROJ/keep", 100, now.Add(-6*24*time.Hour))
+	old := makeEntry(t, root, "your-gitea.example/_/owner/old", 100, now.Add(-8*24*time.Hour))
+	keep := makeEntry(t, root, "bitbucket.example.com/bb/PROJ/keep", 100, now.Add(-6*24*time.Hour))
 
 	list, err := r.List()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := repoNames(list); got != "bitbucket.example.com/PROJ/keep,your-gitea.example/owner/old" {
+	if got := repoNames(list); got != "bitbucket.example.com/bb/PROJ/keep,your-gitea.example/_/owner/old" {
 		t.Fatalf("List = %s", got)
 	}
 	if list[1].IdleDays != 8 || list[1].SizeBytes != 100 || list[1].InUse {
@@ -84,7 +84,7 @@ func TestIdleSweep(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := repoNames(removed); got != "your-gitea.example/owner/old" {
+	if got := repoNames(removed); got != "your-gitea.example/_/owner/old" {
 		t.Errorf("removed = %s", got)
 	}
 	if exists(old) || exists(filepath.Join(root, "your-gitea.example")) {
@@ -100,14 +100,14 @@ func TestIdleSweep(t *testing.T) {
 func TestLRUSweep(t *testing.T) {
 	r, root := cacheRunner(t, Options{IdleDays: 7, MaxCacheBytes: 9000})
 	now := time.Now()
-	a := makeEntry(t, root, "h/ns/a", 4000, now.Add(-3*time.Hour))
-	b := makeEntry(t, root, "h/ns/b", 4000, now.Add(-2*time.Hour))
-	c := makeEntry(t, root, "h/ns/c", 4000, now.Add(-time.Hour))
+	a := makeEntry(t, root, "h/_/ns/a", 4000, now.Add(-3*time.Hour))
+	b := makeEntry(t, root, "h/_/ns/b", 4000, now.Add(-2*time.Hour))
+	c := makeEntry(t, root, "h/_/ns/c", 4000, now.Add(-time.Hour))
 	removed, err := r.Prune()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := repoNames(removed); got != "h/ns/a" {
+	if got := repoNames(removed); got != "h/_/ns/a" {
 		t.Errorf("removed = %s, want h/ns/a", got)
 	}
 	if exists(a) || !exists(b) || !exists(c) {
@@ -116,8 +116,8 @@ func TestLRUSweep(t *testing.T) {
 
 	r.opts.MaxCacheBytes = 3000
 	removed, _ = r.Prune()
-	if got := repoNames(removed); got != "h/ns/b,h/ns/c" {
-		t.Errorf("removed = %s, want h/ns/b,h/ns/c", got)
+	if got := repoNames(removed); got != "h/_/ns/b,h/_/ns/c" {
+		t.Errorf("removed = %s, want h/_/ns/b,h/_/ns/c", got)
 	}
 }
 
@@ -127,10 +127,10 @@ func TestLRUSweep(t *testing.T) {
 func TestSweepSparesInUse(t *testing.T) {
 	r, root := cacheRunner(t, Options{IdleDays: 1, MaxCacheBytes: 1})
 	now := time.Now()
-	own := makeEntry(t, root, "h/ns/own", 100, now.Add(-48*time.Hour))
-	locked := makeEntry(t, root, "h/ns/locked", 100, now.Add(-48*time.Hour))
-	recent := makeEntry(t, root, "h/ns/recent", 100, now.Add(-time.Minute))
-	stale := makeEntry(t, root, "h/ns/stale", 100, now.Add(-48*time.Hour))
+	own := makeEntry(t, root, "h/_/ns/own", 100, now.Add(-48*time.Hour))
+	locked := makeEntry(t, root, "h/_/ns/locked", 100, now.Add(-48*time.Hour))
+	recent := makeEntry(t, root, "h/_/ns/recent", 100, now.Add(-time.Minute))
+	stale := makeEntry(t, root, "h/_/ns/stale", 100, now.Add(-48*time.Hour))
 	if err := os.WriteFile(filepath.Join(locked, lockName), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -144,13 +144,13 @@ func TestSweepSparesInUse(t *testing.T) {
 	}
 	list, _ := r.List()
 	for _, e := range list {
-		if want := e.Repo == "h/ns/locked"; e.InUse != want {
+		if want := e.Repo == "h/_/ns/locked"; e.InUse != want {
 			t.Errorf("%s in_use = %v", e.Repo, e.InUse)
 		}
 	}
 
 	removed := r.sweep(root, own)
-	if got := repoNames(removed); got != "h/ns/stale" {
+	if got := repoNames(removed); got != "h/_/ns/stale" {
 		t.Errorf("removed = %s, want h/ns/stale", got)
 	}
 	if !exists(own) || !exists(locked) || !exists(recent) || exists(stale) {
@@ -169,12 +169,12 @@ func TestDeletionNeverFollowsSymlinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	old := time.Now().Add(-48 * time.Hour)
-	e := makeEntry(t, root, "h/ns/repo", 10, old)
+	e := makeEntry(t, root, "h/_/ns/repo", 10, old)
 	if err := os.Symlink(outside, filepath.Join(e, gitDirName, "objects", "link")); err != nil {
 		t.Skipf("symlinks are not available here: %v", err)
 	}
 	// A symlinked git directory and a symlinked entry.
-	e2 := makeEntry(t, root, "h/ns/linkedgit", 10, old)
+	e2 := makeEntry(t, root, "h/_/ns/linkedgit", 10, old)
 	if err := os.RemoveAll(filepath.Join(e2, gitDirName)); err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestDeletionNeverFollowsSymlinks(t *testing.T) {
 	}
 	fakeEntry := t.TempDir()
 	makeEntry(t, fakeEntry, "x", 10, old)
-	if err := os.Symlink(filepath.Join(fakeEntry, "x"), filepath.Join(root, "h", "ns", "linked")); err != nil {
+	if err := os.Symlink(filepath.Join(fakeEntry, "x"), filepath.Join(root, "h", "_", "ns", "linked")); err != nil {
 		t.Fatal(err)
 	}
 	// A foreign file inside an entry.
@@ -195,13 +195,13 @@ func TestDeletionNeverFollowsSymlinks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := repoNames(removed); got != "h/ns/linkedgit,h/ns/repo" {
+	if got := repoNames(removed); got != "h/_/ns/linkedgit,h/_/ns/repo" {
 		t.Errorf("removed = %s", got)
 	}
 	if !exists(victim) || !exists(filepath.Join(fakeEntry, "x", gitDirName)) {
 		t.Fatal("deletion followed a symlink")
 	}
-	if !exists(filepath.Join(root, "h", "ns", "linked")) {
+	if !exists(filepath.Join(root, "h", "_", "ns", "linked")) {
 		t.Error("a symlinked entry was touched")
 	}
 	if exists(filepath.Join(e, gitDirName)) || !exists(filepath.Join(e, "notes.txt")) {
@@ -282,11 +282,11 @@ func TestPlan(t *testing.T) {
 		allowHTTP     bool
 	}{
 		{giteaRepo("https://your-gitea.example/"), "https://your-gitea.example/owner/repo.git", "refs/pull/7/head",
-			"your-gitea.example/owner/repo", schemeToken, false},
+			"your-gitea.example/_/owner/repo", schemeToken, false},
 		{bbsRepo("https://Bitbucket.Example.com/bb"), "https://Bitbucket.Example.com/bb/scm/PROJ/repo.git", "refs/pull-requests/7/from",
-			"bitbucket.example.com/PROJ/repo", schemeBearer, false},
+			"bitbucket.example.com/bb/PROJ/repo", schemeBearer, false},
 		{func() Repo { r := bbsRepo("http://127.0.0.1:7990"); r.Namespace = "~jdoe"; return r }(),
-			"http://127.0.0.1:7990/scm/~jdoe/repo.git", "refs/pull-requests/7/from", "127.0.0.1_7990/~jdoe/repo", schemeBearer, true},
+			"http://127.0.0.1:7990/scm/~jdoe/repo.git", "refs/pull-requests/7/from", "127.0.0.1_7990/_/~jdoe/repo", schemeBearer, true},
 	}
 	for _, tc := range cases {
 		p, err := newPlan(tc.repo, PR{Number: 7, HeadSHA: strings.ToUpper(fakeSHA)})
@@ -351,21 +351,231 @@ func TestLockExclusive(t *testing.T) {
 	l2.release()
 }
 
-// TestChildEnvAllowlist checks childEnv directly, including the git config
-// entries.
+// TestChildEnvAllowlist checks childEnv directly: the configuration
+// entries, the empty home instead of the user's, the system configuration
+// switched off except on Windows, and the proxy variables in both cases.
 func TestChildEnvAllowlist(t *testing.T) {
+	realHome := t.TempDir()
+	t.Setenv("HOME", realHome)
+	t.Setenv("XDG_CONFIG_HOME", realHome)
 	t.Setenv("REVIEW_MCP_GITEA_TOKEN", testToken)
 	t.Setenv("GIT_SSH_COMMAND", "evil")
-	env := childEnv([][2]string{{"http.extraHeader", ""}, {"http.extraHeader", "X: y"}})
-	joined := strings.Join(env, "\n")
-	if strings.Contains(joined, testToken) || strings.Contains(joined, "GIT_SSH_COMMAND") {
-		t.Errorf("parent variables leaked: %v", env)
+	proxies := map[string]string{
+		"http_proxy": "http://p1.example:3128", "https_proxy": "http://p2.example:3128",
+		"no_proxy": "localhost,.internal", "all_proxy": "socks5://p3.example:1080",
+		"HTTP_PROXY": "http://P1.example:3128", "HTTPS_PROXY": "http://P2.example:3128",
+		"NO_PROXY": "LOCALHOST", "ALL_PROXY": "socks5://P3.example:1080",
 	}
-	for _, want := range []string{"LANG=C", "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=", "SSH_ASKPASS=",
-		"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_1=http.extraHeader", "GIT_CONFIG_VALUE_1=X: y"} {
-		if !strings.Contains("\n"+joined+"\n", "\n"+want+"\n") {
-			t.Errorf("env lacks %q", want)
+	for k, v := range proxies {
+		t.Setenv(k, v)
+	}
+	home := filepath.Join(t.TempDir(), homeName)
+	cfg := [][2]string{{"http.extraHeader", ""}, {"http.extraHeader", "X: y"}}
+
+	for _, goos := range []string{"linux", "darwin", "windows"} {
+		env := childEnv(home, cfg, goos)
+		joined := "\n" + strings.Join(env, "\n") + "\n"
+		if strings.Contains(joined, testToken) || strings.Contains(joined, "GIT_SSH_COMMAND") {
+			t.Errorf("%s: parent variables leaked: %v", goos, env)
 		}
+		if strings.Contains(joined, "="+realHome+"\n") {
+			t.Errorf("%s: the user's real home was passed: %v", goos, env)
+		}
+		want := []string{"HOME=" + home, "XDG_CONFIG_HOME=" + home, "LANG=C", "GIT_TERMINAL_PROMPT=0",
+			"GIT_ASKPASS=", "SSH_ASKPASS=", "GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_1=http.extraHeader",
+			"GIT_CONFIG_VALUE_1=X: y"}
+		if goos == "windows" {
+			want = append(want, "USERPROFILE="+home)
+			if strings.Contains(joined, "GIT_CONFIG_NOSYSTEM") {
+				t.Errorf("windows: GIT_CONFIG_NOSYSTEM set; Git for Windows keeps its TLS settings in the system config")
+			}
+		} else {
+			want = append(want, "GIT_CONFIG_NOSYSTEM=1")
+		}
+		for _, w := range want {
+			if !strings.Contains(joined, "\n"+w+"\n") {
+				t.Errorf("%s: env lacks %q", goos, w)
+			}
+		}
+		names := map[string]int{}
+		for _, kv := range env {
+			k, _, _ := strings.Cut(kv, "=")
+			if goos == "windows" {
+				k = strings.ToUpper(k)
+			}
+			names[k]++
+		}
+		for k, n := range names {
+			if n > 1 {
+				t.Errorf("%s: %s passed %d times", goos, k, n)
+			}
+		}
+		if goos == "windows" {
+			// Case-insensitive names: one of each pair, whichever case.
+			for _, k := range []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY"} {
+				if names[k] != 1 {
+					t.Errorf("windows: %s passed %d times", k, names[k])
+				}
+			}
+			continue
+		}
+		for k, v := range proxies {
+			if !strings.Contains(joined, "\n"+k+"="+v+"\n") {
+				t.Errorf("%s: proxy %s not passed", goos, k)
+			}
+		}
+	}
+
+	// The version probe runs before the cache is known: no home at all.
+	if env := strings.Join(childEnv("", nil, "linux"), "\n"); strings.Contains(env, "HOME=") {
+		t.Errorf("a home was passed without a cache: %s", env)
+	}
+}
+
+// TestNetArgsMirrorProvider: the provider's ca_cert and
+// insecure_skip_verify become git settings of network commands only, with
+// the openssl backend on Windows so that the CA file is honoured.
+func TestNetArgsMirrorProvider(t *testing.T) {
+	has := func(a []string, kv string) bool {
+		return strings.Contains(" "+strings.Join(a, " ")+" ", " -c "+kv+" ")
+	}
+	np := &netPolicy{caCert: "/etc/ssl/corp-ca.pem", insecureSkipVerify: true}
+	for goos, backend := range map[string]bool{"linux": false, "darwin": false, "windows": true} {
+		a := safetyArgs(np, goos)
+		if !has(a, "http.sslCAInfo=/etc/ssl/corp-ca.pem") || !has(a, "http.sslVerify=false") {
+			t.Errorf("%s: %v", goos, a)
+		}
+		if has(a, "http.sslBackend=openssl") != backend {
+			t.Errorf("%s: sslBackend=openssl = %v, want %v", goos, !backend, backend)
+		}
+		if local := safetyArgs(nil, goos); has(local, "http.sslCAInfo=/etc/ssl/corp-ca.pem") || has(local, "http.sslVerify=false") {
+			t.Errorf("%s: a local command carries network settings", goos)
+		}
+	}
+	plain := safetyArgs(&netPolicy{}, "windows")
+	for _, kv := range []string{"http.sslVerify=false", "http.sslBackend=openssl"} {
+		if has(plain, kv) {
+			t.Errorf("default policy has %s", kv)
+		}
+	}
+	for _, a := range plain {
+		if strings.HasPrefix(a, "http.sslCAInfo") {
+			t.Errorf("default policy has %s", a)
+		}
+	}
+}
+
+// TestBaseSegment: the escaped base path is one safe, injective directory
+// name; the cache key includes it, so two instances on one host never share
+// an entry.
+func TestBaseSegment(t *testing.T) {
+	long := "/" + strings.Repeat("ctx/", 40)
+	cases := map[string]string{
+		"":              "_",
+		"/":             "_",
+		"/bb":           "bb",
+		"/bitbucket":    "bitbucket",
+		"/a/b":          "a_2Fb",
+		"/a_b":          "a_5Fb",
+		"/a%2Fb":        "a_252Fb",
+		"/.hidden":      "_2Ehidden",
+		"/..":           "_2E.",
+		"/-x":           "_2Dx",
+		"/v1.2-x":       "v1.2-x",
+		"/~user":        "_7Euser",
+		"/_h0123":       "_5Fh0123",
+		"/git/":         "git_2F",
+		long:            "",
+		long + "x":      "",
+		"//double":      "_2Fdouble",
+		"/caf%C3%A9":    "caf_25C3_25A9",
+		"/with%20space": "with_2520space",
+	}
+	seen := map[string]string{}
+	for in, want := range cases {
+		got := baseSegment(in)
+		if want != "" && got != want {
+			t.Errorf("baseSegment(%q) = %q, want %q", in, got, want)
+		}
+		if !safeSegment(got) {
+			t.Errorf("baseSegment(%q) = %q is not a safe segment", in, got)
+		}
+		if strings.HasPrefix(in, "/") && len(in) > 1 && got == "_" {
+			t.Errorf("baseSegment(%q) is the empty-path name", in)
+		}
+		if prev, ok := seen[got]; ok && strings.TrimPrefix(prev, "/") != strings.TrimPrefix(in, "/") {
+			t.Errorf("%q and %q share %q", prev, in, got)
+		}
+		seen[got] = in
+	}
+	if got := baseSegment(long); !strings.HasPrefix(got, "_h") || len(got) != 42 {
+		t.Errorf("long base path = %q, want _h + 40 hex", got)
+	}
+
+	// Two instances on one host, and one at the root, get three entries.
+	rels := map[string]bool{}
+	for _, base := range []string{"https://git.example.com", "https://git.example.com/gitea", "https://git.example.com/bitbucket"} {
+		p, err := newPlan(giteaRepo(base), PR{Number: 7, HeadSHA: fakeSHA})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rels[filepath.ToSlash(p.rel)] = true
+	}
+	for _, want := range []string{"git.example.com/_/owner/repo", "git.example.com/gitea/owner/repo", "git.example.com/bitbucket/owner/repo"} {
+		if !rels[want] {
+			t.Errorf("rel %s missing from %v", want, rels)
+		}
+	}
+}
+
+// TestHomeDir: the cache's .home is created 0700 with the cache, is never an
+// entry (List, Prune and the sweeps leave it alone), and a symlinked .home
+// makes the cache unusable rather than giving git someone else's home.
+func TestHomeDir(t *testing.T) {
+	r, root := cacheRunner(t, Options{IdleDays: 1, MaxCacheBytes: 1})
+	h := homeDir(root)
+	fi, err := os.Lstat(h)
+	if err != nil || !fi.IsDir() {
+		t.Fatalf(".home = %v, %v", fi, err)
+	}
+	if os.PathSeparator == '/' && fi.Mode().Perm() != 0o700 {
+		t.Errorf(".home mode = %v, want 0700", fi.Mode().Perm())
+	}
+	// Even a .home that looks like an old entry is not one.
+	old := time.Now().Add(-48 * time.Hour)
+	makeEntry(t, h, "x/y/z", 10, old)
+	makeEntry(t, root, "h/_/ns/old", 10, old)
+	if list, _ := r.List(); repoNames(list) != "h/_/ns/old" {
+		t.Errorf("List = %s", repoNames(list))
+	}
+	if removed, _ := r.Prune(); repoNames(removed) != "h/_/ns/old" {
+		t.Errorf("Prune = %s", repoNames(removed))
+	}
+	if !exists(filepath.Join(h, "x", "y", "z", gitDirName)) {
+		t.Error("the sweep entered .home")
+	}
+
+	// Mode is restored on the next use.
+	if os.PathSeparator == '/' {
+		if err := os.Chmod(h, 0o755); err != nil { //nolint:gosec // G302: testing the repair
+			t.Fatal(err)
+		}
+		if _, err := r.openRoot(true); err != nil {
+			t.Fatal(err)
+		}
+		if fi, _ := os.Lstat(h); fi.Mode().Perm() != 0o700 {
+			t.Errorf(".home mode after reuse = %v", fi.Mode().Perm())
+		}
+	}
+
+	if err := os.RemoveAll(h); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(t.TempDir(), h); err != nil {
+		t.Skipf("symlinks are not available here: %v", err)
+	}
+	if _, err := r.openRoot(true); ReasonOf(err) != ReasonCache {
+		t.Errorf("openRoot with a symlinked .home = %v, want cache_unusable", err)
 	}
 }
 

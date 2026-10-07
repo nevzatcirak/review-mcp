@@ -7,11 +7,28 @@
 // never a shell (RC-2). The provider token reaches git only through the
 // environment of the one child process that needs it, as GIT_CONFIG_COUNT /
 // GIT_CONFIG_KEY_n / GIT_CONFIG_VALUE_n (http.extraHeader); it never appears
-// in an argument, on disk, in a log or in an error (RC-3). The clone URL is
-// built from the configured provider base URL and the resolved repository
-// only (RC-4). The fetched commit must equal the pull request's head SHA
-// (RC-5). The cache sweeps idle and least-recently-used repositories at the
-// start of every use (RC-6).
+// in an argument, on disk, in a log or in an error (RC-3).
+//
+// Every git process gets a fresh environment from an allowlist, never the
+// parent's: PATH; SYSTEMROOT on Windows; the proxy variables (http_proxy,
+// https_proxy, no_proxy, all_proxy, in both cases) when set; HOME and
+// XDG_CONFIG_HOME (and USERPROFILE on Windows) pointing at the cache's empty
+// <cache_dir>/.home, never the user's real home, so the user's global git
+// configuration is not read; GIT_CONFIG_NOSYSTEM=1 except on Windows (Git
+// for Windows keeps its TLS backend and CA settings in the system
+// configuration); LANG=C; GIT_TERMINAL_PROMPT=0 and empty GIT_ASKPASS and
+// SSH_ASKPASS; and the GIT_CONFIG_* entries. The provider's ca_cert and
+// insecure_skip_verify are mirrored as http.sslCAInfo (with
+// http.sslBackend=openssl on Windows) and http.sslVerify=false.
+//
+// The clone URL is built from the configured provider base URL and the
+// resolved repository only (RC-4). Before any network command, git expands
+// the remote's URL through every url.*.insteadOf it would apply (ls-remote
+// --get-url, no network, no credential); anything but the pinned URL stops
+// the fetch with reason redirect. The fetched commit must equal the pull
+// request's head SHA (RC-5). The cache, one entry per
+// host/base path/namespace/repository, sweeps idle and least-recently-used
+// repositories at the start of every use (RC-6).
 //
 // Every failure is an *Error that carries a fixed reason and nothing else:
 // git's stderr is classified and dropped, never passed on.

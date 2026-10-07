@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -141,20 +143,27 @@ func TestSafetySettings(t *testing.T) {
 }
 
 // allowedEnv is the allowlist of the child environment.
-var allowedEnv = regexp.MustCompile(`^(?i:PATH|HOME|USERPROFILE|SYSTEMROOT|LANG|GIT_TERMINAL_PROMPT|GIT_ASKPASS|SSH_ASKPASS|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+)$`)
+var allowedEnv = regexp.MustCompile(`^(?i:PATH|HOME|XDG_CONFIG_HOME|USERPROFILE|SYSTEMROOT|LANG|GIT_CONFIG_NOSYSTEM|GIT_TERMINAL_PROMPT|GIT_ASKPASS|SSH_ASKPASS|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+|HTTP_PROXY|HTTPS_PROXY|NO_PROXY|ALL_PROXY)$`)
 
 // TestParentEnvironmentNotPassed [canary]: a variable of the parent never
-// reaches git; every variable git sees is on the allowlist.
+// reaches git; every variable git sees is on the allowlist; the user's real
+// home never reaches git, only the cache's empty .home does, with the system
+// configuration off (except on Windows).
 func TestParentEnvironmentNotPassed(t *testing.T) {
 	resetSchemes()
 	const sentinel = "sentinel-value-ZQ7X"
 	t.Setenv("REVIEW_MCP_SENTINEL_CANARY", sentinel)
 	t.Setenv("GIT_DIR", "/tmp/elsewhere-"+sentinel)
 	t.Setenv("GIT_CONFIG_PARAMETERS", "'http.extraheader'='"+sentinel+"'")
+	t.Setenv("XDG_CONFIG_HOME", "/tmp/xdg-"+sentinel)
+	t.Setenv("GIT_CONFIG_GLOBAL", "/tmp/global-"+sentinel)
 	r, f := fakeRunner(t, fakeBehavior{SHA: fakeSHA}, Options{})
+	realHome := os.Getenv("HOME") // newFakeGit pointed it at a fresh directory
 	if _, err := r.Ensure(context.Background(), giteaRepo("https://your-gitea.example"), PR{Number: 7, HeadSHA: fakeSHA}); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
+	root, _ := r.CacheDir()
+	wantHome := homeDir(root)
 	calls := f.calls(t)
 	if len(calls) < 3 {
 		t.Fatalf("only %d git calls recorded", len(calls))
@@ -164,12 +173,124 @@ func TestParentEnvironmentNotPassed(t *testing.T) {
 			if strings.HasPrefix(kv, "=") { // Windows per-drive directories
 				continue
 			}
-			name, _, _ := strings.Cut(kv, "=")
+			name, v, _ := strings.Cut(kv, "=")
 			if strings.Contains(kv, sentinel) || !allowedEnv.MatchString(name) {
 				t.Errorf("git %s got the parent's %s", c.subcommand(), name)
 			}
+			if v == realHome || strings.HasPrefix(v, realHome+string(filepath.Separator)) {
+				t.Errorf("git %s got the user's real home in %s", c.subcommand(), name)
+			}
+		}
+		if c.subcommand() == "--version" {
+			continue // runs before the cache is known: no home at all
+		}
+		for _, name := range []string{"HOME", "XDG_CONFIG_HOME"} {
+			if got, ok := envValue(c.Env, name); !ok || got != wantHome {
+				t.Errorf("git %s: %s = %q (set %v), want %s", c.subcommand(), name, got, ok, wantHome)
+			}
+		}
+		got, ok := envValue(c.Env, "GIT_CONFIG_NOSYSTEM")
+		if runtime.GOOS == "windows" {
+			if ok {
+				t.Errorf("git %s: GIT_CONFIG_NOSYSTEM set on Windows", c.subcommand())
+			}
+		} else if !ok || got != "1" {
+			t.Errorf("git %s: GIT_CONFIG_NOSYSTEM = %q (set %v), want 1", c.subcommand(), got, ok)
 		}
 	}
+}
+
+// TestProxyAndTLSMirrored: the proxy variables reach the git commands in
+// both cases, and the provider's ca_cert and insecure_skip_verify become the
+// fetch's http.sslCAInfo and http.sslVerify=false (plus the openssl backend
+// on Windows).
+func TestProxyAndTLSMirrored(t *testing.T) {
+	resetSchemes()
+	proxies := map[string]string{
+		"https_proxy": "http://proxy.example:3128", "no_proxy": ".internal.example",
+		"HTTP_PROXY": "http://proxy.example:3129", "ALL_PROXY": "socks5://proxy.example:1080",
+	}
+	if runtime.GOOS != "windows" { // one variable per name there
+		proxies["http_proxy"] = "http://proxy.example:3130"
+		proxies["HTTPS_PROXY"] = "http://proxy.example:3131"
+		proxies["NO_PROXY"] = "localhost"
+		proxies["all_proxy"] = "socks5://proxy.example:1081"
+	}
+	for k, v := range proxies {
+		t.Setenv(k, v)
+	}
+	r, f := fakeRunner(t, fakeBehavior{SHA: fakeSHA}, Options{})
+	repo := bbsRepo("https://bitbucket.example.com/bb")
+	repo.CACert, repo.InsecureSkipVerify = "/etc/ssl/corp-ca.pem", true
+	if _, err := r.Ensure(context.Background(), repo, PR{Number: 7, HeadSHA: fakeSHA}); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	calls := f.calls(t)
+	for _, c := range calls {
+		if c.subcommand() == "--version" {
+			continue
+		}
+		for k, v := range proxies {
+			// Exact case: on Unix both spellings are separate variables.
+			if !slices.Contains(c.Env, k+"="+v) && (runtime.GOOS != "windows" || !hasFold(c.Env, k+"="+v)) {
+				t.Errorf("git %s: %s=%s not passed", c.subcommand(), k, v)
+			}
+		}
+	}
+	fetch := " " + strings.Join(callsOf(calls, "fetch")[0].Args, " ") + " "
+	for _, want := range []string{" -c http.sslCAInfo=/etc/ssl/corp-ca.pem ", " -c http.sslVerify=false "} {
+		if !strings.Contains(fetch, want) {
+			t.Errorf("fetch lacks %q: %s", strings.TrimSpace(want), fetch)
+		}
+	}
+	if backend := strings.Contains(fetch, " -c http.sslBackend=openssl "); backend != (runtime.GOOS == "windows") {
+		t.Errorf("http.sslBackend=openssl in fetch = %v on %s", backend, runtime.GOOS)
+	}
+}
+
+// TestRedirectGuard [canary]: a url.<other>.insteadOf=<pinned URL> in any
+// configuration git reads (injected here as an extra entry) is caught by the
+// ls-remote --get-url guard: redirect, no fetch, and the credential reaches
+// no git command. The guard itself carries no credential.
+func TestRedirectGuard(t *testing.T) {
+	resetSchemes()
+	setExtraConfig(t, [][2]string{{"url.https://elsewhere.example/.insteadOf", "https://your-gitea.example/"}})
+	r, f := fakeRunner(t, fakeBehavior{SHA: fakeSHA}, Options{})
+	_, err := r.Ensure(context.Background(), giteaRepo("https://your-gitea.example"), PR{Number: 7, HeadSHA: fakeSHA})
+	wantReason(t, err, ReasonRedirect)
+	calls := f.calls(t)
+	if n := len(callsOf(calls, "fetch")); n != 0 {
+		t.Errorf("%d fetches ran after the guard", n)
+	}
+	guards := callsOf(calls, "ls-remote")
+	if len(guards) != 1 {
+		t.Fatalf("%d ls-remote calls, want 1", len(guards))
+	}
+	if a := strings.Join(guards[0].Args, " "); !strings.HasSuffix(a, " ls-remote --get-url origin") {
+		t.Errorf("guard args = %s", a)
+	}
+	for _, c := range calls {
+		all := strings.Join(c.Args, "\n") + "\n" + strings.Join(c.Env, "\n")
+		if strings.Contains(all, testToken) || strings.Contains(strings.ToLower(all), "extraheader") {
+			t.Errorf("git %s carries the credential", c.subcommand())
+		}
+	}
+}
+
+func hasFold(env []string, kv string) bool {
+	for _, e := range env {
+		if strings.EqualFold(e, kv) {
+			return true
+		}
+	}
+	return false
+}
+
+// setExtraConfig sets testExtraConfig for one test.
+func setExtraConfig(t *testing.T, cfg [][2]string) {
+	t.Helper()
+	testExtraConfig = cfg
+	t.Cleanup(func() { testExtraConfig = nil })
 }
 
 // TestStderrNeverInError: git's stderr (which can echo URLs and headers) is
@@ -253,7 +374,7 @@ func TestBusyAndStaleLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry := filepath.Join(root, "your-gitea.example", "owner", "repo")
+	entry := filepath.Join(root, "your-gitea.example", "_", "owner", "repo")
 	if err := os.MkdirAll(entry, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -286,8 +407,8 @@ func TestEnsureSweepsIdleRepositories(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	idle := makeEntry(t, root, "your-gitea.example/owner/old", 2048, time.Now().Add(-8*24*time.Hour))
-	fresh := makeEntry(t, root, "your-gitea.example/owner/fresh", 2048, time.Now().Add(-6*24*time.Hour))
+	idle := makeEntry(t, root, "your-gitea.example/_/owner/old", 2048, time.Now().Add(-8*24*time.Hour))
+	fresh := makeEntry(t, root, "your-gitea.example/_/owner/fresh", 2048, time.Now().Add(-6*24*time.Hour))
 	if _, err := r.Ensure(context.Background(), giteaRepo("https://your-gitea.example"), PR{Number: 7, HeadSHA: fakeSHA}); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}

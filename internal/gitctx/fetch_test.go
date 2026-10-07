@@ -259,6 +259,36 @@ func TestRedirectNotFollowed(t *testing.T) {
 	}
 }
 
+// TestInsteadOfGuardRealGit [canary]: with the real git, a
+// url.<other>.insteadOf=<pinned base> (here an extra configuration entry;
+// in the field a Windows system configuration) would send the fetch, and
+// its Authorization header, to another server. The ls-remote --get-url
+// guard stops it first: redirect, and no request reaches either server.
+func TestInsteadOfGuardRealGit(t *testing.T) {
+	resetSchemes()
+	var elsewhere atomic.Int32
+	var leaked atomic.Bool
+	other := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		elsewhere.Add(1)
+		if strings.Contains(r.Header.Get("Authorization"), testToken) {
+			leaked.Store(true)
+		}
+	}))
+	defer other.Close()
+	s := newGitServer(t, provider.KindGitea)
+	s.set(acceptExactly("token "+testToken), "")
+	setExtraConfig(t, [][2]string{{"url." + other.URL + "/.insteadOf", s.base + "/"}})
+	r, _ := realRunner(t, Options{})
+	_, err := r.Ensure(context.Background(), giteaRepo(s.base), PR{Number: 7, HeadSHA: s.head})
+	if n := elsewhere.Load(); n != 0 {
+		t.Errorf("%d requests reached the other server (token sent: %v)", n, leaked.Load())
+	}
+	if got := s.requests(); len(got) != 0 {
+		t.Errorf("%d requests reached the pinned server", len(got))
+	}
+	wantReason(t, err, ReasonRedirect)
+}
+
 // TestFetchTimeout: a server that does not answer is timeout after
 // fetch_timeout, not a hang.
 func TestFetchTimeout(t *testing.T) {

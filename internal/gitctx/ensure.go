@@ -2,7 +2,9 @@ package gitctx
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"io/fs"
 	"net/url"
@@ -27,7 +29,7 @@ type plan struct {
 	cloneURL  string
 	remoteRef string // refs/pull/{n}/head or refs/pull-requests/{n}/from
 	localRef  string
-	rel       string // <host>/<namespace>/<repo> under the cache directory
+	rel       string // <host>/<base>/<namespace>/<repo> under the cache directory
 	headSHA   string
 	net       netPolicy
 	schemes   []scheme
@@ -44,6 +46,50 @@ var (
 
 func safeSegment(s string) bool {
 	return segmentRE.MatchString(s) && s != "." && s != ".."
+}
+
+// maxBaseSegment is the longest escaped base path kept readable; a longer
+// one is replaced by a hash.
+const maxBaseSegment = 100
+
+// baseSegment turns the escaped path of the base URL ("" or "/bitbucket",
+// "/a/b", "/git%20x") into one cache directory name that is a safeSegment.
+//
+// The mapping is injective, so two different base paths never share an
+// entry:
+//   - no path at all is "_";
+//   - otherwise ASCII letters and digits are kept, and so are "." and "-"
+//     except as the first character (no ".", "..", hidden or option-like
+//     names); every other byte, "_" and "/" included, is "_XX" with XX its
+//     upper-case hex code. So "a/b" is "a_2Fb" and "a_b" is "a_5Fb";
+//   - a result longer than maxBaseSegment is "_h" followed by 40 lower-case
+//     hex digits of the path's SHA-256 ("h" is never the first character of
+//     an escape, and a kept result never contains "_h").
+//
+// Case is kept: on a case-insensitive file system "/BB" and "/bb" share a
+// directory, as they already do for namespaces; the SHA check (RC-5) keeps
+// such a shared entry correct.
+func baseSegment(escapedPath string) string {
+	p := strings.TrimPrefix(escapedPath, "/")
+	if p == "" {
+		return "_"
+	}
+	var b strings.Builder
+	for i := 0; i < len(p); i++ {
+		c := p[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9',
+			(c == '.' || c == '-') && i > 0:
+			b.WriteByte(c)
+		default:
+			b.WriteString("_" + strings.ToUpper(hex.EncodeToString([]byte{c})))
+		}
+	}
+	if b.Len() > maxBaseSegment {
+		sum := sha256.Sum256([]byte(p))
+		return "_h" + hex.EncodeToString(sum[:20])
+	}
+	return b.String()
 }
 
 // newPlan validates repo and pr and builds the clone URL (RC-4), the PR ref
@@ -93,10 +139,11 @@ func newPlan(repo Repo, pr PR) (*plan, error) {
 	if port := u.Port(); port != "" {
 		host += "_" + port
 	}
-	if !safeSegment(host) {
+	// A host never starts with "." (the cache's .home lives beside the hosts).
+	if !safeSegment(host) || strings.HasPrefix(host, ".") {
 		return nil, unsupported
 	}
-	p.rel = filepath.Join(host, repo.Namespace, repo.Name)
+	p.rel = filepath.Join(host, baseSegment(u.EscapedPath()), repo.Namespace, repo.Name)
 	p.cacheKey = string(repo.Kind) + "\x00" + base
 	return p, nil
 }
@@ -209,8 +256,11 @@ func (r *Runner) Ensure(ctx context.Context, repo Repo, pr PR) (Checkout, error)
 	}
 
 	gitDir := filepath.Join(entry, gitDirName)
-	g := &gitRun{path: probe.path, gitDir: gitDir, dir: entry}
+	g := &gitRun{path: probe.path, gitDir: gitDir, dir: entry, home: homeDir(root)}
 	if err := g.prepare(ctx, p); err != nil {
+		return Checkout{}, err
+	}
+	if err := g.checkURL(ctx, p); err != nil {
 		return Checkout{}, err
 	}
 	if err := g.fetch(ctx, repo, p); err != nil {
@@ -240,12 +290,38 @@ func (r *Runner) Ensure(ctx context.Context, repo Repo, pr PR) (Checkout, error)
 // gitRun runs git against one cache entry's bare repository.
 type gitRun struct {
 	path, gitDir, dir string
+	// home is the cache's empty home directory.
+	home string
 }
 
 func (g *gitRun) run(ctx context.Context, c gitCmd) result {
 	c.args = append([]string{"--git-dir=" + g.gitDir}, c.args...)
-	c.dir = g.dir
+	c.dir, c.home = g.dir, g.home
 	return run(ctx, g.path, c)
+}
+
+// checkURL is the redirect guard that runs before any network command: git
+// expands the URL the fetch will use (remote origin, through every
+// url.*.insteadOf of every configuration git reads, including a Windows
+// system configuration) without any network access, and it must be exactly
+// the pinned clone URL. Otherwise nothing is sent and the reason is
+// redirect.
+//
+// It runs with the environment of the fetch minus the credential: the same
+// HOME, system-configuration setting and extra entries, and no
+// http.extraHeader. "origin" rather than the URL itself is expanded, so a
+// second remote.origin.url from a configuration file (fetch uses the first)
+// is caught as well.
+func (g *gitRun) checkURL(ctx context.Context, p *plan) error {
+	res := g.run(ctx, gitCmd{args: []string{"ls-remote", "--get-url", "origin"}})
+	if res.err != nil {
+		_, err := res.failure()
+		return err
+	}
+	if strings.TrimRight(string(res.stdout), "\r\n") != p.cloneURL {
+		return fail(ReasonRedirect)
+	}
+	return nil
 }
 
 // prepare creates the bare repository on first use and pins its remote to
@@ -261,7 +337,7 @@ func (g *gitRun) prepare(ctx context.Context, p *plan) error {
 		err = fs.ErrNotExist
 	}
 	if errors.Is(err, fs.ErrNotExist) {
-		res := run(ctx, g.path, gitCmd{args: []string{"init", "--bare", "--quiet", g.gitDir}, dir: g.dir})
+		res := run(ctx, g.path, gitCmd{args: []string{"init", "--bare", "--quiet", g.gitDir}, dir: g.dir, home: g.home})
 		if res.err != nil {
 			_, err := res.failure()
 			return err

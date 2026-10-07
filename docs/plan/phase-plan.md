@@ -160,11 +160,30 @@ Specification: `docs/plan/P8-spec.md`. Live items: section J of
 
 ---
 
+## v1.1 — Repository context (planned, after v1.0.0)
+
+**Goal:** Reviews that see beyond the diff: an opt-in, stdio-only cache of
+shallow PR-head clones (idle repositories deleted after 7 days, total size
+capped), symbols extracted from the diff, their uses found with `git grep`,
+and a budgeted "related code" prompt block. A code graph follows only if
+measurement shows a clear gain.
+
+Design note and spec draft: `docs/design/v1.1-repo-context.md`.
+
+---
+
 ## v2 backlog (explicitly out of v1 scope)
 
 - `pr_describe` (cheapest next tool — no line anchoring).
 - `pr_improve` (code suggestions). Its anchoring builds on P7's inline anchors.
 - GitHub provider.
+- GitLab provider (added 2026-10-07, owner decision). Notes for its design:
+  merge requests; nested group paths, so the X-2 resolver must accept a
+  variable number of namespace segments; discussions API with `position`
+  objects (`base_sha`/`start_sha`/`head_sha`) for inline comments; native
+  quick actions (`/` commands), so the P5 slash sanitization applies to every
+  published body; project and personal access tokens; self-managed instances
+  with a context path.
 - Anything surfaced by usage friction during v1 (friction reports become work
   items).
 

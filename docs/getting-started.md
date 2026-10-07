@@ -146,6 +146,7 @@ If `command` is not found, use the absolute path to the binary.
 |---|---|
 | `server_info` | Version, enabled providers and the effective non-secret configuration. |
 | `pr_comments` | Lists a pull request's comment threads. |
+| `pr_info` | Target branch, human reviewers, approval counts and merge status of a pull request; read-only, no LLM call. See [Pull request status](pr-info.md). |
 | `pr_comment_reply` | Replies to a pull request comment. |
 | `pr_comment_create` | Posts a new comment on a pull request, PR-level or on a changed line (`file` and `line`). |
 | `pr_review` | Reviews a pull request with your LLM; see [Reviewing pull requests](review.md). The PR's title, description, existing comments and diff are sent to `llm.base_url`. |

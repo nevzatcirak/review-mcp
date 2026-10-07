@@ -185,10 +185,14 @@ type apiPR struct {
 	State     string `json:"state"`
 	HTMLURL   string `json:"html_url"`
 	MergeBase string `json:"merge_base"`
+	Draft     *bool  `json:"draft"`
+	Merged    bool   `json:"merged"`
+	Mergeable *bool  `json:"mergeable"`
 	User      struct {
 		Login string `json:"login"`
 	} `json:"user"`
-	Head struct {
+	RequestedReviewers []apiUser `json:"requested_reviewers"`
+	Head               struct {
 		Ref string `json:"ref"`
 		SHA string `json:"sha"`
 	} `json:"head"`
@@ -225,6 +229,9 @@ func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*pro
 		BaseStrategy: strategy,
 		WebURL:       in.HTMLURL,
 		State:        in.State,
+		Draft:        in.Draft,
+		Merged:       in.Merged,
+		Mergeable:    in.Mergeable,
 	}, nil
 }
 

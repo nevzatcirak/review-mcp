@@ -117,7 +117,7 @@ func TestNoCrossTalkBetweenConcurrentCalls(t *testing.T) {
 func TestMissingGiteaHeaderFailsBeforeAnyIO(t *testing.T) {
 	ts := startServer(t, serverOpts{level: slog.LevelInfo})
 
-	for _, tool := range []string{"pr_review", "pr_ask", "pr_comments", "pr_comment_create", "pr_comment_create inline"} {
+	for _, tool := range []string{"pr_review", "pr_ask", "pr_comments", "pr_info", "pr_comment_create", "pr_comment_create inline"} {
 		args := map[string]any{"pr_url": ts.prURL(3)}
 		switch tool {
 		case "pr_ask":

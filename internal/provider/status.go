@@ -1,0 +1,76 @@
+package provider
+
+import "time"
+
+// ReviewState is the state of one reviewer's verdict on a pull request.
+type ReviewState string
+
+// Review states of pr_info (X-23).
+const (
+	ReviewApproved         ReviewState = "approved"
+	ReviewChangesRequested ReviewState = "changes_requested"
+	ReviewCommented        ReviewState = "commented"
+	ReviewPending          ReviewState = "pending"
+)
+
+// Reviewer is one human reviewer of a pull request. DisplayName is untrusted
+// third-party text.
+type Reviewer struct {
+	User        User
+	DisplayName string
+	// Requested is true when the reviewer was asked to review.
+	Requested bool
+	State     ReviewState
+	// Stale is true when the state was given on an older commit than the
+	// head, where the provider reports it.
+	Stale bool
+	// At is when the state was given; the zero time when unknown.
+	At time.Time
+}
+
+// Fixed notes of a ReviewStatus. They are the only text a provider adds.
+const (
+	NoteReviewsUnreadable = "The reviews could not be read, so the reviewers are not listed."
+	NoteMergeUnreadable   = "The merge status could not be read."
+	// NoteActivityUnclassified: a review of the token's user could not be
+	// told from review-mcp's own, so it is left out of the reviewers.
+	NoteActivityUnclassified = "A review by the token's user could not be checked for review-mcp's markers and is not listed."
+)
+
+// Fixed merge blockers. A provider maps structured server reasons to these
+// and never passes server text through.
+const (
+	BlockerApprovals  = "required approvals missing"
+	BlockerNeedsWork  = "a reviewer marked the pull request as needs work"
+	BlockerBuilds     = "required builds are missing or failing"
+	BlockerConflict   = "merge conflict"
+	BlockerOtherCheck = "other merge check"
+)
+
+// ReviewStatusOptions tunes GetReviewStatus.
+type ReviewStatusOptions struct {
+	// Me is the token's own user. When set, a review of Me that IsOwn
+	// recognises as review-mcp's is left out of the reviewers (X-23); when
+	// nil, nothing is excluded.
+	Me *User
+	// IsOwn reports whether a review or review-comment body carries one of
+	// review-mcp's markers. The body is only inspected, never kept.
+	IsOwn func(body string) bool
+}
+
+// ReviewStatus is the reviewer and merge status of a pull request. Every
+// part that could not be read is nil (Reviewers, RequiredApprovals,
+// Mergeable) and explained by a fixed entry of Notes.
+type ReviewStatus struct {
+	// Reviewers is nil when the reviews could not be read.
+	Reviewers []Reviewer
+	// RequiredApprovals is nil when the provider does not expose it to this
+	// token; it is never a guess.
+	RequiredApprovals *int
+	// Mergeable is nil when unknown.
+	Mergeable *bool
+	// MergeBlockers holds Blocker* texts, only where the provider gives
+	// structured reasons.
+	MergeBlockers []string
+	Notes         []string
+}

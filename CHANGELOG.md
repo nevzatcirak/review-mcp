@@ -52,6 +52,28 @@ review. It ships after v1.0.0 is tagged.
   question as a whole word (case-sensitive) goes before the others. Filters
   still apply. `pr_ask` keeps one model call.
 - `server_info` lists the two new `review.*` settings.
+- `pr_info` (X-23), a read-only tool (stdio and serve; no LLM call, a read token
+  is enough) that answers which branch a pull request merges into and who has
+  reviewed or approved it. It returns the title, author, state, draft flag,
+  source and target branch, head and merge-base revisions, the human
+  `reviewers` (state, requested, stale, time), `approvals` counted over them,
+  `required_approvals`, `mergeable` with `merge_blockers`, and
+  `review_mcp_activity`.
+  - review-mcp's own marked overview, inline findings and AI reviews are
+    reported under `review_mcp_activity` and never count as reviewers or
+    approvals; a plain review by the same account does.
+  - Gitea: the latest non-dismissed approval or changes request of each user
+    decides, a requested reviewer without a review is `pending`, `stale` comes
+    from the review. Bitbucket Server: `reviewers[]` statuses, `stale` from
+    `lastReviewedCommit`, merge status and fixed blockers from the merge
+    endpoint (an unknown veto is "other merge check", never server text).
+  - `required_approvals` is a number or `null` with the note "not readable
+    with this token"; any optional part that cannot be read is `null` with a
+    fixed note, and the tool fails only when the pull request itself cannot be
+    read.
+  - Docs: [Pull request status](docs/pr-info.md), the token checklist in the
+    setup guide (Gitea needs `read:repository`, `read:issue` and `read:user`;
+    reading branch protection may need repository admin and is optional).
 - Docs: "Large pull requests" in the review guide, files the question names in
   the ask guide, long reviews in serve mode, and "The review took several
   minutes" and "Part I of N failed" in the troubleshooting guide.

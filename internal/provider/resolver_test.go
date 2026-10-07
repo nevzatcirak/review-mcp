@@ -66,6 +66,9 @@ func (fakeProvider) EditComment(_ ctxT, _ PRRef, _, _ string) error { return nil
 func (fakeProvider) PostInlineComments(_ ctxT, _ PRRef, _ *PullRequest, _ []InlineComment) ([]InlineResult, error) {
 	return nil, nil
 }
+func (fakeProvider) GetReviewStatus(_ ctxT, _ PRRef, _ *PullRequest, _ ReviewStatusOptions) *ReviewStatus {
+	return nil
+}
 func (fakeProvider) FileLineURL(PRRef, *PullRequest, string, int) string { return "" }
 
 func cfgFor(gitea, web, bbs string) *config.Config {

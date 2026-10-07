@@ -40,6 +40,18 @@ type PullRequest struct {
 	// BaseGiteaBaseSHA, BaseBBSMergeBaseEP and BaseBBSAncestorWalk. GetDiff
 	// uses BaseSHA and BaseStrategy as given.
 	BaseStrategy string
+
+	// The fields below feed pr_info (X-23). They carry states and identities
+	// only, never a comment or review body.
+
+	// Draft is nil when the provider does not report a draft flag.
+	Draft *bool
+	// Merged is true when the provider says the PR was merged (Gitea reports
+	// it next to State; Bitbucket Server uses State "MERGED").
+	Merged bool
+	// Mergeable is the provider's own verdict carried by the PR itself
+	// (Gitea); nil when the PR payload has none.
+	Mergeable *bool
 }
 
 // ChangeType is the kind of change applied to a file.

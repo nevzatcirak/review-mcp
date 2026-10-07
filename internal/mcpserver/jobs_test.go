@@ -321,7 +321,7 @@ func TestJobResultToolDefinition(t *testing.T) {
 		names = append(names, tl.Name)
 	}
 	sort.Strings(names)
-	if got := strings.Join(names, ","); got != "job_result,pr_ask,pr_comment_create,pr_comment_reply,pr_comments,pr_review,server_info" {
+	if got := strings.Join(names, ","); got != "job_result,pr_ask,pr_comment_create,pr_comment_reply,pr_comments,pr_info,pr_review,server_info" {
 		t.Fatalf("stdio tools = %s", got)
 	}
 

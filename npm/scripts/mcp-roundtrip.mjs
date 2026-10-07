@@ -14,10 +14,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 
-// The seven tools the stdio server registers (P6 spec §3.3, acceptance A4;
+// The eight tools the stdio server registers (P6 spec §3.3, acceptance A4;
 // X-14 added pr_comment_create, X-16 added job_result, which serve mode does
-// not register).
-const EXPECTED_TOOLS = ['job_result', 'pr_ask', 'pr_comment_create', 'pr_comment_reply', 'pr_comments', 'pr_review', 'server_info'];
+// not register, X-23 added pr_info).
+const EXPECTED_TOOLS = ['job_result', 'pr_ask', 'pr_comment_create', 'pr_comment_reply', 'pr_comments', 'pr_info', 'pr_review', 'server_info'];
 
 const TIMEOUT_MS = 30000;
 

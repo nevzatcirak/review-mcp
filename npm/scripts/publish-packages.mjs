@@ -15,10 +15,11 @@
 // failed publish is not retried.
 //
 // Verification: after publishing, every <name>@<version> is looked up again
-// with `npm view`, retrying with a backoff (10 s, 20 s, 40 s, ...) for at most
-// 5 minutes in total. A version that is still missing, or whose lookup never
-// gave an answer, fails the job. A version that npm reports as staged rather
-// than published fails it too. Nothing is ever republished.
+// with `npm view`, retrying with a backoff (10 s, 20 s, 40 s, 80 s, 150 s, then
+// 300 s per wait) for at most 30 minutes in total. A version that is still
+// missing, or whose lookup never gave an answer, fails the job. A version that
+// npm reports as staged rather than published fails it too. Nothing is ever
+// republished.
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -69,16 +70,24 @@ export function isStagedOutput(output) {
     .some((line) => !/^npm notice\s+[\d.]+\s*[kMG]?B\s/.test(line) && /\bstaged\b/i.test(line));
 }
 
-export const VERIFY_WINDOW_MS = 5 * 60 * 1000;
-export const VERIFY_FIRST_DELAY_MS = 10 * 1000;
+export const VERIFY_WINDOW_MS = 30 * 60 * 1000;
+export const VERIFY_BACKOFF_MS = [10 * 1000, 20 * 1000, 40 * 1000, 80 * 1000, 150 * 1000];
+export const VERIFY_MAX_WAIT_MS = 5 * 60 * 1000;
 
-// backoffSchedule lists the waits between lookups: 10 s, 20 s, 40 s, ... with
-// the last one shortened so the total equals the window.
-export function backoffSchedule(windowMs = VERIFY_WINDOW_MS, firstMs = VERIFY_FIRST_DELAY_MS) {
+// backoffDelay is the wait before lookup number i + 1 (i counts from 0): the
+// fixed backoff first, then VERIFY_MAX_WAIT_MS for every later wait.
+function backoffDelay(i) {
+  return i < VERIFY_BACKOFF_MS.length ? VERIFY_BACKOFF_MS[i] : VERIFY_MAX_WAIT_MS;
+}
+
+// backoffSchedule lists the waits between lookups: 10 s, 20 s, 40 s, 80 s,
+// 150 s, then 300 s each, with the last one shortened so the total equals the
+// window.
+export function backoffSchedule(windowMs = VERIFY_WINDOW_MS) {
   const waits = [];
   let total = 0;
-  for (let d = firstMs; total < windowMs; d *= 2) {
-    const w = Math.min(d, windowMs - total);
+  for (let i = 0; total < windowMs; i++) {
+    const w = Math.min(backoffDelay(i), windowMs - total);
     waits.push(w);
     total += w;
   }
@@ -91,7 +100,7 @@ export function backoffSchedule(windowMs = VERIFY_WINDOW_MS, firstMs = VERIFY_FI
 export function verifyAll({ packages, version, status, sleep, now = Date.now, log = () => {}, windowMs = VERIFY_WINDOW_MS }) {
   const start = now();
   let pending = packages.map((p) => ({ name: p.name, state: 'missing' }));
-  let delay = VERIFY_FIRST_DELAY_MS;
+  let attempt = 0;
   for (;;) {
     pending = pending.filter((p) => {
       p.state = status(p.name, version);
@@ -100,10 +109,10 @@ export function verifyAll({ packages, version, status, sleep, now = Date.now, lo
     if (pending.length === 0) return { missing: [], unverified: [] };
     const remaining = windowMs - (now() - start);
     if (remaining <= 0) break;
-    const wait = Math.min(delay, remaining);
+    const wait = Math.min(backoffDelay(attempt), remaining);
     log(`${pending.map((p) => p.name).join(', ')} not visible on the registry yet; checking again in ${wait / 1000} s`);
     sleep(wait);
-    delay *= 2;
+    attempt++;
   }
   return {
     missing: pending.filter((p) => p.state === 'missing').map((p) => p.name),

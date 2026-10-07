@@ -15,8 +15,8 @@ does the rest:
    dist-tag `next`, any other under `latest`. A version that already exists on
    the registry stops the job; nothing is republished. After the last publish
    the job looks every `<name>@<version>` up again with `npm view`, retrying
-   for up to 5 minutes (10 s, 20 s, 40 s, ...); a version that is still
-   missing, or reported as staged, fails the job.
+   for up to 30 minutes (10 s, 20 s, 40 s, 80 s, 150 s, then 300 s per wait);
+   a version that is still missing, or reported as staged, fails the job.
 
 ## npm trusted publishing
 
@@ -45,7 +45,7 @@ no longer used and can be deleted.
 
 The `npm-publish` job fails with "is not fully available on the registry" when,
 after publishing, a package version is still not visible on the registry after
-5 minutes of retries, or when `npm publish` reported it as staged. The message
+30 minutes of retries, or when `npm publish` reported it as staged. The message
 names the packages: "Missing" (the registry answered 404 or nothing), "Staged"
 (npm said the version was staged) or "Not verified" (the lookup itself kept
 failing, for example a network error, so nothing is known about that version).
@@ -59,8 +59,9 @@ What to do:
      package settings page shows it.
 2. Wait. The registry can lag: on `v1.0.0-rc.3` the publish job succeeded, but
    `@nevzatcirak/review-mcp-darwin-x64` appeared only about 25 minutes later,
-   far beyond the 5-minute window. Run `npm view <name>@<version> version` again
-   later.
+   far beyond the former 5-minute window. The 30-minute window covers that
+   observed lag of about 25 minutes. If it still runs out, run
+   `npm view <name>@<version> version` again later.
 3. Never republish the same version. npm does not accept it, and a second
    attempt can hide the real cause. Either wait or approve the staged publish,
    or, if the version cannot be completed, cut the next release candidate (for

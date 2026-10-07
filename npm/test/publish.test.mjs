@@ -144,7 +144,7 @@ test('verify: a version missing after the retries fails and is named, with no re
     },
   );
   assert.equal(h.published.length, 3, 'publish ran once per package, never again');
-  assert.equal(h.sleeps.reduce((a, b) => a + b, 0), 5 * 60 * 1000);
+  assert.equal(h.sleeps.reduce((a, b) => a + b, 0), 30 * 60 * 1000);
 });
 
 test('verify: present only after two retries passes', () => {
@@ -179,10 +179,13 @@ test('verify: a transient lookup error is retried and can still pass', () => {
   assert.deepEqual(h.sleeps, [10000, 20000]);
 });
 
-test('backoff schedule: 10 s, 20 s, 40 s, ... and the total is at most 5 minutes', () => {
+test('backoff schedule: 10, 20, 40, 80, 150 s, then 300 s waits, totalling exactly 30 minutes', () => {
   const s = backoffSchedule();
-  assert.deepEqual(s.slice(0, 3), [10000, 20000, 40000]);
-  assert.ok(s.reduce((a, b) => a + b, 0) <= 5 * 60 * 1000);
+  assert.deepEqual(s, [10000, 20000, 40000, 80000, 150000, 300000, 300000, 300000, 300000, 300000]);
+  assert.equal(s.reduce((a, b) => a + b, 0), 1800000);
+  const odd = backoffSchedule(1700000);
+  assert.equal(odd.reduce((a, b) => a + b, 0), 1700000, 'the last wait is shortened to fit');
+  assert.equal(odd[odd.length - 1], 200000);
 });
 
 test('verifyAll only looks up; it has no publish path', () => {

@@ -46,8 +46,8 @@ The structured result has the same facts:
 | `reviewers[].stale` | the state was given on an older commit than the head, where the provider reports it |
 | `reviewers[].at` | when the state was given; omitted when the provider does not say |
 | `approvals` | `{approved, changes_requested, pending}` counted over `reviewers` (reviewers who only commented are in none of them); `null` with `reviewers` |
-| `required_approvals` | the number of approvals the target branch requires, or `null` |
-| `required_approvals_note` | "not readable with this token" whenever `required_approvals` is `null` |
+| `required_approvals` | the number of approvals the target branch requires; `0` with a note when no protection rule applies; `null` when it is not known |
+| `required_approvals_note` | a fixed text whenever `required_approvals` is `null` or `0` because no rule applies: "not readable with this token", "a protection pattern could not be evaluated" or "no branch protection rule applies to the target branch" (see [Troubleshooting](troubleshooting.md#pr_info-required_approvals-notes)) |
 | `mergeable` | `true`, `false`, or `null` when unknown (also `null` for a pull request that is not open) |
 | `merge_blockers` | short fixed reasons, only where the provider gives structured ones |
 | `review_mcp_activity` | `{overview, inline_findings}`: what review-mcp wrote as the token's user; `null` when it could not be read |
@@ -61,7 +61,7 @@ The structured result has the same facts:
 |---|---|
 | title, author, state, `draft`, branches, head, merge base, `mergeable`, requested reviewers | `GET /repos/{o}/{r}/pulls/{n}` |
 | reviewer states | `GET /repos/{o}/{r}/pulls/{n}/reviews` (all pages) |
-| required approvals | `GET /repos/{o}/{r}/branch_protections/{target branch}` |
+| required approvals | `GET /repos/{o}/{r}/branch_protections` (all pages; the rule is chosen here, see below) |
 | review-mcp's own marked overview and inline findings | `GET /issues/{n}/comments` and the review comments, as for `pr_comments`; `GET /user` for the token's user |
 
 Rules:
@@ -76,11 +76,20 @@ Rules:
 - `stale` is the review's own `stale` field. Gitea's `official` flag is only
   counted in the debug log.
 - Team review requests are not listed.
-- Required approvals are read from the protection rule named like the target
-  branch. A token that may not read branch protection (this may need
-  repository admin), a branch without a rule of that name (a rule with a glob
-  pattern is not matched) or any other failure gives `required_approvals:
-  null` and the note. A rule that requires 0 approvals gives 0.
+- Required approvals come from the repository's list of branch protection
+  rules (reading it may need repository admin). The rule whose name equals the
+  target branch is used; otherwise the first rule whose name, taken as a glob
+  pattern (`release/*`, `/` separated, like Go's `path.Match`), matches the
+  target branch. If the rules were read and none applies, `required_approvals`
+  is `0` with the note "no branch protection rule applies to the target
+  branch". Gitea's own glob may accept patterns that `path.Match` does not, and
+  `**` (across directories) is read differently: a rule whose pattern is
+  invalid for `path.Match` or contains `**` is not evaluated and does not
+  match, and
+  when no other rule matched, `required_approvals` is `null` with the note "a
+  protection pattern could not be evaluated". If the list cannot be read (the
+  token may not, or any other failure), it is `null` with "not readable with
+  this token". A rule that requires 0 approvals gives 0 without a note.
 - Gitea gives no structured merge blockers, so `merge_blockers` is empty;
   `mergeable` is the PR's own flag.
 

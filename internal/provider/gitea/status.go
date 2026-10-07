@@ -2,7 +2,8 @@ package gitea
 
 import (
 	"context"
-	"net/url"
+	"errors"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -69,9 +70,8 @@ func later(a, b *apiPRReview) bool {
 // body) is review-mcp's own activity and is not a reviewer. The
 // official flag is only counted in the debug log.
 //
-// Required approvals come from GET .../branch_protections/{target}; any
-// failure (403 and 404 in practice) leaves them nil. Gitea gives no
-// structured merge blockers: only Mergeable (from the PR) is reported.
+// Required approvals come from the list of branch protection rules (see
+// readProtection). Gitea gives no structured merge blockers: only Mergeable (from the PR) is reported.
 func (p *Provider) GetReviewStatus(ctx context.Context, ref provider.PRRef, pr *provider.PullRequest, opts provider.ReviewStatusOptions) *provider.ReviewStatus {
 	st := &provider.ReviewStatus{MergeBlockers: []string{}}
 	if pr == nil {
@@ -103,14 +103,7 @@ func (p *Provider) GetReviewStatus(ctx context.Context, ref provider.PRRef, pr *
 	}
 
 	if pr.TargetBranch != "" {
-		var bp struct {
-			RequiredApprovals *int `json:"required_approvals"`
-		}
-		if err := p.client.GetJSON(ctx, rp+"/branch_protections/"+url.PathEscape(pr.TargetBranch), &bp); err != nil {
-			p.logger.Debug("gitea branch protection not read", "class", errClass(err))
-		} else if bp.RequiredApprovals != nil && *bp.RequiredApprovals >= 0 {
-			st.RequiredApprovals = bp.RequiredApprovals
-		}
+		p.readProtection(ctx, rp, pr.TargetBranch, st)
 	}
 	return st
 }
@@ -237,4 +230,88 @@ func (p *Provider) ownReview(ctx context.Context, pp string, r *apiPRReview, isO
 		}
 	}
 	return false, true
+}
+
+// apiProtection is an entry of GET .../branch_protections. RuleName is the
+// rule's name or glob pattern; BranchName is its legacy spelling.
+type apiProtection struct {
+	RuleName          string `json:"rule_name"`
+	BranchName        string `json:"branch_name"`
+	RequiredApprovals *int   `json:"required_approvals"`
+}
+
+func (b *apiProtection) pattern() string {
+	if b.RuleName != "" {
+		return b.RuleName
+	}
+	return b.BranchName
+}
+
+// readProtection sets st.RequiredApprovals and its note from the repository's
+// branch protection rules.
+//
+// GET .../branch_protections/{name} looks a rule up by its rule name, not by
+// branch, and a rule name may be a glob pattern ("release/*"), so a 404 there
+// says nothing about the branch. The whole list is read instead (paged like
+// the other lists) and the rule is chosen here: the one whose name equals the
+// target branch, else the first one whose pattern matches it with path.Match
+// semantics ("/" separated). Gitea's own glob may accept patterns path.Match
+// does not, and "**" means "across directories" there while path.Match reads
+// it as "*" and would answer wrongly with confidence. So a pattern for which
+// path.Match returns ErrBadPattern, or that contains "**", is unevaluable: it
+// is treated as not matching, and when it leaves no rule matched the status
+// says that a pattern could not be evaluated instead of claiming that no rule
+// applies. A rule that did match stands without a note.
+//
+//   - list read, a rule matches: its required approvals;
+//   - list read, none matches, every pattern evaluable: 0 with
+//     NoteNoProtectionRule;
+//   - list read, none matches, some pattern not evaluable: nil with
+//     NoteProtectionPatternUnevaluable (the unevaluable rule might apply);
+//   - the list cannot be read (401, 403, 404 for a Gitea without the
+//     endpoint, 5xx, network): nil with NoteApprovalsUnreadable.
+func (p *Provider) readProtection(ctx context.Context, rp, target string, st *provider.ReviewStatus) {
+	rules, err := httpx.PagesUntilEmpty[apiProtection](ctx, p.client, rp+"/branch_protections", pageLimit)
+	if err != nil {
+		p.logger.Debug("gitea branch protections not read", "class", errClass(err))
+		st.RequiredApprovalsNote = provider.NoteApprovalsUnreadable
+		return
+	}
+	var matched *apiProtection
+	unevaluable := false
+	for i := range rules {
+		pat := rules[i].pattern()
+		if pat == target {
+			matched = &rules[i]
+			break
+		}
+		if matched != nil {
+			continue
+		}
+		if strings.Contains(pat, "**") {
+			unevaluable = true
+			continue
+		}
+		ok, merr := path.Match(pat, target)
+		switch {
+		case errors.Is(merr, path.ErrBadPattern):
+			unevaluable = true
+		case ok:
+			matched = &rules[i]
+		}
+	}
+	switch {
+	case matched != nil:
+		if n := matched.RequiredApprovals; n != nil && *n >= 0 {
+			st.RequiredApprovals = n
+		} else {
+			st.RequiredApprovalsNote = provider.NoteApprovalsUnreadable
+		}
+	case unevaluable:
+		st.RequiredApprovalsNote = provider.NoteProtectionPatternUnevaluable
+	default:
+		zero := 0
+		st.RequiredApprovals = &zero
+		st.RequiredApprovalsNote = provider.NoteNoProtectionRule
+	}
 }

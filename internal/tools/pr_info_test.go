@@ -223,6 +223,25 @@ func TestRenderPRInfoMarkdown(t *testing.T) {
 		!strings.Contains(md, "Mergeable: no (merge conflict)") || res.RequiredApprovalsNote != "not readable with this token" {
 		t.Errorf("markdown:\n%s", md)
 	}
+
+	// 0 because no rule applies, and null because a pattern is unevaluable:
+	// the provider's note is carried and shown.
+	f.status.RequiredApprovals = new(int)
+	f.status.RequiredApprovalsNote = provider.NoteNoProtectionRule
+	res, _ = PRInfoTool(context.Background(), infoResolver{f}, testPRURL, nil)
+	md = RenderPRInfoMarkdown(res)
+	if res.RequiredApprovals == nil || *res.RequiredApprovals != 0 || res.RequiredApprovalsNote != provider.NoteNoProtectionRule ||
+		!strings.Contains(md, "of 0 required approvals (no branch protection rule applies to the target branch)") {
+		t.Errorf("0 with note: %v %q\n%s", res.RequiredApprovals, res.RequiredApprovalsNote, md)
+	}
+	f.status.RequiredApprovals = nil
+	f.status.RequiredApprovalsNote = provider.NoteProtectionPatternUnevaluable
+	res, _ = PRInfoTool(context.Background(), infoResolver{f}, testPRURL, nil)
+	md = RenderPRInfoMarkdown(res)
+	if res.RequiredApprovals != nil || res.RequiredApprovalsNote != provider.NoteProtectionPatternUnevaluable ||
+		!strings.Contains(md, "required number not readable (a protection pattern could not be evaluated)") {
+		t.Errorf("unevaluable: %q\n%s", res.RequiredApprovalsNote, md)
+	}
 }
 
 func TestCleanName(t *testing.T) {

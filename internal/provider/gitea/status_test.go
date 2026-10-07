@@ -2,6 +2,7 @@ package gitea_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -13,7 +14,7 @@ import (
 )
 
 const (
-	protectionAPI = repoAPI + "/branch_protections/main"
+	protectionAPI = repoAPI + "/branch_protections"
 	reviewBodyMk  = "REVIEWBODY-MARKER-5d1e"
 )
 
@@ -71,11 +72,24 @@ func byLogin(st *provider.ReviewStatus) map[string]provider.Reviewer {
 	return out
 }
 
-func protectionJSON(n int) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, _ *http.Request) {
+// rulesJSON serves the protection rules as one page; page 2 is empty.
+func rulesJSON(rules ...any) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintf(w, `{"rule_name":"main","required_approvals":%d}`, n)
+		if r.URL.Query().Get("page") != "1" {
+			_, _ = fmt.Fprint(w, "[]")
+			return
+		}
+		_ = json.NewEncoder(w).Encode(rules)
 	}
+}
+
+func rule(name string, n int) map[string]any {
+	return map[string]any{"rule_name": name, "required_approvals": n}
+}
+
+func protectionJSON(n int) func(http.ResponseWriter, *http.Request) {
+	return rulesJSON(rule("main", n))
 }
 
 // TestReviewStatusStates: approved, changes requested, stale approval, a
@@ -234,10 +248,11 @@ func TestReviewStatusSameAccountHumanReviewIsAReviewer(t *testing.T) {
 	}
 }
 
-// TestReviewStatusProtectionUnreadable: a 403 and a 404 on the protection
-// read give nil required approvals and no failure; the rest is intact.
+// TestReviewStatusProtectionUnreadable: a 401, 403, 404 or 500 on the rules
+// list gives nil required approvals with the "not readable" note and no
+// failure; the rest is intact.
 func TestReviewStatusProtectionUnreadable(t *testing.T) {
-	for _, code := range []int{http.StatusForbidden, http.StatusNotFound, http.StatusInternalServerError} {
+	for _, code := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusInternalServerError} {
 		t.Run(strconv.Itoa(code), func(t *testing.T) {
 			f := newFake(t, "")
 			f.statusFixture([]any{greview(60, guser(1, "alice", ""), "APPROVED", 10, nil)}, nil,
@@ -246,10 +261,84 @@ func TestReviewStatusProtectionUnreadable(t *testing.T) {
 			if st.RequiredApprovals != nil {
 				t.Errorf("required approvals = %d, want nil", *st.RequiredApprovals)
 			}
+			if st.RequiredApprovalsNote != provider.NoteApprovalsUnreadable {
+				t.Errorf("note = %q", st.RequiredApprovalsNote)
+			}
 			if len(st.Reviewers) != 1 || strings.Contains(fmt.Sprintf("%+v", st), reviewBodyMk) {
 				t.Errorf("status = %+v", st)
 			}
 		})
+	}
+}
+
+func protectionStatus(t *testing.T, h func(http.ResponseWriter, *http.Request)) *provider.ReviewStatus {
+	t.Helper()
+	f := newFake(t, "")
+	f.statusFixture(nil, nil, h)
+	return reviewStatus(t, f, &statusMe)
+}
+
+// TestReviewStatusProtectionRules: the rule is chosen from the list by name or
+// pattern (the target is "main").
+func TestReviewStatusProtectionRules(t *testing.T) {
+	cases := []struct {
+		name  string
+		rules []any
+		want  *int // nil: required approvals nil
+		note  string
+	}{
+		{"exact rule", []any{rule("dev", 5), rule("main", 2)}, ptr(2), ""},
+		{"exact rule beats an earlier pattern", []any{rule("m*", 5), rule("main", 2)}, ptr(2), ""},
+		{"legacy branch_name", []any{map[string]any{"branch_name": "main", "required_approvals": 4}}, ptr(4), ""},
+		{"pattern rule", []any{rule("release/*", 5), rule("m*n", 3)}, ptr(3), ""},
+		{"first matching pattern", []any{rule("ma*", 1), rule("m*", 2)}, ptr(1), ""},
+		{"exact rule with 0", []any{rule("main", 0)}, ptr(0), ""},
+		{"no matching rule", []any{rule("release/*", 5), rule("dev", 2)}, ptr(0), provider.NoteNoProtectionRule},
+		{"no rules at all", []any{}, ptr(0), provider.NoteNoProtectionRule},
+		{"unevaluable pattern", []any{rule("[", 5), rule("dev", 2)}, nil, provider.NoteProtectionPatternUnevaluable},
+		{"a match stands despite an unevaluable pattern", []any{rule("[", 5), rule("main", 2)}, ptr(2), ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			st := protectionStatus(t, rulesJSON(c.rules...))
+			switch {
+			case c.want == nil && st.RequiredApprovals != nil:
+				t.Errorf("required approvals = %d, want nil", *st.RequiredApprovals)
+			case c.want != nil && (st.RequiredApprovals == nil || *st.RequiredApprovals != *c.want):
+				t.Errorf("required approvals = %v, want %d", st.RequiredApprovals, *c.want)
+			}
+			if st.RequiredApprovalsNote != c.note {
+				t.Errorf("note = %q, want %q", st.RequiredApprovalsNote, c.note)
+			}
+		})
+	}
+}
+
+// TestReviewStatusProtectionDoubleStar: "**" is not evaluated, because
+// path.Match would read it as "*" and wrongly say that no rule applies to
+// release/a/b.
+func TestReviewStatusProtectionDoubleStar(t *testing.T) {
+	f := newFake(t, "")
+	f.handleJSON("GET", prAPI, openPR(map[string]any{"base": map[string]any{"ref": "release/a/b", "sha": "basesha"}}))
+	f.handlePages(reviewsAPI, []any{})
+	f.handle("GET", protectionAPI, rulesJSON(rule("release/**", 2), rule("dev", 1)))
+	st := reviewStatus(t, f, &statusMe)
+	if st.RequiredApprovals != nil || st.RequiredApprovalsNote != provider.NoteProtectionPatternUnevaluable {
+		t.Errorf("approvals %v note %q", st.RequiredApprovals, st.RequiredApprovalsNote)
+	}
+}
+
+func ptr(n int) *int { return &n }
+
+// TestReviewStatusProtectionPaged: a rule on the second page is found.
+func TestReviewStatusProtectionPaged(t *testing.T) {
+	f := newFake(t, "")
+	f.handleJSON("GET", prAPI, openPR(nil))
+	f.handlePages(reviewsAPI, []any{})
+	f.handlePages(protectionAPI, []any{rule("dev", 1)}, []any{rule("main", 3)})
+	st := reviewStatus(t, f, &statusMe)
+	if st.RequiredApprovals == nil || *st.RequiredApprovals != 3 {
+		t.Errorf("required approvals = %v, want 3", st.RequiredApprovals)
 	}
 }
 

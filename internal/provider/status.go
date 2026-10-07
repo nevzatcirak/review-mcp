@@ -47,6 +47,20 @@ const (
 	BlockerOtherCheck = "other merge check"
 )
 
+// Fixed notes for RequiredApprovals (RequiredApprovalsNote).
+const (
+	// NoteApprovalsUnreadable explains a nil RequiredApprovals: the
+	// protection could not be read. It is also what tools reports when a
+	// provider leaves RequiredApprovals nil without a note.
+	NoteApprovalsUnreadable = "not readable with this token"
+	// NoteNoProtectionRule accompanies RequiredApprovals 0 when the
+	// protection rules were read and none applies to the target branch.
+	NoteNoProtectionRule = "no branch protection rule applies to the target branch"
+	// NoteProtectionPatternUnevaluable accompanies a nil RequiredApprovals
+	// when no rule matched but a rule pattern could not be evaluated.
+	NoteProtectionPatternUnevaluable = "a protection pattern could not be evaluated"
+)
+
 // ReviewStatusOptions tunes GetReviewStatus.
 type ReviewStatusOptions struct {
 	// Me is the token's own user. When set, a review of Me that IsOwn
@@ -67,6 +81,10 @@ type ReviewStatus struct {
 	// RequiredApprovals is nil when the provider does not expose it to this
 	// token; it is never a guess.
 	RequiredApprovals *int
+	// RequiredApprovalsNote is one of the NoteApprovals*/NoteNoProtection*/
+	// NoteProtection* texts, or empty. Empty with a nil RequiredApprovals
+	// means NoteApprovalsUnreadable.
+	RequiredApprovalsNote string
 	// Mergeable is nil when unknown.
 	Mergeable *bool
 	// MergeBlockers holds Blocker* texts, only where the provider gives

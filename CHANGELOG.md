@@ -67,8 +67,11 @@ review. It ships after v1.0.0 is tagged.
     from the review. Bitbucket Server: `reviewers[]` statuses, `stale` from
     `lastReviewedCommit`, merge status and fixed blockers from the merge
     endpoint (an unknown veto is "other merge check", never server text).
-  - `required_approvals` is a number or `null` with the note "not readable
-    with this token"; any optional part that cannot be read is `null` with a
+  - `required_approvals` is a number, `0` with the note "no branch protection
+    rule applies to the target branch", or `null` with the note "not readable
+    with this token" or "a protection pattern could not be evaluated" (Gitea
+    rules are read from the rules list and matched to the branch by name or
+    glob pattern); any optional part that cannot be read is `null` with a
     fixed note, and the tool fails only when the pull request itself cannot be
     read.
   - Docs: [Pull request status](docs/pr-info.md), the token checklist in the

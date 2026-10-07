@@ -16,9 +16,9 @@ import (
 
 // Fixed texts of pr_info (X-23).
 const (
-	// RequiredApprovalsNote explains a null required_approvals. It is the
-	// only explanation: the number is never guessed.
-	RequiredApprovalsNote = "not readable with this token"
+	// RequiredApprovalsNote explains a null required_approvals when the
+	// provider gave no more specific note. The number is never guessed.
+	RequiredApprovalsNote = provider.NoteApprovalsUnreadable
 	// NoteActivityUnreadable: the PR's comments could not be read, so the
 	// review-mcp activity is unknown.
 	NoteActivityUnreadable = "The comments could not be read, so review-mcp's own activity is not shown."
@@ -75,8 +75,8 @@ type PRInfoResult struct {
 	BaseStrategy          string             `json:"base_strategy" jsonschema:"how merge_base_sha was chosen"`
 	Reviewers             []ReviewerOut      `json:"reviewers" jsonschema:"human reviewers, one entry each; review-mcp's own reviews are not listed; null when the reviews could not be read"`
 	Approvals             *ApprovalCounts    `json:"approvals" jsonschema:"reviewers counted by state; null when the reviewers are null"`
-	RequiredApprovals     *int               `json:"required_approvals" jsonschema:"approvals the target branch requires; null when the provider does not expose it to this token (never a guess)"`
-	RequiredApprovalsNote string             `json:"required_approvals_note,omitempty" jsonschema:"set when required_approvals is null"`
+	RequiredApprovals     *int               `json:"required_approvals" jsonschema:"approvals the target branch requires; 0 with a note when no protection rule applies; null when it is not known (never a guess)"`
+	RequiredApprovalsNote string             `json:"required_approvals_note,omitempty" jsonschema:"fixed text; set when required_approvals is null (not readable with this token, or a protection pattern could not be evaluated) or 0 because no protection rule applies to the target branch"`
 	Mergeable             *bool              `json:"mergeable" jsonschema:"whether the pull request can be merged; null when unknown"`
 	MergeBlockers         []string           `json:"merge_blockers" jsonschema:"short fixed reasons the pull request cannot be merged, only where the provider gives structured ones"`
 	ReviewMCPActivity     *ReviewMCPActivity `json:"review_mcp_activity" jsonschema:"comments written by review-mcp as the token's user; null when they could not be read"`
@@ -164,7 +164,10 @@ func PRInfoTool(ctx context.Context, resolver PRResolver, prURL string, log *slo
 		MergeBlockers:     append([]string{}, st.MergeBlockers...),
 		ReviewMCPActivity: activity,
 	}
-	if st.RequiredApprovals == nil {
+	switch {
+	case st.RequiredApprovalsNote != "":
+		res.RequiredApprovalsNote = st.RequiredApprovalsNote
+	case st.RequiredApprovals == nil:
 		res.RequiredApprovalsNote = RequiredApprovalsNote
 	}
 	if st.Reviewers != nil {
@@ -300,19 +303,25 @@ func shortSHA(s string) string {
 	return s
 }
 
-// approvalLine is "2 of 2 required approvals; 1 changes requested".
+// approvalLine is "2 of 2 required approvals; 1 changes requested". A note
+// other than the default "not readable" one is added in parentheses after the
+// required part, so "0 required" is never shown without its reason.
 func approvalLine(r *PRInfoResult) string {
+	why := ""
+	if n := r.RequiredApprovalsNote; n != "" && n != RequiredApprovalsNote {
+		why = " (" + n + ")"
+	}
 	if r.Approvals == nil {
 		if r.RequiredApprovals != nil {
-			return "Approvals: not readable (" + strconv.Itoa(*r.RequiredApprovals) + " required)"
+			return "Approvals: not readable (" + strconv.Itoa(*r.RequiredApprovals) + " required)" + why
 		}
-		return "Approvals: not readable"
+		return "Approvals: not readable" + why
 	}
 	var s string
 	if r.RequiredApprovals != nil {
-		s = strconv.Itoa(r.Approvals.Approved) + " of " + strconv.Itoa(*r.RequiredApprovals) + " required approvals"
+		s = strconv.Itoa(r.Approvals.Approved) + " of " + strconv.Itoa(*r.RequiredApprovals) + " required approvals" + why
 	} else {
-		s = strconv.Itoa(r.Approvals.Approved) + " approval(s), required number not readable"
+		s = strconv.Itoa(r.Approvals.Approved) + " approval(s), required number not readable" + why
 	}
 	if n := r.Approvals.ChangesRequested; n > 0 {
 		s += "; " + strconv.Itoa(n) + " changes requested"

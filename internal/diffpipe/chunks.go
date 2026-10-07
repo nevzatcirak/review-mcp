@@ -38,7 +38,9 @@ type Chunks struct {
 	Omitted Omitted
 	// Skipped is Parts[0].Skipped (the provider's skips verbatim, then the
 	// files Prepare could not render), followed by any file a later part
-	// could not render.
+	// could not render, in packing order. A further part whose only entries
+	// are Skipped is not added to Parts (it would be a model call with
+	// nothing to review); its entries are still accounted here.
 	Skipped []provider.SkippedFile
 	// TooLarge holds the files that did not fit a part of their own under
 	// large_patch_policy skip, in the order they were set aside. They are
@@ -62,11 +64,16 @@ type Chunks struct {
 //     top file as in Prepare: with clip the clipped file is that chunk's
 //     content; with skip (or when the clip keeps nothing) the file goes to
 //     TooLarge and the chunk is prepared again without it.
+//   - A further chunk becomes a part (one model call) only when it reviews
+//     something: len(Included) + len(Clipped) + len(DeletedListed) > 0. A
+//     chunk whose only entries are Skipped is not a part: those entries are
+//     appended to Chunks.Skipped and taken, and packing continues with the
+//     files left.
 //   - An error wrapping tokens.ErrDoesNotFit comes only from chunk 1, as
 //     from Prepare. Packing stops when no file remains, when maxChunks parts
-//     exist, or when a further chunk would review nothing (only deleted
-//     files remain and none of them fits by name or by patch); the files
-//     left are Omitted.
+//     exist, or when a further chunk would neither review nor skip anything
+//     (only deleted files remain and none of them fits by name or by
+//     patch); the files left are Omitted.
 //
 // maxChunks below 1 is a programming error (configuration allows 1 to 32):
 // PrepareChunks returns an error that does not wrap tokens.ErrDoesNotFit,
@@ -112,19 +119,45 @@ pack:
 			case err != nil:
 				return nil, err
 			}
-			if len(p.Included)+len(p.Clipped)+len(p.DeletedListed)+len(p.Skipped) == 0 {
+			added, progress := ch.acceptPart(p, taken)
+			if !progress {
 				// Only deleted files with a patch too large to admit
 				// remain (the policy never applies to a deleted file):
 				// another part would repeat this one.
 				break pack
 			}
-			ch.addPart(p, taken)
-			last = p
-			break
+			if added {
+				last = p
+				break
+			}
+			// A part with only Skipped entries: they are accounted and
+			// taken, so the next attempt has fewer files.
 		}
 	}
 	ch.Omitted = leftOver(in.Files, taken, last.Omitted)
 	return ch, nil
+}
+
+// acceptPart decides what a further part p becomes. It is a part (one
+// model call) only when it reviews something: len(Included) + len(Clipped)
+// + len(DeletedListed) > 0; then it is added and acceptPart reports added
+// and progress. A part with no reviewable content but Skipped entries is
+// not added: its Skipped entries are appended to ch.Skipped and taken, and
+// acceptPart reports progress only. With neither, it reports no progress
+// and packing stops.
+func (ch *Chunks) acceptPart(p *Prepared, taken map[string]bool) (added, progress bool) {
+	if len(p.Included)+len(p.Clipped)+len(p.DeletedListed) > 0 {
+		ch.addPart(p, taken)
+		return true, true
+	}
+	if len(p.Skipped) == 0 {
+		return false, false
+	}
+	ch.Skipped = append(ch.Skipped, p.Skipped...)
+	for _, s := range p.Skipped {
+		taken[s.Path] = true
+	}
+	return false, true
 }
 
 // addPart appends a part and its accounting, and marks its files taken.

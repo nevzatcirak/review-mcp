@@ -246,6 +246,66 @@ func TestChunksStopWithoutProgress(t *testing.T) {
 	}
 }
 
+// TestAcceptPart: the decision on a further part, on crafted parts. No
+// natural input reaches the skip-only case: rendering a file (fast and
+// compressed) depends only on the file and the diff settings, and part 1
+// renders every file on both paths whenever a file is left over, so it
+// already skips every file that cannot be rendered; a later part has no
+// Skipped entries. The rule is tested here instead.
+func TestAcceptPart(t *testing.T) {
+	first := &Prepared{Included: []string{"a.go"},
+		Skipped: []provider.SkippedFile{{Path: "logo.png", Reason: provider.SkipBinary}}}
+	setup := func() (*Chunks, map[string]bool) {
+		ch, taken := &Chunks{}, map[string]bool{}
+		ch.addPart(first, taken)
+		return ch, taken
+	}
+
+	t.Run("only skipped", func(t *testing.T) {
+		ch, taken := setup()
+		p := &Prepared{Skipped: []provider.SkippedFile{{Path: "empty.go", Reason: SkipEmptyDiff}},
+			Omitted: Omitted{Modified: []string{"b.go"}}}
+		added, progress := ch.acceptPart(p, taken)
+		if added || !progress {
+			t.Errorf("added %v, progress %v; want a skip-only part not added, with progress", added, progress)
+		}
+		if len(ch.Parts) != 1 {
+			t.Errorf("%d parts, want 1: a skip-only part is no model call", len(ch.Parts))
+		}
+		want := []provider.SkippedFile{first.Skipped[0], p.Skipped[0]}
+		if !slices.Equal(ch.Skipped, want) || !taken["empty.go"] || taken["b.go"] {
+			t.Errorf("Skipped %v, taken %v; want %v accounted and only empty.go newly taken", ch.Skipped, taken, want)
+		}
+	})
+
+	t.Run("nothing", func(t *testing.T) {
+		ch, taken := setup()
+		p := &Prepared{Omitted: Omitted{Deleted: []string{"kept_gone.go"}}}
+		if added, progress := ch.acceptPart(p, taken); added || progress {
+			t.Errorf("added %v, progress %v; want packing to stop", added, progress)
+		}
+		if len(ch.Parts) != 1 || len(ch.Skipped) != 1 || len(taken) != 2 {
+			t.Errorf("an empty part changed the accounting: %+v, taken %v", ch, taken)
+		}
+	})
+
+	for name, p := range map[string]*Prepared{
+		"included":      {Included: []string{"b.go"}, Skipped: []provider.SkippedFile{{Path: "e.go", Reason: SkipEmptyDiff}}},
+		"clipped":       {Clipped: []string{"b.go"}},
+		"deletedListed": {DeletedListed: []string{"gone.go"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ch, taken := setup()
+			if added, progress := ch.acceptPart(p, taken); !added || !progress {
+				t.Errorf("added %v, progress %v; want a part", added, progress)
+			}
+			if len(ch.Parts) != 2 || ch.Parts[1] != p {
+				t.Errorf("%d parts, want the part appended", len(ch.Parts))
+			}
+		})
+	}
+}
+
 func TestPrepareChunksErrors(t *testing.T) {
 	in := chunkInput(300, "skip", modified("huge.go", 300, 2))
 	if _, err := PrepareChunks(in, 8); !errors.Is(err, tokens.ErrDoesNotFit) {

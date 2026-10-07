@@ -60,9 +60,16 @@ pull request discussion already says. It is validated by the V1 acceptance run
   for an overview or a posted finding.
 - The README quick start shows Bitbucket Server and a locally hosted LLM
   endpoint, and the `@next` tag for release candidates.
+- The comment URLs in the `pr_comment_create` and `pr_comment_reply` results
+  are no longer redacted: they are returned as built from the configured base
+  URL and the comment id, so Gitea links keep `#issuecomment-N` and Bitbucket
+  Server links keep `?commentId=N`. Logs stay redacted.
 
 ### Fixed
 
+- `pr_comment_reply` to an inline (review) comment on Gitea no longer fails
+  with a protocol error: Gitea answers the issue-comment lookup with 204 and no
+  body for such a comment, and the reply now falls back to the review comments.
 - Test fixtures whose directory names differed only by case are renamed. They
   broke checkouts on macOS and Windows and are rejected by the Go module proxy.
   A CI step now fails when two tracked paths are equal under case folding.

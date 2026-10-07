@@ -278,8 +278,8 @@ implementation must do or must not do).
 - **Consequences:**
   - The overview is posted first, so a failed inline batch never leaves the PR without it; an inline failure never fails the review.
   - Gitea: no PENDING review is ever left behind; a failed post deletes the draft, and an outcome-unknown failure is never reposted.
-  - Gitea posting is refused (class `conflict`) when the token's user already has a PENDING review on the PR, because the server would submit that draft with our comments. (Decided in 7b; **awaiting architect confirmation**.)
-  - Error classes `not_owner` (an edit of a comment the token's user did not write) and `conflict` (a request that conflicts with the server's state) are new allowlist classes in X-6. (Decided in 7b; **awaiting architect confirmation**.)
+  - Gitea posting is refused (class `conflict`) when the token's user already has a PENDING review on the PR, because the server would submit that draft with our comments. (Decided in 7b; confirmed by architect review on PR #9 (2026-10-07).)
+  - Error classes `not_owner` (an edit of a comment the token's user did not write) and `conflict` (a request that conflicts with the server's state) are new allowlist classes in X-6. (Decided in 7b; confirmed by architect review on PR #9 (2026-10-07).)
 
 #### X-12 — Persistent overview (added P7, amends X-1, extends X-4)
 - **Decision:**
@@ -289,10 +289,10 @@ implementation must do or must not do).
   - It carries the enabled X-4 fields, the new **`performance_concerns`** field (`review.require_performance`, default true; the model answers "No" or text, like `security_concerns`), the run time and head SHA, a findings index and the coverage.
 - **Rationale:** One living summary instead of a pile of comments, and security and performance covered.
 - **Consequences:**
-  - The overview is posted, then edited once to link each finding to its inline comment. (7c; **awaiting architect confirmation**: it costs one extra edit per first publish and relies on `EditComment`.)
-  - The performance field description is the spec wording plus the security field's no-translation sentence, so a non-English review still answers the literal English "No" that the No-detector reads. This deviates from upstream and is recorded in the template header. (7d; **awaiting architect confirmation**.)
-  - Identity: `CurrentUser` is Gitea's `GET /api/v1/user` and, for Bitbucket Server, the `X-AUSERNAME` and `X-AUSERID` headers of `GET /rest/api/1.0/application-properties`. Ownership is checked by id when both sides carry one and by case-insensitive name otherwise, before every edit and for the overview lookup. (7b; **awaiting architect confirmation**; acceptance I1 verifies it live, including with project and repository tokens.)
-  - The Gitea token needs `read:user` for it (setup guide; "verify at A3"). (7b; **awaiting architect confirmation**.)
+  - The overview is posted, then edited once to link each finding to its inline comment. (7c; decided, architect review on PR #9 (2026-10-07): it costs one extra edit per first publish and relies on `EditComment`.)
+  - The performance field description is the spec wording plus the security field's no-translation sentence, so a non-English review still answers the literal English "No" that the No-detector reads. This deviates from upstream and is recorded in the template header. (7d; decided, architect review on PR #9 (2026-10-07).)
+  - Identity: `CurrentUser` is Gitea's `GET /api/v1/user` and, for Bitbucket Server, the `X-AUSERNAME` and `X-AUSERID` headers of `GET /rest/api/1.0/application-properties`. Ownership is checked by id when both sides carry one and by case-insensitive name otherwise, before every edit and for the overview lookup. (7b; decided, architect review on PR #9 (2026-10-07); acceptance I1 verifies it live, including with project and repository tokens.)
+  - The Gitea token needs `read:user` for it (setup guide; "verify at A3"). (7b; decided, architect review on PR #9 (2026-10-07).)
 
 #### X-13 — Discussion awareness (added P7, decides DQ-15 for review)
 - **Decision:**
@@ -302,7 +302,7 @@ implementation must do or must not do).
 - **Rationale:** A review that repeats the humans' points is noise; reviewers' comments are the best signal of what is already known.
 - **Consequences:**
   - A failed read adds a note and the review continues.
-  - The discussion yields to the diff: when the context window is too small for both, the discussion is dropped. (7e; **awaiting architect confirmation**.)
+  - The discussion yields to the diff: when the context window is too small for both, the discussion is dropped. (7e; decided, architect review on PR #9 (2026-10-07).)
   - Prompt injection through comments cannot be excluded by construction; acceptance I5 observes the model live.
 
 #### X-14 — `pr_comment_create` (added P7, extends X-9)
@@ -311,8 +311,8 @@ implementation must do or must not do).
   - An inline request whose line is not on the new side of the file's diff hunks is **refused** with a fixed sentence, "the line is not part of the pull request diff; use a changed or context line of a changed file", and is never silently downgraded to a PR-level comment. The anchor is the same resolver as the review's.
   - Serve mode: `RequireCredentials` and the per-call scope as for the other tools; the call needs the provider token and no LLM key.
 - **Consequences:**
-  - **Marker lines refused (awaiting architect confirmation):** `pr_comment_create` and `pr_comment_reply` refuse a body with a line that, trimmed, starts with `[//]:` and contains `review-mcp:`, before any request. A marker in a comment of ours would be adopted by the overview or the duplicate lookup, because the author matches; Gitea's reply is a new PR-level comment of ours, so it is affected as well.
-  - **URL redaction (awaiting architect confirmation):** the result's URL goes through the same redaction as `pr_comment_reply`'s (fragment dropped, query values replaced), which for Bitbucket Server reads `...?commentId=REDACTED`. The comment `id` is the usable handle.
+  - **Marker lines refused (decided, architect review on PR #9 (2026-10-07)):** `pr_comment_create` and `pr_comment_reply` refuse a body with a line that, trimmed, starts with `[//]:` and contains `review-mcp:`, before any request. A marker in a comment of ours would be adopted by the overview or the duplicate lookup, because the author matches; Gitea's reply is a new PR-level comment of ours, so it is affected as well.
+  - **URL redaction (decided, architect review on PR #9 (2026-10-07)):** the URLs in the `pr_comment_create` and `pr_comment_reply` results are built by the provider from the configured base URL plus the comment id (Gitea `...#issuecomment-N`, Bitbucket Server `...?commentId=N`). Config validation forbids credentials in a base URL, so they are returned unredacted and the deep link works. `logging.RedactURL` is for logs only, and every log line stays redacted.
   - The tool is not read-only, not destructive, not idempotent, open-world.
 
 ---
@@ -402,5 +402,7 @@ violations are reported together in one token-free startup error.
 | Repo-local config | Layered loader with explicit layer list |
 | Basic auth (Bitbucket Server) | Auth as a provider-level strategy, not a hardcoded header |
 | Labels | Typed `Capabilities` struct (inline and persistent comments shipped in P7, X-11, X-12) |
+| Duplicate-skipped finding links to its earlier inline comment (v1.0.x) | `CommentItem.URL` filled for inline comments |
+| Shared package for the P2e sanitizers duplicated in `internal/review` (v1.0.x) | None; a refactor |
 | `/improve` (DQ-11; DQ-13, 14, 15, 18 were decided in P7) | Hunk model with multiple renderers (DQ-10) |
 | Additional review fields | Field-descriptor table (X-4, DQ-6) |

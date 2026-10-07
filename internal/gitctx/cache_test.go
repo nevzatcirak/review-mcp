@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -415,6 +416,24 @@ func TestChildEnvAllowlist(t *testing.T) {
 			for _, k := range []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY"} {
 				if names[k] != 1 {
 					t.Errorf("windows: %s passed %d times", k, names[k])
+				}
+			}
+			continue
+		}
+		if runtime.GOOS == "windows" {
+			// A Windows host cannot hold http_proxy and HTTP_PROXY at once,
+			// so the parent has one entry per pair: exactly one case is
+			// passed, with the value the host reports.
+			for _, k := range []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY"} {
+				v, _ := os.LookupEnv(k)
+				got := 0
+				for _, name := range []string{k, strings.ToLower(k)} {
+					if strings.Contains(joined, "\n"+name+"="+v+"\n") {
+						got++
+					}
+				}
+				if got != 1 {
+					t.Errorf("%s: proxy %s passed %d times with the host's value", goos, k, got)
 				}
 			}
 			continue

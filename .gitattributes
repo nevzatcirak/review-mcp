@@ -1,0 +1,3 @@
+# Byte-exact test fixtures: keep LF on every OS (Windows checkouts would
+# otherwise convert them to CRLF and change the parsed diffs).
+internal/gitctx/testdata/symbols/* text eol=lf

@@ -31,7 +31,21 @@ type Coverage struct {
 	ReviewedFiles    int  `json:"reviewed_files"`
 	TotalFiles       int  `json:"total_files"`
 	NotReviewedFiles int  `json:"not_reviewed_files"`
+
+	// ModelCalls is the number of parts sent to the model (X-19): 1 for a
+	// review in one call, N for a review in N parts, 0 without a model call.
+	// A re-ask of a part is not counted (metadata.llm_calls counts every
+	// completion). FailedParts is how many of them failed; their files are
+	// in Skipped with reason SkipModelCallFailed. pr_ask makes one call
+	// (X-21), so it reports 1 and 0, or 0 and 0 without a call.
+	ModelCalls  int `json:"model_calls"`
+	FailedParts int `json:"failed_parts"`
 }
+
+// SkipModelCallFailed is the skip reason of a file whose part's model call
+// failed (X-19): the file was sent but no review came back, so it is not
+// reviewed.
+const SkipModelCallFailed = "model_call_failed"
 
 // Tally is the X-18 summary of a Coverage. Every changed file is in exactly
 // one of these places, and the mapping of the existing categories is:
@@ -47,8 +61,9 @@ type Coverage struct {
 //     budget cut them or the deleted-files section did not fit), so the
 //     model saw nothing of them.
 //   - Skipped for size (file_limit, size_limit), too large for a chunk of
-//     its own (too_large), unreadable (fetch_failed, unparseable_patch) or
-//     for any reason not named here: NOT reviewed. A reviewable file was
+//     its own (too_large), unreadable (fetch_failed, unparseable_patch), in
+//     a part whose model call failed (model_call_failed) or for any reason
+//     not named here: NOT reviewed. A reviewable file was
 //     lost; an unknown reason counts as lost, never as fine.
 //   - Skipped as binary or as an empty diff (a pure rename, a mode change):
 //     outside the count, like Filtered. There is no text change to review,

@@ -49,12 +49,59 @@ func (l *loader) validate() {
 	if !l.bad["review.max_discussion_tokens"] && c.Review.MaxDiscussionTokens < 0 {
 		l.problem("review.max_discussion_tokens: %d must not be negative (0 turns the discussion off)", c.Review.MaxDiscussionTokens)
 	}
+	if !l.bad["review.max_chunks"] && (c.Review.MaxChunks < MinMaxChunks || c.Review.MaxChunks > MaxMaxChunks) {
+		l.problem("review.max_chunks: %d is out of range (%d-%d)", c.Review.MaxChunks, MinMaxChunks, MaxMaxChunks)
+	}
+	l.validateMaxTotalFindings()
 	if _, err := logging.ParseLevel(c.Log.Level); err != nil {
 		l.problem("log.level: %v", err)
 	}
 	if l.mode == ModeServe {
 		l.validateServe()
 	}
+}
+
+// Bounds of review.max_chunks and review.max_total_findings (X-19).
+const (
+	MinMaxChunks        = 1
+	MaxMaxChunks        = 32
+	MaxMaxTotalFindings = 50
+	maxFindingsUpper    = 20
+)
+
+// validateMaxTotalFindings checks review.max_total_findings: at most
+// MaxMaxTotalFindings and, when it is set, at least review.max_findings.
+//
+// Decision (lead; architect may override on 11e2): the spec's lower bound
+// "≥ review.max_findings" is checked only when review.max_total_findings is
+// set (file or environment). With its default (10), a v1.0 configuration
+// with review.max_findings above 10 (allowed up to 20) stays valid, and the
+// pipeline caps the merged findings at the larger of the two
+// (EffectiveMaxTotalFindings), so such a configuration keeps its findings.
+func (l *loader) validateMaxTotalFindings() {
+	c := l.cfg.Review
+	if l.bad["review.max_total_findings"] {
+		return
+	}
+	if c.MaxTotalFindings < 1 || c.MaxTotalFindings > MaxMaxTotalFindings {
+		l.problem("review.max_total_findings: %d is out of range (1-%d)", c.MaxTotalFindings, MaxMaxTotalFindings)
+		return
+	}
+	if l.rep.Sources["review.max_total_findings"] == OriginDefault || l.bad["review.max_findings"] ||
+		c.MaxFindings < 1 || c.MaxFindings > maxFindingsUpper {
+		return
+	}
+	if c.MaxTotalFindings < c.MaxFindings {
+		l.problem("review.max_total_findings: %d must be at least review.max_findings (%d)", c.MaxTotalFindings, c.MaxFindings)
+	}
+}
+
+// EffectiveMaxTotalFindings is the cap on a review's merged findings: the
+// larger of review.max_total_findings and maxFindings (the effective
+// review.max_findings of the call), so that a single part never loses
+// findings its own max_findings allowed.
+func EffectiveMaxTotalFindings(r Review, maxFindings int) int {
+	return max(r.MaxTotalFindings, maxFindings)
 }
 
 func (l *loader) validateLLM() {

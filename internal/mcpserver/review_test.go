@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -88,6 +89,9 @@ type fakeServer struct {
 	// ghost lists a second changed file that the diff does not contain: the
 	// provider cannot read it, so the result is partial (X-18).
 	ghost bool
+	// large, when set, replaces the PR's one file with these added files
+	// (path -> head content), for a review in parts (X-19).
+	large map[string]string
 }
 
 // setGhost makes the files endpoint list a file the provider cannot read.
@@ -196,6 +200,24 @@ func newFakeGiteaHost(t *testing.T) *fakeServer {
 				"head": map[string]any{"ref": "feature-" + branchMarker, "sha": "headsha"},
 				"base": map[string]any{"ref": "main", "sha": "basesha"},
 			})
+		case r.Method == "GET" && p == api+"/pulls/7.diff" && f.large != nil:
+			_, _ = io.WriteString(w, largeDiff(f.large))
+		case r.Method == "GET" && p == api+"/pulls/7/files" && f.large != nil:
+			files := []any{}
+			if r.URL.Query().Get("page") == "1" {
+				for _, path := range slices.Sorted(maps.Keys(f.large)) {
+					n := strings.Count(f.large[path], "\n")
+					files = append(files, map[string]any{"filename": path, "status": "added", "additions": n, "deletions": 0, "changes": n})
+				}
+			}
+			writeJ(files)
+		case r.Method == "GET" && strings.HasPrefix(p, api+"/raw/") && f.large != nil:
+			content, ok := f.large[strings.TrimPrefix(p, api+"/raw/")]
+			if !ok || r.URL.Query().Get("ref") != "headsha" {
+				http.NotFound(w, r)
+				return
+			}
+			_, _ = io.WriteString(w, content)
 		case r.Method == "GET" && p == api+"/pulls/7.diff":
 			_, _ = io.WriteString(w, reviewDiff)
 		case r.Method == "GET" && p == api+"/pulls/7/files":

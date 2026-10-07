@@ -205,3 +205,20 @@ func TestCoverageDeletedListed(t *testing.T) {
 		}
 	}
 }
+
+// TestCoverageModelCalls: a review in parts says how many model calls it
+// used, in every profile (X-19); a review in one call does not.
+func TestCoverageModelCalls(t *testing.T) {
+	const line = "- Reviewed in 3 model calls.\n"
+	for name, render := range profiles() {
+		cov := completeCoverage()
+		cov.ModelCalls = 3
+		if out := render(noFindingsResult(cov)); !strings.Contains(out, line) {
+			t.Errorf("%s: no model-calls line:\n%s", name, out)
+		}
+		cov.ModelCalls = 1
+		if out := render(noFindingsResult(cov)); strings.Contains(out, "model calls") {
+			t.Errorf("%s: a review in one call names its model calls:\n%s", name, out)
+		}
+	}
+}

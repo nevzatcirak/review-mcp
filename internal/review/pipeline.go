@@ -113,11 +113,15 @@ type Args struct {
 	// REVIEW_MCP_REVIEW_MAX_DISCUSSION_TOKENS variable as the value mapped
 	// here, in the one package that owns the config table.
 	MaxDiscussionTokens *int
+	// MaxChunks is the most model calls (parts) of the review (X-19); 0 or
+	// less takes review.max_chunks, and 1 reviews in one call as v1.0 did.
+	MaxChunks int
 }
 
-// WithConfigDefaults returns a with every option the call left unset (nil)
-// taken from cfg: review.inline_findings, review.persistent_overview and
-// review.max_discussion_tokens. A value the call set wins. Without it, nil
+// WithConfigDefaults returns a with every option the call left unset (nil,
+// or 0 for MaxChunks) taken from cfg: review.inline_findings,
+// review.persistent_overview, review.max_discussion_tokens and
+// review.max_chunks. A value the call set wins. Without it, nil
 // keeps the documented defaults (on, on, DefaultMaxDiscussionTokens).
 func (a Args) WithConfigDefaults(cfg *config.Config) Args {
 	if cfg == nil {
@@ -134,6 +138,9 @@ func (a Args) WithConfigDefaults(cfg *config.Config) Args {
 	if a.MaxDiscussionTokens == nil {
 		v := cfg.Review.MaxDiscussionTokens
 		a.MaxDiscussionTokens = &v
+	}
+	if a.MaxChunks <= 0 {
+		a.MaxChunks = cfg.Review.MaxChunks
 	}
 	return a
 }
@@ -158,14 +165,24 @@ type Plan struct {
 	Result *Result
 	// Budget is the token budget the diff was prepared against.
 	Budget tokens.Budget
-	// Prompts are the final prompts of the first model call. They are zero
-	// when Empty is set. Callers must never log them (X-8).
+	// Prompts are the final prompts of the first model call (of part 1 for
+	// a review in parts). They are zero when Empty is set. Callers must
+	// never log them (X-8).
 	Prompts Prompts
 	// Empty reports that nothing reviewable is left after filtering, so no
 	// model call is made (step 5).
 	Empty bool
 
-	fit         *fitted
+	// parts are the model calls of the review, in order: one for a review
+	// in one call, N for a review in parts (X-19). Each has its prepared
+	// diff, its final prompts and its own coverage.
+	parts []*part
+	// chunks is the packing of a review in parts; nil for one call.
+	chunks *diffpipe.Chunks
+	// flt is the filter, for the coverage of a review in parts.
+	flt *filter.Filter
+	// maxTotal caps the merged findings (config.EffectiveMaxTotalFindings).
+	maxTotal    int
 	ref         provider.PRRef
 	p           provider.Provider
 	pr          *provider.PullRequest
@@ -229,7 +246,6 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 		publish(ctx, deps, args, pl)
 		return res, nil
 	}
-	progress(deps, StageCallingModel)
 	return pl.finish(ctx, deps, args)
 }
 
@@ -255,6 +271,10 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	maxFindings := cfg.Review.MaxFindings
 	if args.MaxFindings > 0 {
 		maxFindings = args.MaxFindings
+	}
+	maxChunks := args.MaxChunks
+	if maxChunks <= 0 {
+		maxChunks = cfg.Review.MaxChunks
 	}
 	extra := cfg.Review.ExtraInstructions
 	if args.ExtraInstructions != "" {
@@ -294,7 +314,8 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 
 	// The PR's discussion, for the prompt and for the duplicate check; a
 	// failure never fails the review.
-	pl := &Plan{ref: ref, p: p, pr: pr, d: d, toggles: toggles, maxFindings: maxFindings, log: log}
+	pl := &Plan{ref: ref, p: p, pr: pr, d: d, toggles: toggles, maxFindings: maxFindings, log: log, flt: flt,
+		maxTotal: config.EffectiveMaxTotalFindings(cfg.Review, maxFindings)}
 	maxDisc := DefaultMaxDiscussionTokens
 	if args.MaxDiscussionTokens != nil {
 		maxDisc = *args.MaxDiscussionTokens
@@ -341,9 +362,8 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 
 	// Step 5: prepare the numbered diff.
-	prep, err := diffpipe.Prepare(diffpipe.Input{
-		Files: d.Files, Skipped: d.Skipped, Mode: diffpipe.ModeNumbered, Budget: budget, Diff: cfg.Diff,
-	})
+	dIn := diffpipe.Input{Files: d.Files, Skipped: d.Skipped, Mode: diffpipe.ModeNumbered, Budget: budget, Diff: cfg.Diff}
+	prep, err := diffpipe.Prepare(dIn)
 	if err != nil {
 		if errors.Is(err, tokens.ErrDoesNotFit) {
 			return nil, doesNotFit(err)
@@ -383,14 +403,28 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		return pl, nil
 	}
 
+	// A diff that leaves files out is reviewed in parts when
+	// review.max_chunks allows it (X-19); otherwise, and when the packing
+	// yields one part, the review is the one call below, unchanged.
+	if maxChunks > 1 && leavesFilesOut(prep) {
+		ok, err := pl.planParts(dIn, in, maxChunks)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return pl, nil
+		}
+	}
+
 	// Step 6: render the final prompts behind the request-size guard.
 	fit, err := fitPrompts(in, prep.Text, budget)
 	if err != nil {
 		return nil, err
 	}
-	pl.fit = fit
+	pl.parts = []*part{{prep: prep, fit: fit}}
 	pl.Prompts = fit.prompts
 	res.Metadata.RequestTokens = fit.requestTokens
+	res.Coverage.ModelCalls = 1
 	if fit.keptLines >= 0 {
 		types := map[string]provider.ChangeType{}
 		for _, f := range d.Files {
@@ -410,56 +444,67 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	return pl, nil
 }
 
-// finish runs steps 7 to 13 of a non-empty plan.
+// finish runs steps 7 to 13 of a non-empty plan: one model call per part,
+// the merge of the parts' answers (X-19), snippets, links and the publish.
 func (pl *Plan) finish(ctx context.Context, deps Deps, args Args) (*Result, error) {
-	res, log, fit := pl.Result, pl.log, pl.fit
+	res, log := pl.Result, pl.log
 	ref, p, pr, d := pl.ref, pl.p, pl.pr, pl.d
-	toggles, maxFindings := pl.toggles, pl.maxFindings
+	n := len(pl.parts)
 
-	// Steps 7 and 8: call the model, parse, re-ask once on a parse failure.
-	keys := RepairKeys(toggles)
-	var rev *Review
-	var conv *Conversion
-	for attempt := range 2 {
-		user := fit.prompts.User
-		if attempt == 1 {
-			user = fit.reaskUser
-			res.Metadata.Reasked = true
+	// Steps 7 and 8, per part and sequentially: call the model, parse,
+	// re-ask once on a parse failure.
+	answers := make([]*partAnswer, n)
+	classes := make([]string, n)
+	var firstErr error
+	failed := 0
+	for i, pt := range pl.parts {
+		if n == 1 {
+			progress(deps, StageCallingModel)
+		} else {
+			progress(deps, CallingModelPart(i+1, n))
 		}
-		resp, err := deps.LLM.Complete(ctx, fit.prompts.System, user)
-		res.Metadata.LLMCalls++
+		a, err := pl.callPart(ctx, deps, pt.fit, i+1, n)
+		res.Metadata.LLMCalls += a.calls
 		if err != nil {
-			return nil, err
+			if n == 1 || ctx.Err() != nil {
+				// One call: its error is the run's, as before. A cancelled
+				// run stops at once.
+				return nil, err
+			}
+			if firstErr == nil {
+				firstErr = err
+			}
+			failed++
+			classes[i] = failureClass(err)
+			log.Debug("review: part failed", "part", i+1, "parts", n, "class", classes[i])
+			continue
 		}
-		// Truncated describes the answer that is converted: a cut-off first
-		// answer followed by a complete re-ask is not truncated.
-		res.Metadata.Truncated = resp.Truncated
-		data, trace := yamlrepair.Load(strings.TrimSpace(resp.Content), keys)
-		res.Metadata.RepairTactic = trace.Tactic
-		log.Debug("review: answer loaded", "attempt", attempt+1, "repair_tactic", trace.Tactic,
-			"truncated", resp.Truncated, "prompt_tokens_reported", resp.Usage.PromptTokens,
-			"completion_tokens_reported", resp.Usage.CompletionTokens)
-		// Step 9: validate and convert.
-		rev, conv, err = Convert(data, toggles, maxFindings)
-		if err == nil {
-			break
-		}
-		if attempt == 1 {
-			return nil, ErrUnparseable.WithCause(err)
-		}
+		answers[i] = a
 	}
-	for _, w := range conv.Warnings {
-		log.Debug("review: field warning", "warning", w)
+	if failed == n {
+		// Every part failed: the first part's classified error, as for a
+		// review in one call.
+		return nil, firstErr
 	}
-	if res.Metadata.Truncated {
-		res.Notes = append(res.Notes, NoteTruncated)
-	}
-	if res.Metadata.Reasked {
-		res.Notes = append(res.Notes, NoteReasked)
-	}
-	res.Notes = append(res.Notes, conv.Notes...)
 
-	// Steps 10 and 11: snippets and links.
+	var rev *Review
+	if n == 1 {
+		a := answers[0]
+		rev = a.rev
+		res.Metadata.Truncated, res.Metadata.RepairTactic, res.Metadata.Reasked = a.truncated, a.tactic, a.reasked
+		if a.truncated {
+			res.Notes = append(res.Notes, NoteTruncated)
+		}
+		if a.reasked {
+			res.Notes = append(res.Notes, NoteReasked)
+		}
+		res.Notes = append(res.Notes, a.conv.Notes...)
+	} else {
+		rev = pl.mergeParts(answers, classes)
+	}
+
+	// Steps 10 and 11: snippets and links, on the merged list against every
+	// file of the PR.
 	files := map[string]*provider.FilePatch{}
 	for i := range d.Files {
 		files[d.Files[i].Path] = &d.Files[i]
@@ -487,9 +532,61 @@ func (pl *Plan) finish(ctx context.Context, deps Deps, args Args) (*Result, erro
 	}
 	res.Review = rev
 	log.Debug("review: done", "findings", len(rev.KeyIssuesToReview), "unverified_snippets", unverified,
-		"llm_calls", res.Metadata.LLMCalls, "reasked", res.Metadata.Reasked)
+		"llm_calls", res.Metadata.LLMCalls, "reasked", res.Metadata.Reasked, "parts", n, "failed_parts", failed)
 
 	// Step 13: publish.
 	publish(ctx, deps, args, pl)
 	return res, nil
+}
+
+// partAnswer is the converted answer of one part.
+type partAnswer struct {
+	rev  *Review
+	conv *Conversion
+	// calls counts the completions (1, or 2 with the re-ask), also when the
+	// part failed.
+	calls              int
+	reasked, truncated bool
+	tactic             string
+}
+
+// callPart runs steps 7 and 8 for one part: the call, the YAML repair, the
+// conversion and at most one re-ask. The returned answer is never nil; its
+// calls count holds also on an error.
+func (pl *Plan) callPart(ctx context.Context, deps Deps, fit *fitted, i, n int) (*partAnswer, error) {
+	log := pl.log
+	keys := RepairKeys(pl.toggles)
+	a := &partAnswer{}
+	for attempt := range 2 {
+		user := fit.prompts.User
+		if attempt == 1 {
+			user = fit.reaskUser
+			a.reasked = true
+		}
+		resp, err := deps.LLM.Complete(ctx, fit.prompts.System, user)
+		a.calls++
+		if err != nil {
+			return a, err
+		}
+		// Truncated describes the answer that is converted: a cut-off first
+		// answer followed by a complete re-ask is not truncated.
+		a.truncated = resp.Truncated
+		data, trace := yamlrepair.Load(strings.TrimSpace(resp.Content), keys)
+		a.tactic = trace.Tactic
+		log.Debug("review: answer loaded", "part", i, "parts", n, "attempt", attempt+1, "repair_tactic", trace.Tactic,
+			"truncated", resp.Truncated, "prompt_tokens_reported", resp.Usage.PromptTokens,
+			"completion_tokens_reported", resp.Usage.CompletionTokens)
+		// Step 9: validate and convert.
+		a.rev, a.conv, err = Convert(data, pl.toggles, pl.maxFindings)
+		if err == nil {
+			break
+		}
+		if attempt == 1 {
+			return a, ErrUnparseable.WithCause(err)
+		}
+	}
+	for _, w := range a.conv.Warnings {
+		log.Debug("review: field warning", "part", i, "warning", w)
+	}
+	return a, nil
 }

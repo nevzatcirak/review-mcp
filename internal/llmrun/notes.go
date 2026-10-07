@@ -1,8 +1,10 @@
 package llmrun
 
 import (
+	"slices"
 	"strconv"
 
+	"github.com/nevzatcirak/review-mcp/internal/diffpipe"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 )
 
@@ -26,6 +28,11 @@ const (
 	// does not change (too large for the provider, over its file limit,
 	// unreadable).
 	NoteProviderSkips = "Some changed files were skipped or could not be read from the provider (see Coverage); a larger diff budget does not change that."
+	// NoteRaiseChunksLimit and NoteRaiseChunksWindow are NoteRaiseLimit and
+	// NoteLargerWindow of a chunked review that used every part it may
+	// (review.max_chunks) and still left files out (X-19).
+	NoteRaiseChunksLimit  = "To review every file, raise review.max_chunks, raise or unset diff.max_tokens, or use a model with a larger context window."
+	NoteRaiseChunksWindow = "To review every file, raise review.max_chunks, or use a model with a larger context window."
 )
 
 // PartialNotes returns the notes of a partial result (X-18), none for a
@@ -34,19 +41,38 @@ const (
 // that cap was the limit that applied (Budget.Limit). A file the provider
 // skipped or could not read gets its own note, since no budget setting helps.
 func PartialNotes(c *Coverage, b tokens.Budget) []string {
+	return ChunkedPartialNotes(c, b, false)
+}
+
+// ChunkedPartialNotes is PartialNotes for a review in parts (X-19).
+// chunksReached reports that the review used every part review.max_chunks
+// allows and files were still left out; the budget hint then also names
+// review.max_chunks. A file too large for a part of its own (too_large) is a
+// budget loss: a larger window or diff budget helps, so it gets the budget
+// hint, not NoteProviderSkips. A file of a failed part (model_call_failed)
+// has its own note from the pipeline and gets neither.
+func ChunkedPartialNotes(c *Coverage, b tokens.Budget, chunksReached bool) []string {
 	if !c.Tally().Partial {
 		return nil
 	}
 	var notes []string
-	if len(c.Clipped)+len(c.Omitted.Added)+len(c.Omitted.Modified)+len(c.Omitted.Deleted) > 0 {
-		if b.Limit() == tokens.LimitDiffMaxTokens {
+	budgetLoss := len(c.Clipped)+len(c.Omitted.Added)+len(c.Omitted.Modified)+len(c.Omitted.Deleted) > 0 ||
+		slices.ContainsFunc(c.Skipped, func(s SkippedFile) bool { return s.Reason == diffpipe.SkipTooLarge })
+	if budgetLoss {
+		limit := b.Limit() == tokens.LimitDiffMaxTokens
+		switch {
+		case chunksReached && limit:
+			notes = append(notes, NoteRaiseChunksLimit)
+		case chunksReached:
+			notes = append(notes, NoteRaiseChunksWindow)
+		case limit:
 			notes = append(notes, NoteRaiseLimit)
-		} else {
+		default:
 			notes = append(notes, NoteLargerWindow)
 		}
 	}
 	for _, s := range c.Skipped {
-		if skipLosesReviewableFile(s.Reason) {
+		if skipLosesReviewableFile(s.Reason) && s.Reason != diffpipe.SkipTooLarge && s.Reason != SkipModelCallFailed {
 			notes = append(notes, NoteProviderSkips)
 			break
 		}

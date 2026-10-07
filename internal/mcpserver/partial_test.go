@@ -85,11 +85,12 @@ func coverageSchemas(v any, out *[]map[string]any) {
 
 // TestOutputSchemasCarryThePartialFields: every output schema that has a
 // coverage object (pr_review and pr_ask, plain and stdio oneOf, and both
-// branches of job_result) declares the four X-18 fields and the X-20 list
-// deleted_listed as required.
+// branches of job_result) declares the four X-18 fields, the X-20 list
+// deleted_listed and the X-19 counts model_calls and failed_parts as
+// required.
 func TestOutputSchemasCarryThePartialFields(t *testing.T) {
 	types := map[string]string{"partial": "boolean", "reviewed_files": "integer", "total_files": "integer", "not_reviewed_files": "integer",
-		"deleted_listed": "array"}
+		"deleted_listed": "array", "model_calls": "integer", "failed_parts": "integer"}
 	check := func(name string, schema any, want int) {
 		t.Helper()
 		raw, err := json.Marshal(schema)

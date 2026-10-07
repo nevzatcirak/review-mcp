@@ -73,7 +73,8 @@ type coverageGroup struct {
 
 // Coverage writes the coverage section (X-3), which is always present:
 // the included and omitted counts (and the count of deletions listed by
-// name, when there are any), then the files that are clipped, listed by
+// name, when there are any), "Reviewed in N model calls." for a review in
+// N > 1 parts (X-19), then the files that are clipped, listed by
 // name or omitted, grouped by reason. At most MaxListedFiles files are
 // listed across all groups; the rest are counted ("and N more").
 // Everything is plain markdown (no HTML).
@@ -91,6 +92,10 @@ func Coverage(b *strings.Builder, heading string, c *llmrun.Coverage) {
 		b.WriteString("\n- " + textDeletedListed + ": " + strconv.Itoa(n) + " " + plural(n))
 	}
 	b.WriteString("\n- Omitted: " + strconv.Itoa(omitted) + " " + plural(omitted) + "\n")
+	if c.ModelCalls > 1 {
+		// A review in parts (X-19, RC-13) says how many calls it used.
+		b.WriteString("- Reviewed in " + strconv.Itoa(c.ModelCalls) + " model calls.\n")
+	}
 
 	var groups []coverageGroup
 	if len(c.Clipped) > 0 {

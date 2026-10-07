@@ -310,6 +310,8 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 	pl.Prompts = Prompts{System: fit.Rendered.System, User: fit.Rendered.User}
 	res.Metadata.RequestTokens = fit.RequestTokens
+	// pr_ask makes one model call (X-21); a plan without one (Empty) keeps 0.
+	res.Coverage.ModelCalls = 1
 	if fit.KeptLines >= 0 {
 		types := map[string]provider.ChangeType{}
 		for _, f := range d.Files {

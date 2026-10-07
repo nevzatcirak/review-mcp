@@ -7,6 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/nevzatcirak/review-mcp/internal/review"
 	"github.com/nevzatcirak/review-mcp/internal/tools"
 )
 
@@ -53,11 +54,17 @@ func progressFunc(ctx context.Context, req *mcp.CallToolRequest, log *slog.Logge
 	if token == nil || req.Session == nil {
 		return nil
 	}
-	step := 0
+	step, total := 0, progressTotal
 	return func(stage string) {
 		step++
+		// A review in N parts reports one "calling model (part I of N)"
+		// stage per part instead of one "calling model" (X-19), so its
+		// total is the other stages plus N.
+		if n, ok := review.StageParts(stage); ok {
+			total = max(total, progressTotal-1+n)
+		}
 		err := req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{
-			ProgressToken: token, Message: stage, Progress: float64(step), Total: progressTotal,
+			ProgressToken: token, Message: stage, Progress: float64(step), Total: float64(total),
 		})
 		if err != nil {
 			log.Debug(tool+": progress notification not sent", "stage", stage)

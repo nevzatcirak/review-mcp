@@ -23,6 +23,8 @@
 - **Friction:** any friction you hit (an unclear step, a confusing message, too much config) is recorded as an item even when the check passes. User friction is product truth.
 
 ## 1. Preparation
+`scripts/acceptance/make-test-repo.sh <new-dir>` builds a local throwaway repository with every branch below (`feature/basic`, `feature/large`, `feature/filters`, `feature/huge-file`; `main` advanced after the branches are cut). It never pushes; push it to an empty repository on your personal instance and open one pull request per branch.
+
 - **Test PRs:** one on Gitea and one on Bitbucket Server, each containing:
   - a modified file;
   - an added file;

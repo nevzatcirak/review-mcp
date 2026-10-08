@@ -22,8 +22,14 @@
   - **minor:** wording, cosmetics or friction. It goes to the v1.0.x backlog.
 - **Friction:** any friction you hit (an unclear step, a confusing message, too much config) is recorded as an item even when the check passes. User friction is product truth.
 
+## 0a. In-use mode (owner decision, 2026-10-08)
+The owner runs the acceptance while using review-mcp on pull requests that come up anyway, instead of a dedicated test repository. Items are recorded as they are met; an item the normal flow never produces stays **not run** with that reason.
+- **Core set (must be pass before `v1.0.0`):** A4, E1, E5, F1, H1, H4, I2, I3, I5, J1, J2 (including the output-schema check per client).
+- **Opportunistic:** every other item, recorded when a suitable pull request appears.
+- **Record only verdicts and generic descriptions** ("E5 Bitbucket: pass, renamed file link correct"). Nothing from the instance, the repository, the code or the review text enters the record. Screenshots are not attached.
+
 ## 1. Preparation
-`scripts/acceptance/make-test-repo.sh <new-dir>` builds a local throwaway repository with every branch below (`feature/basic`, `feature/large`, `feature/filters`, `feature/huge-file`; `main` advanced after the branches are cut). It never pushes; push it to an empty repository on your personal instance and open one pull request per branch.
+Optional (not used in in-use mode): `scripts/acceptance/make-test-repo.sh <new-dir>` builds a local throwaway repository with every branch below (`feature/basic`, `feature/large`, `feature/filters`, `feature/huge-file`; `main` advanced after the branches are cut). It never pushes; push it to an empty repository on your personal instance and open one pull request per branch.
 
 - **Test PRs:** one on Gitea and one on Bitbucket Server, each containing:
   - a modified file;

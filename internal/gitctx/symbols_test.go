@@ -43,6 +43,9 @@ func dumpSymbols(syms []Symbol) string {
 		if s.New {
 			n = " new"
 		}
+		if s.Test {
+			n += " test"
+		}
 		fmt.Fprintf(&b, "%-9s %-16s %s%s\n", s.Rank, s.Name, s.Path, n)
 	}
 	return b.String()
@@ -116,5 +119,48 @@ func TestChangedPaths(t *testing.T) {
 	got := ChangedPaths([]provider.FilePatch{{Path: "b.go", OldPath: "a.go"}, {Path: "c.go"}, {Path: "a.go"}})
 	if strings.Join(got, ",") != "b.go,a.go,c.go" {
 		t.Errorf("ChangedPaths = %v", got)
+	}
+}
+
+// TestIsTestPath: each name rule matches, and look-alikes do not.
+func TestIsTestPath(t *testing.T) {
+	yes := []string{
+		"a_test.go", "pkg/a_test.go", "test_a.py", "a/test_a.py", "a_test.py", "FooTest.java", "FooTests.java",
+		"FooTest.kt", "a.test.ts", "a.test.tsx", "a.test.js", "a.test.jsx", "a.spec.ts", "a.spec.tsx",
+		"a.spec.js", "a.spec.jsx", "FooTests.cs", "FooTest.cs", "test/x.go", "a/tests/x.go", "src/__tests__/x.js",
+		"src/test/java/Foo.java",
+	}
+	no := []string{
+		"contest.go", "latest/x.go", "testing.go", "a/testing/x.go", "attests/x.go", "test.go", "_test.go",
+		"a_test.txt", "test_a.go", "mytest.py", "Test.java", "FooTester.java", "footest.java", "FooTest.cs.bak",
+		"a.test.go", "a.spec.py", "a.tests.ts", "a.test.json", "Tests/x.go", "__test__/x.go", "x/test", "src/Test/x.go",
+	}
+	for _, p := range yes {
+		if !IsTestPath(p) {
+			t.Errorf("IsTestPath(%q) = false, want true", p)
+		}
+	}
+	for _, p := range no {
+		if IsTestPath(p) {
+			t.Errorf("IsTestPath(%q) = true, want false", p)
+		}
+	}
+}
+
+// TestExtractSymbolsCapCutsTestsFirst: the cap applies after the full
+// ordering, so test-file symbols are cut before any other.
+func TestExtractSymbolsCapCutsTestsFirst(t *testing.T) {
+	files := loadDiff(t, "ranking")
+	all := ExtractSymbols(files, 100)
+	nonTest := 0
+	for _, s := range all {
+		if !s.Test {
+			nonTest++
+		}
+	}
+	for _, s := range ExtractSymbols(files, nonTest) {
+		if s.Test {
+			t.Errorf("test symbol %s kept while a non-test one was cut", s.Name)
+		}
 	}
 }

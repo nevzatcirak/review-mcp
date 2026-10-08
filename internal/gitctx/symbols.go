@@ -71,6 +71,38 @@ type Symbol struct {
 	// one that existed before). Within a rank, existing definitions come
 	// first because only they can have callers.
 	New bool
+	// Test: Path is a test file (IsTestPath). Test symbols rank after every
+	// other symbol, whatever their Rank: a test is a caller, not a thing
+	// callers depend on.
+	Test bool
+}
+
+// IsTestPath reports whether path names a test file: by file name
+// (*_test.go, test_*.py, *_test.py, *Test.java, *Tests.java, *Test.kt,
+// *.test.* and *.spec.* of ts, tsx, js and jsx, *Test.cs, *Tests.cs) or by a
+// directory segment equal to test, tests or __tests__. Names are
+// case-sensitive and a segment is compared whole ("latest/" is not "test/").
+// The repository has no other test-file rule to reuse.
+func IsTestPath(path string) bool {
+	segs := strings.Split(strings.ReplaceAll(path, "\\", "/"), "/")
+	for _, d := range segs[:len(segs)-1] {
+		if d == "test" || d == "tests" || d == "__tests__" {
+			return true
+		}
+	}
+	base := segs[len(segs)-1]
+	for _, suf := range testSuffixes {
+		if len(base) > len(suf) && strings.HasSuffix(base, suf) {
+			return true
+		}
+	}
+	return (strings.HasPrefix(base, "test_") && strings.HasSuffix(base, ".py") && len(base) > len("test_.py"))
+}
+
+var testSuffixes = []string{
+	"_test.go", "_test.py", "Test.java", "Tests.java", "Test.kt", "Test.cs", "Tests.cs",
+	".test.ts", ".test.tsx", ".test.js", ".test.jsx",
+	".spec.ts", ".spec.tsx", ".spec.js", ".spec.jsx",
 }
 
 // ChangedPaths returns the paths of the pull request's own files: the new
@@ -98,10 +130,12 @@ func ChangedPaths(files []provider.FilePatch) []string {
 //     patterns for func, fun, fn, def, function, class, interface, type,
 //     struct, enum, trait, method signatures and exported constants.
 //
-// Ranking: RankRemoved, then RankSignature, then RankChanged; inside a rank
-// existing definitions before new ones, then the order of the diff (files in
-// the order given, hunks and lines in order). A name is kept once, with its
-// best rank.
+// Ranking: removed or renamed, changed signature, other changed (existing)
+// definitions, new definitions, then the symbols of test files (Symbol.Test,
+// in the same sub-order, a new test definition included); inside each the
+// order of the diff (files in the order given, hunks and lines in order). A
+// name is kept once, with its best rank. The cap applies after the whole
+// ordering, so test symbols are the first to be cut.
 //
 // A "changed signature" is precise: the name is defined on at least one
 // removed line and at least one added line of the pull request, and the set
@@ -172,6 +206,9 @@ func ExtractSymbols(files []provider.FilePatch, max int) []Symbol {
 		out = append(out, a.symbol())
 	}
 	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Test != out[j].Test {
+			return !out[i].Test
+		}
 		if out[i].Rank != out[j].Rank {
 			return out[i].Rank < out[j].Rank
 		}
@@ -206,6 +243,7 @@ func (a *symAgg) symbol() Symbol {
 		s.Path = a.removedPath
 	}
 	s.New = len(a.removed) == 0 && len(a.added) > 0 && !a.header
+	s.Test = IsTestPath(s.Path)
 	return s
 }
 

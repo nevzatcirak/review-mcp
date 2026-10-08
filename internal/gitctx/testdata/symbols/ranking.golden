@@ -7,3 +7,8 @@ changed   MovedAway        a/one.go
 changed   RenamedNew       a/one.go new
 changed   BrandNew         a/one.go new
 changed   BodyOnly         a/two.go new
+removed   TestRemovedHelper a/one_test.go test
+removed   removed_in_tests a/tests/util.py test
+changed   TestAnchor       a/one_test.go test
+changed   TestNewHelper    a/one_test.go new test
+changed   sig_in_tests     a/tests/util.py new test

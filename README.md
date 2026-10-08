@@ -12,8 +12,8 @@ mode), are never logged and are never persisted. There is no telemetry and there
 are no embedded defaults for URLs or endpoints: everything comes from your
 configuration.
 
-**Status: release candidate.** The current release candidate is published
-under the npm dist-tag `next`; it is being validated before v1.0.0. See the
+**Status: stable (1.0.0).** Stable releases are published under the npm
+dist-tag `latest`; release candidates of the next version under `next`. See the
 [changelog](CHANGELOG.md).
 
 ## Quick start
@@ -22,9 +22,8 @@ under the npm dist-tag `next`; it is being validated before v1.0.0. See the
    ([Setup guide, steps 2 and 3](docs/setup.md#2-create-tokens)). A read-only
    token is enough for reviews and questions that are not published.
 2. Register the server with your client. With npm there is nothing to install.
-   Release candidates are published under the dist-tag `next`; pin the exact
-   version you test (for example `@nevzatcirak/review-mcp@1.0.0-rc.3`) so that
-   `npx` does not reuse an older cached copy. Stable releases are `latest`.
+   Pin the exact version (for example `@nevzatcirak/review-mcp@1.0.0`) so that
+   `npx` does not reuse an older cached copy; update the pin to upgrade.
 
    **Claude Code**
 
@@ -35,7 +34,7 @@ under the npm dist-tag `next`; it is being validated before v1.0.0. See the
      --env REVIEW_MCP_GITEA_BASE_URL=https://your-gitea.example \
      --env REVIEW_MCP_LLM_API_KEY="$REVIEW_MCP_LLM_API_KEY" \
      --env REVIEW_MCP_GITEA_TOKEN="$REVIEW_MCP_GITEA_TOKEN" \
-     -- npx -y @nevzatcirak/review-mcp@next
+     -- npx -y @nevzatcirak/review-mcp@1.0.0
    ```
 
    **opencode** (`opencode.json`)
@@ -46,7 +45,7 @@ under the npm dist-tag `next`; it is being validated before v1.0.0. See the
      "mcp": {
        "review-mcp": {
          "type": "local",
-         "command": ["npx", "-y", "@nevzatcirak/review-mcp@next"],
+         "command": ["npx", "-y", "@nevzatcirak/review-mcp@1.0.0"],
          "enabled": true,
          "environment": {
            "REVIEW_MCP_LLM_BASE_URL": "https://llm.example.com/v1",

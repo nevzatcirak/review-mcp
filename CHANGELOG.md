@@ -5,12 +5,18 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.0-rc.1] - Unreleased
+## [1.1.0-rc.1]
 
-First v1.1 release candidate. Large pull requests no longer lose most of
-their files: the files that do not fit one model call are reviewed in further
-calls, up to a configurable number, and the answers are merged into one
-review. It ships after v1.0.0 is tagged.
+First v1.1 release candidate, built on 1.0.0. Three additions:
+
+- Large pull requests no longer lose most of their files: the files that do not
+  fit one model call are reviewed in further calls, up to a configurable number,
+  and the answers are merged into one review.
+- `pr_info` answers which branch a pull request targets and who has really
+  reviewed or approved it, keeping review-mcp's own reviews apart.
+- Optional repository context (stdio only, off by default): uses of the changed
+  symbols elsewhere in the repository are found in a credential-safe local cache
+  and given to the model as read-only context.
 
 ### Added
 
@@ -347,6 +353,9 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[1.1.0-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v1.1.0-rc.1
+[1.0.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v1.0.0
+[1.0.0-rc.4]: https://github.com/nevzatcirak/review-mcp/releases/tag/v1.0.0-rc.4
 [1.0.0-rc.3]: https://github.com/nevzatcirak/review-mcp/releases/tag/v1.0.0-rc.3
 [1.0.0-rc.2]: https://github.com/nevzatcirak/review-mcp/releases/tag/v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v1.0.0-rc.1

@@ -80,7 +80,8 @@ Rules:
   rules (reading it may need repository admin). The rule whose name equals the
   target branch is used; otherwise the first rule whose name, taken as a glob
   pattern (`release/*`, `/` separated, like Go's `path.Match`), matches the
-  target branch. If the rules were read and none applies, `required_approvals`
+  target branch (patterns are tried by the rule's `priority` when Gitea sends
+  one, lowest first, otherwise in list order). If the rules were read and none applies, `required_approvals`
   is `0` with the note "no branch protection rule applies to the target
   branch". Gitea's own glob may accept patterns that `path.Match` does not, and
   `**` (across directories) is read differently: a rule whose pattern is

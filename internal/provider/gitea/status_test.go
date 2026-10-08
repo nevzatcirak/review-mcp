@@ -330,6 +330,40 @@ func TestReviewStatusProtectionDoubleStar(t *testing.T) {
 
 func ptr(n int) *int { return &n }
 
+func prio(name string, n int, priority int) map[string]any {
+	r := rule(name, n)
+	r["priority"] = priority
+	return r
+}
+
+// TestReviewStatusProtectionPriority: pattern rules are tried by ascending
+// priority (list order on ties and for rules without one); an exact-name rule
+// still wins over any pattern.
+func TestReviewStatusProtectionPriority(t *testing.T) {
+	cases := []struct {
+		name  string
+		rules []any
+		want  int
+	}{
+		{"priority beats list order", []any{prio("m*", 1, 2), prio("ma*", 2, 1)}, 2},
+		{"ties keep list order", []any{prio("m*", 1, 3), prio("ma*", 2, 3)}, 1},
+		{"no priority keeps list order", []any{rule("m*", 1), rule("ma*", 2)}, 1},
+		{"rules without priority sort last", []any{rule("m*", 1), prio("ma*", 2, 9)}, 2},
+		{"exact name beats a lower-priority pattern", []any{prio("m*", 1, 1), prio("main", 2, 5)}, 2},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			st := protectionStatus(t, rulesJSON(c.rules...))
+			if st.RequiredApprovals == nil {
+				t.Fatalf("required approvals nil (note %q), want %d", st.RequiredApprovalsNote, c.want)
+			}
+			if *st.RequiredApprovals != c.want {
+				t.Errorf("required approvals = %d, want %d", *st.RequiredApprovals, c.want)
+			}
+		})
+	}
+}
+
 // TestReviewStatusProtectionPaged: a rule on the second page is found.
 func TestReviewStatusProtectionPaged(t *testing.T) {
 	f := newFake(t, "")

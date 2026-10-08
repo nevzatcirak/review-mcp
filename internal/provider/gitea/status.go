@@ -238,6 +238,9 @@ type apiProtection struct {
 	RuleName          string `json:"rule_name"`
 	BranchName        string `json:"branch_name"`
 	RequiredApprovals *int   `json:"required_approvals"`
+	// Priority orders pattern rules in recent Gitea versions; nil when the
+	// server does not send it.
+	Priority *int64 `json:"priority"`
 }
 
 func (b *apiProtection) pattern() string {
@@ -255,7 +258,11 @@ func (b *apiProtection) pattern() string {
 // says nothing about the branch. The whole list is read instead (paged like
 // the other lists) and the rule is chosen here: the one whose name equals the
 // target branch, else the first one whose pattern matches it with path.Match
-// semantics ("/" separated). Gitea's own glob may accept patterns path.Match
+// semantics ("/" separated). The exact-name check runs over the whole list
+// first. The pattern rules are then tried in order of their "priority" field
+// (recent Gitea versions; ascending, stable so list order breaks ties). A rule
+// without the field sorts after every rule that has it, in list order, so a
+// server that sends no priority at all keeps plain list order. Gitea's own glob may accept patterns path.Match
 // does not, and "**" means "across directories" there while path.Match reads
 // it as "*" and would answer wrongly with confidence. So a pattern for which
 // path.Match returns ErrBadPattern, or that contains "**", is unevaluable: it
@@ -278,26 +285,41 @@ func (p *Provider) readProtection(ctx context.Context, rp, target string, st *pr
 		return
 	}
 	var matched *apiProtection
-	unevaluable := false
 	for i := range rules {
-		pat := rules[i].pattern()
-		if pat == target {
+		if rules[i].pattern() == target {
 			matched = &rules[i]
 			break
 		}
-		if matched != nil {
-			continue
+	}
+	unevaluable := false
+	if matched == nil {
+		order := make([]int, len(rules))
+		for i := range order {
+			order[i] = i
 		}
-		if strings.Contains(pat, "**") {
-			unevaluable = true
-			continue
-		}
-		ok, merr := path.Match(pat, target)
-		switch {
-		case errors.Is(merr, path.ErrBadPattern):
-			unevaluable = true
-		case ok:
-			matched = &rules[i]
+		sort.SliceStable(order, func(a, b int) bool {
+			pa, pb := rules[order[a]].Priority, rules[order[b]].Priority
+			switch {
+			case pa == nil:
+				return false
+			case pb == nil:
+				return true
+			}
+			return *pa < *pb
+		})
+		for _, i := range order {
+			pat := rules[i].pattern()
+			if strings.Contains(pat, "**") {
+				unevaluable = true
+				continue
+			}
+			ok, merr := path.Match(pat, target)
+			if errors.Is(merr, path.ErrBadPattern) {
+				unevaluable = true
+			} else if ok {
+				matched = &rules[i]
+				break
+			}
 		}
 	}
 	switch {

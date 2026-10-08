@@ -324,7 +324,8 @@ fails with the first part's error sentence, as a review in one call does.
 
 On Gitea, `pr_info` reads the repository's branch protection rules and picks
 the one for the target branch: a rule named like the branch, else the first
-rule whose glob pattern (`release/*`) matches it. Reading the rules may need
+rule whose glob pattern (`release/*`) matches it (patterns are tried by the
+rule's `priority` when Gitea sends one, lowest first, otherwise in list order). Reading the rules may need
 repository admin. The note in `required_approvals_note` says what happened:
 
 | `required_approvals` and note | Meaning |

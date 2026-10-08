@@ -607,7 +607,7 @@ func TestRepoContextCrossPartUses(t *testing.T) {
 	h, fb = repoHarness(defFiles(), map[string][]gitctx.Hit{"Alpha": {useHit("Alpha", "pkg/b.go", 3), useHit("Alpha", "pkg/use.go", 4)}})
 	pl := prepareWith(t, h, Args{MaxChunks: 1})
 	if strings.Contains(pl.Prompts.User, "pkg/b.go:3") || !strings.Contains(pl.Prompts.User, "pkg/use.go:4") ||
-		strings.Contains(pl.Prompts.User, "changed in this pull request") {
+		strings.Contains(pl.Prompts.User, "(changed in this pull request") {
 		t.Errorf("one call:\n%s", pl.Prompts.User)
 	}
 	if ex := fb.queries[0].Exclude; !slices.Equal(ex, []string{"pkg/a.go", "pkg/b.go"}) {

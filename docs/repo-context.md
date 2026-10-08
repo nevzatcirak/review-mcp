@@ -36,7 +36,7 @@ For each review (or answer), after the diff is fetched:
    discussion block and before the diff:
 
    ````text
-   Related code outside this pull request (read-only context; it may be incomplete). Use it to judge the effect of the change on callers and implementations. Do not report issues in this code unless the pull request causes them.
+   Related code that uses symbols changed in this pull request (read-only context; it may be incomplete). Entries marked as changed in this pull request are reviewed in another part or not at all. Use this code to judge the effect of the change on callers and implementations. Do not report issues in it unless the pull request causes them.
    ```
    [pkg/client.go:42] uses Fetch
    <the line and its context>
@@ -174,8 +174,8 @@ context.repo.enabled: repository context is not available in serve mode (cached 
   the version is checked once per process). With a missing or older git, the
   review runs without context and says
   `repository context skipped: git 2.31 or later is required`.
-- git 2.44 or later also sets `GIT_NO_LAZY_FETCH` for the searches. Older git
-  relies on `protocol.allow=never` alone, which stops the same fetch.
+- Searches also set `GIT_NO_LAZY_FETCH` where git supports it; on older git,
+  `protocol.allow=never` alone blocks lazy fetches, which is tested.
 - The provider must serve the pull request ref over HTTP(S): Gitea
   `refs/pull/<n>/head`, Bitbucket Server `refs/pull-requests/<n>/from`.
 
@@ -276,9 +276,20 @@ with context (nothing is published) and writes, under `-out` only:
 
 - `pr-NN/off.json` and `pr-NN/on.json`, the structured results;
 - `pr-NN/compare.md`, both reviews' findings and coverage one after another;
-- `ratings.csv`, one row per finding with the columns `cross_file`, `correct`
-  and `new` left empty for you: is the finding about code outside the changed
-  files, is it right, and does it appear only with context.
+- `ratings.csv`, one row per finding of both runs with the columns
+  `cross_file`, `correct` and `new` left empty for you: is the finding about
+  code outside the changed files, is it right, and does it appear only with
+  context.
+
+The rating is **blind** by default, so that knowing which review had context
+cannot colour it. The rows are shuffled with a seed (`-seed N`; the default is
+time-based, and the seed is printed and written to `README.txt`, so a run can
+be reproduced), the sheet carries an opaque `sample` id instead of the mode,
+and the mapping from sample to pull request, mode and finding is in
+`key.csv`, which the sheet does not reference. Rate from `ratings.csv` alone:
+opening a file under `pr-NN/` reveals the mode. `-blind=false` writes the
+plain layout (mode, finding number and coverage status in columns, no
+`key.csv` or `README.txt`).
 
 `-out` is required; evalrepo refuses a directory inside the repository-context
 cache (it asks the binary where the cache is, or take `-cache-dir`) and a
@@ -287,3 +298,8 @@ output or log.
 
 **Stage 2** (a real code graph instead of name matches) starts only if your
 ratings show a clear gain on at least **20 pull requests**.
+
+## Backlog
+
+- Evaluation of `pr_ask` with context (`tools/evalrepo` reviews only in v1.1).
+- A real code graph (stage 2), only after the rule above is met.

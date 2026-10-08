@@ -84,7 +84,9 @@ review. It ships after v1.0.0 is tagged.
   block's tokens and the symbols searched.
 - `tools/evalrepo`, an evaluation harness (not shipped): reviews a list of pull
   requests without and with repository context and writes both results and a
-  rating sheet under a directory you give it, never into the cache.
+  blind rating sheet (shuffled with a printed seed, an opaque sample id instead
+  of the mode, the mapping in `key.csv`) under a directory you give it, never
+  into the cache.
 - Docs: [Repository context](docs/repo-context.md), and sections in the review,
   ask, serve and troubleshooting guides.
 - `server_info` lists the two new `review.*` settings.

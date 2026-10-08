@@ -32,9 +32,10 @@ import (
 )
 
 // Header is the sentence above the fenced block (RC-8, verbatim).
-const Header = "Related code outside this pull request (read-only context; it may be incomplete). " +
-	"Use it to judge the effect of the change on callers and implementations. " +
-	"Do not report issues in this code unless the pull request causes them."
+const Header = "Related code that uses symbols changed in this pull request (read-only context; it may be incomplete). " +
+	"Entries marked as changed in this pull request are reviewed in another part or not at all. " +
+	"Use this code to judge the effect of the change on callers and implementations. " +
+	"Do not report issues in it unless the pull request causes them."
 
 // ReasonNothingToReview is the reason of a review whose diff is empty after
 // filtering: no model call is made, so no repository context is either. It

@@ -652,7 +652,7 @@ func TestNoLazyFetchEnvironmentAlone(t *testing.T) {
 	p := gitProbe(r.opts.GitPath)
 	var major, minor int
 	if _, err := fmt.Sscanf(p.version, "%d.%d", &major, &minor); err != nil || major < 2 || major == 2 && minor < 44 {
-		t.Skipf("git %s: GIT_NO_LAZY_FETCH needs git 2.44; the protocol settings stop the fetch on older git", p.version)
+		t.Skipf("git %s: this test is run only on a git that honours GIT_NO_LAZY_FETCH; on older git the protocol settings alone stop the fetch (TestOfflineBlocksLazyFetch)", p.version)
 	}
 	root, _ := r.CacheDir()
 	g := &gitRun{path: p.path, gitDir: co.GitDir, dir: filepath.Dir(co.GitDir), home: homeDir(root)}

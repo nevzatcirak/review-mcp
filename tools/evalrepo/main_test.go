@@ -64,7 +64,7 @@ func readCSV(t *testing.T, path string) [][]string {
 	return rows
 }
 
-// TestLayoutAndRatingSheet: both modes of every pull request are stored, the
+// TestLayoutAndRatingSheet (-blind=false, the plain layout): both modes of every pull request are stored, the
 // comparison names both, and the rating sheet has exactly one row per finding
 // with the three rating columns empty. The review text reaches only the files
 // under -out.
@@ -76,7 +76,7 @@ func TestLayoutAndRatingSheet(t *testing.T) {
 		t.Fatal(err)
 	}
 	fb := &fakeBin{cache: filepath.Join(tmp, "cache")}
-	code, stdout, stderr := runEval(t, fb, "-out", out, "-urls", list, "https://git.example/o/r/pulls/3")
+	code, stdout, stderr := runEval(t, fb, "-blind=false", "-out", out, "-urls", list, "https://git.example/o/r/pulls/3")
 	if code != 0 {
 		t.Fatalf("exit %d; stderr:\n%s", code, stderr)
 	}
@@ -101,6 +101,9 @@ func TestLayoutAndRatingSheet(t *testing.T) {
 	// 3 pull requests x (1 finding off + 2 findings on).
 	if len(rows) != 1+3*3 {
 		t.Fatalf("%d rows, want 10", len(rows))
+	}
+	if _, err := os.Stat(filepath.Join(out, "key.csv")); err == nil {
+		t.Error("a plain run wrote key.csv")
 	}
 	for _, row := range rows[1:] {
 		if len(row) != 12 || row[9] != "" || row[10] != "" || row[11] != "" {
@@ -205,5 +208,104 @@ func TestFailedReviewIsReportedNotFatal(t *testing.T) {
 	cmp, _ := os.ReadFile(filepath.Join(out, "pr-01", "compare.md")) //nolint:gosec // G304: test output
 	if !strings.Contains(string(cmp), "The review failed") {
 		t.Errorf("compare.md = %s", cmp)
+	}
+}
+
+// blindFixture runs the blind harness over n pull requests.
+func blindFixture(t *testing.T, args ...string) (out string, fb *fakeBin) {
+	t.Helper()
+	tmp := t.TempDir()
+	out = filepath.Join(tmp, "eval")
+	fb = &fakeBin{cache: filepath.Join(tmp, "cache")}
+	urls := []string{}
+	for i := 1; i <= 6; i++ {
+		urls = append(urls, "https://git.example/o/r/pulls/"+string(rune('0'+i)))
+	}
+	code, stdout, stderr := runEval(t, fb, append(append([]string{"-out", out}, args...), urls...)...)
+	if code != 0 {
+		t.Fatalf("exit %d; stderr:\n%s", code, stderr)
+	}
+	if !strings.Contains(stdout, "blind sheet, seed ") {
+		t.Errorf("the seed is not printed: %q", stdout)
+	}
+	return out, fb
+}
+
+// TestBlindSheet [canary]: by default the sheet is shuffled, shows a sample id
+// instead of the mode, and no cell of it says off, on or the coverage status;
+// key.csv maps every sample back, and README.txt has the seed. The check is on
+// cell values (the fixture's finding text has no such words), so a finding
+// that merely contains the word "on" would not fool it.
+func TestBlindSheet(t *testing.T) {
+	out, _ := blindFixture(t, "-seed", "42")
+	sheet := readCSV(t, filepath.Join(out, "ratings.csv"))
+	key := readCSV(t, filepath.Join(out, "key.csv"))
+	if len(sheet) != 1+6*3 || len(key) != len(sheet) {
+		t.Fatalf("sheet %d rows, key %d rows; want 19", len(sheet), len(key))
+	}
+	if want := []string{"sample", "pr", "url", "file", "start_line", "end_line", "header", "cross_file", "correct", "new"}; strings.Join(sheet[0], ",") != strings.Join(want, ",") {
+		t.Errorf("header = %v", sheet[0])
+	}
+	for _, row := range sheet {
+		for _, cell := range row {
+			switch cell {
+			case "off", "on", "used", "skipped", "mode", "repo_context":
+				t.Errorf("the sheet reveals the mode: %v", row)
+			}
+		}
+	}
+	// key.csv maps each sample to its mode; the sheet row and the key row agree
+	// on the pull request, and each pull request has 1 "off" and 2 "on" samples.
+	modes := map[string]int{}
+	for i := 1; i < len(sheet); i++ {
+		if sheet[i][0] != key[i][0] || sheet[i][1] != key[i][1] {
+			t.Errorf("row %d: sheet %v, key %v", i, sheet[i], key[i])
+		}
+		modes[key[i][2]]++
+	}
+	if modes["off"] != 6 || modes["on"] != 12 {
+		t.Errorf("modes in the key = %v", modes)
+	}
+	// It is shuffled: not the order of the runs (pr 1 off, pr 1 on, ...).
+	inOrder := true
+	for i := 2; i < len(key); i++ {
+		if key[i][1] < key[i-1][1] {
+			inOrder = false
+		}
+	}
+	if inOrder {
+		t.Error("the rows are not shuffled")
+	}
+	readme, _ := os.ReadFile(filepath.Join(out, "README.txt")) //nolint:gosec // G304: test output
+	if !strings.Contains(string(readme), "42") || !strings.Contains(string(readme), "reveals which") {
+		t.Errorf("README.txt = %s", readme)
+	}
+}
+
+// TestBlindShuffleIsDeterministicPerSeed: the same seed gives the same sheet
+// and key, another seed another order.
+func TestBlindShuffleIsDeterministicPerSeed(t *testing.T) {
+	read := func(seed string) string {
+		out, _ := blindFixture(t, "-seed", seed)
+		a, _ := os.ReadFile(filepath.Join(out, "ratings.csv")) //nolint:gosec // G304: test output
+		b, _ := os.ReadFile(filepath.Join(out, "key.csv"))     //nolint:gosec // G304: test output
+		return string(a) + "\n" + string(b)
+	}
+	first, second := read("7"), read("7")
+	if first != second {
+		t.Error("the same seed gave different sheets")
+	}
+	if first == read("8") {
+		t.Error("different seeds gave the same sheet")
+	}
+	items := make([]item, 20)
+	for i := range items {
+		items[i].pr = i
+	}
+	a, b := shuffle(items, 3), shuffle(items, 3)
+	for i := range a {
+		if a[i].pr != b[i].pr {
+			t.Fatal("shuffle is not deterministic")
+		}
 	}
 }

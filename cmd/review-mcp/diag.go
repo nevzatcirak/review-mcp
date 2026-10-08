@@ -27,7 +27,8 @@ const diagUsageText = `usage:
   review-mcp diag reply <PR_URL> --comment-id <ID> --body <TEXT>
   review-mcp diag diff <PR_URL> [--mode plain|numbered] [--prompt-tokens N]
                        [--context-window N]
-  review-mcp diag review <PR_URL> [--dry-run] [--show-prompt] [--publish]
+  review-mcp diag review <PR_URL> [--dry-run] [--show-prompt] [--publish] [--json]
+                         [--repo-context on|off]
   review-mcp diag ask <PR_URL> --question <TEXT> [--dry-run] [--show-prompt] [--publish]
   review-mcp diag cache [--prune]
 
@@ -58,7 +59,10 @@ diag review   review the pull request with the configured LLM and print the
               window); it cannot be combined with
               --publish. --show-prompt prints the rendered system and user
               prompts to stdout after the output, under separator lines
-              (they are never logged)
+              (they are never logged). --json prints the pr_review structured
+              result as JSON instead of markdown (not with --dry-run).
+              --repo-context on|off overrides context.repo.enabled for this
+              run; the coverage line says whether repository context was used
 diag ask      answer --question (required, at most 8000 characters) about the
               pull request with the configured LLM and print the client
               markdown; --publish also posts the question and answer as a PR

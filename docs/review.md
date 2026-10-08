@@ -28,7 +28,8 @@ no raw HTML, so terminal clients show it as is) and the same data as
 structured content (`pr`, `review`, `coverage`, `notes`, `metadata` and, when
 requested, `publish`). While it runs, a client that sent a progress token
 receives the stages `fetching`, `preparing diff`, `calling model` and
-`rendering`. A review in parts reports `calling model (part 1 of 3)`,
+`rendering` (with [repository context](#repository-context) on and symbols to
+look for, `fetching repository context` comes before `preparing diff`). A review in parts reports `calling model (part 1 of 3)`,
 `calling model (part 2 of 3)` and so on instead of `calling model` (see
 [Large pull requests](#large-pull-requests)).
 
@@ -48,11 +49,13 @@ several parts, one request each (see
 - the **diff**, filtered by `ignore.glob`, `ignore.regex` and the built-in
   rules for generated files, lockfiles and binaries, with extra context lines
   around each change;
+- with [repository context](#repository-context) on, a block of places
+  outside the pull request that use the symbols it changes;
 - your `extra_instructions`, if any, and the output-language instruction.
 
 Never sent: provider tokens, the LLM API key (it is only the `Authorization`
 header of the request itself), configuration files, or anything outside the
-PR. Commit messages are not part of the review prompt. Comment text is part
+PR (except the repository context you turned on). Commit messages are not part of the review prompt. Comment text is part
 of it, unless you turn the discussion off.
 
 The prompts, the model's answer and the diff are never written to the logs,
@@ -174,6 +177,9 @@ did **not** see. Every changed file appears in exactly one group:
   and for a review in parts `too_large` (the file does not fit a part of its
   own) and `model_call_failed` (the file was in a part whose model call
   failed).
+- **Repository context**: a line, only when it is on, with
+  `N symbols, M references from K files` or `skipped: <reason>` (see
+  [Repository context](#repository-context)).
 - **Filtered**: excluded by the ignore rules, with the rule that matched
   (`ignore_glob`, `ignore_regex`, `lockfile_or_minified`, `bad_extension`,
   `generated:<framework>`).
@@ -465,6 +471,22 @@ never written to the logs.
 - `review.max_discussion_tokens = 0` turns the block off: the comments are then
   not sent to the LLM. With `publish` and inline comments on, the PR is still
   read to skip findings that were already posted.
+
+## Repository context
+
+With `context.repo.enabled` (stdio only; off by default) the prompt also
+carries a block of **uses of the symbols the pull request changes** found in
+the rest of the repository: callers of a changed function, other
+implementations of a changed interface. The block follows the discussion and
+precedes the diff, is clipped to `context.repo.max_tokens` (default 2000), and
+yields to the diff. In a review in parts each part gets the symbols of its own
+files and its own block; reserving room for it can add a part, counted in
+`coverage.model_calls`. The coverage section says
+`Repository context: N symbols, M references from K files`, or
+`skipped: <reason>`, and the structured `coverage.repo_context` has the
+status, the reason and the counts. A failure of any kind is a note, never a
+failed review. See [Repository context](repo-context.md) for the settings, the
+cache, the security properties and every reason.
 
 ## Slow endpoints
 

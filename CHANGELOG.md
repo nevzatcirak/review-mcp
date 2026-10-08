@@ -51,6 +51,42 @@ review. It ships after v1.0.0 is tagged.
   whose full path, or base name of at least 5 characters, appears in the
   question as a whole word (case-sensitive) goes before the others. Filters
   still apply. `pr_ask` keeps one model call.
+- Repository context (X-22), opt-in and stdio only. With
+  `context.repo.enabled` (`REVIEW_MCP_CONTEXT_REPO_ENABLED`, default false),
+  `pr_review` and `pr_ask` fetch the pull request head into a local cache with
+  the system `git` (2.31 or later), search where the symbols the diff changes
+  are used, and add the best uses to the prompt as one budgeted block. It is a
+  startup error in serve mode.
+  - Nine `context.repo.*` settings: `enabled`, `cache_dir`, `idle_days` (7),
+    `max_cache_mb` (2048), `max_repo_mb` (500), `fetch_timeout_seconds` (60),
+    `max_symbols` (20), `max_hits_per_symbol` (5) and `max_tokens` (2000, 200
+    to 16000), all in `server_info`.
+  - The token reaches `git` only in the environment of the fetch process, never
+    in an argument, on disk or in a log; `git` gets an allowlisted environment
+    and an empty `HOME`, so your own git configuration is not read; the clone
+    URL is pinned to the configured provider and checked against `insteadOf`;
+    searches run offline.
+  - The block comes after the discussion and before the diff and yields to the
+    diff. With `review.max_chunks` above 1 its budget is reserved up front, so a
+    review that fitted one call can become two parts (counted in
+    `coverage.model_calls`); each part gets the symbols of its own files and its
+    own block, and uses in files another part reviews are marked.
+  - `coverage.repo_context` (`status`, `reason`, `symbols`, `references`,
+    `files`) in every output schema, and a `Repository context` line in the
+    coverage section when it is on. Failures are notes with a fixed reason
+    (`auth`, `not_found`, `timeout`, `too_large`, `sha_mismatch`, `redirect`,
+    `git_failed`, `git_unavailable`, `busy`, `cache_unusable`, `unsupported`,
+    `budget`, `nothing_to_review`), never a failed review. The progress stage
+    `fetching repository context` precedes `preparing diff`.
+- `review-mcp diag cache [--prune]` lists and sweeps the repository cache.
+- `diag review --repo-context=on|off` overrides `context.repo.enabled` for one
+  run; `--json` prints the structured result; `--dry-run` also shows the
+  block's tokens and the symbols searched.
+- `tools/evalrepo`, an evaluation harness (not shipped): reviews a list of pull
+  requests without and with repository context and writes both results and a
+  rating sheet under a directory you give it, never into the cache.
+- Docs: [Repository context](docs/repo-context.md), and sections in the review,
+  ask, serve and troubleshooting guides.
 - `server_info` lists the two new `review.*` settings.
 - `pr_info` (X-23), a read-only tool (stdio and serve; no LLM call, a read token
   is enough) that answers which branch a pull request merges into and who has

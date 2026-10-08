@@ -140,6 +140,12 @@ client's documentation and adapt the example; if it does not expand
 references, export the variables in the environment the client is started from.
 If `command` is not found, use the absolute path to the binary.
 
+## Optional: repository context
+
+Set `REVIEW_MCP_CONTEXT_REPO_ENABLED=true` (stdio only, needs `git`) to add the
+uses of the changed symbols from the rest of the repository to the prompt; see
+[Repository context](repo-context.md).
+
 ## Tools
 
 | Tool | What it does |

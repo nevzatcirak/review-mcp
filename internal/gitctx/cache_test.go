@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 )
 
@@ -250,7 +251,7 @@ func TestForeignCacheDirRefused(t *testing.T) {
 // refused, and within() is lexical and strict.
 func TestPathEscapeRejected(t *testing.T) {
 	for _, bad := range []struct{ ns, name string }{
-		{"..", "repo"}, {"owner", ".."}, {".", "repo"}, {"a/b", "repo"}, {`a\b`, "repo"},
+		{"..", "repo"}, {"owner", ".."}, {".", "repo"}, {"a//b", "repo"}, {"a/../b", "repo"}, {`a\b`, "repo"},
 		{"owner", "re/po"}, {"", "repo"}, {"owner", ""}, {"own er", "repo"}, {"owner", "repo\x00"},
 	} {
 		repo := giteaRepo("https://your-gitea.example")
@@ -615,5 +616,44 @@ func TestRepoFor(t *testing.T) {
 	o := OptionsFromConfig(config.Defaults().Context.Repo)
 	if o.MaxCacheBytes != 2048<<20 || o.MaxRepoBytes != 500<<20 || o.FetchTimeout != time.Minute || o.IdleDays != 7 {
 		t.Errorf("OptionsFromConfig = %+v", o)
+	}
+}
+
+// TestNestedNamespacePlan: a namespace with several segments keeps its "/"
+// in the clone URL (each segment escaped, no "%2F"), is one cache directory
+// of the fixed-depth layout whose name still holds every segment in order,
+// and survives logging.RedactURL unchanged.
+func TestNestedNamespacePlan(t *testing.T) {
+	r := giteaRepo("https://your-gitea.example")
+	r.Namespace = "group/sub/team"
+	p, err := newPlan(r, PR{Number: 7, HeadSHA: fakeSHA})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "https://your-gitea.example/group/sub/team/repo.git"; p.cloneURL != want {
+		t.Errorf("cloneURL = %q, want %q", p.cloneURL, want)
+	}
+	if got := logging.RedactURL(p.cloneURL); got != p.cloneURL {
+		t.Errorf("RedactURL changed the clone URL: %q", got)
+	}
+	rel := filepath.ToSlash(p.rel)
+	if want := "your-gitea.example/_/group+sub+team/repo"; rel != want {
+		t.Errorf("rel = %q, want %q", rel, want)
+	}
+	if strings.Contains(p.cloneURL, "%2F") || strings.Contains(rel, "%2F") {
+		t.Errorf("a path separator was escaped: %q %q", p.cloneURL, rel)
+	}
+	// The segments are recoverable from the directory name.
+	if got := strings.Join(strings.Split(strings.Split(rel, "/")[2], nsDirSep), "/"); got != r.Namespace {
+		t.Errorf("namespace directory %q does not round-trip to %q", got, r.Namespace)
+	}
+
+	// "+" is the joiner, so it is not a namespace character: two namespaces
+	// never share a directory.
+	for _, ns := range []string{"", "/a", "a/", "a//b", "a/../b", "a/./b", "a/b c", "a\\b", "a+b"} {
+		r.Namespace = ns
+		if _, err := newPlan(r, PR{Number: 7, HeadSHA: fakeSHA}); ReasonOf(err) != ReasonUnsupported {
+			t.Errorf("namespace %q: err = %v, want unsupported", ns, err)
+		}
 	}
 }

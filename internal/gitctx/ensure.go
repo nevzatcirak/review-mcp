@@ -29,7 +29,7 @@ type plan struct {
 	cloneURL  string
 	remoteRef string // refs/pull/{n}/head or refs/pull-requests/{n}/from
 	localRef  string
-	rel       string // <host>/<base>/<namespace>/<repo> under the cache directory
+	rel       string // <host>/<base>/<namespace dir>/<repo> under the cache directory
 	headSHA   string
 	net       netPolicy
 	schemes   []scheme
@@ -46,6 +46,30 @@ var (
 
 func safeSegment(s string) bool {
 	return segmentRE.MatchString(s) && s != "." && s != ".."
+}
+
+// nsDirSep joins the segments of a nested namespace ("group/sub/team") into
+// one cache directory name. It is not a segmentRE character, so the mapping
+// is injective, and it is safe in a directory name on every OS. A namespace
+// of one segment is its own directory name, as before.
+const nsDirSep = "+"
+
+// safeNamespace reports whether every "/"-separated segment of ns is a
+// safeSegment (so there is no empty, "." or ".." segment).
+func safeNamespace(ns string) bool {
+	for _, s := range strings.Split(ns, "/") {
+		if !safeSegment(s) {
+			return false
+		}
+	}
+	return true
+}
+
+// namespaceDir is the single cache directory name of ns. The cache depth
+// stays fixed, so that an entry can never lie inside another one's
+// directory (see the layout in cache.go).
+func namespaceDir(ns string) string {
+	return strings.ReplaceAll(ns, "/", nsDirSep)
 }
 
 // maxBaseSegment is the longest escaped base path kept readable; a longer
@@ -96,7 +120,7 @@ func baseSegment(escapedPath string) string {
 // (RC-5) and the cache path.
 func newPlan(repo Repo, pr PR) (*plan, error) {
 	unsupported := fail(ReasonUnsupported)
-	if !safeSegment(repo.Namespace) || !safeSegment(repo.Name) || pr.Number <= 0 {
+	if !safeNamespace(repo.Namespace) || !safeSegment(repo.Name) || pr.Number <= 0 {
 		return nil, unsupported
 	}
 	sha := strings.ToLower(strings.TrimSpace(pr.HeadSHA))
@@ -122,7 +146,7 @@ func newPlan(repo Repo, pr PR) (*plan, error) {
 		},
 	}
 	base := u.String()
-	ns, name := url.PathEscape(repo.Namespace), url.PathEscape(repo.Name)
+	ns, name := provider.EscapeNamespace(repo.Namespace), url.PathEscape(repo.Name)
 	switch repo.Kind {
 	case provider.KindGitea:
 		p.cloneURL = base + "/" + ns + "/" + name + ".git"
@@ -143,7 +167,7 @@ func newPlan(repo Repo, pr PR) (*plan, error) {
 	if !safeSegment(host) || strings.HasPrefix(host, ".") {
 		return nil, unsupported
 	}
-	p.rel = filepath.Join(host, baseSegment(u.EscapedPath()), repo.Namespace, repo.Name)
+	p.rel = filepath.Join(host, baseSegment(u.EscapedPath()), namespaceDir(repo.Namespace), repo.Name)
 	p.cacheKey = string(repo.Kind) + "\x00" + base
 	return p, nil
 }

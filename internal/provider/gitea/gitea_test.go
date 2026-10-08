@@ -24,7 +24,10 @@ func TestKindAndCapabilities(t *testing.T) {
 	if p.Kind() != provider.KindGitea || gitea.NewFactory().Kind() != provider.KindGitea {
 		t.Fatal("wrong kind")
 	}
-	want := provider.Capabilities{GFM: true, MarkdownTables: true, Labels: true, InlineComments: true}
+	want := provider.Capabilities{
+		GFM: true, MarkdownTables: true, Labels: true, InlineComments: true,
+		ThreadResolution: true, DescriptionEdit: true,
+	}
 	if p.Capabilities() != want {
 		t.Fatalf("capabilities = %+v", p.Capabilities())
 	}
@@ -54,6 +57,8 @@ func TestParsePRPath(t *testing.T) {
 		{"/octo//pulls/7", "", "", 0, false},
 		{"/../demo/pulls/7", "", "", 0, false},
 		{"/octo/%2e%2e/pulls/7", "", "", 0, false},
+		{"/octo%2Fsub/demo/pulls/7", "", "", 0, false},
+		{"/octo/sub/demo/pulls/7", "", "", 0, false},
 		{"/octo/de%zzmo/pulls/7", "", "", 0, false},
 		{"/octo/demo/pulls/99999999999999999999", "", "", 0, false},
 		{"octo/demo/pulls/7", "", "", 0, false},

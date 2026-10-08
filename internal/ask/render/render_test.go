@@ -121,7 +121,7 @@ func noSlashLine(body string) (string, bool) {
 
 // TestProviderSanitizesQuickActions [canary]: an answer containing "\n/close"
 // is published as "\n /close", also after "\r", at the very start, and in
-// the question. Removing sanitizeQuickActions fails this test.
+// the question. Removing provider.SanitizeQuickActions fails this test.
 func TestProviderSanitizesQuickActions(t *testing.T) {
 	for _, caps := range []provider.Capabilities{capsGitea, capsBB} {
 		r := sample()
@@ -154,26 +154,6 @@ func TestProviderSanitizesQuickActions(t *testing.T) {
 	r.Question = "/close"
 	if body := Provider(r, capsBB); !strings.Contains(body, "```\n /close\n```") {
 		t.Errorf("a question starting with / is not neutralized:\n%q", body)
-	}
-}
-
-func TestSanitizeQuickActions(t *testing.T) {
-	cases := map[string]string{
-		"":                  "",
-		"plain":             "plain",
-		"a/b\nc/d":          "a/b\nc/d",
-		"/x":                " /x",
-		"a\n/b":             "a\n /b",
-		"a\r/b":             "a\r /b",
-		"a\r\n/b":           "a\r\n /b",
-		"a\n/\n/":           "a\n /\n /",
-		"a\n //already":     "a\n //already",
-		"a\n\n/b\n/c\r/d\n": "a\n\n /b\n /c\r /d\n",
-	}
-	for in, want := range cases {
-		if got := sanitizeQuickActions(in); got != want {
-			t.Errorf("sanitizeQuickActions(%q) = %q, want %q", in, got, want)
-		}
 	}
 }
 

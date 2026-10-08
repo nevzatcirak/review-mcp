@@ -111,6 +111,20 @@ func countChanges(hunks string) (add, del int) {
 	return add, del
 }
 
+// capabilities checks that the fixture's ResolvableThreads trait agrees with
+// the provider's ThreadResolution capability.
+func (s *suite) capabilities(t *testing.T) {
+	p, _, _ := s.serve(t, samplePR())
+	caps := p.Capabilities()
+	has := slices.Contains(s.tr.ResolvableThreads, provider.ThreadInline)
+	switch {
+	case caps.ThreadResolution && !has:
+		t.Errorf("Capabilities().ThreadResolution is true but Traits.ResolvableThreads lacks %q: %v", provider.ThreadInline, s.tr.ResolvableThreads)
+	case !caps.ThreadResolution && len(s.tr.ResolvableThreads) > 0:
+		t.Errorf("Capabilities().ThreadResolution is false but Traits.ResolvableThreads = %v, want none", s.tr.ResolvableThreads)
+	}
+}
+
 // metadata: GetPullRequest returns the spec's metadata, and the base
 // strategy is one the provider documents.
 func (s *suite) metadata(t *testing.T) {

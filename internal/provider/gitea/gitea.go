@@ -60,7 +60,9 @@ func (Factory) ParsePRPath(remainder string) (namespace, repo string, number int
 		}
 		segs[i] = s
 	}
-	if segs[0] == "" || segs[1] == "" || segs[2] != "pulls" || isDots(segs[0]) || isDots(segs[1]) {
+	// The URL shape has exactly one namespace segment: an escaped "/" in it
+	// ("%2F") would smuggle a nested namespace in.
+	if strings.Contains(segs[0], "/") || segs[0] == "" || segs[1] == "" || segs[2] != "pulls" || isDots(segs[0]) || isDots(segs[1]) {
 		return "", "", 0, errShape
 	}
 	n, ok := parsePositive(segs[3])
@@ -153,7 +155,10 @@ func (*Provider) Kind() provider.Kind { return provider.KindGitea }
 
 // Capabilities implements provider.Provider.
 func (*Provider) Capabilities() provider.Capabilities {
-	return provider.Capabilities{GFM: true, MarkdownTables: true, Labels: true, InlineComments: true}
+	return provider.Capabilities{
+		GFM: true, MarkdownTables: true, Labels: true, InlineComments: true,
+		ThreadResolution: true, DescriptionEdit: true,
+	}
 }
 
 func protocolErr(hint string) *provider.Error {

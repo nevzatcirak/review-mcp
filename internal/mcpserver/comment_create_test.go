@@ -377,6 +377,10 @@ type createProvider struct {
 	posted  []string
 }
 
+func (c *createProvider) Capabilities() provider.Capabilities {
+	return provider.Capabilities{GFM: true}
+}
+
 func (c *createProvider) GetPullRequest(context.Context, provider.PRRef) (*provider.PullRequest, error) {
 	c.bump()
 	return &provider.PullRequest{HeadSHA: "headsha"}, nil

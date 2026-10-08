@@ -113,3 +113,18 @@ func TestRedactText(t *testing.T) {
 		})
 	}
 }
+
+// TestRedactURLKeepsNestedNamespace: a path with several namespace segments
+// (nested groups) comes back with its "/" separators, and only the userinfo,
+// the fragment and the query values change.
+func TestRedactURLKeepsNestedNamespace(t *testing.T) {
+	in := "https://u:FAKE-pw@gitlab.example.com/group/sub/team/repo/-/merge_requests/7?private_token=FAKE-q#frag" //nolint:gosec // synthetic fake credentials used to test redaction
+	want := "https://gitlab.example.com/group/sub/team/repo/-/merge_requests/7?private_token=REDACTED"
+	got := RedactURL(in)
+	if got != want {
+		t.Errorf("RedactURL = %q, want %q", got, want)
+	}
+	if strings.Contains(got, "%2F") {
+		t.Errorf("RedactURL escaped a path separator: %q", got)
+	}
+}

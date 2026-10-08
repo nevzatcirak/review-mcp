@@ -400,7 +400,7 @@ func diagComment(ctx context.Context, cfg *config.Config, logger *slog.Logger, p
 	if err != nil {
 		return reportError(stderr, err)
 	}
-	c, err := p.PostComment(ctx, ref, body)
+	c, err := p.PostComment(ctx, ref, provider.SanitizeBody(p.Capabilities(), body))
 	if err != nil {
 		return reportError(stderr, err)
 	}

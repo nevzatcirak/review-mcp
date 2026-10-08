@@ -71,7 +71,9 @@ type Repo struct {
 	// BaseURL is the configured provider base URL (gitea.base_url or
 	// bitbucket_server.base_url, including any context path).
 	BaseURL string
-	// Namespace is the Gitea owner or the Bitbucket project key.
+	// Namespace is the Gitea owner or the Bitbucket project key. It may hold
+	// "/" (nested groups); the clone URL keeps the "/" and escapes each
+	// segment, and the cache directory is the segments joined with "+".
 	Namespace string
 	// Name is the repository name (Gitea) or slug (Bitbucket Server).
 	Name string

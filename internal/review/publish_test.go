@@ -308,3 +308,36 @@ func TestPrepareKeepsTheProviderHunks(t *testing.T) {
 		}
 	}
 }
+
+// TestPublishSanitizesSlashesByCapability [canary]: with QuickActions the
+// overview (posted and edited) and every inline comment have no line that
+// starts with "/"; without it all three are published as rendered.
+func TestPublishSanitizesSlashesByCapability(t *testing.T) {
+	startsWithSlash := func(body string) bool {
+		return strings.HasPrefix(body, "/") || strings.Contains(body, "\n/") || strings.Contains(body, "\r/")
+	}
+	for _, qa := range []bool{false, true} {
+		h := newHarness(answerWith(onAdded, onContext))
+		h.prov.quickActions = qa
+		h.deps.RenderProvider = func(*Result, provider.Capabilities) string { return "/close\noverview" }
+		h.deps.RenderInline = func(*KeyIssue, provider.Capabilities) string { return "/assign me\ninline" }
+		if _, err := Run(context.Background(), h.deps, Args{PRURL: testPRURL, Publish: true}); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(h.prov.seq, []string{"post", "inline", "edit"}) || len(h.prov.inline) != 1 || len(h.prov.inline[0]) != 2 {
+			t.Fatalf("QuickActions=%v: write calls = %v, inline = %+v", qa, h.prov.seq, h.prov.inline)
+		}
+		bodies := map[string]string{"overview": h.prov.posted[0], "overview edit": h.prov.edits[0].body}
+		for i, it := range h.prov.inline[0] {
+			bodies[fmt.Sprintf("inline %d", i)] = it.Body
+		}
+		for name, body := range bodies {
+			if got := startsWithSlash(body); got != !qa {
+				t.Errorf("QuickActions=%v: %s body has a line starting with /: %v\n%q", qa, name, got, body)
+			}
+		}
+		if !qa && !strings.HasPrefix(h.prov.posted[0], "/close\n") {
+			t.Errorf("without QuickActions the overview changed: %q", h.prov.posted[0])
+		}
+	}
+}

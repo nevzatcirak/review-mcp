@@ -43,6 +43,8 @@ type fakeProvider struct {
 	replies   [][2]string // commentID, body
 }
 
+func (f *fakeProvider) Capabilities() provider.Capabilities { return provider.Capabilities{GFM: true} }
+
 func (f *fakeProvider) ListThreads(context.Context, provider.PRRef) ([]provider.Thread, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

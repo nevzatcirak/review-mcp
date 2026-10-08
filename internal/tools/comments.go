@@ -329,7 +329,7 @@ func PRCommentReply(ctx context.Context, resolver PRResolver, prURL, commentID, 
 	if err != nil {
 		return PRCommentReplyResult{}, err
 	}
-	rr, err := p.ReplyToComment(ctx, ref, commentID, body)
+	rr, err := p.ReplyToComment(ctx, ref, commentID, provider.SanitizeBody(p.Capabilities(), body))
 	if err != nil {
 		return PRCommentReplyResult{}, err
 	}

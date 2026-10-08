@@ -78,6 +78,11 @@ func (Factory) ParsePRPath(remainder string) (namespace, repo string, number int
 	if segs[2] != "repos" || segs[4] != "pull-requests" {
 		return "", "", 0, errShape
 	}
+	// The URL shape has exactly one namespace segment: an escaped "/" in it
+	// ("%2F") would smuggle a nested namespace in.
+	if strings.Contains(segs[1], "/") {
+		return "", "", 0, errShape
+	}
 	switch segs[0] {
 	case "projects":
 		namespace = segs[1]
@@ -175,7 +180,10 @@ func (*Provider) Kind() provider.Kind { return provider.KindBitbucketServer }
 
 // Capabilities implements provider.Provider.
 func (*Provider) Capabilities() provider.Capabilities {
-	return provider.Capabilities{GFM: false, MarkdownTables: true, Labels: false, InlineComments: true}
+	return provider.Capabilities{
+		GFM: false, MarkdownTables: true, Labels: false, InlineComments: true,
+		ThreadResolution: true, DescriptionEdit: true,
+	}
 }
 
 func protocolErr(hint string) *provider.Error {

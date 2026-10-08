@@ -84,9 +84,13 @@ type postProvider struct {
 	provider.Provider
 	err  error
 	body string
+	// quickActions makes Capabilities report QuickActions.
+	quickActions bool
 }
 
-func (p *postProvider) Capabilities() provider.Capabilities { return provider.Capabilities{GFM: true} }
+func (p *postProvider) Capabilities() provider.Capabilities {
+	return provider.Capabilities{GFM: true, QuickActions: p.quickActions}
+}
 func (p *postProvider) PostComment(_ context.Context, _ provider.PRRef, body string) (*provider.Comment, error) {
 	p.body = body
 	if p.err != nil {
@@ -116,5 +120,24 @@ func TestPostResult(t *testing.T) {
 	PostResult(context.Background(), log, provider.PRRef{}, p, out, "failed", nil)
 	if out.Published || out.Error != "failed" {
 		t.Errorf("no renderer = %+v", out)
+	}
+}
+
+// TestPostResultSanitizesByCapability: the body of a provider with
+// QuickActions is slash-sanitised (also the ask answer); otherwise it is
+// posted as rendered.
+func TestPostResultSanitizesByCapability(t *testing.T) {
+	log := slog.New(slog.DiscardHandler)
+	render := func(provider.Capabilities) string { return "/close\nthe answer\n/reopen" }
+	for _, qa := range []bool{false, true} {
+		p := &postProvider{quickActions: qa}
+		PostResult(context.Background(), log, provider.PRRef{}, p, &PublishResult{}, "failed", render)
+		want := "/close\nthe answer\n/reopen"
+		if qa {
+			want = " /close\nthe answer\n /reopen"
+		}
+		if p.body != want {
+			t.Errorf("QuickActions=%v: body = %q, want %q", qa, p.body, want)
+		}
 	}
 }

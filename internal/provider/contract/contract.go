@@ -35,11 +35,11 @@ type Traits struct {
 	BaseStrategies []string
 	// ResolvableThreads lists the thread kinds whose resolved state the
 	// host stores and the provider reports. Threads of other kinds must
-	// report Resolved nil.
-	//
-	// TODO(WP-2b): derive this from Capabilities().ThreadResolution once the
-	// capability exists. A single bool does not say that Gitea can resolve
-	// inline threads only; see the DESIGN-QUESTION of WP-2a.
+	// report Resolved nil. It must agree with Capabilities().ThreadResolution:
+	// it includes provider.ThreadInline when the capability is true and is
+	// empty when it is false (the "capabilities" case checks this). The
+	// capability is one bool, so it cannot say that Gitea resolves inline
+	// threads only; the trait keeps that per-kind fact.
 	ResolvableThreads []provider.ThreadKind
 	// OmitsNoNewlineMarker is true for a provider that builds patches from
 	// file contents and documents that it never emits "\ No newline at end
@@ -69,6 +69,7 @@ func Run(t *testing.T, f Fixture) {
 		name string
 		run  func(*testing.T)
 	}{
+		{"capabilities", s.capabilities},
 		{"metadata", s.metadata},
 		{"file_list", s.fileList},
 		{"file_limit", s.fileLimit},

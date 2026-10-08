@@ -37,6 +37,8 @@ type fakeProvider struct {
 	pr      provider.PullRequest
 	files   []provider.FilePatch
 	postErr error
+	// quickActions makes Capabilities report QuickActions.
+	quickActions bool
 
 	calls    int
 	posted   []string
@@ -160,7 +162,9 @@ func (f *fakeProvider) EditComment(_ context.Context, _ provider.PRRef, id, body
 	return &provider.Error{Class: provider.ClassNotFound, Status: 404}
 }
 
-func (f *fakeProvider) Capabilities() provider.Capabilities { return provider.Capabilities{GFM: true} }
+func (f *fakeProvider) Capabilities() provider.Capabilities {
+	return provider.Capabilities{GFM: true, QuickActions: f.quickActions}
+}
 
 func (f *fakeProvider) GetPullRequest(context.Context, provider.PRRef) (*provider.PullRequest, error) {
 	f.calls++

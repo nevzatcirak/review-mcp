@@ -126,8 +126,8 @@ func TestFastPathKeepsGroupThenProviderOrder(t *testing.T) {
 	if p.Tokens != tokens.Estimate(p.Text, 0.3) {
 		t.Fatalf("Tokens = %d, want Estimate(Text) = %d", p.Tokens, tokens.Estimate(p.Text, 0.3))
 	}
-	if len(p.Omitted.Added)+len(p.Omitted.Modified)+len(p.Omitted.Deleted)+len(p.Clipped) != 0 {
-		t.Fatalf("fast path omitted or clipped files: %+v", p)
+	if len(p.Omitted.Added)+len(p.Omitted.Modified)+len(p.Omitted.Deleted)+len(p.Clipped)+len(p.DeletedListed) != 0 {
+		t.Fatalf("fast path omitted, clipped or listed files: %+v", p)
 	}
 }
 
@@ -209,12 +209,16 @@ func TestCompressedAdmission(t *testing.T) {
 				t.Fatal("FastPath = true")
 			}
 			// Go group first, by size: big.go and moved.go do not fit, mid.go
-			// and small.go do; gone.go is listed by name only.
+			// and small.go do; gone.go is listed by name only (X-20:
+			// DeletedListed, not Omitted).
 			if !slices.Equal(p.Included, []string{"mid.go", "small.go", "tiny.py"}) {
 				t.Fatalf("Included = %q", p.Included)
 			}
+			if !slices.Equal(p.DeletedListed, []string{"gone.go"}) {
+				t.Fatalf("DeletedListed = %q", p.DeletedListed)
+			}
 			if !slices.Equal(p.Omitted.Modified, []string{"big.go", "moved.go"}) ||
-				!slices.Equal(p.Omitted.Deleted, []string{"gone.go"}) ||
+				len(p.Omitted.Deleted) != 0 ||
 				!slices.Equal(p.Omitted.Added, []string{"new.py"}) {
 				t.Fatalf("Omitted = %+v", p.Omitted)
 			}
@@ -237,7 +241,8 @@ func TestCompressedOnlyDeletedFiles(t *testing.T) {
 		Budget: budget(500), Diff: diffCfg("skip")}
 	p := mustPrepare(t, in)
 	want := "\n\n" + patch.DeletedFilesHeader + "\na.go\nb.go"
-	if p.Text != want || len(p.Included) != 0 || !slices.Equal(p.Omitted.Deleted, []string{"a.go", "b.go"}) {
+	if p.Text != want || len(p.Included) != 0 || !slices.Equal(p.DeletedListed, []string{"a.go", "b.go"}) ||
+		len(p.Omitted.Deleted) != 0 {
 		t.Fatalf("got text %q, %+v", p.Text, p)
 	}
 }
@@ -454,41 +459,8 @@ func TestAccountingPropertyRealTokenizer(t *testing.T) {
 
 func accountingProperty(t *testing.T, cases, maxLines int, estimator func(float64) func(string) int) {
 	rng := rand.New(rand.NewSource(20261006)) //nolint:gosec // reproducible test inputs, not security-relevant
-	exts := []string{".go", ".py", ".md", ".zzz", ".js"}
 	for i := range cases {
-		var in Input
-		n := rng.Intn(12)
-		for j := range n {
-			path := fmt.Sprintf("d%d/f%d%s", rng.Intn(3), j, exts[rng.Intn(len(exts))])
-			size := 1 + rng.Intn(maxLines)
-			var f provider.FilePatch
-			switch rng.Intn(7) {
-			case 0:
-				f = deleted(path, size)
-			case 1:
-				f = renamed(path, size, 1+rng.Intn(5))
-			case 2:
-				f = provider.FilePatch{Path: path, Type: provider.ChangeRenamed} // empty patch
-			case 3:
-				f = modified(path, size, 1+rng.Intn(5))
-				f.HeadContent, f.HeadStatus = nil, provider.ContentFetchFailed
-			case 4:
-				f = modified(path, size, 1+rng.Intn(5))
-			default:
-				f = added(path, size)
-			}
-			in.Files = append(in.Files, f)
-		}
-		for j := range rng.Intn(3) {
-			in.Skipped = append(in.Skipped, provider.SkippedFile{Path: fmt.Sprintf("skip/%d.bin", j), Reason: provider.SkipBinary})
-		}
-		in.Mode = Mode(rng.Intn(2))
-		in.Diff = diffCfg([]string{"clip", "skip"}[rng.Intn(2)])
-		in.Budget = tokens.Budget{ContextWindow: 1500 + 1 + rng.Intn(maxLines*40), PromptTokens: rng.Intn(200),
-			Factor: []float64{0, 0.3, 1}[rng.Intn(3)]}
-		if in.Budget.SoftLimit() <= 0 {
-			in.Budget.PromptTokens = 0
-		}
+		in := randomInput(rng, 12, maxLines)
 		c := newCounter(in.Budget.Factor, estimator(in.Budget.Factor))
 		p, err := prepare(in, c)
 		if errors.Is(err, tokens.ErrDoesNotFit) {
@@ -513,4 +485,47 @@ func accountingProperty(t *testing.T, cases, maxLines int, estimator func(float6
 			t.Fatalf("case %d failed", i)
 		}
 	}
+}
+
+// randomInput is the randomized pull request of the property tests: up to
+// maxFiles-1 files of every kind (added, modified, renamed, deleted, a pure
+// rename without hunks, a fetch-failed head) with 1 to maxLines lines, up to
+// two provider-skipped files, a random mode, policy and budget. Paths are
+// unique within one input.
+func randomInput(rng *rand.Rand, maxFiles, maxLines int) Input {
+	exts := []string{".go", ".py", ".md", ".zzz", ".js"}
+	var in Input
+	n := rng.Intn(maxFiles)
+	for j := range n {
+		path := fmt.Sprintf("d%d/f%d%s", rng.Intn(3), j, exts[rng.Intn(len(exts))])
+		size := 1 + rng.Intn(maxLines)
+		var f provider.FilePatch
+		switch rng.Intn(7) {
+		case 0:
+			f = deleted(path, size)
+		case 1:
+			f = renamed(path, size, 1+rng.Intn(5))
+		case 2:
+			f = provider.FilePatch{Path: path, Type: provider.ChangeRenamed} // empty patch
+		case 3:
+			f = modified(path, size, 1+rng.Intn(5))
+			f.HeadContent, f.HeadStatus = nil, provider.ContentFetchFailed
+		case 4:
+			f = modified(path, size, 1+rng.Intn(5))
+		default:
+			f = added(path, size)
+		}
+		in.Files = append(in.Files, f)
+	}
+	for j := range rng.Intn(3) {
+		in.Skipped = append(in.Skipped, provider.SkippedFile{Path: fmt.Sprintf("skip/%d.bin", j), Reason: provider.SkipBinary})
+	}
+	in.Mode = Mode(rng.Intn(2))
+	in.Diff = diffCfg([]string{"clip", "skip"}[rng.Intn(2)])
+	in.Budget = tokens.Budget{ContextWindow: 1500 + 1 + rng.Intn(maxLines*40), PromptTokens: rng.Intn(200),
+		Factor: []float64{0, 0.3, 1}[rng.Intn(3)]}
+	if in.Budget.SoftLimit() <= 0 {
+		in.Budget.PromptTokens = 0
+	}
+	return in
 }

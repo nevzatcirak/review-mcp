@@ -62,6 +62,10 @@ const (
 	// SkipUnparseablePatch marks a file whose patch is not a hunk-only
 	// unified diff (patch.ParseHunks failed).
 	SkipUnparseablePatch = "unparseable_patch"
+	// SkipTooLarge marks a file PrepareChunks could not fit into a chunk of
+	// its own under large_patch_policy skip (Chunks.TooLarge). Prepare never
+	// uses it: for a single call such a file is ErrDoesNotFit.
+	SkipTooLarge = "too_large"
 )
 
 // Input is one pull request's diff, the render mode and the budget.
@@ -73,6 +77,13 @@ type Input struct {
 	Mode    Mode
 	Budget  tokens.Budget
 	Diff    config.Diff
+	// Pinned lists paths of Files that go before the ranked rest, in the
+	// order they have in Files (pr_ask's question-named files, X-21): they
+	// are rendered and admitted first, and are not reordered by size. A
+	// path that is not in Files is ignored, so pinning can never add a file
+	// (a filtered or provider-skipped one stays where it is). Empty keeps
+	// the ranking unchanged.
+	Pinned []string
 }
 
 // Omitted lists the files left out of the diff body, by change type, in
@@ -83,29 +94,35 @@ type Omitted struct {
 	// Modified holds modified and renamed files (upstream lists
 	// EDIT_TYPE.RENAMED under "Additional modified files").
 	Modified []string
-	// Deleted holds deleted files: on the compressed path every deleted
-	// file whose patch upstream drops (handle_patch_deletions), plus any
-	// deleted file not admitted for budget.
+	// Deleted holds deleted files whose names are not in Text: on the
+	// compressed path a deleted file whose patch upstream drops
+	// (handle_patch_deletions) when the deleted-files section did not fit
+	// or was clipped before its name, plus any deleted file with a patch
+	// that was not admitted for budget (listed by name or not). A dropped
+	// deletion whose name is in Text is in Prepared.DeletedListed instead
+	// (X-20).
 	Deleted []string
 }
 
 // Prepared is the assembled diff and its coverage accounting.
 //
-// Accounting invariant (spec §4.6): every element of Input.Files appears in
-// exactly one of Included, Omitted.Added, Omitted.Modified,
-// Omitted.Deleted, Clipped, or Skipped (as an entry Prepare appends, with
-// reason SkipEmptyDiff or SkipUnparseablePatch); Skipped starts with
-// Input.Skipped, verbatim and in order, and no provider-skipped file is
-// counted anywhere else. Hence
+// Accounting invariant (spec §4.6, extended by X-20): every element of
+// Input.Files appears in exactly one of Included, Omitted.Added,
+// Omitted.Modified, Omitted.Deleted, Clipped, DeletedListed, or Skipped (as
+// an entry Prepare appends, with reason SkipEmptyDiff or
+// SkipUnparseablePatch); Skipped starts with Input.Skipped, verbatim and in
+// order, and no provider-skipped file is counted anywhere else. Hence
 //
 //	len(Included) + len(Omitted.Added) + len(Omitted.Modified) +
-//	len(Omitted.Deleted) + len(Clipped) + len(Skipped)
+//	len(Omitted.Deleted) + len(Clipped) + len(DeletedListed) + len(Skipped)
 //	== len(Input.Files) + len(Input.Skipped).
 //
-// Included and Clipped are exactly the files whose content is in Text.
-// Omitted is the full list of files whose content is not in Text; the
-// sections at the end of Text name them only when the budget allows it
-// (upstream behaviour), so Omitted is the source of truth for coverage.
+// Included and Clipped are exactly the files whose content is in Text, and
+// DeletedListed the deleted files whose name is in Text in place of their
+// content. Omitted is the full list of the other files whose content is not
+// in Text; the sections at the end of Text name them only when the budget
+// allows it (upstream behaviour), so Omitted is the source of truth for
+// coverage.
 type Prepared struct {
 	// Text is the diff the prompt embeds.
 	Text string
@@ -120,6 +137,12 @@ type Prepared struct {
 	Omitted Omitted
 	// Clipped holds the paths included in clipped form (§4.5).
 	Clipped []string
+	// DeletedListed holds the deleted files whose patch the compressed path
+	// drops by design (handle_patch_deletions) and whose names are in
+	// Text's deleted-files section, in that section's order. The model was
+	// shown the deletion, so they count as reviewed (X-20). Always empty
+	// on the fast path, which renders deletions in full.
+	DeletedListed []string
 	// Skipped holds Input.Skipped followed by the files Prepare could not
 	// render (SkipEmptyDiff, SkipUnparseablePatch), in input order.
 	Skipped []provider.SkippedFile
@@ -130,9 +153,27 @@ type Prepared struct {
 // (Budget.RequireCapacity) or when no file fits and large_patch_policy
 // cannot help (§4.5).
 func Prepare(in Input) (*Prepared, error) {
-	factor := in.Budget.Factor
-	return prepare(in, newCounter(factor, func(s string) int { return tokens.Estimate(s, factor) }))
+	return prepare(in, estimateCounter(in.Budget.Factor))
 }
+
+// estimateCounter is the counter Prepare and PrepareChunks use:
+// tokens.Estimate with the budget's factor.
+func estimateCounter(factor float64) *counter {
+	return newCounter(factor, func(s string) int { return tokens.Estimate(s, factor) })
+}
+
+// tooLargeError is the ErrDoesNotFit of the compressed path when no file was
+// admitted and large_patch_policy produced no clipped file: it names the
+// top-ranked file the policy was applied to, so PrepareChunks can set that
+// file aside (SkipTooLarge). Error and Unwrap are those of err, so Prepare's
+// callers see the same error as before.
+type tooLargeError struct {
+	path string
+	err  error
+}
+
+func (e *tooLargeError) Error() string { return e.err.Error() }
+func (e *tooLargeError) Unwrap() error { return e.err }
 
 // file is one parsed input file.
 type file struct {
@@ -148,6 +189,13 @@ type file struct {
 }
 
 func prepare(in Input, c *counter) (*Prepared, error) {
+	return prepareRanked(in, c, nil)
+}
+
+// prepareRanked is prepare with the language groups in langOrder when it is
+// not nil (PrepareChunks passes the order of the whole pull request, so a
+// later chunk keeps the original rank order; see orderGroups).
+func prepareRanked(in Input, c *counter, langOrder []string) (*Prepared, error) {
 	if in.Mode != ModePlain && in.Mode != ModeNumbered {
 		return nil, fmt.Errorf("diffpipe: unknown mode %d", in.Mode)
 	}
@@ -172,6 +220,12 @@ func prepare(in Input, c *counter) (*Prepared, error) {
 		files[i] = f
 	}
 	groups := rank(files)
+	if langOrder != nil {
+		orderGroups(groups, langOrder)
+	}
+	if len(in.Pinned) > 0 {
+		groups = pinFirst(groups, files, in.Pinned)
+	}
 
 	p, err := assemble(in, c, groups)
 	if err != nil {

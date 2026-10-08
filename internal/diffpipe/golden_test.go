@@ -165,7 +165,9 @@ func TestUpstreamGoldens(t *testing.T) {
 			eq(t, "Included", got.Included, want.Included)
 			eq(t, "Omitted.Added", got.Omitted.Added, want.Omitted.Added)
 			eq(t, "Omitted.Modified", got.Omitted.Modified, want.Omitted.Modified)
-			eq(t, "Omitted.Deleted", got.Omitted.Deleted, want.Omitted.Deleted)
+			// Upstream's deleted list is split by X-20: the names in the text
+			// first (DeletedListed), then the rest (Omitted.Deleted).
+			eq(t, "DeletedListed + Omitted.Deleted", slices.Concat(got.DeletedListed, got.Omitted.Deleted), want.Omitted.Deleted)
 			if len(got.Clipped) != 0 {
 				t.Errorf("Clipped = %q, want none", got.Clipped)
 			}
@@ -207,7 +209,8 @@ func checkClipOvershoot(t *testing.T, in Input, got *Prepared, want string, off 
 	full := map[string]string{
 		patch.AddedFilesHeader:    patch.AddedFilesHeader + "\n" + strings.Join(got.Omitted.Added, "\n"),
 		patch.ModifiedFilesHeader: patch.ModifiedFilesHeader + "\n" + strings.Join(got.Omitted.Modified, "\n"),
-		patch.DeletedFilesHeader:  patch.DeletedFilesHeader + "\n" + strings.Join(got.Omitted.Deleted, "\n"),
+		patch.DeletedFilesHeader: patch.DeletedFilesHeader + "\n" +
+			strings.Join(slices.Concat(got.DeletedListed, got.Omitted.Deleted), "\n"),
 	}
 	rest := got.Text[off:]
 	for rest != "" {
@@ -298,7 +301,7 @@ func checkPolicyCase(t *testing.T, in Input, want goldenOutput, got *Prepared, e
 	}
 	eq(t, "Omitted.Added", got.Omitted.Added, rm(want.Omitted.Added))
 	eq(t, "Omitted.Modified", got.Omitted.Modified, rm(want.Omitted.Modified))
-	eq(t, "Omitted.Deleted", got.Omitted.Deleted, rm(want.Omitted.Deleted))
+	eq(t, "DeletedListed + Omitted.Deleted", slices.Concat(got.DeletedListed, got.Omitted.Deleted), rm(want.Omitted.Deleted))
 	checkAccounting(t, in, got)
 }
 

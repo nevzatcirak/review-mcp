@@ -11,15 +11,17 @@ import (
 )
 
 // Coverage accounts for every changed file (X-3): the files whose diff the
-// model saw (Included, Clipped), the files left out for budget (Omitted),
-// the files skipped for other reasons (Skipped) and the filtered files
-// (Filtered, with the filter's reason).
+// model saw (Included, Clipped), the deleted files shown by name in place of
+// their patch (DeletedListed, X-20), the files left out for budget
+// (Omitted), the files skipped for other reasons (Skipped) and the filtered
+// files (Filtered, with the filter's reason).
 type Coverage struct {
-	Included []string      `json:"included"`
-	Clipped  []string      `json:"clipped"`
-	Omitted  OmittedFiles  `json:"omitted"`
-	Skipped  []SkippedFile `json:"skipped"`
-	Filtered []SkippedFile `json:"filtered"`
+	Included      []string      `json:"included"`
+	Clipped       []string      `json:"clipped"`
+	DeletedListed []string      `json:"deleted_listed"`
+	Omitted       OmittedFiles  `json:"omitted"`
+	Skipped       []SkippedFile `json:"skipped"`
+	Filtered      []SkippedFile `json:"filtered"`
 
 	// Partial and the three counts below are the X-18 summary of the lists
 	// above; Finalize sets them and Tally is their single definition.
@@ -29,23 +31,40 @@ type Coverage struct {
 	ReviewedFiles    int  `json:"reviewed_files"`
 	TotalFiles       int  `json:"total_files"`
 	NotReviewedFiles int  `json:"not_reviewed_files"`
+
+	// ModelCalls is the number of parts sent to the model (X-19): 1 for a
+	// review in one call, N for a review in N parts, 0 without a model call.
+	// A re-ask of a part is not counted (metadata.llm_calls counts every
+	// completion). FailedParts is how many of them failed; their files are
+	// in Skipped with reason SkipModelCallFailed. pr_ask makes one call
+	// (X-21), so it reports 1 and 0, or 0 and 0 without a call.
+	ModelCalls  int `json:"model_calls"`
+	FailedParts int `json:"failed_parts"`
 }
+
+// SkipModelCallFailed is the skip reason of a file whose part's model call
+// failed (X-19): the file was sent but no review came back, so it is not
+// reviewed.
+const SkipModelCallFailed = "model_call_failed"
 
 // Tally is the X-18 summary of a Coverage. Every changed file is in exactly
 // one of these places, and the mapping of the existing categories is:
 //
 //   - Included: reviewed.
+//   - DeletedListed: reviewed (X-20). The diff drops a deleted file's patch
+//     by design and names the file under "Deleted files:" instead; the name
+//     is in the text, so the model was shown the deletion.
 //   - Clipped: NOT reviewed. The model saw only part of the file, so
 //     nothing may be concluded about the rest of it.
 //   - Omitted (added, modified, deleted): NOT reviewed. Deleted files count
-//     too: X-3 reports them as left out to fit the context window, the
-//     coverage section lists them next to the others, and on the compressed
-//     path the model sees only their names. A banner that left them out
-//     would disagree with the section it points to.
-//   - Skipped for size (file_limit, size_limit), unreadable (fetch_failed,
-//     unparseable_patch) or for any reason not named here: NOT reviewed. A
-//     reviewable file was lost; an unknown reason counts as lost, never as
-//     fine.
+//     too: they are the deletions whose names did not reach the text (the
+//     budget cut them or the deleted-files section did not fit), so the
+//     model saw nothing of them.
+//   - Skipped for size (file_limit, size_limit), too large for a chunk of
+//     its own (too_large), unreadable (fetch_failed, unparseable_patch), in
+//     a part whose model call failed (model_call_failed) or for any reason
+//     not named here: NOT reviewed. A reviewable file was
+//     lost; an unknown reason counts as lost, never as fine.
 //   - Skipped as binary or as an empty diff (a pure rename, a mode change):
 //     outside the count, like Filtered. There is no text change to review,
 //     so nothing was lost; the coverage section still lists them.
@@ -62,7 +81,7 @@ type Tally struct {
 // Tally computes the X-18 summary from the file lists.
 func (c *Coverage) Tally() Tally {
 	t := Tally{
-		Reviewed: len(c.Included),
+		Reviewed: len(c.Included) + len(c.DeletedListed),
 		NotReviewed: len(c.Clipped) + len(c.Omitted.Added) + len(c.Omitted.Modified) +
 			len(c.Omitted.Deleted),
 	}
@@ -121,8 +140,9 @@ func NonNil[T any](s []T) []T {
 // reports them).
 func BuildCoverage(p *diffpipe.Prepared, f *filter.Filter) Coverage {
 	c := Coverage{
-		Included: NonNil(append([]string(nil), p.Included...)),
-		Clipped:  NonNil(append([]string(nil), p.Clipped...)),
+		Included:      NonNil(append([]string(nil), p.Included...)),
+		Clipped:       NonNil(append([]string(nil), p.Clipped...)),
+		DeletedListed: NonNil(append([]string(nil), p.DeletedListed...)),
 		Omitted: OmittedFiles{
 			Added:    NonNil(append([]string(nil), p.Omitted.Added...)),
 			Modified: NonNil(append([]string(nil), p.Omitted.Modified...)),
@@ -152,10 +172,12 @@ func BuildCoverage(p *diffpipe.Prepared, f *filter.Filter) Coverage {
 // content is entirely in the first kept lines stays where it was, a file
 // that was cut becomes Clipped, a file that is gone moves to Omitted by its
 // change type. A file whose header cannot be found is reported as Clipped
-// (its content may be incomplete), never as complete.
+// (its content may be incomplete), never as complete. A listed deletion
+// whose name is no longer in the kept lines moves to Omitted.Deleted.
 func TrimCoverage(c *Coverage, diff string, kept int, types map[string]provider.ChangeType) {
 	defer c.Finalize()
 	lines := strings.Split(diff, "\n")
+	trimDeletedListed(c, lines, kept)
 	order := append(slices.Clone(c.Included), c.Clipped...)
 	wasClipped := map[string]bool{}
 	for _, p := range c.Clipped {
@@ -226,4 +248,39 @@ func TrimCoverage(c *Coverage, diff string, kept int, types map[string]provider.
 			}
 		}
 	}
+}
+
+// trimDeletedListed keeps in DeletedListed the names that are still whole
+// lines of the deleted-files section within the first kept lines (X-20) and
+// moves the others to the front of Omitted.Deleted, where the section's
+// order puts them. A name that cannot be found is moved too: a listed
+// deletion is never reported as reviewed without its name in the diff.
+func trimDeletedListed(c *Coverage, lines []string, kept int) {
+	if len(c.DeletedListed) == 0 {
+		return
+	}
+	header := strings.TrimSuffix(patch.DeletedFilesHeader, "\n")
+	start := -1
+	for j := len(lines) - 1; j >= 0; j-- {
+		if lines[j] == header {
+			start = j
+			break
+		}
+	}
+	var stay, cut []string
+	for _, p := range c.DeletedListed {
+		at := -1
+		if start >= 0 {
+			if k := slices.Index(lines[start+1:], p); k >= 0 {
+				at = start + 1 + k
+			}
+		}
+		if at >= 0 && at < kept {
+			stay = append(stay, p)
+		} else {
+			cut = append(cut, p)
+		}
+	}
+	c.DeletedListed = NonNil(stay)
+	c.Omitted.Deleted = NonNil(append(cut, c.Omitted.Deleted...))
 }

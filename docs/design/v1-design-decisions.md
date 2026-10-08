@@ -61,6 +61,9 @@ code must not anticipate them beyond the seams named here.
 | X-16 | Background jobs for long calls (P8) | stdio only: `pr_review` and `pr_ask` wait at most `wait_seconds`, then return a `job_id`; the new tool `job_result` collects the result; serve mode stays synchronous | Decided |
 | X-17 | Latency controls (P8) | `llm.timeout_seconds` default 300; optional `diff.max_tokens` caps the diff budget | Decided |
 | X-18 | Partial-coverage honesty (P9, extends X-3) | A result is partial when a reviewable file was omitted, clipped, skipped for size or unreadable; it leads with a fixed banner in every rendering, carries counts in `coverage`, and every "no concerns" statement is scoped to the reviewed files | Decided |
+| X-19 | Chunked review (v1.1, RC-11 to RC-14) | When the prepared diff does not hold every reviewable file, `pr_review` reviews the rest in further model calls ("parts"), up to `review.max_chunks` (default 8), sequentially, and merges the answers; `review.max_chunks = 1` is the v1.0 behaviour | Decided |
+| X-20 | Deletions listed by name are not budget losses (v1.1, settles 9a DESIGN-QUESTION 1) | A deleted file whose patch is dropped by design and whose name is in the prompt's deleted-files list counts as reviewed (`coverage.deleted_listed`); only deletions cut by the budget are not reviewed | Decided |
+| X-21 | `pr_ask` does not chunk (v1.1, RC-15) | `pr_ask` keeps one call; the files a question names are admitted first; the X-18 banner stays | Decided |
 
 ---
 
@@ -372,6 +375,38 @@ implementation must do or must not do).
   - Providers truncate nothing; a file too large for a provider is skipped whole (`size_limit`).
 - **Consequences:** `total_files` is the number of changed files that carry a reviewable text change, not the number of files in the PR. The diff-trimming guard (`diff_trimmed`) recomputes the counts after it moves files.
 
+#### X-19 — Chunked review (added v1.1, RC-11 to RC-14)
+- **Origin:** on `rc.3` a 62-file PR was reviewed on 5 files because of the diff budget (X-18 made that visible; this decision covers the rest). Owner priority: completeness and correctness before speed. Background jobs (X-16) remove the client-timeout obstacle to several model calls.
+- **Decision:**
+  - When the prepared diff leaves files out, `pr_review` packs the remaining files into further parts with the same admission rules (`diffpipe.PrepareChunks`), up to `review.max_chunks` parts in total (`REVIEW_MCP_REVIEW_MAX_CHUNKS`, default 8, 1 to 32). Each further part gets the files earlier parts did not include, clip or list, in the original rank order, and no provider skips (those are accounted once, from part 1). A file is in at most one part.
+  - A part that fits in full is sent with extended context, like a small pull request.
+  - A file too large for a further part of its own: `large_patch_policy = clip` makes the clipped file that part's content; `skip` records it as skipped with reason `too_large` (not reviewed) and packing continues. A further part never returns "does not fit"; only part 1 can, as before. A part with nothing reviewable never becomes a model call.
+  - Each part is one model call with the same scaffolding (system prompt, title, description, discussion block budgeted per call) and, when there is more than one part, one line before the diff: "This pull request is large and is reviewed in N parts. This is part I of N. Review only the files in the diff below; the other files are reviewed separately." (an intentional deviation from upstream, recorded in the template header). The diff budget of a review in parts reserves that line; a review in one call keeps the v1.0 budget and prompts byte for byte.
+  - Calls run sequentially (local endpoints are usually single-slot). Progress reports `calling model (part I of N)`. Each call has its own `llm.timeout_seconds`, YAML repair and re-ask.
+  - **Merge (RC-12):** findings in part order, then model order; a finding whose fingerprint (X-13) an earlier part returned is dropped; findings already posted on the PR are handled by the X-13 inline dedup as in a single-call review; the list is capped at `review.max_total_findings` (`REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS`, default 10, at most 50), and the rest are counted in the note "N further findings were not shown because of review.max_total_findings." Each part still asks for at most `review.max_findings`. Effort is the maximum of the parts that returned one; tests are true if any part says true, false if every part that answered says false, absent if none answered; security and performance concerns are the concern texts when at least one successful part has a concern (joined by a blank line, each prefixed `Part I:` only when more than one part has one), "No" only when every successful part said "No", and otherwise (some parts said "No", another left the field out) absent, with the note "Part I did not answer the security question; nothing is concluded about its files." (or the performance equivalent) per silent part and field, so that "No" never covers files whose part said nothing (architect, DQ-6 on 11e2); when no part answers, the field is absent without a note, as in a single-call review. Snippets, links and inline anchoring run on the merged list against the full PR file set.
+  - **Failed part:** a part whose call fails (timeout, LLM error, unparseable after repair and re-ask) makes its files not reviewed with reason `model_call_failed` and adds the note "Part I of N failed (<fixed error class>); its files were not reviewed." The class is a fixed token, never error text. If every part fails, the run returns the first part's classified error. If at least one part succeeds, the result is partial (X-18) and publishable.
+  - **Honesty (RC-13):** coverage counts all parts; `coverage` gains `model_calls` (parts sent to the model; re-asks are not counted) and `failed_parts`, in every schema that carries `coverage`. Client and provider renderings add "Reviewed in N model calls." to the coverage section when N > 1. Files left after `review.max_chunks` parts stay not reviewed; the partial hint then also names `review.max_chunks` ("To review every file, raise review.max_chunks, …"), and names `diff.max_tokens` only when it was the limit that applied (X-18).
+  - **Time (RC-14):** stdio uses the X-16 background job unchanged. Serve mode stays synchronous; serve clients raise their tool timeout or set `review.max_chunks = 1`.
+- **As implemented (lead decisions on 11e2, open to the architect):** `review.max_total_findings ≥ review.max_findings` is checked only when `review.max_total_findings` is set explicitly; at run time the cap is the larger of the two, so a v1.0 configuration with `review.max_findings` above 10 stays valid and a single part never loses findings. The "raise review.max_chunks" hint appears only when `review.max_chunks` is greater than 1. For a review in parts, `metadata.diff_tokens` is the sum over the parts and `metadata.request_tokens` the largest part's request.
+- **Consequences:** a review in N parts takes about N times as long as one call. `diff.max_tokens` now makes each part smaller, not the review shorter.
+
+#### X-20 — Deletions listed by name are not budget losses (added v1.1, settles 9a DESIGN-QUESTION 1)
+- **Decision:**
+  - A deleted file whose patch the deletion handling drops by design, and whose name is in the prompt's deleted-files section, counts as **reviewed**: its deletion was shown to the model. `Prepared` and `coverage` list it under `deleted_listed`; the coverage section shows it under "Deleted (listed by name)".
+  - Only deletions whose names are not in the text (cut by the budget, or the section did not fit) stay in `Omitted.Deleted` and count as not reviewed. The request-size guard moves a listed deletion whose name it cuts back to `Omitted.Deleted`.
+  - A deleted file that has a patch is reviewed only through its patch; its name in the section does not count.
+  - In a review in parts (X-19) a name is listed in at most one part.
+- **Consequences:** the accounting invariant gains `len(DeletedListed)`; `Tally()` counts it as reviewed; `deleted_listed` is in every schema that carries `coverage`.
+
+#### X-21 — `pr_ask` does not chunk (added v1.1, RC-15)
+- **Decision:** `pr_ask` keeps one model call. Merging several answers needs a further reduce call and its own honesty rules; that is backlog. Instead, the files the question names are admitted first:
+  - A changed file is named when its full path, or its base name of at least 5 characters, occurs in the question, case-sensitive, as a whole token: bounded by the start or end of the question or by a character that is not a path character (letters, digits, `.`, `/`, `-`, `_`), with full stops allowed right after the name. A full path may be written with a leading `./`, which is skipped before the same rule is applied (architect, on 11e2): `./src/a.go` names `src/a.go`, `../src/a.go` does not.
+  - Named files keep their relative order and go before the ranked rest. Pinning never overrides filters: only the reviewable files after filtering are candidates.
+  - Coverage and the X-18 banner are unchanged; `coverage.model_calls` is 1 (0 without a call) and `failed_parts` 0.
+- **Consequences:** a question about one file of a large PR is answered from that file when it fits the budget. `pr_ask` chunking stays in the backlog.
+
+**Confirmed from 9a (v1.1 spec §0):** binary and empty-diff files stay outside `total_files` (9a DESIGN-QUESTION 2), as the X-18 mapping says.
+
 ---
 
 ## 5. Resulting v1 configuration surface
@@ -425,6 +460,8 @@ Secrets are environment-only (in `serve` mode, credentials come from request hea
 | `review.inline_findings` | `REVIEW_MCP_REVIEW_INLINE_FINDINGS` | true | X-11; per-call `inline_findings` argument |
 | `review.persistent_overview` | `REVIEW_MCP_REVIEW_PERSISTENT_OVERVIEW` | true | X-12 |
 | `review.max_discussion_tokens` | `REVIEW_MCP_REVIEW_MAX_DISCUSSION_TOKENS` | 1500 | X-13; 0 disables the discussion block; must not be negative |
+| `review.max_chunks` | `REVIEW_MCP_REVIEW_MAX_CHUNKS` | 8 | X-19 (v1.1); 1 to 32; 1 reviews in one call |
+| `review.max_total_findings` | `REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS` | 10 | X-19 (v1.1); 1 to 50; at least `review.max_findings` when set; the run-time cap is the larger of the two |
 | `ask.extra_instructions` | `REVIEW_MCP_ASK_EXTRA_INSTRUCTIONS` | (empty) | Per-call override |
 | `log.level` | `REVIEW_MCP_LOG_LEVEL` | `info` | stderr only (X-8) |
 | `serve.listen` | `REVIEW_MCP_SERVE_LISTEN` | `127.0.0.1:8787` | serve only (X-10); `host:port`; `--listen` overrides |

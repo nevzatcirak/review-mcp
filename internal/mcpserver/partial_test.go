@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -84,9 +85,12 @@ func coverageSchemas(v any, out *[]map[string]any) {
 
 // TestOutputSchemasCarryThePartialFields: every output schema that has a
 // coverage object (pr_review and pr_ask, plain and stdio oneOf, and both
-// branches of job_result) declares the four X-18 fields as required.
+// branches of job_result) declares the four X-18 fields, the X-20 list
+// deleted_listed and the X-19 counts model_calls and failed_parts as
+// required.
 func TestOutputSchemasCarryThePartialFields(t *testing.T) {
-	types := map[string]string{"partial": "boolean", "reviewed_files": "integer", "total_files": "integer", "not_reviewed_files": "integer"}
+	types := map[string]string{"partial": "boolean", "reviewed_files": "integer", "total_files": "integer", "not_reviewed_files": "integer",
+		"deleted_listed": "array", "model_calls": "integer", "failed_parts": "integer"}
 	check := func(name string, schema any, want int) {
 		t.Helper()
 		raw, err := json.Marshal(schema)
@@ -107,8 +111,15 @@ func TestOutputSchemasCarryThePartialFields(t *testing.T) {
 			required, _ := c["required"].([]any)
 			for field, typ := range types {
 				p, _ := props[field].(map[string]any)
-				if p["type"] != typ {
+				// The schema inferred for ask.Result types a slice as
+				// ["null", "array"], as it does every other list.
+				ts, _ := p["type"].([]any)
+				nullableArray := typ == "array" && slices.Contains(ts, any(typ))
+				if p["type"] != typ && !nullableArray {
 					t.Errorf("%s: coverage.%s = %v, want type %s", name, field, p, typ)
+				}
+				if items, _ := p["items"].(map[string]any); typ == "array" && items["type"] != "string" {
+					t.Errorf("%s: coverage.%s items = %v, want strings", name, field, p["items"])
 				}
 				found := false
 				for _, r := range required {

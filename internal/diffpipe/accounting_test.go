@@ -2,13 +2,21 @@ package diffpipe
 
 import (
 	"slices"
+	"strings"
 	"testing"
+
+	"github.com/nevzatcirak/review-mcp/internal/patch"
+	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/tokens"
 )
 
-// checkAccounting asserts the spec §4.6 invariant documented on Prepared:
-// every input file is in exactly one of Included, Omitted.*, Clipped or
-// Skipped; the provider's skipped files open Skipped verbatim; Included and
-// Clipped are exactly the files whose content is in the text.
+// checkAccounting asserts the spec §4.6 invariant documented on Prepared,
+// with the X-20 split of the deletions: every input file is in exactly one
+// of Included, Omitted.*, Clipped, DeletedListed or Skipped; the provider's
+// skipped files open Skipped verbatim; Included and Clipped are exactly the
+// files whose content is in the text; DeletedListed are the dropped
+// deletions whose names are in the text, and no dropped deletion left in
+// Omitted.Deleted is.
 func checkAccounting(t *testing.T, in Input, p *Prepared) {
 	t.Helper()
 	if len(p.Skipped) < len(in.Skipped) || !slices.Equal(p.Skipped[:len(in.Skipped)], in.Skipped) {
@@ -29,6 +37,7 @@ func checkAccounting(t *testing.T, in Input, p *Prepared) {
 	add("Omitted.Modified", p.Omitted.Modified)
 	add("Omitted.Deleted", p.Omitted.Deleted)
 	add("Clipped", p.Clipped)
+	add("DeletedListed", p.DeletedListed)
 	for _, s := range p.Skipped {
 		add("Skipped", []string{s.Path})
 	}
@@ -43,7 +52,7 @@ func checkAccounting(t *testing.T, in Input, p *Prepared) {
 		}
 	}
 	total := len(p.Included) + len(p.Omitted.Added) + len(p.Omitted.Modified) + len(p.Omitted.Deleted) +
-		len(p.Clipped) + len(p.Skipped)
+		len(p.Clipped) + len(p.DeletedListed) + len(p.Skipped)
 	if want := len(in.Files) + len(in.Skipped); total != want {
 		t.Errorf("accounted %d entries, want %d (one per input file)", total, want)
 	}
@@ -52,4 +61,53 @@ func checkAccounting(t *testing.T, in Input, p *Prepared) {
 			t.Errorf("Prepare-added Skipped entry %v has an unexpected reason", s)
 		}
 	}
+	checkDeletedListed(t, in, p)
+}
+
+// checkDeletedListed: X-20. DeletedListed holds exactly the dropped
+// deletions (a deleted file without head content, whose patch the
+// compressed path drops) whose names are complete lines of the text's
+// deleted-files section.
+func checkDeletedListed(t *testing.T, in Input, p *Prepared) {
+	t.Helper()
+	dropped := map[string]bool{}
+	for _, f := range in.Files {
+		unreadable := f.HeadStatus == provider.ContentFetchFailed && f.Patch == ""
+		if f.Type == provider.ChangeDeleted && (f.HeadContent == nil || *f.HeadContent == "") && !unreadable {
+			dropped[f.Path] = true
+		}
+	}
+	if p.FastPath && len(p.DeletedListed) > 0 {
+		t.Errorf("fast path: DeletedListed = %q, want none", p.DeletedListed)
+	}
+	inSection := map[string]bool{}
+	if i := strings.LastIndex(p.Text, sectionSeparator+patch.DeletedFilesHeader+"\n"); i >= 0 {
+		section := p.Text[i+len(sectionSeparator+patch.DeletedFilesHeader+"\n"):]
+		cut := strings.HasSuffix(section, tokens.TruncationMarker)
+		names := strings.Split(strings.TrimSuffix(section, tokens.TruncationMarker), "\n")
+		for k, name := range names {
+			// The line before the marker may be a name cut in the middle;
+			// it counts only when it is a whole input path.
+			if k < len(names)-1 || !cut || seenPath(in, name) {
+				inSection[name] = true
+			}
+		}
+	}
+	for _, path := range p.DeletedListed {
+		if !dropped[path] {
+			t.Errorf("DeletedListed %q is not a dropped deletion", path)
+		}
+		if !inSection[path] {
+			t.Errorf("DeletedListed %q is not listed in the text's deleted-files section", path)
+		}
+	}
+	for _, path := range p.Omitted.Deleted {
+		if dropped[path] && inSection[path] {
+			t.Errorf("dropped deletion %q is listed in the text but accounted as Omitted.Deleted", path)
+		}
+	}
+}
+
+func seenPath(in Input, path string) bool {
+	return slices.ContainsFunc(in.Files, func(f provider.FilePatch) bool { return f.Path == path })
 }

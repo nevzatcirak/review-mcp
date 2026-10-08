@@ -122,7 +122,9 @@ func TestDiffMaxTokensOmitsFilesIntoCoverage(t *testing.T) {
 	h.prov.files = files
 	capTokens := 2000
 	h.deps.Config.Diff.MaxTokens = &capTokens
-	pl, err = Prepare(context.Background(), h.deps, Args{PRURL: testPRURL})
+	// One call (review.max_chunks 1): the cap bounds the one diff sent. A
+	// review in parts applies it to each part (TestChunkedRespectsDiffCap).
+	pl, err = Prepare(context.Background(), h.deps, Args{PRURL: testPRURL, MaxChunks: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

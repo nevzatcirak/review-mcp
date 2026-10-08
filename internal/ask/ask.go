@@ -265,9 +265,13 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 
 	// Step 5: prepare the plain diff (ModePlain, never ModeNumbered: the
-	// question is about the code, not about line anchors).
+	// question is about the code, not about line anchors). The files the
+	// question names go first (X-21); pr_ask makes one call and never
+	// reviews in parts.
+	pinned := PinnedFiles(question, d.Files)
 	prep, err := diffpipe.Prepare(diffpipe.Input{
 		Files: d.Files, Skipped: d.Skipped, Mode: diffpipe.ModePlain, Budget: budget, Diff: cfg.Diff,
+		Pinned: pinned,
 	})
 	if err != nil {
 		if errors.Is(err, tokens.ErrDoesNotFit) {
@@ -286,7 +290,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 	log.Debug("ask: diff prepared", "url", logging.RedactURL(ref.URL), "files", len(d.Files),
 		"provider_skipped", len(d.Skipped), "included", len(prep.Included), "clipped", len(prep.Clipped),
-		"fast_path", prep.FastPath, "prompt_tokens", promptTokens, "diff_tokens", prep.Tokens)
+		"fast_path", prep.FastPath, "prompt_tokens", promptTokens, "diff_tokens", prep.Tokens, "pinned", len(pinned))
 
 	pl := &Plan{Result: res, Budget: budget, ref: ref, p: p, log: log}
 	if prep.Text == "" {
@@ -310,6 +314,8 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 	pl.Prompts = Prompts{System: fit.Rendered.System, User: fit.Rendered.User}
 	res.Metadata.RequestTokens = fit.RequestTokens
+	// pr_ask makes one model call (X-21); a plan without one (Empty) keeps 0.
+	res.Coverage.ModelCalls = 1
 	if fit.KeptLines >= 0 {
 		types := map[string]provider.ChangeType{}
 		for _, f := range d.Files {

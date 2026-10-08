@@ -104,6 +104,13 @@ type Review struct {
 	// MaxDiscussionTokens is the token budget of the existing-discussion
 	// block of the prompt (X-13); 0 turns the block off.
 	MaxDiscussionTokens int `toml:"max_discussion_tokens" json:"max_discussion_tokens"`
+	// MaxChunks is the most model calls ("parts") one review makes when the
+	// prepared diff does not hold every reviewable file (X-19); 1 turns
+	// chunking off.
+	MaxChunks int `toml:"max_chunks" json:"max_chunks"`
+	// MaxTotalFindings caps the findings of a review after the parts are
+	// merged (X-19); each part still asks for at most MaxFindings.
+	MaxTotalFindings int `toml:"max_total_findings" json:"max_total_findings"`
 }
 
 // Ask configures the pr_ask tool.
@@ -153,6 +160,8 @@ func Defaults() *Config {
 			InlineFindings:        true,
 			PersistentOverview:    true,
 			MaxDiscussionTokens:   1500,
+			MaxChunks:             8,
+			MaxTotalFindings:      10,
 		},
 		Log: Log{Level: "info"},
 		Serve: Serve{

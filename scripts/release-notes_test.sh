@@ -11,6 +11,10 @@ cat >"$tmp/CHANGELOG.md" <<'EOF'
 
 ## [Unreleased]
 
+## [1.1.0-rc.1] - Unreleased
+
+- Parts.
+
 ## [1.0.0-rc.1] - 2026-01-02
 
 ### Added
@@ -38,6 +42,10 @@ want=$(printf '### Added\n\n- First tool surface.')
 
 out=$(sh "$here/release-notes.sh" v1.0.0-rc.10 "$tmp/CHANGELOG.md")
 [ "$out" = "- Tenth candidate." ] || fail "rc.10 must not match rc.1: $out"
+
+# A section marked "- Unreleased" (until it is tagged) is found by its version.
+out=$(sh "$here/release-notes.sh" v1.1.0-rc.1 "$tmp/CHANGELOG.md")
+[ "$out" = "- Parts." ] || fail "unreleased-marked section mismatch: $out"
 
 if sh "$here/release-notes.sh" v0.9.0 "$tmp/CHANGELOG.md" 2>/dev/null; then fail "empty section must fail"; fi
 if sh "$here/release-notes.sh" v2.0.0 "$tmp/CHANGELOG.md" 2>/dev/null; then fail "missing section must fail"; fi

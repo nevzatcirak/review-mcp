@@ -1,0 +1,150 @@
+=== part 1 of 2 (fast_path false, tokens 800)
+included: a.go, notes.zzz
+clipped: 
+deleted_listed: 
+omitted.added: c.go
+omitted.modified: huge.py
+omitted.deleted: 
+skipped: logo.png (binary), moved.go (empty_diff)
+--- text
+
+
+## File: 'a.go'
+
+@@ -0,0 +1,45 @@
+__new hunk__
+1 +    value_0 = compute(0)
+2 +    value_1 = compute(1)
+3 +    value_2 = compute(2)
+4 +    value_3 = compute(3)
+5 +    value_4 = compute(4)
+6 +    value_5 = compute(5)
+7 +    value_6 = compute(6)
+8 +    value_7 = compute(7)
+9 +    value_8 = compute(8)
+10 +    value_9 = compute(9)
+11 +    value_10 = compute(10)
+12 +    value_11 = compute(11)
+13 +    value_12 = compute(12)
+14 +    value_13 = compute(13)
+15 +    value_14 = compute(14)
+16 +    value_15 = compute(15)
+17 +    value_16 = compute(16)
+18 +    value_17 = compute(17)
+19 +    value_18 = compute(18)
+20 +    value_19 = compute(19)
+21 +    value_20 = compute(20)
+22 +    value_21 = compute(21)
+23 +    value_22 = compute(22)
+24 +    value_23 = compute(23)
+25 +    value_24 = compute(24)
+26 +    value_25 = compute(25)
+27 +    value_26 = compute(26)
+28 +    value_27 = compute(27)
+29 +    value_28 = compute(28)
+30 +    value_29 = compute(29)
+31 +    value_30 = compute(30)
+32 +    value_31 = compute(31)
+33 +    value_32 = compute(32)
+34 +    value_33 = compute(33)
+35 +    value_34 = compute(34)
+36 +    value_35 = compute(35)
+37 +    value_36 = compute(36)
+38 +    value_37 = compute(37)
+39 +    value_38 = compute(38)
+40 +    value_39 = compute(39)
+41 +    value_40 = compute(40)
+42 +    value_41 = compute(41)
+43 +    value_42 = compute(42)
+44 +    value_43 = compute(43)
+45 +    value_44 = compute(44)
+
+
+## File: 'notes.zzz'
+
+@@ -0,0 +1,4 @@
+__new hunk__
+1 +    value_0 = compute(0)
+2 +    value_1 = compute(1)
+3 +    value_2 = compute(2)
+4 +    value_3 = compute(3)
+
+Additional added files (insufficient token budget to process):
+
+c.go
+
+Additional modified files (insufficient token budget to process):
+
+huge.py
+=== part 2 of 2 (fast_path false, tokens 679)
+included: c.go
+clipped: 
+deleted_listed: 
+omitted.added: 
+omitted.modified: huge.py
+omitted.deleted: 
+skipped: 
+--- text
+
+
+## File: 'c.go'
+
+@@ -0,0 +1,44 @@
+__new hunk__
+1 +    value_0 = compute(0)
+2 +    value_1 = compute(1)
+3 +    value_2 = compute(2)
+4 +    value_3 = compute(3)
+5 +    value_4 = compute(4)
+6 +    value_5 = compute(5)
+7 +    value_6 = compute(6)
+8 +    value_7 = compute(7)
+9 +    value_8 = compute(8)
+10 +    value_9 = compute(9)
+11 +    value_10 = compute(10)
+12 +    value_11 = compute(11)
+13 +    value_12 = compute(12)
+14 +    value_13 = compute(13)
+15 +    value_14 = compute(14)
+16 +    value_15 = compute(15)
+17 +    value_16 = compute(16)
+18 +    value_17 = compute(17)
+19 +    value_18 = compute(18)
+20 +    value_19 = compute(19)
+21 +    value_20 = compute(20)
+22 +    value_21 = compute(21)
+23 +    value_22 = compute(22)
+24 +    value_23 = compute(23)
+25 +    value_24 = compute(24)
+26 +    value_25 = compute(25)
+27 +    value_26 = compute(26)
+28 +    value_27 = compute(27)
+29 +    value_28 = compute(28)
+30 +    value_29 = compute(29)
+31 +    value_30 = compute(30)
+32 +    value_31 = compute(31)
+33 +    value_32 = compute(32)
+34 +    value_33 = compute(33)
+35 +    value_34 = compute(34)
+36 +    value_35 = compute(35)
+37 +    value_36 = compute(36)
+38 +    value_37 = compute(37)
+39 +    value_38 = compute(38)
+40 +    value_39 = compute(39)
+41 +    value_40 = compute(40)
+42 +    value_41 = compute(41)
+43 +    value_42 = compute(42)
+44 +    value_43 = compute(43)
+
+Additional modified files (insufficient token budget to process):
+
+huge.py
+=== overall
+included: a.go, notes.zzz, c.go
+clipped: 
+deleted_listed: 
+too_large: huge.py
+omitted.added: 
+omitted.modified: 
+omitted.deleted: 
+skipped: logo.png (binary), moved.go (empty_diff)

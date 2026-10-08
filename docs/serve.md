@@ -305,6 +305,14 @@ client a tool timeout that fits your model, and set `llm.timeout_seconds` to
 match. A client that reports `-32001 Request timed out` gave up on its own
 timeout: raise that timeout in the client.
 
+A large pull request is reviewed in several parts, one model call after
+another ([Large pull requests](review.md#large-pull-requests)), and in serve
+mode all of them run inside the one request. A review in N parts takes about N
+times as long as a review in one call. For large pull requests, raise the
+client's tool timeout accordingly, or set `review.max_chunks = 1`
+(`REVIEW_MCP_REVIEW_MAX_CHUNKS=1`) on the server to review in one call, as
+before, with the files that do not fit listed as omitted.
+
 ## Errors specific to serve mode
 
 `credentials_missing`, `server_busy`, the malformed-header sentence and the

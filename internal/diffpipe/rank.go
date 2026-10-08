@@ -28,6 +28,38 @@ type group struct {
 	lang   string
 	weight int
 	files  []*file
+	// pinned marks the group of Input.Pinned files (pinFirst): it comes
+	// first and the compressed path keeps its order instead of sorting it
+	// by size.
+	pinned bool
+}
+
+// pinFirst moves the files whose path is in pinned out of their language
+// groups into one leading pinned group, in input order (files is the input
+// order). Groups left empty are dropped; the other groups and their files
+// keep their order. Paths of pinned that no file has are ignored.
+func pinFirst(groups []group, files []*file, pinned []string) []group {
+	want := make(map[string]bool, len(pinned))
+	for _, p := range pinned {
+		want[p] = true
+	}
+	head := group{pinned: true}
+	for _, f := range files {
+		if want[f.fp.Path] {
+			head.files = append(head.files, f)
+		}
+	}
+	if len(head.files) == 0 {
+		return groups
+	}
+	out := []group{head}
+	for _, g := range groups {
+		g.files = slices.DeleteFunc(slices.Clone(g.files), func(f *file) bool { return want[f.fp.Path] })
+		if len(g.files) > 0 {
+			out = append(out, g)
+		}
+	}
+	return out
 }
 
 // rank groups files by language (spec §4.2).
@@ -73,4 +105,37 @@ func rank(files []*file) []group {
 		return 0
 	})
 	return groups
+}
+
+// rankOrder returns the language order of the DQ-2 ranking of files.
+func rankOrder(files []provider.FilePatch) []string {
+	fs := make([]*file, len(files))
+	for i := range files {
+		fs[i] = &file{fp: &files[i]}
+	}
+	groups := rank(fs)
+	order := make([]string, len(groups))
+	for i, g := range groups {
+		order[i] = g.lang
+	}
+	return order
+}
+
+// orderGroups sorts groups into the language order given (the ranking of a
+// larger file set, see PrepareChunks). A subset of the files can weigh
+// differently from the whole, so rank alone could reorder the groups of a
+// later chunk. A language missing from order (not expected) goes last, in
+// rank order.
+func orderGroups(groups []group, order []string) {
+	pos := make(map[string]int, len(order))
+	for i, lang := range order {
+		pos[lang] = i
+	}
+	at := func(lang string) int {
+		if i, ok := pos[lang]; ok {
+			return i
+		}
+		return len(order)
+	}
+	slices.SortStableFunc(groups, func(a, b group) int { return at(a.lang) - at(b.lang) })
 }

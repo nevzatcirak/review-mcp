@@ -27,10 +27,11 @@ type diffOut struct {
 	Omitted  struct {
 		Added, Modified, Deleted []string
 	} `json:"omitted"`
-	Clipped   []string   `json:"clipped"`
-	Skipped   []diffSkip `json:"skipped"`
-	Filtered  []diffSkip `json:"filtered"`
-	ElapsedMS int64      `json:"elapsed_ms"`
+	Clipped       []string   `json:"clipped"`
+	DeletedListed []string   `json:"deleted_listed"`
+	Skipped       []diffSkip `json:"skipped"`
+	Filtered      []diffSkip `json:"filtered"`
+	ElapsedMS     int64      `json:"elapsed_ms"`
 }
 
 const diffSep = "--- prepared diff ---\n"
@@ -84,6 +85,7 @@ func assertAccounting(t *testing.T, d diffOut) {
 	all = append(all, d.Omitted.Modified...)
 	all = append(all, d.Omitted.Deleted...)
 	all = append(all, d.Clipped...)
+	all = append(all, d.DeletedListed...)
 	for _, s := range d.Skipped {
 		all = append(all, s.Path)
 	}
@@ -161,9 +163,10 @@ func TestDiagDiffCompressedPath(t *testing.T) {
 	if len(d.Omitted.Added)+len(d.Omitted.Modified)+len(d.Omitted.Deleted) == 0 {
 		t.Errorf("want omitted files: %+v", d.Omitted)
 	}
-	// The deleted file is dropped by deletion handling and listed.
-	if len(d.Omitted.Deleted) != 1 || d.Omitted.Deleted[0] != "server/gone.go" {
-		t.Errorf("omitted.deleted = %v", d.Omitted.Deleted)
+	// The deleted file is dropped by deletion handling and listed by name
+	// (X-20: deleted_listed, not omitted).
+	if len(d.DeletedListed) != 1 || d.DeletedListed[0] != "server/gone.go" || len(d.Omitted.Deleted) != 0 {
+		t.Errorf("deleted_listed = %v, omitted.deleted = %v", d.DeletedListed, d.Omitted.Deleted)
 	}
 	if d.Tokens > d.Budget.HardLimit {
 		t.Errorf("tokens %d exceed the hard limit %d", d.Tokens, d.Budget.HardLimit)

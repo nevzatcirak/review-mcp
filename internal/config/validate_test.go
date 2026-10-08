@@ -45,6 +45,12 @@ func TestValidationRules(t *testing.T) {
 		{"framework unknown", map[string]string{"REVIEW_MCP_DIFF_IGNORE_GENERATED_FRAMEWORKS": "protobuf,nosuchfw"}, "diff.ignore_generated_frameworks[1]: unknown framework \"nosuchfw\" (valid names: go_gen, graphql,"},
 		{"max findings low", map[string]string{"REVIEW_MCP_REVIEW_MAX_FINDINGS": "0"}, "review.max_findings: 0 is out of range (1-20)"},
 		{"max findings high", map[string]string{"REVIEW_MCP_REVIEW_MAX_FINDINGS": "21"}, "review.max_findings"},
+		{"max chunks low", map[string]string{"REVIEW_MCP_REVIEW_MAX_CHUNKS": "0"}, "review.max_chunks: 0 is out of range (1-32)"},
+		{"max chunks high", map[string]string{"REVIEW_MCP_REVIEW_MAX_CHUNKS": "33"}, "review.max_chunks: 33 is out of range (1-32)"},
+		{"max total findings low", map[string]string{"REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS": "0"}, "review.max_total_findings: 0 is out of range (1-50)"},
+		{"max total findings high", map[string]string{"REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS": "51"}, "review.max_total_findings: 51 is out of range (1-50)"},
+		{"max total findings below max findings", map[string]string{"REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS": "4", "REVIEW_MCP_REVIEW_MAX_FINDINGS": "5"},
+			"review.max_total_findings: 4 must be at least review.max_findings (5)"},
 		{"log level", map[string]string{"REVIEW_MCP_LOG_LEVEL": "loud"}, "log.level: invalid log level"},
 		{"web url without base url", map[string]string{"REVIEW_MCP_GITEA_BASE_URL": "", "REVIEW_MCP_GITEA_TOKEN": "", "REVIEW_MCP_GITEA_WEB_URL": "https://web.example.com", "REVIEW_MCP_BITBUCKET_SERVER_BASE_URL": "https://bitbucket.example.com", "REVIEW_MCP_BITBUCKET_SERVER_TOKEN": fakeBitbkt}, "gitea.web_url is set but gitea.base_url is not"},
 	}
@@ -103,11 +109,24 @@ func TestValidationBoundariesAccepted(t *testing.T) {
 		"REVIEW_MCP_DIFF_MAX_FILE_BYTES":              "1024",
 		"REVIEW_MCP_DIFF_MAX_DIFF_BYTES":              "1024",
 		"REVIEW_MCP_REVIEW_MAX_FINDINGS":              "20",
+		"REVIEW_MCP_REVIEW_MAX_CHUNKS":                "32",
+		"REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS":        "50",
 		"REVIEW_MCP_LLM_REASONING_EFFORT":             "high",
 		"REVIEW_MCP_IGNORE_REGEX":                     `^docs/.*\.md$`,
 		"REVIEW_MCP_DIFF_IGNORE_GENERATED_FRAMEWORKS": "protobuf",
 	})
 	mustLoad(t, MemSource{Env: env})
+	// The lower bounds of the chunking keys; max_total_findings may equal
+	// max_findings.
+	mustLoad(t, MemSource{Env: envWith(map[string]string{"REVIEW_MCP_REVIEW_MAX_CHUNKS": "1",
+		"REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS": "3", "REVIEW_MCP_REVIEW_MAX_FINDINGS": "3"})})
+	// With its default (10), max_total_findings does not reject a
+	// max_findings above it (a valid v1.0 configuration); the pipeline caps
+	// at the larger of the two.
+	cfg, _ := mustLoad(t, MemSource{Env: envWith(map[string]string{"REVIEW_MCP_REVIEW_MAX_FINDINGS": "15"})})
+	if got := EffectiveMaxTotalFindings(cfg.Review, cfg.Review.MaxFindings); got != 15 {
+		t.Errorf("effective max_total_findings = %d, want 15", got)
+	}
 	// wait_seconds 0 is valid: answer with a job id at once (X-16).
 	mustLoad(t, MemSource{Env: envWith(map[string]string{"REVIEW_MCP_LLM_WAIT_SECONDS": "0"})})
 }

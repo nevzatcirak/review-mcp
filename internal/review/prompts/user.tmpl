@@ -19,6 +19,13 @@ discussion block. When the pipeline supplies one (.discussion, already
 rendered: the fixed header and the threads inside an adaptive code fence),
 it follows the description and precedes the diff; without one nothing is
 rendered, so the prompt is byte-identical to the one without the feature.
+
+Intentional deviation (v1.1 spec WP-11e2, X-19): upstream reviews a pull
+request in one call. When the pipeline reviews a large one in several parts,
+each part's prompt gets one line (.part_header, the fixed sentence of
+PartHeader) right before the diff, telling the model which part it sees.
+With one part nothing is rendered, so the prompt is byte-identical to the
+one without the feature.
 */}}
 
 
@@ -41,6 +48,10 @@ PR Description:
 {{- if .discussion }}
 
 {{ .discussion }}
+{{- end }}
+{{- if .part_header }}
+
+{{ .part_header }}
 {{- end }}
 
 

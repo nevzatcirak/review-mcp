@@ -226,7 +226,8 @@ func TestRunAnswers(t *testing.T) {
 		t.Errorf("question = %q", res.Question)
 	}
 	if !slices.Equal(res.Coverage.Included, []string{"src/app.go", "src/util.go"}) ||
-		len(res.Coverage.Filtered) != 1 || res.Coverage.Filtered[0].Path != "vendor/lib.go" {
+		len(res.Coverage.Filtered) != 1 || res.Coverage.Filtered[0].Path != "vendor/lib.go" ||
+		res.Coverage.ModelCalls != 1 || res.Coverage.FailedParts != 0 {
 		t.Errorf("coverage = %+v", res.Coverage)
 	}
 	m := res.Metadata
@@ -446,7 +447,7 @@ func TestRunEmptyDiffMakesNoModelCall(t *testing.T) {
 	if !slices.Equal(res.Notes, []string{"No reviewable changes after filtering."}) || res.Answer != "" {
 		t.Errorf("notes %v answer %q", res.Notes, res.Answer)
 	}
-	if len(res.Coverage.Filtered) != 1 || len(res.Coverage.Included) != 0 {
+	if len(res.Coverage.Filtered) != 1 || len(res.Coverage.Included) != 0 || res.Coverage.ModelCalls != 0 {
 		t.Errorf("coverage = %+v", res.Coverage)
 	}
 	if res.Publish == nil || !res.Publish.Published {

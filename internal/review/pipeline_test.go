@@ -309,6 +309,8 @@ type harness struct {
 	llm      *fakeLLM
 	logs     *bytes.Buffer
 	rendered []*Result
+	// stages are the progress stages of the last runChunked.
+	stages []string
 }
 
 func newHarness(answers ...string) *harness {
@@ -397,7 +399,8 @@ func TestRunReview(t *testing.T) {
 	}
 	c := res.Coverage
 	if !slices.Equal(c.Included, []string{"src/app.go", "src/util.go"}) || len(c.Filtered) != 1 ||
-		c.Filtered[0].Path != "vendor/lib.go" || c.Filtered[0].Reason == provider.SkipFiltered {
+		c.Filtered[0].Path != "vendor/lib.go" || c.Filtered[0].Reason == provider.SkipFiltered ||
+		c.ModelCalls != 1 || c.FailedParts != 0 {
 		t.Errorf("coverage = %+v", c)
 	}
 	m := res.Metadata
@@ -534,7 +537,7 @@ func TestRunEmptyPreparedDiffMakesNoLLMCall(t *testing.T) {
 		res.Review.KeyIssuesToReview == nil {
 		t.Errorf("result = %+v", res)
 	}
-	if len(res.Coverage.Filtered) != 3 || len(res.Coverage.Included) != 0 || res.Metadata.LLMCalls != 0 {
+	if len(res.Coverage.Filtered) != 3 || len(res.Coverage.Included) != 0 || res.Metadata.LLMCalls != 0 || res.Coverage.ModelCalls != 0 {
 		t.Errorf("coverage = %+v", res.Coverage)
 	}
 	if res.Publish == nil || !res.Publish.Published {

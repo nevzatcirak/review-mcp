@@ -132,15 +132,16 @@ type omittedJSON struct {
 // diffpipe reasons empty_diff and unparseable_patch). Each file therefore
 // appears in exactly one list of the report.
 type diffReport struct {
-	Budget    budgetJSON    `json:"budget"`
-	FastPath  bool          `json:"fast_path"`
-	Tokens    int           `json:"tokens"`
-	Included  []string      `json:"included"`
-	Omitted   omittedJSON   `json:"omitted"`
-	Clipped   []string      `json:"clipped"`
-	Skipped   []skippedJSON `json:"skipped"`
-	Filtered  []skippedJSON `json:"filtered"`
-	ElapsedMS int64         `json:"elapsed_ms"`
+	Budget        budgetJSON    `json:"budget"`
+	FastPath      bool          `json:"fast_path"`
+	Tokens        int           `json:"tokens"`
+	Included      []string      `json:"included"`
+	Omitted       omittedJSON   `json:"omitted"`
+	Clipped       []string      `json:"clipped"`
+	DeletedListed []string      `json:"deleted_listed"`
+	Skipped       []skippedJSON `json:"skipped"`
+	Filtered      []skippedJSON `json:"filtered"`
+	ElapsedMS     int64         `json:"elapsed_ms"`
 }
 
 func nonNil(s []string) []string {
@@ -162,10 +163,11 @@ func buildDiffReport(b tokens.Budget, f *filter.Filter, p *diffpipe.Prepared, el
 		Omitted: omittedJSON{
 			Added: nonNil(p.Omitted.Added), Modified: nonNil(p.Omitted.Modified), Deleted: nonNil(p.Omitted.Deleted),
 		},
-		Clipped:   nonNil(p.Clipped),
-		Skipped:   []skippedJSON{},
-		Filtered:  []skippedJSON{},
-		ElapsedMS: elapsed.Milliseconds(),
+		Clipped:       nonNil(p.Clipped),
+		DeletedListed: nonNil(p.DeletedListed),
+		Skipped:       []skippedJSON{},
+		Filtered:      []skippedJSON{},
+		ElapsedMS:     elapsed.Milliseconds(),
 	}
 	for _, s := range p.Skipped {
 		if s.Reason != provider.SkipFiltered {

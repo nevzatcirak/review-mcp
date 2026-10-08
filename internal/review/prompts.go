@@ -2,6 +2,7 @@ package review
 
 import (
 	"embed"
+	"fmt"
 	"text/template"
 
 	"github.com/nevzatcirak/review-mcp/internal/prompt"
@@ -51,6 +52,9 @@ type PromptInput struct {
 	Discussion string
 	// Date is the prompt date (prompt.Date).
 	Date string
+	// PartHeader is the part line of a review in several parts (PartHeader);
+	// empty for a review in one call, which then renders as before.
+	PartHeader string
 	// Diff is the prepared diff; empty for the scaffolding measurement.
 	Diff string
 }
@@ -73,8 +77,17 @@ func (in *PromptInput) vars() map[string]any {
 		"branch":             in.Branch,
 		"description":        in.Description,
 		"discussion":         in.Discussion,
+		"part_header":        in.PartHeader,
 		"diff":               in.Diff,
 	}
+}
+
+// PartHeader is the line the user prompt carries before the diff when a
+// review is made in n > 1 parts (v1.1 spec WP-11e2, verbatim); i is the
+// 1-based part number.
+func PartHeader(i, n int) string {
+	return fmt.Sprintf("This pull request is large and is reviewed in %d parts. This is part %d of %d. "+
+		"Review only the files in the diff below; the other files are reviewed separately.", n, i, n)
 }
 
 // RenderPrompts renders the system and user prompts.

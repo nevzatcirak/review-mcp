@@ -36,7 +36,9 @@ func TestPartialCoverageAndHint(t *testing.T) {
 		h.prov.files = files
 		h.deps.Config.Diff.MaxTokens = cap
 		h.deps.Config.LLM.ContextWindow = window
-		pl, err := Prepare(context.Background(), h.deps, Args{PRURL: testPRURL})
+		// One call (review.max_chunks 1), as in v1.0; the hints of a review
+		// in parts are tested in chunked_test.go.
+		pl, err := Prepare(context.Background(), h.deps, Args{PRURL: testPRURL, MaxChunks: 1})
 		if err != nil {
 			t.Fatal(err)
 		}

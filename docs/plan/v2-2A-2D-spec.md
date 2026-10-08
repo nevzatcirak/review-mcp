@@ -31,7 +31,7 @@
    - metadata round trip; base strategy is one of the provider's documented values;
    - file list: modified, added, deleted, renamed with edits (old path kept), binary → skipped `binary`, too large → `size_limit`, beyond the file cap → `file_limit`;
    - hunks and content match the spec byte for byte (LF), including a file without trailing newline;
-   - threads: general before inline, replies in order, resolved hidden only where the provider reports resolution (capability `ThreadResolution`, WP-2b);
+   - threads: general before inline, replies in order, resolved hidden only where the provider reports resolution (capabilities `InlineThreadResolution` / `GeneralThreadResolution`, WP-2b);
    - `ReplyToComment` result `in_thread` matches the capability;
    - `EditComment` refuses a comment not written by the token user, before any write request;
    - `PostInlineComments` on an added line, a context line and an out-of-hunk line: posted, posted, unanchorable;
@@ -49,7 +49,8 @@ Commit: `test(provider): add a contract suite that every provider runs`
 ## 2. WP-2b — `PRRef` and capabilities (Sonnet)
 
 1. `PRRef.Namespace` documentation: may contain `/` (nested groups). Every place that builds a URL, a cache key or a log field from it escapes per segment. Audit and test: Gitea and Bitbucket parsers still reject a `/` in their namespace (their URL shapes have exactly one segment); a unit test proves a multi-segment namespace survives the X-22 cache key and `logging.RedactURL` unchanged.
-2. `Capabilities` gains `SuggestionBlocks`, `QuickActions`, `ThreadResolution`, `DescriptionEdit` (bools). Values: Gitea `ThreadResolution=true`, `DescriptionEdit=true`; Bitbucket Server `ThreadResolution=true`, `DescriptionEdit=true`; all others false.
+2. `Capabilities` gains `SuggestionBlocks`, `QuickActions`, `InlineThreadResolution`, `GeneralThreadResolution`, `DescriptionEdit` (bools; split resolution flags decided in the WP-2a review). Values: Gitea inline resolution true, general false, `DescriptionEdit=true`; Bitbucket Server both resolution flags true, `DescriptionEdit=true`; all others false.
+   - Also in this package (WP-2a review): document the two valid shapes of a limit-hit file on `Provider.GetDiff`; document on `FilePatch.Patch` that the no-newline marker is present only when the host provides it; add a `go list -deps` guard so no production package imports `internal/provider/contract`; add general-thread replies to the contract suite.
 3. **Slash sanitisation by capability.** The P5 rule (a published line starting with `/` gets a leading space) moves from `pr_ask` into the provider-neutral publishing path and applies to every published body when `QuickActions` is true. Today no provider sets it, so output is unchanged (golden check); a test with a fake capability proves it applies to overview, inline, reply and describe bodies.
 4. **[canary]** apply the sanitisation only to `pr_ask` again: the capability test fails for the overview body.
 

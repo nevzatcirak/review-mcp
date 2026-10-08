@@ -33,6 +33,11 @@ type Provider interface {
 	// result has one entry per item, in order. An error is returned only
 	// when nothing could be attempted.
 	PostInlineComments(ctx context.Context, ref PRRef, pr *PullRequest, items []InlineComment) ([]InlineResult, error)
+	// GetReviewStatus returns the human reviewers, the required approvals
+	// and the merge status of pr (X-23). It is read-only and never returns
+	// comment or review bodies. A part that cannot be read is left nil with
+	// a fixed note instead of failing the call.
+	GetReviewStatus(ctx context.Context, ref PRRef, pr *PullRequest, opts ReviewStatusOptions) *ReviewStatus
 	// FileLineURL is pure: no I/O.
 	FileLineURL(ref PRRef, pr *PullRequest, path string, line int) string
 }

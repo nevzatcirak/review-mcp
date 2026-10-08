@@ -93,7 +93,7 @@ always write.
 
 | Use | Needs |
 |---|---|
-| Read only: `pr_comments`, `pr_review` and `pr_ask` with `publish=false` | the read scopes below |
+| Read only: `pr_comments`, `pr_info`, `pr_review` and `pr_ask` with `publish=false` | the read scopes below |
 | Read and write: `publish=true`, `pr_comment_reply`, `pr_comment_create` | the read scopes plus the write scope |
 
 > **Every scope in this guide is unconfirmed.** They are derived from the API
@@ -133,6 +133,8 @@ Endpoints the Gitea provider calls (under `{base_url}/api/v1/repos/{owner}/{repo
 | `GET /issues/comments/{id}` | find the comment a reply refers to (`pr_comment_reply`); re-read a comment and check its author before editing it | `read:issue` | `internal/provider/gitea/comments.go` (`ReplyToComment`), `internal/provider/gitea/write.go` (`EditComment`) |
 | `PATCH /issues/comments/{id}` | edit a PR comment the token's user wrote (the review overview) | `write:issue` | `internal/provider/gitea/write.go` (`EditComment`) |
 | `GET /api/v1/user` | the token's own user | `read:user` | `internal/provider/gitea/write.go` (`CurrentUser`) |
+| `GET /pulls/{n}` (again), `GET /pulls/{n}/reviews`, and `GET /pulls/{n}/reviews/{id}/comments` for the token user's own comment-only reviews | `pr_info`: requested reviewers, each reviewer's state, and the check whether a review of the token's user is review-mcp's own (comment bodies are looked at for markers and never kept) | `read:repository` | `internal/provider/gitea/status.go` (`GetReviewStatus`) |
+| `GET /branch_protections` | `pr_info`: the rules are listed and the one for the target branch is picked by name or glob pattern. Optional: a token without the right to read branch protection (it may need repository admin) gets `null` and the note "not readable with this token", never a guess | `read:repository`; may need admin | `internal/provider/gitea/status.go` (`GetReviewStatus`) |
 | `POST /issues/{n}/comments` | post a comment: `publish=true` (the overview), `pr_comment_create` without a file, and `pr_comment_reply` (Gitea has no thread reply, so a reply is a new PR-level comment with a quote line) | `write:issue` | `internal/provider/gitea/gitea.go` (`PostComment`) |
 
 `pr_comment_create` adds no endpoint of its own: a PR-level comment needs the
@@ -169,6 +171,7 @@ includes your context path):
 | `GET .../pull-requests/{id}/changes` | the list of changed files | read | `internal/provider/bitbucketserver/diff.go` (`GetDiff`) |
 | `GET /rest/api/1.0/projects/{key}/repos/{slug}/raw/{path}?at={sha}` | file contents on both sides; the patch is built from them | read | `internal/provider/bitbucketserver/diff.go` (`rawPath`, `fetchSide`) |
 | `GET .../pull-requests/{id}/activities` | comment threads (`pr_comments`, reply lookup) | read | `internal/provider/bitbucketserver/comments.go` (`ListThreads`) |
+| `GET .../pull-requests/{id}` (again) and `GET .../pull-requests/{id}/merge` | `pr_info`: the reviewers with their status, and whether the pull request can be merged and why not (an open pull request only) | read | `internal/provider/bitbucketserver/status.go` (`GetReviewStatus`) |
 | `POST .../pull-requests/{id}/comments` | PR-level comment (`publish=true`, `pr_comment_create` without a file) | write | `internal/provider/bitbucketserver/bitbucketserver.go` (`PostComment`) |
 | `POST .../pull-requests/{id}/comments` with `parent` | reply inside a thread (`pr_comment_reply`) | write | `internal/provider/bitbucketserver/comments.go` (`ReplyToComment`) |
 | `POST .../pull-requests/{id}/comments` with `anchor` | inline comment on a changed or context line, one request per comment (`publish=true`, and `pr_comment_create` with `file` and `line`) | read (to be confirmed at A3) | `internal/provider/bitbucketserver/write.go` (`PostInlineComments`) |
@@ -442,7 +445,8 @@ layer that is broken.
    the result, use `publish=true` (needs the write scope).
 
 Ask a question the same way with `pr_ask` ([Asking questions](ask.md)), and
-read comment threads with `pr_comments`.
+read comment threads with `pr_comments`. Ask which branch a pull request merges
+into and who has approved it with `pr_info` ([Pull request status](pr-info.md)).
 
 ## 6. When something fails
 

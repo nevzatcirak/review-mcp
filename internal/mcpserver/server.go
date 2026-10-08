@@ -119,6 +119,7 @@ func New(deps Deps) *mcp.Server {
 	registerPRComments(s, deps)
 	registerPRCommentReply(s, deps)
 	registerPRCommentCreate(s, deps)
+	registerPRInfo(s, deps)
 	registerPRReview(s, deps)
 	registerPRAsk(s, deps)
 	if deps.background() {

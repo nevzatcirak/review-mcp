@@ -35,8 +35,9 @@ func (t *lenientTime) UnmarshalJSON(b []byte) error {
 }
 
 type apiUser struct {
-	ID    int64  `json:"id"`
-	Login string `json:"login"`
+	ID       int64  `json:"id"`
+	Login    string `json:"login"`
+	FullName string `json:"full_name"`
 }
 
 // apiIssueComment is an entry of GET .../issues/{n}/comments and the body of

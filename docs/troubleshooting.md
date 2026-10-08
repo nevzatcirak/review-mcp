@@ -320,6 +320,20 @@ the error text:
 Run the review again to cover those files. When every part fails, the review
 fails with the first part's error sentence, as a review in one call does.
 
+## `pr_info` required_approvals notes
+
+On Gitea, `pr_info` reads the repository's branch protection rules and picks
+the one for the target branch: a rule named like the branch, else the first
+rule whose glob pattern (`release/*`) matches it (patterns are tried by the
+rule's `priority` when Gitea sends one, lowest first, otherwise in list order). Reading the rules may need
+repository admin. The note in `required_approvals_note` says what happened:
+
+| `required_approvals` and note | Meaning |
+|---|---|
+| `null`, "not readable with this token" | The list of rules could not be read (the token lacks admin rights, the server does not offer it, or the call failed). Give the token repository admin, or read the number in the Gitea settings. |
+| `0`, "no branch protection rule applies to the target branch" | The rules were read and none matches the target branch, so no approvals are required by a rule. Check the rules in the repository settings if you expected one. |
+| `null`, "a protection pattern could not be evaluated" | No rule matched, but a rule's pattern is one review-mcp cannot evaluate (a pattern with `**`, or one Go's `path.Match` rejects; Gitea's glob may accept more), so that rule might apply. Read the number in the Gitea settings. |
+
 ## Review a pull request with `diag review`
 
 ```sh

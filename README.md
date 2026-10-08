@@ -122,6 +122,7 @@ dist-tag `latest`; release candidates of the next version under `next`. See the
 |---|---|
 | `server_info` | Version, enabled providers and the effective non-secret configuration; secrets show only as set or unset. |
 | `pr_comments` | Lists a pull request's comment threads. |
+| `pr_info` | Which branch a pull request merges into and who has reviewed or approved it: human reviewers with their states, approval counts, required approvals and merge status where the provider exposes them. review-mcp's own reviews and comments are reported separately and never count as approvals. Read-only, no LLM call; see [Pull request status](docs/pr-info.md). |
 | `pr_comment_reply` | Replies to a pull request comment (inside the thread on Bitbucket Server; as a quoting PR-level comment on Gitea). |
 | `pr_comment_create` | Posts a new comment on a pull request, PR-level or on a changed line (`file` and `line`). A line outside the diff is refused, never posted at PR level instead. |
 | `pr_review` | Reviews a pull request with your LLM. The title, description, existing comments and diff are sent to your LLM endpoint. Optionally publishes the review: one overview comment, edited in place on later runs, and inline comments on the changed lines. |
@@ -134,6 +135,7 @@ dist-tag `latest`; release candidates of the next version under `next`. See the
 - [Serve mode](docs/serve.md): one shared HTTP server for a team, the header contract, TLS, the container.
 - [Reviewing pull requests](docs/review.md): what `pr_review` sends to the LLM, choosing `llm.context_window`, reading coverage and notes, large pull requests reviewed in parts, `publish` (the overview and inline comments), discussion awareness, slow endpoints and `job_result`, `diag review --dry-run`.
 - [Asking questions about a pull request](docs/ask.md): what `pr_ask` sends to the LLM, files the question names, grounding and honesty, coverage, `publish` and the slash sanitization, `diag ask --dry-run`.
+- [Pull request status](docs/pr-info.md): what `pr_info` reports (target branch, human reviewers, approvals, merge status), where each fact comes from, and why review-mcp's own reviews are not reviewers.
 - [Getting started](docs/getting-started.md): the minimal configuration and the diff budget in detail.
 - [Troubleshooting](docs/troubleshooting.md): the `diag` commands and every error sentence.
 - [Changelog](CHANGELOG.md).

@@ -207,6 +207,13 @@ type apiRef struct {
 	LatestCommit string `json:"latestCommit"`
 }
 
+// apiPerson is a user object of a PR payload.
+type apiPerson struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	DisplayName string `json:"displayName"`
+}
+
 type apiPR struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
@@ -217,6 +224,12 @@ type apiPR struct {
 			DisplayName string `json:"displayName"`
 		} `json:"user"`
 	} `json:"author"`
+	Draft     *bool `json:"draft"`
+	Reviewers []struct {
+		User               apiPerson `json:"user"`
+		Status             string    `json:"status"`
+		LastReviewedCommit string    `json:"lastReviewedCommit"`
+	} `json:"reviewers"`
 	FromRef apiRef `json:"fromRef"`
 	ToRef   apiRef `json:"toRef"`
 	Links   struct {
@@ -272,6 +285,8 @@ func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*pro
 		BaseStrategy: strategy,
 		WebURL:       webURL,
 		State:        in.State,
+		Draft:        in.Draft,
+		Merged:       strings.EqualFold(in.State, "MERGED"),
 	}, nil
 }
 

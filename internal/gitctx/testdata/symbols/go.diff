@@ -1,0 +1,38 @@
+=== internal/server/handler.go
+@@ -10,14 +10,14 @@ func (s *Server) Serve(ctx context.Context) error {
+ 	ctx = withTrace(ctx)
+ 	s.mu.Lock()
+-func (s *Server) HandleRequest(ctx context.Context, r *Request) error {
++func (s *Server) HandleRequest(ctx context.Context, r *Request, opts Options) error {
+ 	return s.route(ctx, r)
+ }
+-func legacyRoute(name string) string {
+-	return "/v1/" + name
+-}
++func NewRouter() *Router {
++	return &Router{}
++}
+ // Reformatted only.
+-func (s *Server) Close() error {
++func (s *Server) Close() error  {
+ 	return nil
+ }
+@@ -60,6 +60,9 @@ type Options struct {
+ 	Name string
++	Retries int
++	if err := run(ctx); err != nil {
++	}
+ }
+=== internal/server/config.go
+@@ -1,6 +1,8 @@ package server
+ import "errors"
+-type Settings struct {
++type Settings struct { // widened
+ 	Addr string
+ }
++const DefaultTimeout = 5 * time.Second
++var ErrNotFound = errors.New("not found")
++var localOnly = 3
++func init() {
++	go worker(ctx)
++	defer cleanup(ctx)

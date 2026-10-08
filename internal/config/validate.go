@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"regexp/syntax"
 	"strings"
@@ -53,6 +54,7 @@ func (l *loader) validate() {
 		l.problem("review.max_chunks: %d is out of range (%d-%d)", c.Review.MaxChunks, MinMaxChunks, MaxMaxChunks)
 	}
 	l.validateMaxTotalFindings()
+	l.validateContextRepo()
 	if _, err := logging.ParseLevel(c.Log.Level); err != nil {
 		l.problem("log.level: %v", err)
 	}
@@ -102,6 +104,47 @@ func (l *loader) validateMaxTotalFindings() {
 // findings its own max_findings allowed.
 func EffectiveMaxTotalFindings(r Review, maxFindings int) int {
 	return max(r.MaxTotalFindings, maxFindings)
+}
+
+// Bounds of the context.repo.* keys (X-22).
+const (
+	MaxContextRepoIdleDays     = 365
+	MaxContextRepoCacheMB      = 1 << 20 // 1 TiB
+	MaxContextRepoFetchTimeout = 600
+	MaxContextRepoSymbols      = 50
+	MaxContextRepoHits         = 20
+	MinContextRepoTokens       = 200
+	MaxContextRepoTokens       = 16000
+)
+
+// validateContextRepo checks the context.repo.* keys. They are validated
+// whether or not context.repo.enabled is set, like every other key.
+func (l *loader) validateContextRepo() {
+	c := &l.cfg.Context.Repo
+	rng := func(key string, v, lo, hi int) bool {
+		if l.bad[key] {
+			return false
+		}
+		if v < lo || v > hi {
+			l.problem("%s: %d is out of range (%d-%d)", key, v, lo, hi)
+			return false
+		}
+		return true
+	}
+	c.CacheDir = strings.TrimSpace(c.CacheDir)
+	if c.CacheDir != "" && !filepath.IsAbs(c.CacheDir) {
+		l.problem("context.repo.cache_dir: %q must be an absolute path", c.CacheDir)
+	}
+	rng("context.repo.idle_days", c.IdleDays, 1, MaxContextRepoIdleDays)
+	rng("context.repo.fetch_timeout_seconds", c.FetchTimeoutSeconds, 1, MaxContextRepoFetchTimeout)
+	rng("context.repo.max_symbols", c.MaxSymbols, 1, MaxContextRepoSymbols)
+	rng("context.repo.max_hits_per_symbol", c.MaxHitsPerSymbol, 1, MaxContextRepoHits)
+	rng("context.repo.max_tokens", c.MaxTokens, MinContextRepoTokens, MaxContextRepoTokens)
+	cacheOK := rng("context.repo.max_cache_mb", c.MaxCacheMB, 1, MaxContextRepoCacheMB)
+	repoOK := rng("context.repo.max_repo_mb", c.MaxRepoMB, 1, MaxContextRepoCacheMB)
+	if cacheOK && repoOK && c.MaxRepoMB > c.MaxCacheMB {
+		l.problem("context.repo.max_repo_mb: %d must be at most context.repo.max_cache_mb (%d)", c.MaxRepoMB, c.MaxCacheMB)
+	}
 }
 
 func (l *loader) validateLLM() {

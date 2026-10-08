@@ -27,7 +27,9 @@ The result has two parts: the question and the answer as portable markdown
 (the text content; no raw HTML) and the same data as structured content
 (`question`, `answer`, `coverage`, `notes`, `metadata` and, when requested,
 `publish`). While it runs, a client that sent a progress token receives the
-stages `fetching`, `preparing diff`, `calling model` and `rendering`.
+stages `fetching`, `preparing diff`, `calling model` and `rendering` (with
+[repository context](#repository-context) on and symbols to look for,
+`fetching repository context` comes before `preparing diff`).
 
 ## What is sent to the LLM
 
@@ -40,6 +42,8 @@ One chat completion request per question goes to `llm.base_url`. It contains:
 - the **diff**, filtered by `ignore.glob`, `ignore.regex` and the built-in
   rules for generated files, lockfiles and binaries, in its plain form
   (`+`, `-` and space prefixes, no line numbers);
+- with [repository context](#repository-context) on, a block of places outside
+  the pull request that use the symbols the diff changes;
 - your **question**, `extra_instructions`, if any, and the output-language
   instruction.
 
@@ -153,6 +157,17 @@ The **notes** section appears when something deserves attention: the answer
 was cut off by the output limit ("The answer was cut off by the model's output
 limit."; raise `llm.max_output_tokens`), files were clipped, or the diff was
 shortened by the request-size guard.
+
+## Repository context
+
+With `context.repo.enabled` (stdio only; off by default) the prompt also
+carries a block of uses, in the rest of the repository, of the symbols the
+files of the prepared diff change, so that a question about the impact of a
+change can be answered from the callers. `pr_ask` makes one call and never
+reserves room for the block: it gets only what the diff leaves of the context
+window, and is left out (reason `budget`) when nothing is left. The coverage
+section and `coverage.repo_context` report it as for a review. See
+[Repository context](repo-context.md).
 
 ## Publishing
 

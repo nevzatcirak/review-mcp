@@ -98,6 +98,53 @@ func TestServerInfoListsPublishSettings(t *testing.T) {
 	}
 }
 
+// TestServerInfoRepoContext: the context.repo.* rows appear with their
+// origins; with context.repo.enabled the value is the git status (§3.0 item
+// 4), and without it the plain false.
+func TestServerInfoRepoContext(t *testing.T) {
+	saved := repoContextStatus
+	t.Cleanup(func() { repoContextStatus = saved })
+	repoContextStatus = func() string { return "enabled, unavailable: git 2.31 or later is required" }
+
+	env := validEnv()
+	env["REVIEW_MCP_CONTEXT_REPO_IDLE_DAYS"] = "3"
+	cfg, rep, err := load(env)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	md := RenderServerInfoMarkdown(ServerInfo(cfg, rep, nil))
+	for _, line := range []string{
+		"- `context.repo.enabled` = `false` (default)",
+		"- `context.repo.idle_days` = `3` (env)",
+		"- `context.repo.cache_dir` = `\"\"` (default)",
+		"- `context.repo.max_cache_mb` = `2048` (default)",
+		"- `context.repo.max_repo_mb` = `500` (default)",
+		"- `context.repo.fetch_timeout_seconds` = `60` (default)",
+		"- `context.repo.max_symbols` = `20` (default)",
+		"- `context.repo.max_hits_per_symbol` = `5` (default)",
+		"- `context.repo.max_tokens` = `2000` (default)",
+	} {
+		if !strings.Contains(md, line) {
+			t.Errorf("markdown lacks %q", line)
+		}
+	}
+
+	env["REVIEW_MCP_CONTEXT_REPO_ENABLED"] = "true"
+	cfg, rep, err = load(env)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	r := ServerInfo(cfg, rep, nil)
+	v := r.Config.Values["context.repo.enabled"]
+	if v.Value != "enabled, unavailable: git 2.31 or later is required" || v.Source != config.OriginEnv {
+		t.Errorf("context.repo.enabled = %v (%s)", v.Value, v.Source)
+	}
+	repoContextStatus = func() string { return "enabled, git 2.45.1" }
+	if line := "- `context.repo.enabled` = `\"enabled, git 2.45.1\"` (env)"; !strings.Contains(RenderServerInfoMarkdown(ServerInfo(cfg, rep, nil)), line) {
+		t.Errorf("markdown lacks %q", line)
+	}
+}
+
 func TestServerInfoInvalidConfig(t *testing.T) {
 	env := map[string]string{
 		"REVIEW_MCP_LLM_API_KEY": testLLMKey,

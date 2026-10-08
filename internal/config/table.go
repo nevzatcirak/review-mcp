@@ -83,6 +83,17 @@ var table = []entry{
 
 	{"ask.extra_instructions", "REVIEW_MCP_ASK_EXTRA_INSTRUCTIONS", func(c *Config) any { return &c.Ask.ExtraInstructions }},
 
+	// context.repo.* rows: v1.1 design note §2 (X-22).
+	{"context.repo.enabled", "REVIEW_MCP_CONTEXT_REPO_ENABLED", func(c *Config) any { return &c.Context.Repo.Enabled }},
+	{"context.repo.cache_dir", "REVIEW_MCP_CONTEXT_REPO_CACHE_DIR", func(c *Config) any { return &c.Context.Repo.CacheDir }},
+	{"context.repo.idle_days", "REVIEW_MCP_CONTEXT_REPO_IDLE_DAYS", func(c *Config) any { return &c.Context.Repo.IdleDays }},
+	{"context.repo.max_cache_mb", "REVIEW_MCP_CONTEXT_REPO_MAX_CACHE_MB", func(c *Config) any { return &c.Context.Repo.MaxCacheMB }},
+	{"context.repo.max_repo_mb", "REVIEW_MCP_CONTEXT_REPO_MAX_REPO_MB", func(c *Config) any { return &c.Context.Repo.MaxRepoMB }},
+	{"context.repo.fetch_timeout_seconds", "REVIEW_MCP_CONTEXT_REPO_FETCH_TIMEOUT_SECONDS", func(c *Config) any { return &c.Context.Repo.FetchTimeoutSeconds }},
+	{"context.repo.max_symbols", "REVIEW_MCP_CONTEXT_REPO_MAX_SYMBOLS", func(c *Config) any { return &c.Context.Repo.MaxSymbols }},
+	{"context.repo.max_hits_per_symbol", "REVIEW_MCP_CONTEXT_REPO_MAX_HITS_PER_SYMBOL", func(c *Config) any { return &c.Context.Repo.MaxHitsPerSymbol }},
+	{"context.repo.max_tokens", "REVIEW_MCP_CONTEXT_REPO_MAX_TOKENS", func(c *Config) any { return &c.Context.Repo.MaxTokens }},
+
 	{"log.level", "REVIEW_MCP_LOG_LEVEL", func(c *Config) any { return &c.Log.Level }},
 
 	// serve.* rows: P6 spec §1.2. They are read in every mode but validated
@@ -129,8 +140,12 @@ var (
 func init() {
 	for _, e := range table {
 		byKey[e.key] = e
-		sec, _, _ := strings.Cut(e.key, ".")
-		sections[sec] = true
+		// Every proper prefix is a section: "context" and "context.repo"
+		// for context.repo.enabled.
+		for k := e.key; strings.Contains(k, "."); {
+			k = k[:strings.LastIndex(k, ".")]
+			sections[k] = true
+		}
 		knownEnv[e.env] = true
 		keyToEnv[e.key] = e.env
 	}

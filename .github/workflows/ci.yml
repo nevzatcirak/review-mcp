@@ -26,6 +26,20 @@ jobs:
         with:
           version: v2.14.0
 
+  # The repository-context runner on Windows (v1.1 spec §3.0 item 3): lock
+  # files with O_CREATE|O_EXCL, core.hooksPath=NUL, the child environment
+  # and the cache sweeps. The git http-backend tests skip themselves there
+  # with a stated reason. -race needs cgo, which this runner lacks.
+  gitctx-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+      - name: Test internal/gitctx
+        run: go test -count=1 -v ./internal/gitctx/...
+
   licenses:
     runs-on: ubuntu-latest
     steps:

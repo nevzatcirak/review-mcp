@@ -43,8 +43,8 @@ func (c *countingListen) listen(network, address string) (net.Listener, error) {
 }
 
 // TestServeRefusesInvalidConfigWithoutListening: [canary] (P6 §1.6 #2 and
-// #4): environment provider tokens and an insecure non-loopback bind fail
-// validation, exit 2 and open no listener.
+// #4, and RC-1): environment provider tokens, an insecure non-loopback bind
+// and repository context fail validation, exit 2 and open no listener.
 func TestServeRefusesInvalidConfigWithoutListening(t *testing.T) {
 	tests := []struct {
 		name string
@@ -56,6 +56,8 @@ func TestServeRefusesInvalidConfigWithoutListening(t *testing.T) {
 			"serve mode takes provider tokens from request headers; unset REVIEW_MCP_GITEA_TOKEN"},
 		{"bitbucket token in env", serveTestEnv(map[string]string{"REVIEW_MCP_BITBUCKET_SERVER_TOKEN": serveEnvToken}), nil,
 			"serve mode takes provider tokens from request headers; unset REVIEW_MCP_BITBUCKET_SERVER_TOKEN"},
+		{"repository context (RC-1)", serveTestEnv(map[string]string{"REVIEW_MCP_CONTEXT_REPO_ENABLED": "true"}), nil,
+			config.ServeRepoContextSentence},
 		{"insecure bind by flag", serveTestEnv(nil), []string{"--listen", "0.0.0.0:8787"}, "is not a loopback address"},
 		{"insecure bind by env", serveTestEnv(map[string]string{"REVIEW_MCP_SERVE_LISTEN": "0.0.0.0:8787"}), nil, "is not a loopback address"},
 		{"server key source without access token", serveTestEnv(map[string]string{

@@ -1,0 +1,31 @@
+=== src/api/client.ts
+@@ -5,12 +5,12 @@ export class ApiClient {
+   private base: string;
+-  async fetchUser(id: string): Promise<User> {
++  async fetchUser(id: string, opts?: Options): Promise<User> {
+     return this.get(id);
+   }
+-export function parseResponse(raw: string): Response {
++export function parseResponse(raw: string, strict: boolean): Response {
+   return JSON.parse(raw);
+ }
+-export interface LegacyOptions {
+-}
++export interface ClientOptions {
++}
++export type UserId = string;
++export const API_VERSION = "v2";
++export const buildUrl = (path: string): string => base + path;
++export enum Status { Ok, Failed }
++const localHelper = async (x) => x + 1;
++  retryRequest(attempt, delay) {
++  }
++    if (attempt > 3) {
++  describe('client', function() {
++  setTimeout(function() {
+=== src/util.js
+@@ -1,4 +1,4 @@ function formatName(first, last) {
+-function formatName(first, last) {
++function formatName(first, last, sep) {
+ }
++module.exports = { formatName };

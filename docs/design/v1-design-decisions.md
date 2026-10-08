@@ -64,6 +64,7 @@ code must not anticipate them beyond the seams named here.
 | X-19 | Chunked review (v1.1, RC-11 to RC-14) | When the prepared diff does not hold every reviewable file, `pr_review` reviews the rest in further model calls ("parts"), up to `review.max_chunks` (default 8), sequentially, and merges the answers; `review.max_chunks = 1` is the v1.0 behaviour | Decided |
 | X-20 | Deletions listed by name are not budget losses (v1.1, settles 9a DESIGN-QUESTION 1) | A deleted file whose patch is dropped by design and whose name is in the prompt's deleted-files list counts as reviewed (`coverage.deleted_listed`); only deletions cut by the budget are not reviewed | Decided |
 | X-21 | `pr_ask` does not chunk (v1.1, RC-15) | `pr_ask` keeps one call; the files a question names are admitted first; the X-18 banner stays | Decided |
+| X-22 | Repository context (v1.1, RC-1 to RC-10) | Opt-in and stdio only: the PR head is fetched into a credential-safe, self-pruning cache, the symbols the diff changes are searched with `git grep` on that commit, and the best uses go into a budgeted prompt block; every failure is a note and `coverage.repo_context`, never a failed review | Decided |
 | X-23 | `pr_info`: target branch, reviewers and approvals (v1.1, Track C) | A read-only tool, no LLM call: target branch, human reviewers with states, approval counts, required approvals and merge status where the provider exposes them; review-mcp's own marked activity is reported separately and never counts as a review | Decided |
 
 ---
@@ -406,6 +407,31 @@ implementation must do or must not do).
   - Coverage and the X-18 banner are unchanged; `coverage.model_calls` is 1 (0 without a call) and `failed_parts` 0.
 - **Consequences:** a question about one file of a large PR is answered from that file when it fits the budget. `pr_ask` chunking stays in the backlog.
 
+#### X-22 — Repository context (added v1.1, RC-1 to RC-10)
+- **Origin:** a diff-only review misses the effect of a change on the rest of the project (callers of a changed function, other implementations of a changed interface). The design note `docs/design/v1.1-repo-context.md` holds the rationale; the v1.1 spec §3.0 settled its open questions. Guide: `docs/repo-context.md`.
+- **Decision (RC-1 to RC-10):**
+  - **Opt-in, stdio only (RC-1).** `context.repo.enabled` defaults to false; in serve mode it is a startup error with a fixed sentence (a shared server would hold code fetched with one user's token).
+  - **System `git`, no new module (RC-2).** Minimum 2.31, checked once per process; a missing or old `git` is a note, never an error.
+  - **Credentials (RC-3).** The token reaches `git` only through the environment of the one fetch process (`http.extraHeader` as `GIT_CONFIG_*`); never argv, disk, logs or errors. Gitea: `Authorization: token`, then on a 401 HTTP Basic with the token user's name; Bitbucket Server: `Bearer`, then Basic; the scheme that worked is cached for the process (§3.0 items 1 and 2).
+  - **Pinned clone URL (RC-4)** from the configured base URL and the resolved repository; no redirects.
+  - **Fetch and verify (RC-5).** The PR ref (`refs/pull/<n>/head`, `refs/pull-requests/<n>/from`) with `--depth=1 --filter=blob:limit=1m --no-tags`; the fetched commit must equal the provider's head SHA.
+  - **Cache lifecycle (RC-6).** Idle and LRU sweeps at the start of every use, a lock file per repository, `diag cache [--prune]`.
+  - **Symbols and uses (RC-7).** Symbols from hunk headers and definition lines, `git grep -w -F` on the head commit with the PR's own files excluded by pathspec and again by a post-filter.
+  - **Block (RC-8).** After the discussion block and before the diff, counted inside the prompt tokens, clipped by whole entries; used by `pr_review` and `pr_ask`.
+  - **Honesty (RC-9).** A coverage line and `coverage.repo_context` (`status`, `reason`, `symbols`, `references`, `files`) in every schema that carries `coverage`.
+  - **Measure before claiming (RC-10).** `diag review --repo-context=on|off` and `tools/evalrepo`; stage 2 (a code graph) starts only if the owner's ratings show a clear gain on at least 20 pull requests.
+- **Settled on PR #13 (architect):**
+  - **Isolation.** Every `git` child gets an allowlisted environment (never the parent's), `HOME` and `XDG_CONFIG_HOME` at an empty `<cache_dir>/.home`, `GIT_CONFIG_NOSYSTEM=1` except on Windows, and before any request `git ls-remote --get-url origin` must print exactly the pinned URL (`insteadOf` guard; reason `redirect`). Expanding `origin`, not the literal URL.
+  - **Proxy and TLS** mirror the provider client: proxy variables passed on, `ca_cert` as `http.sslCAInfo` (with `http.sslBackend=openssl` on Windows), `insecure_skip_verify` as `http.sslVerify=false`.
+  - **Cache layout** `host[_port]/<escaped base path or _>/namespace/repo`, fixed depth with injective escaping, so two instances on one host never share an entry; dot-prefixed host names are skipped; the old three-level layout is not recognised.
+  - **Offline reads.** Searches run with no credential, `protocol.allow=never` and `GIT_NO_LAZY_FETCH=1`; a blob the partial clone lacks is counted as skipped, never fetched. `GIT_NO_LAZY_FETCH` is set where git supports it; on older git `protocol.allow=never` alone blocks lazy fetches, which is tested. Errors from `git` are mapped to fixed reasons; stderr is never passed on.
+  - **Ranking.** Removed or renamed, changed signature, other changed (existing), new definitions, then the symbols of test files (by file-name rules), each in diff order.
+  - **Budget.** The diff always wins. With `review.max_chunks > 1`, `context.repo.max_tokens` is reserved up front when the head is ready and the diff has symbols, for the one call and for every part alike; files the reservation pushes out go to a further part (acceptable; counted in `model_calls`). With `review.max_chunks = 1` and in `pr_ask`, the block uses only the room left and is skipped with reason `budget` otherwise. A block that would make the request-size guard trim the diff is dropped.
+  - **Parts (X-19).** Each part searches the symbols of its own files and has its own block; the head is fetched once. A part excludes only its own files: uses in files another part reviews are shown, marked `(changed in this pull request; reviewed in part J)`, and uses in files no part reviews `(changed in this pull request; not reviewed)`. In one call every PR file is excluded.
+  - **Reasons.** `auth`, `not_found`, `timeout`, `too_large`, `sha_mismatch`, `redirect`, `git_failed`, `git_unavailable`, `busy`, `cache_unusable`, `unsupported` (from `gitctx`), plus `budget` and `nothing_to_review` (an empty diff is `skipped`, not `off`; `off` means only "disabled").
+  - **Progress.** The fetch is its own stage, `fetching repository context`, before `preparing diff`, reported only when context is on and the diff has symbols; per-part searches add no stage.
+- **Consequences:** `context.repo.*` keys in §5 (the shipped `max_tokens` range is 200 to 16000); `coverage.repo_context` in every schema; the prompt templates record the deviation from upstream in their header comments; the cache holds only re-fetchable copies.
+
 #### X-23 — `pr_info`: target branch, reviewers and approvals (added v1.1, Track C, owner request)
 - **Origin:** "which branch does this pull request merge into, and who has approved it?" had no tool. The obvious answer, "reviews on the PR", is wrong for a PR that review-mcp itself reviewed: the AI review is a review on Gitea, and counting it would read as an approval.
 - **Decision:**
@@ -475,6 +501,15 @@ Secrets are environment-only (in `serve` mode, credentials come from request hea
 | `review.max_chunks` | `REVIEW_MCP_REVIEW_MAX_CHUNKS` | 8 | X-19 (v1.1); 1 to 32; 1 reviews in one call |
 | `review.max_total_findings` | `REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS` | 10 | X-19 (v1.1); 1 to 50; at least `review.max_findings` when set; the run-time cap is the larger of the two |
 | `ask.extra_instructions` | `REVIEW_MCP_ASK_EXTRA_INSTRUCTIONS` | (empty) | Per-call override |
+| `context.repo.enabled` | `REVIEW_MCP_CONTEXT_REPO_ENABLED` | false | X-22 (v1.1); repository context, stdio only; `server_info` shows `enabled, git <version>` or `enabled, unavailable: <reason>` when set |
+| `context.repo.cache_dir` | `REVIEW_MCP_CONTEXT_REPO_CACHE_DIR` | (empty) | X-22; absolute path; empty means `os.UserCacheDir()/review-mcp/repos`; created with mode 0700; a non-empty directory without review-mcp's `CACHEDIR.TAG` is refused |
+| `context.repo.idle_days` | `REVIEW_MCP_CONTEXT_REPO_IDLE_DAYS` | 7 | X-22; 1 to 365 |
+| `context.repo.max_cache_mb` | `REVIEW_MCP_CONTEXT_REPO_MAX_CACHE_MB` | 2048 | X-22; 1 to 1048576 |
+| `context.repo.max_repo_mb` | `REVIEW_MCP_CONTEXT_REPO_MAX_REPO_MB` | 500 | X-22; 1 to 1048576, at most `max_cache_mb`; measured after the fetch |
+| `context.repo.fetch_timeout_seconds` | `REVIEW_MCP_CONTEXT_REPO_FETCH_TIMEOUT_SECONDS` | 60 | X-22; 1 to 600; covers the lock wait and the fetch, including the auth retry |
+| `context.repo.max_symbols` | `REVIEW_MCP_CONTEXT_REPO_MAX_SYMBOLS` | 20 | X-22; 1 to 50; symbols taken from the diff, ranked (removed or renamed, changed signature, other changed) |
+| `context.repo.max_hits_per_symbol` | `REVIEW_MCP_CONTEXT_REPO_MAX_HITS_PER_SYMBOL` | 5 | X-22; 1 to 20; uses kept per symbol, distinct files and the definition's language group first |
+| `context.repo.max_tokens` | `REVIEW_MCP_CONTEXT_REPO_MAX_TOKENS` | 2000 | X-22; 200 to 16000; token budget of the repository-context block, counted inside the prompt tokens; a part of a review in parts has its own; clipped by whole entries, dropped when the diff needs the room |
 | `log.level` | `REVIEW_MCP_LOG_LEVEL` | `info` | stderr only (X-8) |
 | `serve.listen` | `REVIEW_MCP_SERVE_LISTEN` | `127.0.0.1:8787` | serve only (X-10); `host:port`; `--listen` overrides |
 | `serve.tls_cert` | `REVIEW_MCP_SERVE_TLS_CERT` | — | serve only; PEM path, set together with `tls_key` |

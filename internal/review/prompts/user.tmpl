@@ -26,6 +26,20 @@ each part's prompt gets one line (.part_header, the fixed sentence of
 PartHeader) right before the diff, telling the model which part it sees.
 With one part nothing is rendered, so the prompt is byte-identical to the
 one without the feature.
+
+Intentional deviation (v1.1 spec WP-11c, X-22, RC-8): upstream has no
+repository context. When context.repo.enabled is set and the pipeline found
+uses of the changed symbols outside the pull request, it supplies one block
+(.repo_context, already rendered: the fixed sentence of repoctx.Header and
+the entries "[path:line] uses symbol" with their snippets inside an
+adaptive code fence). It follows the discussion block and precedes the part
+line and the diff; without one nothing is rendered, so the prompt is
+byte-identical to the one without the feature. In a review in several parts
+an entry whose file is itself changed by the pull request, in a file another
+part reviews (or that no part reviews), ends its first line with a mark in
+parentheses: "(changed in this pull request; reviewed in part J)" or
+"(changed in this pull request; not reviewed)". The uses are read from the
+head commit, so they show the new version of that file. The block's fixed intro sentence says that such entries are reviewed in another part or not at all.
 */}}
 
 
@@ -48,6 +62,10 @@ PR Description:
 {{- if .discussion }}
 
 {{ .discussion }}
+{{- end }}
+{{- if .repo_context }}
+
+{{ .repo_context }}
 {{- end }}
 {{- if .part_header }}
 

@@ -54,15 +54,20 @@ func progressFunc(ctx context.Context, req *mcp.CallToolRequest, log *slog.Logge
 	if token == nil || req.Session == nil {
 		return nil
 	}
-	step, total := 0, progressTotal
+	step, extra, parts := 0, 0, 0
 	return func(stage string) {
 		step++
-		// A review in N parts reports one "calling model (part I of N)"
-		// stage per part instead of one "calling model" (X-19), so its
-		// total is the other stages plus N.
-		if n, ok := review.StageParts(stage); ok {
-			total = max(total, progressTotal-1+n)
+		// The repository-context fetch is one more stage, reported only
+		// when it happens (X-22). A review in N parts reports one "calling
+		// model (part I of N)" stage per part instead of one "calling
+		// model" (X-19), so its total is the other stages plus N.
+		if stage == review.StageRepoContext {
+			extra = 1
 		}
+		if n, ok := review.StageParts(stage); ok {
+			parts = max(parts, n-1)
+		}
+		total := progressTotal + extra + parts
 		err := req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{
 			ProgressToken: token, Message: stage, Progress: float64(step), Total: float64(total),
 		})

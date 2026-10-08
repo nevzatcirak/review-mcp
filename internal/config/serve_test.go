@@ -359,3 +359,24 @@ func TestIsLoopbackHost(t *testing.T) {
 		}
 	}
 }
+
+// TestServeRefusesRepoContext: [canary] (RC-1, v1.1 spec §3.0 item 4):
+// repository context is a startup error in serve mode, with a fixed
+// sentence, from the environment and from a file; stdio accepts it.
+func TestServeRefusesRepoContext(t *testing.T) {
+	ps := serveProblems(t, serveEnv(map[string]string{"REVIEW_MCP_CONTEXT_REPO_ENABLED": "true"}), nil)
+	if !hasProblem(ps, ServeRepoContextSentence) {
+		t.Errorf("repo context in serve mode not refused: %v", ps)
+	}
+	file := "[context.repo]\nenabled = true\n"
+	ps = serveProblems(t, serveEnv(map[string]string{"REVIEW_MCP_CONFIG": "/c.toml"}), map[string]string{"/c.toml": file})
+	if !hasProblem(ps, ServeRepoContextSentence) {
+		t.Errorf("repo context from a file in serve mode not refused: %v", ps)
+	}
+	if ps := serveProblems(t, serveEnv(map[string]string{"REVIEW_MCP_CONTEXT_REPO_ENABLED": "false"}), nil); ps != nil {
+		t.Errorf("repo context off in serve mode: %v", ps)
+	}
+	if _, _, err := Load(memSrc(envWith(map[string]string{"REVIEW_MCP_CONTEXT_REPO_ENABLED": "true"}), nil)); err != nil {
+		t.Errorf("stdio refused repo context: %v", err)
+	}
+}

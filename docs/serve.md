@@ -313,6 +313,20 @@ client's tool timeout accordingly, or set `review.max_chunks = 1`
 (`REVIEW_MCP_REVIEW_MAX_CHUNKS=1`) on the server to review in one call, as
 before, with the files that do not fit listed as omitted.
 
+## Repository context is not available
+
+[Repository context](repo-context.md) caches code fetched with the caller's
+provider token. A shared server would hold that code for everyone, and another
+user could receive it as context, so serve mode refuses it: with
+`context.repo.enabled` set, the server exits with code 2 before it listens,
+printing
+
+```text
+context.repo.enabled: repository context is not available in serve mode (cached code fetched with one user's token must not reach another user); unset REVIEW_MCP_CONTEXT_REPO_ENABLED
+```
+
+Use stdio mode (one user, one cache) if you want it.
+
 ## Errors specific to serve mode
 
 `credentials_missing`, `server_busy`, the malformed-header sentence and the

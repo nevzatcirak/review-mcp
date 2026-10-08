@@ -28,20 +28,30 @@ func structLeaves(t *testing.T, c *Config) map[string]leaf {
 		if sec == "" || sec == "-" {
 			t.Fatalf("Config.%s has no toml tag", f.Name)
 		}
-		sv := rv.Field(i)
-		for j := 0; j < sv.NumField(); j++ {
-			ff := sv.Type().Field(j)
-			tk := ff.Tag.Get("toml")
-			if tk == "" {
-				t.Fatalf("%s.%s has no toml tag", f.Name, ff.Name)
-			}
-			if jk := ff.Tag.Get("json"); jk != tk {
-				t.Errorf("%s.%s: json tag %q differs from toml tag %q", f.Name, ff.Name, jk, tk)
-			}
-			out[sec+"."+tk] = leaf{key: sec + "." + tk, addr: sv.Field(j).Addr().Pointer(), typ: ff.Type}
-		}
+		addLeaves(t, out, sec, f.Name, rv.Field(i))
 	}
 	return out
+}
+
+// addLeaves records the fields of the section struct sv under prefix,
+// descending into nested section structs (context.repo).
+func addLeaves(t *testing.T, out map[string]leaf, prefix, name string, sv reflect.Value) {
+	t.Helper()
+	for j := 0; j < sv.NumField(); j++ {
+		ff := sv.Type().Field(j)
+		tk := ff.Tag.Get("toml")
+		if tk == "" {
+			t.Fatalf("%s.%s has no toml tag", name, ff.Name)
+		}
+		if jk := ff.Tag.Get("json"); jk != tk {
+			t.Errorf("%s.%s: json tag %q differs from toml tag %q", name, ff.Name, jk, tk)
+		}
+		if ff.Type.Kind() == reflect.Struct {
+			addLeaves(t, out, prefix+"."+tk, name+"."+ff.Name, sv.Field(j))
+			continue
+		}
+		out[prefix+"."+tk] = leaf{key: prefix + "." + tk, addr: sv.Field(j).Addr().Pointer(), typ: ff.Type}
+	}
 }
 
 // TestTableMatchesStruct fails when a Config field has no table row or a table
@@ -107,7 +117,9 @@ func sampleFor(p any) string {
 		return "sample"
 	case **string:
 		return "sample"
-	case *int, **int:
+	case *int:
+		return strconv.Itoa(*v + 1)
+	case **int:
 		return "7"
 	case **int64:
 		return "-9"

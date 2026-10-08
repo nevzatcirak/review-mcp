@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/gitctx"
 	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/mdutil"
 	"github.com/nevzatcirak/review-mcp/internal/version"
@@ -76,6 +77,7 @@ func ServerInfo(cfg *config.Config, rep *config.Report, loadErr error) ServerInf
 	bi := version.Info()
 	sum := cfg.Summary(rep)
 	reportContextWindow(&sum, cfg)
+	reportRepoContext(&sum, cfg)
 
 	res := ServerInfoResult{
 		Name:      ServerName,
@@ -125,6 +127,24 @@ func reportContextWindow(sum *config.Summary, cfg *config.Config) {
 	}
 	sum.Values[key] = v
 }
+
+// reportRepoContext shows, when context.repo.enabled is set, whether the
+// system git can serve it (§3.0 item 4): "enabled, git <version>" or
+// "enabled, unavailable: <fixed reason>". The git version is checked once
+// per process ("git --version", no network). Disabled, the value stays
+// false.
+func reportRepoContext(sum *config.Summary, cfg *config.Config) {
+	const key = "context.repo.enabled"
+	v, ok := sum.Values[key]
+	if !ok || !cfg.Context.Repo.Enabled {
+		return
+	}
+	v.Value = repoContextStatus()
+	sum.Values[key] = v
+}
+
+// repoContextStatus is gitctx.Status; a variable so tests need no git.
+var repoContextStatus = gitctx.Status
 
 // ServerName is the implementation name reported to MCP clients.
 const ServerName = "review-mcp"

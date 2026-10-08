@@ -334,6 +334,31 @@ repository admin. The note in `required_approvals_note` says what happened:
 | `0`, "no branch protection rule applies to the target branch" | The rules were read and none matches the target branch, so no approvals are required by a rule. Check the rules in the repository settings if you expected one. |
 | `null`, "a protection pattern could not be evaluated" | No rule matched, but a rule's pattern is one review-mcp cannot evaluate (a pattern with `**`, or one Go's `path.Match` rejects; Gitea's glob may accept more), so that rule might apply. Read the number in the Gitea settings. |
 
+## Repository context was skipped
+
+The coverage section says `Repository context: skipped: <reason>` (and
+`coverage.repo_context.reason` has the same word) when
+[repository context](repo-context.md) is on but not in the prompt. The review
+itself is unaffected. The reasons you will meet most:
+
+| Reason | What to do |
+|---|---|
+| `auth` | The git server did not accept the token over HTTP. The token needs read access to the code, not only to pull requests; check the scopes in [Token scopes](#token-scopes). |
+| `redirect` | The git server redirected, or the repository URL differs from the configured base URL (a proxy, a `url.*.insteadOf` rule). Redirects are never followed; point the base URL at the real host. |
+| `git_unavailable` | `git` is missing or older than 2.31. Install it, or check `server_info` (`context.repo.enabled` shows `enabled, git <version>`). |
+| `too_large` | The repository is larger than `context.repo.max_repo_mb`; raise it (and `max_cache_mb`) or leave context off for this repository. |
+| `timeout` | The fetch took longer than `context.repo.fetch_timeout_seconds`; raise it for a big repository or a slow link. |
+| `busy` | Another review held the repository's lock for the whole timeout; run again. |
+| `sha_mismatch` | A push changed the pull request head while it was fetched; run again. |
+| `budget` | The diff leaves no room in the context window. Use a larger window, or accept that the diff wins. With `review.max_chunks` above 1 the room is reserved up front instead, and a part may be added. |
+| `nothing_to_review` | Nothing was left to review after filtering. |
+
+The full list is in [Repository context](repo-context.md#reading-the-result).
+`review-mcp diag review <PR_URL> --repo-context=on --dry-run` shows the
+symbols and the block's size without calling the model; `diag cache` lists the
+cache. In serve mode the setting is refused at startup: see
+[Serve mode](serve.md#repository-context-is-not-available).
+
 ## Review a pull request with `diag review`
 
 ```sh
@@ -347,7 +372,8 @@ coverage; the model is not called. Use it to tune `llm.context_window` and the
 `ignore.*` rules. Without `--dry-run` it runs the full review and prints the
 markdown the `pr_review` tool returns; `--publish` also posts it, and
 `--show-prompt` prints the rendered prompts after the output (never to the
-log). See [Reviewing pull requests](review.md) for how to read the result.
+log); `--json` prints the structured result instead of markdown, and
+`--repo-context=on|off` overrides `context.repo.enabled` for the run. See [Reviewing pull requests](review.md) for how to read the result.
 
 ### LLM and review errors
 

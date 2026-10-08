@@ -97,6 +97,9 @@ commands:
             the token budget report without calling the model
   diag ask <PR_URL> --question <TEXT> [--dry-run] [--show-prompt] [--publish]
             answer a question about the pull request with the configured LLM
+  diag cache [--prune]
+            list the repository-context cache; --prune deletes idle and
+            least-recently-used repositories
   serve [--listen host:port]
             run the MCP server over streamable HTTP; credentials come from
             the headers of each request

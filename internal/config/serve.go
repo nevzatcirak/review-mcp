@@ -103,11 +103,22 @@ func (l *loader) refuseServeEnvToken(s Secret, env string) {
 	}
 }
 
+// ServeRepoContextSentence is the fixed sentence of the serve-mode refusal
+// of repository context (RC-1, v1.1 spec §3.0 item 4): a shared server would
+// hold code fetched with one user's token, and another user could receive it
+// as context.
+const ServeRepoContextSentence = "context.repo.enabled: repository context is not available in serve mode " +
+	"(cached code fetched with one user's token must not reach another user); unset REVIEW_MCP_CONTEXT_REPO_ENABLED"
+
 // validateServe applies the serve-mode rules of P6 spec §1.2. The provider
 // token rules live in validateProviders.
 func (l *loader) validateServe() {
 	s := &l.cfg.Serve
 	sec := &l.cfg.Secrets
+
+	if l.cfg.Context.Repo.Enabled {
+		l.problem("%s", ServeRepoContextSentence)
+	}
 
 	// Listen address and the non-loopback rule.
 	host, _, listenOK := SplitListen(s.Listen)

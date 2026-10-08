@@ -1,0 +1,36 @@
+=== src/main/java/com/example/OrderService.java
+@@ -12,10 +12,10 @@ public class OrderService {
+     private final Repo repo;
+-    public Order findOrder(long id) {
++    public Order findOrder(long id, boolean includeDeleted) {
+         return repo.find(id);
+     }
+-    private static void legacyCleanup() {
+-    }
++    @Override
++    public synchronized void refreshCache() throws IOException {
++    }
++    public static final int MAX_RETRIES = 3;
++    List<String> names(Map<String, Integer> counts) {
++        return list;
++    }
++    return buildOrder(id);
++    String value = computeValue(x);
+ }
+=== src/main/java/com/example/Billing.java
+@@ -1,5 +1,5 @@ public interface Billing {
+-    void charge(Order order);
++    void charge(Order order, Money amount);
++    void refund(Order order);
+ }
+=== src/main/kotlin/com/example/Mapper.kt
+@@ -3,9 +3,9 @@ data class Mapper(val x: Int) {
+-    fun toDto(order: Order): OrderDto {
++    fun toDto(order: Order, locale: Locale): OrderDto {
+         return OrderDto()
+     }
++    suspend fun loadAll(): List<Order> = emptyList()
++    fun String.shout(): String = uppercase()
++    const val DEFAULT_PAGE = 20
++    data class PageInfo(val page: Int)
++    object Registry

@@ -1,6 +1,7 @@
 package llmrun
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 
@@ -40,6 +41,50 @@ type Coverage struct {
 	// (X-21), so it reports 1 and 0, or 0 and 0 without a call.
 	ModelCalls  int `json:"model_calls"`
 	FailedParts int `json:"failed_parts"`
+
+	// RepoContext says whether repository context (RC-9) went into the
+	// prompt, and how much.
+	RepoContext RepoContext `json:"repo_context"`
+}
+
+// Values of RepoContext.Status.
+const (
+	// RepoOff: context.repo.enabled is false; nothing was done.
+	RepoOff = "off"
+	// RepoUsed: the repository was searched; the counts say what the
+	// prompt(s) carry (all zero when the diff defined no symbol to search).
+	RepoUsed = "used"
+	// RepoSkipped: repository context was on but is not in the prompt; Reason
+	// says why (also for a review with no model call).
+	RepoSkipped = "skipped"
+)
+
+// RepoContext is the structured form of the "Repository context" line of
+// the coverage section (RC-9, v1.1 spec WP-11c).
+//
+// Status is "used", "skipped" or "off"; "off" means only "disabled". Reason
+// is a fixed word (a gitctx reason, "budget" when the diff needs the room,
+// or "nothing_to_review" when the diff is empty after filtering) for
+// "skipped" and "" otherwise; it is always present in the JSON. For "used", Symbols is the number of symbols searched, and
+// References and Files count the uses and the distinct files that are in the
+// prompt(s) (summed over the parts of a review in parts; Files is then a sum
+// of per-part counts).
+type RepoContext struct {
+	Status     string `json:"status"`
+	Reason     string `json:"reason"`
+	Symbols    int    `json:"symbols"`
+	References int    `json:"references"`
+	Files      int    `json:"files"`
+}
+
+// MarshalJSON writes the zero value as "off", so a Coverage built without
+// BuildCoverage still satisfies the schema's status enum.
+func (r RepoContext) MarshalJSON() ([]byte, error) {
+	type plain RepoContext
+	if r.Status == "" {
+		r.Status = RepoOff
+	}
+	return json.Marshal(plain(r))
 }
 
 // SkipModelCallFailed is the skip reason of a file whose part's model call
@@ -148,8 +193,9 @@ func BuildCoverage(p *diffpipe.Prepared, f *filter.Filter) Coverage {
 			Modified: NonNil(append([]string(nil), p.Omitted.Modified...)),
 			Deleted:  NonNil(append([]string(nil), p.Omitted.Deleted...)),
 		},
-		Skipped:  []SkippedFile{},
-		Filtered: []SkippedFile{},
+		Skipped:     []SkippedFile{},
+		Filtered:    []SkippedFile{},
+		RepoContext: RepoContext{Status: RepoOff},
 	}
 	for _, s := range p.Skipped {
 		if s.Reason != provider.SkipFiltered {

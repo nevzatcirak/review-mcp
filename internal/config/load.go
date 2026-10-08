@@ -137,8 +137,8 @@ func (l *loader) loadFile() {
 	var secretPrefixes, unknownPrefixes []string
 	for _, k := range md.Keys() {
 		key := strings.Join(k, ".")
-		if len(k) == 1 && sections[key] {
-			continue // a known section header
+		if sections[key] {
+			continue // a known section header, also a nested one ([context.repo])
 		}
 		if underAny(key, secretPrefixes) {
 			continue

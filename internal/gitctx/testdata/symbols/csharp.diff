@@ -1,0 +1,17 @@
+=== src/Orders/OrderService.cs
+@@ -15,10 +15,10 @@ namespace Orders {
+     public sealed class OrderService : IOrderService
+-    public async Task<Order> GetOrderAsync(long id)
++    public async Task<Order> GetOrderAsync(long id, CancellationToken ct)
+     {
+-    internal static void LegacyMigrate()
++    public Order Create(string name)
++    public const int MaxLines = 100;
++    public record OrderSummary(long Id, decimal Total);
++    public interface IOrderEvents
++    public enum OrderState { New, Paid }
++    protected virtual void OnCreated(OrderEventArgs e)
++    private readonly ILogger log;
++    var order = new Order(name);
++    await SaveAsync(order);
++    return Total(order);

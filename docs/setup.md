@@ -448,6 +448,13 @@ Ask a question the same way with `pr_ask` ([Asking questions](ask.md)), and
 read comment threads with `pr_comments`. Ask which branch a pull request merges
 into and who has approved it with `pr_info` ([Pull request status](pr-info.md)).
 
+**Optional: repository context.** To show the model where the symbols a pull
+request changes are used elsewhere in the project, set
+`REVIEW_MCP_CONTEXT_REPO_ENABLED=true` (stdio only; needs `git` 2.31 or later;
+the settings are in [Repository context](repo-context.md#enabling-it)). Check
+`server_info` for `enabled, git <version>` and the coverage section of a review
+for the `Repository context` line.
+
 ## 6. When something fails
 
 Every error review-mcp returns is one of a fixed set of sentences, each tied to

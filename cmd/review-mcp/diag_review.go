@@ -14,6 +14,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/repoctx"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 	"github.com/nevzatcirak/review-mcp/internal/review/render"
 	"github.com/nevzatcirak/review-mcp/internal/wiring"
@@ -35,8 +36,20 @@ func runDiagReview(rest []string, stdout, stderr io.Writer, load configLoader) i
 	dryRun := fs.Bool("dry-run", false, "run everything up to the model call and print a JSON budget report; the model is not called")
 	showPrompt := fs.Bool("show-prompt", false, "print the rendered system and user prompts to stdout after the output")
 	publish := fs.Bool("publish", false, "also post the review as a PR comment")
+	asJSON := fs.Bool("json", false, "print the review result as JSON (the pr_review structured result) instead of markdown")
+	repoCtx := fs.String("repo-context", "", "`on` or `off`: override context.repo.enabled for this run (repository context, stdio only)")
 	prURL, ok := parseDiagArgs(fs, rest, stderr)
 	if !ok {
+		return 2
+	}
+	if *repoCtx != "" && *repoCtx != "on" && *repoCtx != "off" {
+		_, _ = fmt.Fprintln(stderr, "diag review: --repo-context must be on or off")
+		diagUsage(stderr)
+		return 2
+	}
+	if *dryRun && *asJSON {
+		_, _ = fmt.Fprintln(stderr, "diag review: --dry-run already prints JSON; --json cannot be combined with it")
+		diagUsage(stderr)
 		return 2
 	}
 	if *dryRun && *publish {
@@ -48,12 +61,18 @@ func runDiagReview(rest []string, stdout, stderr io.Writer, load configLoader) i
 	if cfg == nil {
 		return code
 	}
+	switch *repoCtx {
+	case "on":
+		cfg.Context.Repo.Enabled = true
+	case "off":
+		cfg.Context.Repo.Enabled = false
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	if *dryRun {
 		return diagReviewDryRun(ctx, cfg, logger, prURL, *showPrompt, stdout, stderr)
 	}
-	return diagReview(ctx, cfg, logger, prURL, *publish, *showPrompt, stdout, stderr)
+	return diagReview(ctx, cfg, logger, prURL, *publish, *showPrompt, *asJSON, stdout, stderr)
 }
 
 // dryRunReport is the JSON document of diag review --dry-run. It has no field
@@ -68,6 +87,9 @@ type dryRunReport struct {
 	Fast   bool            `json:"fast_path"`
 	Cover  review.Coverage `json:"coverage"`
 	Notes  []string        `json:"notes"`
+	// RepoContext is the block's tokens and the symbols searched (RC-9);
+	// absent when repository context is off.
+	RepoContext *repoctx.Report `json:"repo_context,omitempty"`
 	// ElapsedMS is the time to fetch and prepare.
 	ElapsedMS int64 `json:"elapsed_ms"`
 }
@@ -100,11 +122,12 @@ func buildDryRunReport(pl *review.Plan, elapsed time.Duration) dryRunReport {
 			ContextWindow: b.ContextWindow, SoftLimit: b.SoftLimit(), HardLimit: b.HardLimit(),
 			PromptTokens: b.PromptTokens, Factor: b.Factor, Limit: b.Limit(), MaxDiffTokens: b.MaxDiffTokens,
 		},
-		Tokens:    dryRunTokens{Prompt: m.PromptTokens, Diff: m.DiffTokens, Request: m.RequestTokens, ContextWindow: m.ContextWindow},
-		Fast:      m.FastPath,
-		Cover:     pl.Result.Coverage,
-		Notes:     notes,
-		ElapsedMS: elapsed.Milliseconds(),
+		Tokens:      dryRunTokens{Prompt: m.PromptTokens, Diff: m.DiffTokens, Request: m.RequestTokens, ContextWindow: m.ContextWindow},
+		Fast:        m.FastPath,
+		Cover:       pl.Result.Coverage,
+		Notes:       notes,
+		RepoContext: pl.RepoReport,
+		ElapsedMS:   elapsed.Milliseconds(),
 	}
 }
 
@@ -195,7 +218,7 @@ func (r *promptRecorder) ResolveContextWindow(ctx context.Context) (int, string,
 
 // diagReview runs the full review and prints the client markdown; with
 // publish it also posts the provider rendering.
-func diagReview(ctx context.Context, cfg *config.Config, logger *slog.Logger, prURL string, publish, showPrompt bool, stdout, stderr io.Writer) int {
+func diagReview(ctx context.Context, cfg *config.Config, logger *slog.Logger, prURL string, publish, showPrompt, asJSON bool, stdout, stderr io.Writer) int {
 	client, err := wiring.NewLLM(cfg, logger)
 	if err != nil {
 		return reportError(stderr, err)
@@ -211,7 +234,12 @@ func diagReview(ctx context.Context, cfg *config.Config, logger *slog.Logger, pr
 	if err != nil {
 		return reportError(stderr, err)
 	}
-	if _, err := io.WriteString(stdout, render.Client(res)); err != nil {
+	if asJSON {
+		err = writeJSON(stdout, res)
+	} else {
+		_, err = io.WriteString(stdout, render.Client(res))
+	}
+	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "could not write the review to stdout")
 		return 1
 	}

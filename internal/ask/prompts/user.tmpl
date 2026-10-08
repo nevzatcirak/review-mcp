@@ -11,6 +11,15 @@ branch, description fenced with ======), the main-language line (omitted
 when the first diffpipe language group is Other), the plain diff with the
 one-line explanation of its prefixes, the question fenced with ====== and
 the closing line. Jinja whitespace control is reproduced with {{- and -}}.
+
+Intentional deviation (v1.1 spec WP-11c, X-22, RC-8): upstream has no
+repository context. When context.repo.enabled is set and the pipeline found
+uses of the changed symbols outside the pull request, it supplies one block
+(.repo_context, already rendered: the fixed sentence of repoctx.Header and
+the entries "[path:line] uses symbol" with their snippets inside an
+adaptive code fence). It follows the main-language line and precedes the
+diff; without one nothing is rendered, so the prompt is byte-identical to
+the one without the feature.
 */ -}}
 PR Info:
 
@@ -27,6 +36,10 @@ Description:
 {{- if .language }}
 
 Main PR language: '{{ .language }}'
+{{- end }}
+{{- if .repo_context }}
+
+{{ .repo_context }}
 {{- end }}
 
 

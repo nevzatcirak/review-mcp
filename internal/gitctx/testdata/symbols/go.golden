@@ -1,0 +1,9 @@
+removed   legacyRoute      internal/server/handler.go
+signature HandleRequest    internal/server/handler.go
+signature Settings         internal/server/config.go
+changed   Serve            internal/server/handler.go
+changed   Close            internal/server/handler.go
+changed   Options          internal/server/handler.go
+changed   NewRouter        internal/server/handler.go new
+changed   DefaultTimeout   internal/server/config.go new
+changed   ErrNotFound      internal/server/config.go new

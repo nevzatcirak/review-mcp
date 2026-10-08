@@ -1,6 +1,7 @@
 package review
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/repoctx"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 )
 
@@ -106,7 +108,16 @@ func leavesFilesOut(p *diffpipe.Prepared) bool {
 // measured with PartHeader(maxChunks, maxChunks), the longest line the
 // review can have. A review in one call keeps the budget without it, so
 // its prompts are those of v1.0.
-func (pl *Plan) planParts(dIn diffpipe.Input, in PromptInput, maxChunks int) (bool, error) {
+//
+// With repository context (rcs non-nil) and reserve > 0, the budget of every
+// part also holds reserve tokens (context.repo.max_tokens) for the part's own
+// block (X-22, v1.1 spec WP-11c); the caller decides on the reservation
+// (the head is fetched, there are symbols). Each part searches the symbols of
+// its own files only, excluding its own files from the search. A use in
+// another file of the pull request is shown, marked with the part that
+// reviews the file (the head SHA holds the new version) or as not reviewed.
+func (pl *Plan) planParts(ctx context.Context, dIn diffpipe.Input, in PromptInput, maxChunks int,
+	rcs *repoctx.Session, reserve int) (bool, error) {
 	res, log := pl.Result, pl.log
 	factor := dIn.Budget.Factor
 	hdr := in
@@ -115,6 +126,7 @@ func (pl *Plan) planParts(dIn diffpipe.Input, in PromptInput, maxChunks int) (bo
 	if err != nil {
 		return false, err
 	}
+	promptTokens += reserve
 	budget := dIn.Budget
 	budget.PromptTokens = promptTokens
 	if budget.RequireCapacity() != nil {
@@ -139,12 +151,24 @@ func (pl *Plan) planParts(dIn diffpipe.Input, in PromptInput, maxChunks int) (bo
 	n := len(ch.Parts)
 	parts := make([]*part, n)
 	diffTokens, requestTokens, trimmed := 0, 0, false
+	var repos []repoctx.Outcome
+	marks := partMarks(dIn, ch)
 	for i, prep := range ch.Parts {
 		pin := in
 		pin.PartHeader = PartHeader(i+1, n)
 		fit, err := fitPrompts(pin, prep.Text, budget)
 		if err != nil {
 			return false, err
+		}
+		if rcs != nil {
+			// Each part searches the symbols of its own files only (X-19).
+			var o repoctx.Outcome
+			own := diffFiles(dIn.Files, concat(prep.Included, prep.DeletedListed), prep.Clipped)
+			sc := &repoctx.Scope{Exclude: gitctxPaths(own), Marks: marks}
+			_, fit, o = placeRepo(ctx, rcs, pin, diffFiles(dIn.Files, prep.Included, prep.Clipped), sc, prep.Text, fit, budget)
+			repos = append(repos, o)
+			log.Debug("review: repository context", "part", i+1, "status", o.Status, "reason", o.Reason,
+				"symbols", o.Symbols, "references", o.References, "files", o.Files, "omitted", o.Omitted)
 		}
 		pt := &part{prep: prep, fit: fit, cov: Coverage{
 			Included:      llmrun.NonNil(append([]string(nil), prep.Included...)),
@@ -166,6 +190,9 @@ func (pl *Plan) planParts(dIn diffpipe.Input, in PromptInput, maxChunks int) (bo
 	}
 
 	pl.parts, pl.chunks, pl.Budget = parts, ch, budget
+	var repoNotes []string
+	pl.repoCtx, repoNotes = repoctx.Summarize(repos)
+	pl.RepoReport = repoctx.ReportOf(repos)
 	pl.Prompts = parts[0].fit.prompts
 	res.Coverage = pl.partsCoverage(nil)
 	m := &res.Metadata
@@ -184,6 +211,7 @@ func (pl *Plan) planParts(dIn diffpipe.Input, in PromptInput, maxChunks int) (bo
 	}
 	reached := n == maxChunks && leftOut(ch.Omitted)
 	res.Notes = append(res.Notes, llmrun.ChunkedPartialNotes(&res.Coverage, budget, reached)...)
+	res.Notes = append(res.Notes, repoNotes...)
 	log.Debug("review: diff prepared in parts", "parts", n, "max_chunks", maxChunks, "too_large", len(ch.TooLarge),
 		"left_out", len(ch.Omitted.Added)+len(ch.Omitted.Modified)+len(ch.Omitted.Deleted),
 		"prompt_tokens", promptTokens, "diff_tokens", diffTokens)
@@ -224,6 +252,9 @@ func (pl *Plan) partsCoverage(failed []bool) Coverage {
 	}
 	c.Skipped = append(c.Skipped, lost...)
 	c.ModelCalls = len(pl.parts)
+	if pl.repoCtx.Status != "" {
+		c.RepoContext = pl.repoCtx
+	}
 	for _, f := range failed {
 		if f {
 			c.FailedParts++
@@ -412,4 +443,24 @@ func mergeConcerns(answers []partText, missing []int, no, question string) (*str
 	}
 	s := strings.Join(texts, "\n\n")
 	return &s, nil
+}
+
+// partMarks gives, for every file of the pull request a part's search may
+// meet, the text after the symbol of a use in it (repoctx.Scope.Marks): the
+// part that reviews the file, as packed, else "not reviewed" (left out by
+// the budget, too large for a part, skipped by the provider).
+func partMarks(dIn diffpipe.Input, ch *diffpipe.Chunks) map[string]string {
+	marks := map[string]string{}
+	for _, f := range dIn.Skipped {
+		marks[f.Path] = repoctx.MarkNotReviewed
+	}
+	for i := range dIn.Files {
+		marks[dIn.Files[i].Path] = repoctx.MarkNotReviewed
+	}
+	for j, prep := range ch.Parts {
+		for _, f := range concat(prep.Included, prep.Clipped, prep.DeletedListed) {
+			marks[f] = repoctx.MarkReviewedInPart(j + 1)
+		}
+	}
+	return marks
 }

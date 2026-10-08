@@ -1,6 +1,7 @@
 package filter
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -179,5 +180,47 @@ func TestUnknownFrameworkListsValidNames(t *testing.T) {
 	_, err := New(cfgWith(nil, nil, []string{"nope"}))
 	if err == nil || !strings.Contains(err.Error(), "go_gen, graphql, grpc_csharp") {
 		t.Fatalf("error should list sorted valid names, got %v", err)
+	}
+}
+
+// TestExcludePathspecs: the path-shaped rules become git exclude pathspecs;
+// a rule with no pathspec form (a brace glob) is left out, and a regex never
+// is one.
+func TestExcludePathspecs(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Ignore.Glob = []string{"docs/**", "*.snap", "build/{a,b}/*.o"}
+	cfg.Ignore.Regex = []string{`^vendor/`}
+	cfg.Diff.IgnoreGeneratedFrameworks = []string{"go_gen"}
+	f, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	specs := f.ExcludePathspecs()
+	have := map[string]bool{}
+	for _, s := range specs {
+		have[s] = true
+	}
+	for _, want := range []string{
+		":(exclude,glob)**/package-lock.json",
+		":(exclude,glob,icase)**/*.min.js",
+		":(exclude,glob,icase)**/*.png",
+		":(exclude,glob)docs/**",
+		":(exclude,glob)**/*.snap",
+		":(exclude,glob)**/*_gen.go",
+	} {
+		if !have[want] {
+			t.Errorf("no pathspec %s", want)
+		}
+	}
+	for _, s := range specs {
+		if strings.ContainsAny(s, "{}") || strings.Contains(s, "vendor") {
+			t.Errorf("untranslatable rule became a pathspec: %s", s)
+		}
+	}
+	if !slices.IsSorted(specs) || len(slices.Compact(slices.Clone(specs))) != len(specs) {
+		t.Error("pathspecs are not sorted and unique")
+	}
+	if got := escapeGlob("a*b[c]?"); got != `a\*b\[c]\?` {
+		t.Errorf("escapeGlob = %s", got)
 	}
 }

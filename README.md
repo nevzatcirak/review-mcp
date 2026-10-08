@@ -116,6 +116,30 @@ dist-tag `latest`; release candidates of the next version under `next`. See the
    publishing it. The [Setup guide](docs/setup.md) walks through the first run,
    keeps tokens out of files, and covers release archives and `go install`.
 
+## Repository context (opt-in)
+
+A diff does not show who depends on what it changes. With
+`REVIEW_MCP_CONTEXT_REPO_ENABLED=true` (stdio only, needs `git` 2.31 or later),
+`pr_review` and `pr_ask` also fetch the pull request head into a local,
+self-pruning cache, search where the changed symbols are used, and add the
+best uses to the prompt within a token budget. Off by default; the token never
+touches disk or logs. Settings:
+
+| Key | Env | Default |
+|---|---|---|
+| `context.repo.enabled` | `REVIEW_MCP_CONTEXT_REPO_ENABLED` | `false` |
+| `context.repo.cache_dir` | `REVIEW_MCP_CONTEXT_REPO_CACHE_DIR` | OS user cache dir + `review-mcp/repos` |
+| `context.repo.idle_days` | `REVIEW_MCP_CONTEXT_REPO_IDLE_DAYS` | `7` |
+| `context.repo.max_cache_mb` | `REVIEW_MCP_CONTEXT_REPO_MAX_CACHE_MB` | `2048` |
+| `context.repo.max_repo_mb` | `REVIEW_MCP_CONTEXT_REPO_MAX_REPO_MB` | `500` |
+| `context.repo.fetch_timeout_seconds` | `REVIEW_MCP_CONTEXT_REPO_FETCH_TIMEOUT_SECONDS` | `60` |
+| `context.repo.max_symbols` | `REVIEW_MCP_CONTEXT_REPO_MAX_SYMBOLS` | `20` |
+| `context.repo.max_hits_per_symbol` | `REVIEW_MCP_CONTEXT_REPO_MAX_HITS_PER_SYMBOL` | `5` |
+| `context.repo.max_tokens` | `REVIEW_MCP_CONTEXT_REPO_MAX_TOKENS` | `2000` |
+
+See [Repository context](docs/repo-context.md) for the details. `review-mcp
+diag cache [--prune]` lists and sweeps the cache.
+
 ## Tools
 
 | Tool | What it does |
@@ -136,6 +160,7 @@ dist-tag `latest`; release candidates of the next version under `next`. See the
 - [Reviewing pull requests](docs/review.md): what `pr_review` sends to the LLM, choosing `llm.context_window`, reading coverage and notes, large pull requests reviewed in parts, `publish` (the overview and inline comments), discussion awareness, slow endpoints and `job_result`, `diag review --dry-run`.
 - [Asking questions about a pull request](docs/ask.md): what `pr_ask` sends to the LLM, files the question names, grounding and honesty, coverage, `publish` and the slash sanitization, `diag ask --dry-run`.
 - [Pull request status](docs/pr-info.md): what `pr_info` reports (target branch, human reviewers, approvals, merge status), where each fact comes from, and why review-mcp's own reviews are not reviewers.
+- [Repository context](docs/repo-context.md): opt-in, stdio only: shows the model where the symbols a pull request changes are used elsewhere in the project (a cached `git` fetch of the head, `git grep`, a budgeted prompt block), its configuration, the cache, the security properties, the coverage line and the evaluation harness.
 - [Getting started](docs/getting-started.md): the minimal configuration and the diff budget in detail.
 - [Troubleshooting](docs/troubleshooting.md): the `diag` commands and every error sentence.
 - [Changelog](CHANGELOG.md).

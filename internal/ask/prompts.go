@@ -49,6 +49,9 @@ type PromptInput struct {
 	Description string
 	// Question is the validated question (Validate).
 	Question string
+	// RepoContext is the rendered repository-context block (repoctx.Render);
+	// empty omits it. It is repository text, and part of the scaffolding.
+	RepoContext string
 	// Diff is the prepared plain diff; empty for the scaffolding
 	// measurement.
 	Diff string
@@ -73,6 +76,7 @@ func (in *PromptInput) vars() map[string]any {
 		"branch":             in.Branch,
 		"description":        in.Description,
 		"language":           lang,
+		"repo_context":       in.RepoContext,
 		"diff":               in.Diff,
 		"questions":          in.Question,
 	}

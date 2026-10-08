@@ -46,6 +46,15 @@ func TestDefaultsAppliedWhenNothingSet(t *testing.T) {
 		{"review.max_chunks", cfg.Review.MaxChunks, 8},
 		{"review.max_total_findings", cfg.Review.MaxTotalFindings, 10},
 		{"ask.extra_instructions", cfg.Ask.ExtraInstructions, ""},
+		{"context.repo.enabled", cfg.Context.Repo.Enabled, false},
+		{"context.repo.cache_dir", cfg.Context.Repo.CacheDir, ""},
+		{"context.repo.idle_days", cfg.Context.Repo.IdleDays, 7},
+		{"context.repo.max_cache_mb", cfg.Context.Repo.MaxCacheMB, 2048},
+		{"context.repo.max_repo_mb", cfg.Context.Repo.MaxRepoMB, 500},
+		{"context.repo.fetch_timeout_seconds", cfg.Context.Repo.FetchTimeoutSeconds, 60},
+		{"context.repo.max_symbols", cfg.Context.Repo.MaxSymbols, 20},
+		{"context.repo.max_hits_per_symbol", cfg.Context.Repo.MaxHitsPerSymbol, 5},
+		{"context.repo.max_tokens", cfg.Context.Repo.MaxTokens, 2000},
 		{"log.level", cfg.Log.Level, "info"},
 		// DQ-26: no defaults for these.
 		{"llm.max_output_tokens", cfg.LLM.MaxOutputTokens == nil, true},
@@ -161,6 +170,33 @@ temperature = 1
 	}
 }
 
+// TestNestedSectionFromFile: the context.repo.* keys load from a nested
+// [context.repo] table (and from dotted keys), with source "file", and the
+// environment still wins.
+func TestNestedSectionFromFile(t *testing.T) {
+	for name, file := range map[string]string{
+		"table":  "[context.repo]\nenabled = true\nidle_days = 3\ncache_dir = \"/var/cache/rm\"\n",
+		"dotted": "[context]\nrepo.enabled = true\nrepo.idle_days = 3\nrepo.cache_dir = \"/var/cache/rm\"\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			env := envWith(map[string]string{"REVIEW_MCP_CONFIG": "/c.toml", "REVIEW_MCP_CONTEXT_REPO_MAX_REPO_MB": "100"})
+			cfg, rep := mustLoad(t, memSrc(env, map[string]string{"/c.toml": file}))
+			r := cfg.Context.Repo
+			if !r.Enabled || r.IdleDays != 3 || r.CacheDir != "/var/cache/rm" || r.MaxRepoMB != 100 {
+				t.Errorf("context.repo = %+v", r)
+			}
+			for k, want := range map[string]Origin{
+				"context.repo.enabled": OriginFile, "context.repo.idle_days": OriginFile,
+				"context.repo.max_repo_mb": OriginEnv, "context.repo.max_cache_mb": OriginDefault,
+			} {
+				if rep.Sources[k] != want {
+					t.Errorf("source[%s] = %s, want %s", k, rep.Sources[k], want)
+				}
+			}
+		})
+	}
+}
+
 func TestFilePartialLeavesDefaultsIntact(t *testing.T) {
 	file := "[ignore]\nglob = [\"dist/**\"]\n"
 	cfg, rep := mustLoad(t, memSrc(envWith(map[string]string{"REVIEW_MCP_CONFIG": "/c.toml"}), map[string]string{"/c.toml": file}))
@@ -192,6 +228,8 @@ func TestFileErrors(t *testing.T) {
 	}{
 		{"missing file", nil, "/nope.toml", []string{`cannot read config file "/nope.toml"`}},
 		{"unknown key", map[string]string{"/c.toml": "[llm]\nbase_urll = \"x\"\n"}, "/c.toml", []string{`unknown config key "llm.base_urll" in /c.toml`}},
+		{"unknown nested key", map[string]string{"/c.toml": "[context.repo]\nenable = true\n"}, "/c.toml", []string{`unknown config key "context.repo.enable" in /c.toml`}},
+		{"unknown nested section", map[string]string{"/c.toml": "[context.repos]\nenabled = true\n"}, "/c.toml", []string{`unknown config key "context.repos" in /c.toml`}},
 		{"unknown section reported once", map[string]string{"/c.toml": "[nosuch]\na = 1\nb = 2\n"}, "/c.toml", []string{`unknown config key "nosuch" in /c.toml`}},
 		{"syntax error", map[string]string{"/c.toml": "[llm\n"}, "/c.toml", []string{"syntax error at line"}},
 		{"type mismatch", map[string]string{"/c.toml": "[llm]\ncontext_window = \"big\"\n"}, "/c.toml", []string{`config file "/c.toml"`}},
@@ -305,6 +343,12 @@ func TestEnvParsingStrict(t *testing.T) {
 		{"REVIEW_MCP_REVIEW_MAX_DISCUSSION_TOKENS", "300", func(c *Config) bool { return c.Review.MaxDiscussionTokens == 300 }},
 		{"REVIEW_MCP_REVIEW_MAX_CHUNKS", "1", func(c *Config) bool { return c.Review.MaxChunks == 1 }},
 		{"REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS", "25", func(c *Config) bool { return c.Review.MaxTotalFindings == 25 }},
+		{"REVIEW_MCP_CONTEXT_REPO_ENABLED", "true", func(c *Config) bool { return c.Context.Repo.Enabled }},
+		{"REVIEW_MCP_CONTEXT_REPO_CACHE_DIR", " /var/cache/rm ", func(c *Config) bool { return c.Context.Repo.CacheDir == "/var/cache/rm" }},
+		{"REVIEW_MCP_CONTEXT_REPO_FETCH_TIMEOUT_SECONDS", "600", func(c *Config) bool { return c.Context.Repo.FetchTimeoutSeconds == 600 }},
+		{"REVIEW_MCP_CONTEXT_REPO_MAX_SYMBOLS", "50", func(c *Config) bool { return c.Context.Repo.MaxSymbols == 50 }},
+		{"REVIEW_MCP_CONTEXT_REPO_MAX_HITS_PER_SYMBOL", "1", func(c *Config) bool { return c.Context.Repo.MaxHitsPerSymbol == 1 }},
+		{"REVIEW_MCP_CONTEXT_REPO_MAX_TOKENS", "16000", func(c *Config) bool { return c.Context.Repo.MaxTokens == 16000 }},
 		{"REVIEW_MCP_GITEA_INSECURE_SKIP_VERIFY", "True", func(c *Config) bool { return c.Gitea.InsecureSkipVerify }},
 		{"REVIEW_MCP_GITEA_INSECURE_SKIP_VERIFY", "1", func(c *Config) bool { return c.Gitea.InsecureSkipVerify }},
 		{"REVIEW_MCP_LLM_SEED", "-5", func(c *Config) bool { return *c.LLM.Seed == -5 }},

@@ -54,6 +54,7 @@ func TestDefaultsAppliedWhenNothingSet(t *testing.T) {
 		{"context.repo.fetch_timeout_seconds", cfg.Context.Repo.FetchTimeoutSeconds, 60},
 		{"context.repo.max_symbols", cfg.Context.Repo.MaxSymbols, 20},
 		{"context.repo.max_hits_per_symbol", cfg.Context.Repo.MaxHitsPerSymbol, 5},
+		{"context.repo.max_tokens", cfg.Context.Repo.MaxTokens, 2000},
 		{"log.level", cfg.Log.Level, "info"},
 		// DQ-26: no defaults for these.
 		{"llm.max_output_tokens", cfg.LLM.MaxOutputTokens == nil, true},
@@ -347,6 +348,7 @@ func TestEnvParsingStrict(t *testing.T) {
 		{"REVIEW_MCP_CONTEXT_REPO_FETCH_TIMEOUT_SECONDS", "600", func(c *Config) bool { return c.Context.Repo.FetchTimeoutSeconds == 600 }},
 		{"REVIEW_MCP_CONTEXT_REPO_MAX_SYMBOLS", "50", func(c *Config) bool { return c.Context.Repo.MaxSymbols == 50 }},
 		{"REVIEW_MCP_CONTEXT_REPO_MAX_HITS_PER_SYMBOL", "1", func(c *Config) bool { return c.Context.Repo.MaxHitsPerSymbol == 1 }},
+		{"REVIEW_MCP_CONTEXT_REPO_MAX_TOKENS", "16000", func(c *Config) bool { return c.Context.Repo.MaxTokens == 16000 }},
 		{"REVIEW_MCP_GITEA_INSECURE_SKIP_VERIFY", "True", func(c *Config) bool { return c.Gitea.InsecureSkipVerify }},
 		{"REVIEW_MCP_GITEA_INSECURE_SKIP_VERIFY", "1", func(c *Config) bool { return c.Gitea.InsecureSkipVerify }},
 		{"REVIEW_MCP_LLM_SEED", "-5", func(c *Config) bool { return *c.LLM.Seed == -5 }},

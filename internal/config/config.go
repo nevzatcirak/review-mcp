@@ -146,6 +146,9 @@ type ContextRepo struct {
 	MaxSymbols int `toml:"max_symbols" json:"max_symbols"`
 	// MaxHitsPerSymbol caps the uses kept per symbol (RC-7).
 	MaxHitsPerSymbol int `toml:"max_hits_per_symbol" json:"max_hits_per_symbol"`
+	// MaxTokens is the token budget of the repository-context block of the
+	// prompt (RC-8); a part of a review in parts gets its own.
+	MaxTokens int `toml:"max_tokens" json:"max_tokens"`
 }
 
 // Log configures logging (stderr only).
@@ -200,6 +203,7 @@ func Defaults() *Config {
 			FetchTimeoutSeconds: 60,
 			MaxSymbols:          20,
 			MaxHitsPerSymbol:    5,
+			MaxTokens:           2000,
 		}},
 		Log: Log{Level: "info"},
 		Serve: Serve{

@@ -61,6 +61,8 @@ func TestValidationRules(t *testing.T) {
 		{"repo max symbols high", map[string]string{"REVIEW_MCP_CONTEXT_REPO_MAX_SYMBOLS": "51"}, "context.repo.max_symbols: 51 is out of range (1-50)"},
 		{"repo max hits zero", map[string]string{"REVIEW_MCP_CONTEXT_REPO_MAX_HITS_PER_SYMBOL": "0"}, "context.repo.max_hits_per_symbol: 0 is out of range (1-20)"},
 		{"repo max hits high", map[string]string{"REVIEW_MCP_CONTEXT_REPO_MAX_HITS_PER_SYMBOL": "21"}, "context.repo.max_hits_per_symbol: 21 is out of range (1-20)"},
+		{"repo max tokens low", map[string]string{"REVIEW_MCP_CONTEXT_REPO_MAX_TOKENS": "199"}, "context.repo.max_tokens: 199 is out of range (200-16000)"},
+		{"repo max tokens high", map[string]string{"REVIEW_MCP_CONTEXT_REPO_MAX_TOKENS": "16001"}, "context.repo.max_tokens: 16001 is out of range (200-16000)"},
 		{"repo max cache zero", map[string]string{"REVIEW_MCP_CONTEXT_REPO_MAX_CACHE_MB": "0", "REVIEW_MCP_CONTEXT_REPO_MAX_REPO_MB": "1"}, "context.repo.max_cache_mb: 0 is out of range (1-1048576)"},
 		{"repo max repo zero", map[string]string{"REVIEW_MCP_CONTEXT_REPO_MAX_REPO_MB": "0"}, "context.repo.max_repo_mb: 0 is out of range (1-1048576)"},
 		{"repo max repo above max cache", map[string]string{"REVIEW_MCP_CONTEXT_REPO_MAX_CACHE_MB": "100", "REVIEW_MCP_CONTEXT_REPO_MAX_REPO_MB": "101"}, "context.repo.max_repo_mb: 101 must be at most context.repo.max_cache_mb (100)"},

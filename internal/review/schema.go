@@ -56,8 +56,15 @@ func ResultSchema() map[string]any {
 			"not_reviewed_files": integer("changed files the model did not fully see: omitted, clipped, skipped for size or limit, unreadable, too large for a part of their own, or in a part whose model call failed"),
 			"model_calls":        integer("parts sent to the model (X-19): 1 for a review in one call, N for a review in N parts, 0 without a model call; re-asks are not counted"),
 			"failed_parts":       integer("parts whose model call failed; their files are skipped with reason model_call_failed and are not reviewed"),
+			"repo_context": object("repository context in the prompt (RC-9)", map[string]any{
+				"status":     map[string]any{"type": "string", "enum": []any{"used", "skipped", "off"}, "description": "off: context.repo.enabled is false; used: the repository was searched; skipped: it is on but not in the prompt"},
+				"reason":     str("fixed reason when skipped (auth, not_found, timeout, too_large, sha_mismatch, redirect, git_failed, git_unavailable, busy, cache_unusable, unsupported, budget); empty otherwise"),
+				"symbols":    integer("symbols searched (summed over the parts of a review in parts)"),
+				"references": integer("uses of those symbols shown to the model"),
+				"files":      integer("distinct files among the shown uses (summed over the parts of a review in parts)"),
+			}, "status", "reason", "symbols", "references", "files"),
 		}, "included", "clipped", "deleted_listed", "omitted", "skipped", "filtered", "partial", "reviewed_files",
-			"total_files", "not_reviewed_files", "model_calls", "failed_parts"),
+			"total_files", "not_reviewed_files", "model_calls", "failed_parts", "repo_context"),
 		"notes": strList("notes about truncation, dropped findings, clipped or trimmed files and the re-ask"),
 		"metadata": object("run metadata", map[string]any{
 			"model":             str("llm.model"),

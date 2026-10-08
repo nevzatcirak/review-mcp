@@ -113,6 +113,8 @@ const (
 	MaxContextRepoFetchTimeout = 600
 	MaxContextRepoSymbols      = 50
 	MaxContextRepoHits         = 20
+	MinContextRepoTokens       = 200
+	MaxContextRepoTokens       = 16000
 )
 
 // validateContextRepo checks the context.repo.* keys. They are validated
@@ -137,6 +139,7 @@ func (l *loader) validateContextRepo() {
 	rng("context.repo.fetch_timeout_seconds", c.FetchTimeoutSeconds, 1, MaxContextRepoFetchTimeout)
 	rng("context.repo.max_symbols", c.MaxSymbols, 1, MaxContextRepoSymbols)
 	rng("context.repo.max_hits_per_symbol", c.MaxHitsPerSymbol, 1, MaxContextRepoHits)
+	rng("context.repo.max_tokens", c.MaxTokens, MinContextRepoTokens, MaxContextRepoTokens)
 	cacheOK := rng("context.repo.max_cache_mb", c.MaxCacheMB, 1, MaxContextRepoCacheMB)
 	repoOK := rng("context.repo.max_repo_mb", c.MaxRepoMB, 1, MaxContextRepoCacheMB)
 	if cacheOK && repoOK && c.MaxRepoMB > c.MaxCacheMB {

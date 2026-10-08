@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
@@ -23,6 +24,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/repoctx"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 )
 
@@ -58,6 +60,10 @@ type Deps struct {
 	// Progress, when set, is called with a Stage* word as the pipeline
 	// advances. Nil is ignored. It must not block.
 	Progress func(stage string)
+	// RepoContext is the git backend of repository context (X-22); nil
+	// selects the real one (gitctx.New from the configuration). It is used
+	// only when context.repo.enabled is set. Tests substitute a fake.
+	RepoContext repoctx.Backend
 }
 
 // Args are the per-call arguments (DQ-25, X-1). Zero values fall back to
@@ -110,6 +116,10 @@ type Plan struct {
 	// Empty reports that nothing is left to ask about after filtering, so
 	// no model call is made (step 5).
 	Empty bool
+
+	// RepoReport is the repository-context detail for diag ask --dry-run;
+	// nil when repository context is off.
+	RepoReport *repoctx.Report
 
 	ref provider.PRRef
 	p   provider.Provider
@@ -300,17 +310,45 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 
 	// Step 6: render the final prompts behind the request-size guard.
-	fit, err := llmrun.Fit(prep.Text, budget, func(diff string) (llmrun.Rendered, error) {
-		in := in
-		in.Diff = diff
-		pr, err := RenderPrompts(in)
-		if err != nil {
-			return llmrun.Rendered{}, err
-		}
-		return llmrun.Rendered{System: pr.System, User: pr.User}, nil
-	})
+	fit, err := fitPlain(in, prep.Text, budget)
 	if err != nil {
 		return nil, err
+	}
+	var repoNotes []string
+	if cfg.Context.Repo.Enabled {
+		// The block goes into the room the diff leaves (X-22, RC-8): the
+		// diff always wins. The symbols are those of the files in the
+		// prepared diff, the question-named files included.
+		rcs := repoctx.Open(cfg, deps.RepoContext, ref, p, pr.HeadSHA, d.Files, flt, log)
+		var files []provider.FilePatch
+		for i := range d.Files {
+			if slices.Contains(prep.Included, d.Files[i].Path) || slices.Contains(prep.Clipped, d.Files[i].Path) {
+				files = append(files, d.Files[i])
+			}
+		}
+		var fit1 *llmrun.Fitted
+		var in1 PromptInput
+		o := rcs.Attach(ctx, files, budget, fit.RequestTokens, fit.KeptLines >= 0, func(block string) (bool, error) {
+			cand := in
+			cand.RepoContext = block
+			f, err := fitPlain(cand, prep.Text, budget)
+			if err != nil {
+				return false, err
+			}
+			in1, fit1 = cand, f
+			return f.KeptLines >= 0, nil
+		})
+		if o.Block != "" {
+			fit = fit1
+			if res.Metadata.PromptTokens, err = ScaffoldingTokens(in1, factor); err != nil {
+				return nil, err
+			}
+		}
+		res.Coverage.RepoContext, repoNotes = repoctx.Summarize([]repoctx.Outcome{o})
+		pl.RepoReport = repoctx.ReportOf([]repoctx.Outcome{o})
+		log.Debug("ask: repository context", "status", res.Coverage.RepoContext.Status,
+			"reason", res.Coverage.RepoContext.Reason, "symbols", o.Symbols, "references", o.References,
+			"files", o.Files, "omitted", o.Omitted)
 	}
 	pl.Prompts = Prompts{System: fit.Rendered.System, User: fit.Rendered.User}
 	res.Metadata.RequestTokens = fit.RequestTokens
@@ -333,7 +371,22 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			llmrun.CountPhrase(n, "file was", "files were")))
 	}
 	res.Notes = append(res.Notes, llmrun.PartialNotes(&res.Coverage, budget)...)
+	res.Notes = append(res.Notes, repoNotes...)
 	return pl, nil
+}
+
+// fitPlain renders the final prompts of in for diff behind the request-size
+// guard (llmrun.Fit).
+func fitPlain(in PromptInput, diff string, b tokens.Budget) (*llmrun.Fitted, error) {
+	return llmrun.Fit(diff, b, func(diff string) (llmrun.Rendered, error) {
+		in := in
+		in.Diff = diff
+		pr, err := RenderPrompts(in)
+		if err != nil {
+			return llmrun.Rendered{}, err
+		}
+		return llmrun.Rendered{System: pr.System, User: pr.User}, nil
+	})
 }
 
 // publish posts the provider-profile rendering when requested (step 9) and

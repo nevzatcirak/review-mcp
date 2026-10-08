@@ -16,6 +16,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/prompt"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/repoctx"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 	"github.com/nevzatcirak/review-mcp/internal/yamlrepair"
 )
@@ -66,6 +67,10 @@ type Deps struct {
 	// advances (the pr_review tool turns them into MCP progress
 	// notifications). Nil is ignored. It must not block.
 	Progress func(stage string)
+	// RepoContext is the git backend of repository context (X-22); nil
+	// selects the real one (gitctx.New from the configuration). It is used
+	// only when context.repo.enabled is set. Tests substitute a fake.
+	RepoContext repoctx.Backend
 }
 
 // Args are the per-call arguments (DQ-25, X-1). Zero values fall back to
@@ -182,7 +187,13 @@ type Plan struct {
 	// flt is the filter, for the coverage of a review in parts.
 	flt *filter.Filter
 	// maxTotal caps the merged findings (config.EffectiveMaxTotalFindings).
-	maxTotal    int
+	maxTotal int
+	// repoCtx is the repository context of a review in parts, summed over
+	// the parts (repoCoverage); zero for a review in one call.
+	repoCtx llmrun.RepoContext
+	// RepoReport is the repository-context detail for diag review
+	// --dry-run; nil when repository context is off.
+	RepoReport  *repoctx.Report
 	ref         provider.PRRef
 	p           provider.Provider
 	pr          *provider.PullRequest
@@ -403,11 +414,18 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		return pl, nil
 	}
 
+	// Repository context (X-22): opened here, fetched at most once, on the
+	// first search that has a symbol to look for.
+	var rcs *repoctx.Session
+	if cfg.Context.Repo.Enabled {
+		rcs = repoctx.Open(cfg, deps.RepoContext, ref, p, pr.HeadSHA, d.Files, flt, log)
+	}
+
 	// A diff that leaves files out is reviewed in parts when
 	// review.max_chunks allows it (X-19); otherwise, and when the packing
 	// yields one part, the review is the one call below, unchanged.
 	if maxChunks > 1 && leavesFilesOut(prep) {
-		ok, err := pl.planParts(dIn, in, maxChunks)
+		ok, err := pl.planParts(ctx, dIn, in, maxChunks, rcs)
 		if err != nil {
 			return nil, err
 		}
@@ -420,6 +438,23 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	fit, err := fitPrompts(in, prep.Text, budget)
 	if err != nil {
 		return nil, err
+	}
+	var repoNotes []string
+	if rcs != nil {
+		// The block goes into the room the diff leaves (placeRepo); the
+		// prompt tokens then include it.
+		pin, pfit, o := placeRepo(ctx, rcs, in, diffFiles(d.Files, prep.Included, prep.Clipped), prep.Text, fit, budget)
+		fit = pfit
+		if pin.RepoContext != "" {
+			if res.Metadata.PromptTokens, err = ScaffoldingTokens(pin, factor); err != nil {
+				return nil, err
+			}
+		}
+		res.Coverage.RepoContext, repoNotes = repoctx.Summarize([]repoctx.Outcome{o})
+		pl.RepoReport = repoctx.ReportOf([]repoctx.Outcome{o})
+		log.Debug("review: repository context", "status", res.Coverage.RepoContext.Status,
+			"reason", res.Coverage.RepoContext.Reason, "symbols", o.Symbols, "references", o.References,
+			"files", o.Files, "omitted", o.Omitted)
 	}
 	pl.parts = []*part{{prep: prep, fit: fit}}
 	pl.Prompts = fit.prompts
@@ -441,6 +476,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		res.Notes = append(res.Notes, fmt.Sprintf(noteClippedFormat, countPhrase(n, "file was", "files were")))
 	}
 	res.Notes = append(res.Notes, llmrun.PartialNotes(&res.Coverage, budget)...)
+	res.Notes = append(res.Notes, repoNotes...)
 	return pl, nil
 }
 

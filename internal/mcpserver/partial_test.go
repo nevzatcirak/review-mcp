@@ -87,10 +87,10 @@ func coverageSchemas(v any, out *[]map[string]any) {
 // coverage object (pr_review and pr_ask, plain and stdio oneOf, and both
 // branches of job_result) declares the four X-18 fields, the X-20 list
 // deleted_listed and the X-19 counts model_calls and failed_parts as
-// required.
+// required, and the RC-9 object repo_context with its five required fields.
 func TestOutputSchemasCarryThePartialFields(t *testing.T) {
 	types := map[string]string{"partial": "boolean", "reviewed_files": "integer", "total_files": "integer", "not_reviewed_files": "integer",
-		"deleted_listed": "array", "model_calls": "integer", "failed_parts": "integer"}
+		"deleted_listed": "array", "model_calls": "integer", "failed_parts": "integer", "repo_context": "object"}
 	check := func(name string, schema any, want int) {
 		t.Helper()
 		raw, err := json.Marshal(schema)
@@ -127,6 +127,17 @@ func TestOutputSchemasCarryThePartialFields(t *testing.T) {
 				}
 				if !found {
 					t.Errorf("%s: coverage.%s is not required", name, field)
+				}
+			}
+			rc, _ := props["repo_context"].(map[string]any)
+			rcProps, _ := rc["properties"].(map[string]any)
+			rcReq, _ := rc["required"].([]any)
+			for field, typ := range map[string]string{"status": "string", "reason": "string", "symbols": "integer", "references": "integer", "files": "integer"} {
+				if p, _ := rcProps[field].(map[string]any); p["type"] != typ {
+					t.Errorf("%s: coverage.repo_context.%s = %v, want type %s", name, field, p, typ)
+				}
+				if !slices.Contains(rcReq, any(field)) {
+					t.Errorf("%s: coverage.repo_context.%s is not required", name, field)
 				}
 			}
 		}

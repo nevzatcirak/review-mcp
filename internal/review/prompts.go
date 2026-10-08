@@ -50,6 +50,10 @@ type PromptInput struct {
 	// and the fenced threads, see renderDiscussion); empty omits it. It is
 	// third-party text, and part of the scaffolding the diff budget reserves.
 	Discussion string
+	// RepoContext is the rendered repository-context block (repoctx.Header
+	// and the fenced uses of the changed symbols, see repoctx.Render); empty
+	// omits it. It is repository text, and part of the scaffolding.
+	RepoContext string
 	// Date is the prompt date (prompt.Date).
 	Date string
 	// PartHeader is the part line of a review in several parts (PartHeader);
@@ -77,6 +81,7 @@ func (in *PromptInput) vars() map[string]any {
 		"branch":             in.Branch,
 		"description":        in.Description,
 		"discussion":         in.Discussion,
+		"repo_context":       in.RepoContext,
 		"part_header":        in.PartHeader,
 		"diff":               in.Diff,
 	}

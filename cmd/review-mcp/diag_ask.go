@@ -13,6 +13,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/ask"
 	askrender "github.com/nevzatcirak/review-mcp/internal/ask/render"
 	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/repoctx"
 	"github.com/nevzatcirak/review-mcp/internal/tools"
 	"github.com/nevzatcirak/review-mcp/internal/wiring"
 )
@@ -67,6 +68,9 @@ type askDryRunReport struct {
 	Fast   bool         `json:"fast_path"`
 	Cover  ask.Coverage `json:"coverage"`
 	Notes  []string     `json:"notes"`
+	// RepoContext is the block's tokens and the symbols searched (RC-9);
+	// absent when repository context is off.
+	RepoContext *repoctx.Report `json:"repo_context,omitempty"`
 	// ElapsedMS is the time to fetch and prepare.
 	ElapsedMS int64 `json:"elapsed_ms"`
 }
@@ -84,11 +88,12 @@ func buildAskDryRunReport(pl *ask.Plan, elapsed time.Duration) askDryRunReport {
 			ContextWindow: b.ContextWindow, SoftLimit: b.SoftLimit(), HardLimit: b.HardLimit(),
 			PromptTokens: b.PromptTokens, Factor: b.Factor, Limit: b.Limit(), MaxDiffTokens: b.MaxDiffTokens,
 		},
-		Tokens:    dryRunTokens{Prompt: m.PromptTokens, Diff: m.DiffTokens, Request: m.RequestTokens, ContextWindow: m.ContextWindow},
-		Fast:      m.FastPath,
-		Cover:     pl.Result.Coverage,
-		Notes:     notes,
-		ElapsedMS: elapsed.Milliseconds(),
+		Tokens:      dryRunTokens{Prompt: m.PromptTokens, Diff: m.DiffTokens, Request: m.RequestTokens, ContextWindow: m.ContextWindow},
+		Fast:        m.FastPath,
+		Cover:       pl.Result.Coverage,
+		Notes:       notes,
+		RepoContext: pl.RepoReport,
+		ElapsedMS:   elapsed.Milliseconds(),
 	}
 }
 

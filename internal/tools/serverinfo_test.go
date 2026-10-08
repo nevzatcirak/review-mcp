@@ -122,6 +122,7 @@ func TestServerInfoRepoContext(t *testing.T) {
 		"- `context.repo.fetch_timeout_seconds` = `60` (default)",
 		"- `context.repo.max_symbols` = `20` (default)",
 		"- `context.repo.max_hits_per_symbol` = `5` (default)",
+		"- `context.repo.max_tokens` = `2000` (default)",
 	} {
 		if !strings.Contains(md, line) {
 			t.Errorf("markdown lacks %q", line)

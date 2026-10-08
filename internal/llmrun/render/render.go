@@ -20,6 +20,7 @@ const MaxListedFiles = 50
 const (
 	TextCoverage      = "Coverage"
 	TextNotes         = "Notes"
+	TextRepoContext   = "Repository context"
 	reasonBudgetAdded = "Left out to fit the context window (added files)"
 	reasonBudgetMod   = "Left out to fit the context window (modified files)"
 	reasonBudgetDel   = "Left out to fit the context window (deleted files)"
@@ -96,6 +97,9 @@ func Coverage(b *strings.Builder, heading string, c *llmrun.Coverage) {
 		// A review in parts (X-19, RC-13) says how many calls it used.
 		b.WriteString("- Reviewed in " + strconv.Itoa(c.ModelCalls) + " model calls.\n")
 	}
+	if line := RepoContextLine(c.RepoContext); line != "" {
+		b.WriteString("- " + line + "\n")
+	}
 
 	var groups []coverageGroup
 	if len(c.Clipped) > 0 {
@@ -124,6 +128,28 @@ func Coverage(b *strings.Builder, heading string, c *llmrun.Coverage) {
 	if unlisted > 0 {
 		b.WriteString("\nand " + strconv.Itoa(unlisted) + " more (not listed; at most " + strconv.Itoa(MaxListedFiles) + " files are listed)\n")
 	}
+}
+
+// RepoContextLine is the "Repository context" line of the coverage section
+// (RC-9): "N symbols, M references from K files", or "skipped: <reason>". It
+// is empty when repository context is off (and for a zero value), so a
+// result without it renders as it always did.
+func RepoContextLine(r llmrun.RepoContext) string {
+	switch r.Status {
+	case llmrun.RepoUsed:
+		return TextRepoContext + ": " + count(r.Symbols, "symbol", "symbols") + ", " +
+			count(r.References, "reference", "references") + " from " + count(r.Files, "file", "files")
+	case llmrun.RepoSkipped:
+		return TextRepoContext + ": skipped: " + mdutil.Literal(r.Reason)
+	}
+	return ""
+}
+
+func count(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return strconv.Itoa(n) + " " + many
 }
 
 func plural(n int) string {

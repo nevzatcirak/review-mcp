@@ -2,27 +2,26 @@
 
 | | |
 |---|---|
-| Status | **Draft for owner decision** (2026-10-08). Becomes binding through per-phase specs (`docs/plan/v2-*-spec.md`), as v1.1 did. |
+| Status | **Approved in direction** (owner, 2026-10-08: tools first, one 2.0 release, `pr_describe` may edit descriptions in a marked region). Becomes binding through per-phase specs (`docs/plan/v2-*-spec.md`), as v1.1 did. |
 | Scope | The v2 backlog of `docs/plan/phase-plan.md`: two new providers (GitHub, GitLab) and two new tools (`pr_describe`, `pr_improve`), plus the provider contract they need. |
 | Builds on | v1.1 (`main` after `v1.1.0-rc.1`): chunked review (X-19), `pr_info` (X-23), repository context (X-22). |
 | Non-goals | GraphQL clients, GitHub Apps / OAuth flows (tokens only, as today), webhooks or a bot mode, Bitbucket Cloud, Azure DevOps, auto-merge or any write beyond comments, descriptions and suggestions. |
 
-## 0. Release model
+## 0. Release model (owner decision, 2026-10-08)
 
-- **Y-0 — "v2" is a roadmap name, not a major version.** Nothing planned here breaks the tool surface, the configuration or the output schemas: new providers and tools are additive. Semantic versioning therefore ships them as **minor releases** (1.2, 1.3, …), each with its own release candidates and in-use acceptance, instead of one large 2.0. A major version is cut only if a phase has to break something, and that phase's spec must say so.
-- Each phase below is one minor release.
+- **Y-0 — One 2.0 release.** The four additions ship together as `v2.0.0`. Each phase still gets its own release candidate (`v2.0.0-rc.N`, npm `next`) so that it is accepted in use as soon as it lands; `latest` moves only at `v2.0.0`. Nothing planned here breaks the tool surface or the configuration; if a phase must break something, its spec says so and the CHANGELOG lists it under "Breaking".
+- **Branching.** v2 phase PRs stay unmerged until `v1.1.0` is tagged (the v1.1 merge rule, repeated). After that they merge to `main` one phase at a time; v1.1.x fixes, if any, are cut from the `v1.1.0` tag on a `release/1.1` branch.
 
-## 1. Order (proposed)
+## 1. Order (owner decision, 2026-10-08: tools first)
 
-| Phase | Content | Release | Why this position |
+| Phase | Content | Release candidate | Why this position |
 |---|---|---|---|
-| 2A | Provider contract test suite; resolver and `PRRef` generalisation | inside 1.2 | Every later phase is checked against it. Small. |
-| 2D | `pr_describe` | 1.2 | Useful at once on the providers already in use; no line anchoring. |
-| 2E | `pr_improve` | 1.3 | Reuses P7 anchors and X-19 parts; the highest review value after `pr_review`. |
-| 2B | GitHub provider | 1.4 | Dogfooding: this repository's own PRs are a personal test instance. |
-| 2C | GitLab provider | 1.5 | Largest API surface (nested groups, positions, quick actions). |
+| 2A | Provider contract test suite; resolver and `PRRef` generalisation | with 2D | Every later phase is checked against it. Small. |
+| 2D | `pr_describe` | v2.0.0-rc.1 | Useful at once on the providers already in use; no line anchoring. |
+| 2E | `pr_improve` | v2.0.0-rc.2 | Reuses P7 anchors and X-19 parts; the highest review value after `pr_review`. |
+| 2B | GitHub provider | v2.0.0-rc.3 | Dogfooding: this repository's own PRs are a personal test instance. |
+| 2C | GitLab provider | v2.0.0-rc.4 | Largest API surface (nested groups, positions, quick actions). |
 
-The order of 2D/2E versus 2B/2C is the owner's call: tools first gives value on the providers used today; providers first widens the audience sooner.
 
 ## 2. Phase 2A — Provider contract
 
@@ -76,7 +75,7 @@ The order of 2D/2E versus 2B/2C is the owner's call: tools first gives value on 
 - **Docs:** one page per provider (token scopes checklist, URL shapes, known limits) and one per tool.
 - **Clean-room:** fixtures are synthetic; examples use `github.example.com`, `gitlab.example.com`.
 
-## 8. Open questions for the owner
-1. Order: tools first (2A → 2D → 2E → 2B → 2C, proposed) or providers first?
-2. Y-0: minor releases per phase (proposed) or one 2.0 bundle?
-3. `pr_describe` `publish_mode=description`: acceptable to edit PR descriptions at all, given the marked-region rule, or comment-only in the first release?
+## 8. Owner decisions (2026-10-08)
+1. Order: tools first (2A → 2D → 2E → 2B → 2C).
+2. One `v2.0.0` release, with a release candidate per phase.
+3. `pr_describe` may edit PR descriptions, only inside its marked region; the default stays `comment`.

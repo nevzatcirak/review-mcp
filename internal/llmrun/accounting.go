@@ -116,8 +116,9 @@ const SkipModelCallFailed = "model_call_failed"
 //   - Filtered (ignore rules, generated files): outside the count. They
 //     were excluded on purpose, and X-3 lists them with the rule.
 //
-// Providers truncate nothing: a file too large for a provider is skipped
-// whole (size_limit), which is counted above.
+// A file that hits a provider limit is either skipped whole (file_limit,
+// size_limit: not reviewed, counted above) or listed with its patch and its
+// contents not fetched (reviewed from the patch); see Provider.GetDiff.
 type Tally struct {
 	Partial                           bool
 	Reviewed, NotReviewed, TotalFiles int

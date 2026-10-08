@@ -107,8 +107,10 @@ type FilePatch struct {
 	OldPath string
 	Type    ChangeType
 	// Patch is a hunk-only unified diff: it starts at the first "@@" line and
-	// has no diff --git, index, --- or +++ lines. "\ No newline at end of
-	// file" lines are kept verbatim.
+	// has no diff --git, index, --- or +++ lines. The contents stay
+	// byte-exact. The "\ No newline at end of file" marker is present only
+	// when the host provides it (a provider that builds patches from file
+	// contents omits it); consumers must not rely on it.
 	Patch     string
 	Additions int
 	Deletions int
@@ -171,8 +173,12 @@ type Capabilities struct {
 	// QuickActions: a published line that starts with "/" runs a quick
 	// action, so every published body is slash-sanitised (SanitizeBody).
 	QuickActions bool
-	// ThreadResolution: the provider reports whether a thread is resolved.
-	ThreadResolution bool
+	// InlineThreadResolution: the provider reports whether an inline thread
+	// is resolved.
+	InlineThreadResolution bool
+	// GeneralThreadResolution: the provider reports whether a general
+	// (PR-level) thread is resolved.
+	GeneralThreadResolution bool
 	// DescriptionEdit: the PR description can be updated through the API.
 	DescriptionEdit bool
 }

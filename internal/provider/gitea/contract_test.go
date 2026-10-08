@@ -41,9 +41,7 @@ func (ctFixture) Kind() provider.Kind { return provider.KindGitea }
 
 func (ctFixture) Traits() contract.Traits {
 	return contract.Traits{
-		BaseStrategies: []string{provider.BaseGiteaMergeBase, provider.BaseGiteaBaseSHA},
-		// Gitea stores a resolver on review (inline) comments only.
-		ResolvableThreads: []provider.ThreadKind{provider.ThreadInline},
+		BaseStrategies: gitea.BaseStrategies(),
 	}
 }
 

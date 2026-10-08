@@ -26,7 +26,7 @@ func TestKindAndCapabilities(t *testing.T) {
 	}
 	want := provider.Capabilities{
 		GFM: true, MarkdownTables: true, Labels: true, InlineComments: true,
-		ThreadResolution: true, DescriptionEdit: true,
+		InlineThreadResolution: true, DescriptionEdit: true,
 	}
 	if p.Capabilities() != want {
 		t.Fatalf("capabilities = %+v", p.Capabilities())
@@ -58,6 +58,8 @@ func TestParsePRPath(t *testing.T) {
 		{"/../demo/pulls/7", "", "", 0, false},
 		{"/octo/%2e%2e/pulls/7", "", "", 0, false},
 		{"/octo%2Fsub/demo/pulls/7", "", "", 0, false},
+		{"/octo/de%2Fmo/pulls/7", "", "", 0, false},
+		{"/octo/de%2fmo/pulls/7", "", "", 0, false},
 		{"/octo/sub/demo/pulls/7", "", "", 0, false},
 		{"/octo/de%zzmo/pulls/7", "", "", 0, false},
 		{"/octo/demo/pulls/99999999999999999999", "", "", 0, false},

@@ -33,18 +33,11 @@ type Traits struct {
 	// BaseStrategies lists the PullRequest.BaseStrategy values the provider
 	// documents (the provider.Base* constants). Required.
 	BaseStrategies []string
-	// ResolvableThreads lists the thread kinds whose resolved state the
-	// host stores and the provider reports. Threads of other kinds must
-	// report Resolved nil. It must agree with Capabilities().ThreadResolution:
-	// it includes provider.ThreadInline when the capability is true and is
-	// empty when it is false (the "capabilities" case checks this). The
-	// capability is one bool, so it cannot say that Gitea resolves inline
-	// threads only; the trait keeps that per-kind fact.
-	ResolvableThreads []provider.ThreadKind
 	// OmitsNoNewlineMarker is true for a provider that builds patches from
-	// file contents and documents that it never emits "\ No newline at end
-	// of file" (Bitbucket Server, upstream parity). The expected hunks then
-	// lack those marker lines; everything else stays byte for byte.
+	// file contents and never emits "\ No newline at end of file" (Bitbucket
+	// Server, upstream parity). Consumers must not rely on the marker
+	// (FilePatch.Patch); the expected hunks here lack those marker lines and
+	// everything else stays byte for byte.
 	OmitsNoNewlineMarker bool
 }
 
@@ -76,6 +69,7 @@ func Run(t *testing.T, f Fixture) {
 		{"hunks_and_content", s.hunksAndContent},
 		{"threads", s.threads},
 		{"reply_in_thread", s.reply},
+		{"general_reply", s.generalReply},
 		{"edit_ownership", s.editOwnership},
 		{"inline_anchoring", s.inline},
 		{"review_status", s.reviewStatus},

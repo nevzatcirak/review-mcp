@@ -28,7 +28,7 @@ func TestKindAndCapabilities(t *testing.T) {
 	}
 	want := provider.Capabilities{
 		GFM: false, MarkdownTables: true, Labels: false, InlineComments: true,
-		ThreadResolution: true, DescriptionEdit: true,
+		InlineThreadResolution: true, GeneralThreadResolution: true, DescriptionEdit: true,
 	}
 	if p.Capabilities() != want {
 		t.Fatalf("capabilities = %+v", p.Capabilities())
@@ -67,6 +67,8 @@ func TestParsePRPath(t *testing.T) {
 		{"/projects/%2e%2e/repos/demo/pull-requests/7", "", "", 0, false},
 		{"/projects/PROJ%2Fsub/repos/demo/pull-requests/7", "", "", 0, false},
 		{"/users/jdoe%2fx/repos/demo/pull-requests/7", "", "", 0, false},
+		{"/projects/PROJ/repos/de%2Fmo/pull-requests/7", "", "", 0, false},
+		{"/users/jdoe/repos/de%2fmo/pull-requests/7", "", "", 0, false},
 		{"/projects/PROJ/sub/repos/demo/pull-requests/7", "", "", 0, false},
 		{"/users//repos/demo/pull-requests/7", "", "", 0, false},
 		{"/projects/PR%zzOJ/repos/demo/pull-requests/7", "", "", 0, false},

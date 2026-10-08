@@ -111,17 +111,58 @@ func countChanges(hunks string) (add, del int) {
 	return add, del
 }
 
-// capabilities checks that the fixture's ResolvableThreads trait agrees with
-// the provider's ThreadResolution capability.
+// resolves reports whether caps says the provider reports resolution for
+// threads of kind k.
+func resolves(caps provider.Capabilities, k provider.ThreadKind) bool {
+	if k == provider.ThreadInline {
+		return caps.InlineThreadResolution
+	}
+	return caps.GeneralThreadResolution
+}
+
+// capabilityName is the Capabilities field that covers threads of kind k.
+func capabilityName(k provider.ThreadKind) string {
+	if k == provider.ThreadInline {
+		return "InlineThreadResolution"
+	}
+	return "GeneralThreadResolution"
+}
+
+// capabilities checks that the resolution flags agree with what the
+// provider reports for the sample pull request's resolved general thread and
+// resolved inline thread: a flag is true exactly when its thread comes back
+// with a Resolved state. The fake servers report a resolution only where the
+// host stores one.
 func (s *suite) capabilities(t *testing.T) {
-	p, _, _ := s.serve(t, samplePR())
+	spec := samplePR()
+	p, ref, _ := s.serve(t, spec)
 	caps := p.Capabilities()
-	has := slices.Contains(s.tr.ResolvableThreads, provider.ThreadInline)
-	switch {
-	case caps.ThreadResolution && !has:
-		t.Errorf("Capabilities().ThreadResolution is true but Traits.ResolvableThreads lacks %q: %v", provider.ThreadInline, s.tr.ResolvableThreads)
-	case !caps.ThreadResolution && len(s.tr.ResolvableThreads) > 0:
-		t.Errorf("Capabilities().ThreadResolution is false but Traits.ResolvableThreads = %v, want none", s.tr.ResolvableThreads)
+	got, err := p.ListThreads(t.Context(), ref)
+	if err != nil {
+		t.Fatalf("ListThreads: %v", err)
+	}
+	byID := map[string]*provider.Thread{}
+	for i := range got {
+		byID[got[i].ID] = &got[i]
+	}
+	for _, w := range spec.Threads {
+		if !w.Resolved {
+			continue
+		}
+		id := strconv.FormatInt(w.Comments[0].ID, 10)
+		th := byID[id]
+		if th == nil {
+			t.Errorf("%s thread %s is missing", w.Kind, id)
+			continue
+		}
+		flag := resolves(caps, w.Kind)
+		name := capabilityName(w.Kind)
+		switch {
+		case flag && th.Resolved == nil:
+			t.Errorf("Capabilities().%s is true but the resolved %s thread %s comes back with Resolved nil", name, w.Kind, id)
+		case !flag && th.Resolved != nil:
+			t.Errorf("Capabilities().%s is false but the resolved %s thread %s comes back with Resolved = %v", name, w.Kind, id, *th.Resolved)
+		}
 	}
 }
 
@@ -373,14 +414,15 @@ func (s *suite) threads(t *testing.T) {
 		}
 	})
 	t.Run("resolved_hidden_only_where_reported", func(t *testing.T) {
+		caps := p.Capabilities()
 		for _, w := range want {
 			th := byID[strconv.FormatInt(w.Comments[0].ID, 10)]
 			if th == nil {
 				continue // reported above
 			}
-			if !slices.Contains(s.tr.ResolvableThreads, w.Kind) {
+			if !resolves(caps, w.Kind) {
 				if th.Resolved != nil {
-					t.Errorf("%s thread %s: Resolved = %v, want nil (the provider reports no resolution here)", w.Kind, th.ID, *th.Resolved)
+					t.Errorf("%s thread %s: Resolved = %v, want nil (Capabilities().%s is false)", w.Kind, th.ID, *th.Resolved, capabilityName(w.Kind))
 				}
 				continue
 			}
@@ -435,6 +477,108 @@ func (s *suite) reply(t *testing.T) {
 			}
 		})
 	}
+}
+
+// generalReply: a reply to a general comment is either the last comment of
+// the same thread (in_thread) or a new general thread that quotes or names
+// the original comment; the original thread is unchanged either way.
+func (s *suite) generalReply(t *testing.T) {
+	spec := samplePR()
+	p, ref, _ := s.serve(t, spec)
+	const reply = "Thanks, I will take a look."
+	sid := strconv.FormatInt(idGeneralOther, 10)
+	before, err := p.ListThreads(t.Context(), ref)
+	if err != nil {
+		t.Fatalf("ListThreads: %v", err)
+	}
+	orig := findThread(before, sid)
+	if orig == nil {
+		t.Fatalf("thread %s missing", sid)
+	}
+	rr, err := p.ReplyToComment(t.Context(), ref, sid, reply)
+	if err != nil {
+		t.Fatalf("ReplyToComment(%s): %v", sid, err)
+	}
+	if rr.InThread != orig.ReplyInThread {
+		t.Errorf("in_thread = %v, but ListThreads says reply_in_thread = %v", rr.InThread, orig.ReplyInThread)
+	}
+	after, err := p.ListThreads(t.Context(), ref)
+	if err != nil {
+		t.Fatalf("ListThreads after the reply: %v", err)
+	}
+	cur := findThread(after, sid)
+	if cur == nil {
+		t.Fatalf("thread %s missing after the reply", sid)
+	}
+	commentKey := func(c provider.CommentItem) string { return c.ID + "/" + c.Author + "/" + c.Body }
+	if rr.InThread {
+		if len(after) != len(before) {
+			t.Errorf("%d threads after the reply, want %d (the reply joins its thread)", len(after), len(before))
+		}
+		if len(cur.Comments) != len(orig.Comments)+1 {
+			t.Fatalf("thread %s has %d comments, want %d", sid, len(cur.Comments), len(orig.Comments)+1)
+		}
+		last := cur.Comments[len(cur.Comments)-1]
+		if last.Author != spec.TokenUser.Login || last.Body != reply {
+			t.Errorf("last comment = %s/%s/%q, want the token user's reply %q", last.ID, last.Author, last.Body, reply)
+		}
+		if last.ID != rr.Comment.ID {
+			t.Errorf("last comment id = %s, want the reply's %s", last.ID, rr.Comment.ID)
+		}
+		return
+	}
+	// A reply that does not join the thread: the original thread is the
+	// same, and one new general thread holds the reply.
+	var g, w []string
+	for _, c := range cur.Comments {
+		g = append(g, commentKey(c))
+	}
+	for _, c := range orig.Comments {
+		w = append(w, commentKey(c))
+	}
+	if !slices.Equal(g, w) {
+		t.Errorf("thread %s changed: comments = %q, want %q", sid, g, w)
+	}
+	if len(after) != len(before)+1 {
+		t.Fatalf("%d threads after the reply, want %d (one new thread)", len(after), len(before)+1)
+	}
+	known := map[string]bool{}
+	for i := range before {
+		known[before[i].ID] = true
+	}
+	var fresh []*provider.Thread
+	for i := range after {
+		if !known[after[i].ID] {
+			fresh = append(fresh, &after[i])
+		}
+	}
+	if len(fresh) != 1 {
+		t.Fatalf("%d new threads, want 1", len(fresh))
+	}
+	nt := fresh[0]
+	if nt.Kind != provider.ThreadGeneral || len(nt.Comments) == 0 {
+		t.Fatalf("new thread %s: kind %q with %d comments, want a general thread with a root", nt.ID, nt.Kind, len(nt.Comments))
+	}
+	root := nt.Comments[0]
+	if root.Author != spec.TokenUser.Login {
+		t.Errorf("new thread root author = %q, want the token user %q", root.Author, spec.TokenUser.Login)
+	}
+	if !strings.Contains(root.Body, reply) {
+		t.Errorf("new thread root = %q, want it to contain the reply %q", root.Body, reply)
+	}
+	// The provider names the original comment's author in a quote header.
+	if !strings.Contains(root.Body, orig.Comments[0].Author) {
+		t.Errorf("new thread root = %q, want it to name the original author %q", root.Body, orig.Comments[0].Author)
+	}
+}
+
+func findThread(ts []provider.Thread, id string) *provider.Thread {
+	for i := range ts {
+		if ts[i].ID == id {
+			return &ts[i]
+		}
+	}
+	return nil
 }
 
 // editOwnership: an edit of another user's comment is refused with

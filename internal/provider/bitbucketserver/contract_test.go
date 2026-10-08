@@ -40,8 +40,7 @@ func (ctFixture) Kind() provider.Kind { return provider.KindBitbucketServer }
 
 func (ctFixture) Traits() contract.Traits {
 	return contract.Traits{
-		BaseStrategies:       []string{provider.BaseBBSMergeBaseEP, provider.BaseBBSAncestorWalk},
-		ResolvableThreads:    []provider.ThreadKind{provider.ThreadGeneral, provider.ThreadInline},
+		BaseStrategies:       bitbucketserver.BaseStrategies(),
 		OmitsNoNewlineMarker: true,
 	}
 }

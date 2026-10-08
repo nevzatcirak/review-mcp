@@ -78,9 +78,9 @@ func (Factory) ParsePRPath(remainder string) (namespace, repo string, number int
 	if segs[2] != "repos" || segs[4] != "pull-requests" {
 		return "", "", 0, errShape
 	}
-	// The URL shape has exactly one namespace segment: an escaped "/" in it
-	// ("%2F") would smuggle a nested namespace in.
-	if strings.Contains(segs[1], "/") {
+	// The URL shape has exactly one namespace and one slug segment: an
+	// escaped "/" in either ("%2F") would smuggle a nested path in.
+	if strings.Contains(segs[1], "/") || strings.Contains(segs[3], "/") {
 		return "", "", 0, errShape
 	}
 	switch segs[0] {
@@ -182,8 +182,14 @@ func (*Provider) Kind() provider.Kind { return provider.KindBitbucketServer }
 func (*Provider) Capabilities() provider.Capabilities {
 	return provider.Capabilities{
 		GFM: false, MarkdownTables: true, Labels: false, InlineComments: true,
-		ThreadResolution: true, DescriptionEdit: true,
+		InlineThreadResolution: true, GeneralThreadResolution: true, DescriptionEdit: true,
 	}
+}
+
+// BaseStrategies returns the provider.PullRequest.BaseStrategy values this
+// provider can produce (a fresh slice).
+func BaseStrategies() []string {
+	return []string{provider.BaseBBSMergeBaseEP, provider.BaseBBSAncestorWalk}
 }
 
 func protocolErr(hint string) *provider.Error {

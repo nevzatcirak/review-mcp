@@ -5,6 +5,30 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0]
+
+First stable release. The code is the same as `1.0.0-rc.4`; the release
+candidates were validated in use (acceptance record #8, in-use mode). The
+sections below list everything that went into 1.0.0.
+
+### Highlights
+
+- Tools: `server_info`, `pr_comments`, `pr_comment_reply`, `pr_comment_create`,
+  `pr_review`, `pr_ask` and, over stdio, `job_result`.
+- Providers: Gitea and Bitbucket Server (Data Center); any OpenAI-compatible
+  LLM endpoint; per-user tokens, never logged or persisted; no telemetry.
+- Reviews publish one overview comment, edited in place on later runs, and
+  inline comments on the changed lines; existing discussion is taken into
+  account so issues are not repeated.
+- A partial review says so first and never claims anything about the files it
+  did not review.
+- The context window is read from the endpoint when it is not configured;
+  long calls over stdio continue as background jobs.
+- stdio by default; `serve` runs one shared HTTP server with credentials in
+  request headers.
+- Distribution: GitHub release archives with provenance and npm packages
+  (`@nevzatcirak/review-mcp`) published with trusted publishing.
+
 ## [1.0.0-rc.4]
 
 Fourth release candidate. It makes a partial review say so: a review that did

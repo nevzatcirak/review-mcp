@@ -92,7 +92,11 @@ var errNoWiring = errors.New("ask: resolver or LLM dependency missing")
 // Progress stages reported through Deps.Progress. They are fixed words,
 // never PR content. The names match pr_review's.
 const (
-	StageFetching      = "fetching"
+	StageFetching = "fetching"
+	// StageRepoContext is reported, only when context.repo.enabled is set and
+	// the diff defines symbols to look for, while the pull request head is
+	// fetched (X-22). It precedes StagePreparingDiff.
+	StageRepoContext   = "fetching repository context"
 	StagePreparingDiff = "preparing diff"
 	StageCallingModel  = "calling model"
 )
@@ -246,6 +250,18 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Repository context (X-22): the head is fetched now, under its own
+	// progress stage, when the diff defines a symbol to look for. pr_ask
+	// makes one call and never reserves room for the block: the diff always
+	// wins (RC-8).
+	var rcs *repoctx.Session
+	if cfg.Context.Repo.Enabled {
+		rcs = repoctx.Open(cfg, deps.RepoContext, ref, p, pr.HeadSHA, d.Files, d.Skipped, flt, log)
+		if len(rcs.Symbols(d.Files)) > 0 {
+			progress(deps, StageRepoContext)
+			rcs.Ready(ctx)
+		}
+	}
 	progress(deps, StagePreparingDiff)
 	in := PromptInput{
 		ExtraInstructions: extra,
@@ -305,6 +321,9 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	pl := &Plan{Result: res, Budget: budget, ref: ref, p: p, log: log}
 	if prep.Text == "" {
 		pl.Empty = true
+		if rcs != nil {
+			res.Coverage.RepoContext = llmrun.RepoContext{Status: llmrun.RepoSkipped, Reason: repoctx.ReasonNothingToReview}
+		}
 		res.Notes = append(res.Notes, llmrun.PartialNotes(&res.Coverage, budget)...)
 		return pl, nil
 	}
@@ -315,11 +334,10 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		return nil, err
 	}
 	var repoNotes []string
-	if cfg.Context.Repo.Enabled {
+	if rcs != nil {
 		// The block goes into the room the diff leaves (X-22, RC-8): the
 		// diff always wins. The symbols are those of the files in the
 		// prepared diff, the question-named files included.
-		rcs := repoctx.Open(cfg, deps.RepoContext, ref, p, pr.HeadSHA, d.Files, flt, log)
 		var files []provider.FilePatch
 		for i := range d.Files {
 			if slices.Contains(prep.Included, d.Files[i].Path) || slices.Contains(prep.Clipped, d.Files[i].Path) {
@@ -328,7 +346,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		}
 		var fit1 *llmrun.Fitted
 		var in1 PromptInput
-		o := rcs.Attach(ctx, files, budget, fit.RequestTokens, fit.KeptLines >= 0, func(block string) (bool, error) {
+		o := rcs.Attach(ctx, files, nil, budget, fit.RequestTokens, fit.KeptLines >= 0, func(block string) (bool, error) {
 			cand := in
 			cand.RepoContext = block
 			f, err := fitPlain(cand, prep.Text, budget)

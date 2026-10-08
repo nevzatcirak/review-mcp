@@ -156,7 +156,11 @@ var errNoWiring = errors.New("review: resolver or LLM dependency missing")
 // Progress stages reported through Deps.Progress (and by the pr_review tool
 // for the last one). They are fixed words, never PR content.
 const (
-	StageFetching      = "fetching"
+	StageFetching = "fetching"
+	// StageRepoContext is reported, only when context.repo.enabled is set and
+	// the diff defines symbols to look for, while the pull request head is
+	// fetched (X-22). It precedes StagePreparingDiff.
+	StageRepoContext   = "fetching repository context"
 	StagePreparingDiff = "preparing diff"
 	StageCallingModel  = "calling model"
 	StageRendering     = "rendering"
@@ -321,6 +325,25 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Repository context (X-22): the session is opened here and the head is
+	// fetched now (its own progress stage) when the diff defines a symbol to
+	// look for. With review.max_chunks > 1 the block's budget is reserved up
+	// front, as for the parts of a review in parts: files the reservation
+	// pushes out go to a further part, so nothing is lost. With max_chunks
+	// 1 a reservation would leave files unreviewed, so the diff always wins
+	// there: the block uses only the room the diff leaves (placeRepo).
+	var rcs *repoctx.Session
+	reserve := 0
+	if cfg.Context.Repo.Enabled {
+		rcs = repoctx.Open(cfg, deps.RepoContext, ref, p, pr.HeadSHA, d.Files, d.Skipped, flt, log)
+		if len(rcs.Symbols(d.Files)) > 0 {
+			progress(deps, StageRepoContext)
+			if rcs.Ready(ctx) == "" && maxChunks > 1 {
+				reserve = rcs.Settings().MaxTokens
+			}
+		}
+	}
 	progress(deps, StagePreparingDiff)
 
 	// The PR's discussion, for the prompt and for the duplicate check; a
@@ -372,15 +395,36 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		return nil, doesNotFit(err)
 	}
 
-	// Step 5: prepare the numbered diff.
-	dIn := diffpipe.Input{Files: d.Files, Skipped: d.Skipped, Mode: diffpipe.ModeNumbered, Budget: budget, Diff: cfg.Diff}
-	prep, err := diffpipe.Prepare(dIn)
+	// Step 5: prepare the numbered diff, against the budget without the
+	// repository-context reservation (dIn) or with it (reserved). The
+	// reservation is dropped when it leaves no capacity or no diff.
+	base := budget
+	withReserve := func(r int) tokens.Budget {
+		b := base
+		b.PromptTokens += r
+		return b
+	}
+	if reserve > 0 && withReserve(reserve).RequireCapacity() != nil {
+		reserve = 0
+	}
+	dIn := diffpipe.Input{Files: d.Files, Skipped: d.Skipped, Mode: diffpipe.ModeNumbered, Budget: base, Diff: cfg.Diff}
+	prepare := func(r int) (*diffpipe.Prepared, error) {
+		in := dIn
+		in.Budget = withReserve(r)
+		return diffpipe.Prepare(in)
+	}
+	prep, err := prepare(reserve)
+	if reserve > 0 && (errors.Is(err, tokens.ErrDoesNotFit) || (err == nil && prep.Text == "")) {
+		reserve = 0
+		prep, err = prepare(0)
+	}
 	if err != nil {
 		if errors.Is(err, tokens.ErrDoesNotFit) {
 			return nil, doesNotFit(err)
 		}
 		return nil, err
 	}
+	budget = withReserve(reserve)
 	res := &Result{
 		PR: PRInfo{Kind: string(ref.Kind), URL: logging.RedactURL(ref.URL), Number: ref.Number, Title: pr.Title,
 			HeadSHA: pr.HeadSHA},
@@ -410,27 +454,46 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	pl.Result, pl.Budget = res, budget
 	if prep.Text == "" {
 		pl.Empty = true
+		if rcs != nil {
+			// No model call, so no context: skipped, not off ("off" means
+			// only "disabled").
+			res.Coverage.RepoContext = llmrun.RepoContext{Status: llmrun.RepoSkipped, Reason: repoctx.ReasonNothingToReview}
+		}
 		res.Notes = append(res.Notes, llmrun.PartialNotes(&res.Coverage, budget)...)
 		return pl, nil
 	}
 
-	// Repository context (X-22): opened here, fetched at most once, on the
-	// first search that has a symbol to look for.
-	var rcs *repoctx.Session
-	if cfg.Context.Repo.Enabled {
-		rcs = repoctx.Open(cfg, deps.RepoContext, ref, p, pr.HeadSHA, d.Files, flt, log)
-	}
-
 	// A diff that leaves files out is reviewed in parts when
 	// review.max_chunks allows it (X-19); otherwise, and when the packing
-	// yields one part, the review is the one call below, unchanged.
+	// yields one part, the review is the one call below, unchanged. When the
+	// reservation made the diff leave files out and no plan in parts
+	// results, the diff is prepared again without it: the reservation must
+	// never cost a file.
 	if maxChunks > 1 && leavesFilesOut(prep) {
-		ok, err := pl.planParts(ctx, dIn, in, maxChunks, rcs)
+		ok, err := pl.planParts(ctx, dIn, in, maxChunks, rcs, reserve)
 		if err != nil {
 			return nil, err
 		}
 		if ok {
 			return pl, nil
+		}
+		if reserve > 0 {
+			if prep, err = prepare(0); err != nil {
+				if errors.Is(err, tokens.ErrDoesNotFit) {
+					return nil, doesNotFit(err)
+				}
+				return nil, err
+			}
+			budget = base
+			pl.Budget = budget
+			res.Coverage, res.Metadata.DiffTokens, res.Metadata.FastPath = buildCoverage(prep, flt), prep.Tokens, prep.FastPath
+			if leavesFilesOut(prep) {
+				if ok, err = pl.planParts(ctx, dIn, in, maxChunks, rcs, 0); err != nil {
+					return nil, err
+				} else if ok {
+					return pl, nil
+				}
+			}
 		}
 	}
 
@@ -443,7 +506,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	if rcs != nil {
 		// The block goes into the room the diff leaves (placeRepo); the
 		// prompt tokens then include it.
-		pin, pfit, o := placeRepo(ctx, rcs, in, diffFiles(d.Files, prep.Included, prep.Clipped), prep.Text, fit, budget)
+		pin, pfit, o := placeRepo(ctx, rcs, in, diffFiles(d.Files, prep.Included, prep.Clipped), nil, prep.Text, fit, budget)
 		fit = pfit
 		if pin.RepoContext != "" {
 			if res.Metadata.PromptTokens, err = ScaffoldingTokens(pin, factor); err != nil {

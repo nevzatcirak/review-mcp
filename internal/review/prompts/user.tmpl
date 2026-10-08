@@ -34,7 +34,12 @@ uses of the changed symbols outside the pull request, it supplies one block
 the entries "[path:line] uses symbol" with their snippets inside an
 adaptive code fence). It follows the discussion block and precedes the part
 line and the diff; without one nothing is rendered, so the prompt is
-byte-identical to the one without the feature.
+byte-identical to the one without the feature. In a review in several parts
+an entry whose file is itself changed by the pull request, in a file another
+part reviews (or that no part reviews), ends its first line with a mark in
+parentheses: "(changed in this pull request; reviewed in part J)" or
+"(changed in this pull request; not reviewed)". The uses are read from the
+head commit, so they show the new version of that file.
 */}}
 
 

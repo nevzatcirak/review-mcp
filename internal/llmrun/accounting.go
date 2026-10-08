@@ -55,16 +55,17 @@ const (
 	// prompt(s) carry (all zero when the diff defined no symbol to search).
 	RepoUsed = "used"
 	// RepoSkipped: repository context was on but is not in the prompt; Reason
-	// says why.
+	// says why (also for a review with no model call).
 	RepoSkipped = "skipped"
 )
 
 // RepoContext is the structured form of the "Repository context" line of
 // the coverage section (RC-9, v1.1 spec WP-11c).
 //
-// Status is "used", "skipped" or "off". Reason is a fixed word (a gitctx
-// reason or "budget") for "skipped" and "" otherwise; it is always present
-// in the JSON. For "used", Symbols is the number of symbols searched, and
+// Status is "used", "skipped" or "off"; "off" means only "disabled". Reason
+// is a fixed word (a gitctx reason, "budget" when the diff needs the room,
+// or "nothing_to_review" when the diff is empty after filtering) for
+// "skipped" and "" otherwise; it is always present in the JSON. For "used", Symbols is the number of symbols searched, and
 // References and Files count the uses and the distinct files that are in the
 // prompt(s) (summed over the parts of a review in parts; Files is then a sum
 // of per-part counts).

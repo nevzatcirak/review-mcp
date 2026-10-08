@@ -58,7 +58,7 @@ func ResultSchema() map[string]any {
 			"failed_parts":       integer("parts whose model call failed; their files are skipped with reason model_call_failed and are not reviewed"),
 			"repo_context": object("repository context in the prompt (RC-9)", map[string]any{
 				"status":     map[string]any{"type": "string", "enum": []any{"used", "skipped", "off"}, "description": "off: context.repo.enabled is false; used: the repository was searched; skipped: it is on but not in the prompt"},
-				"reason":     str("fixed reason when skipped (auth, not_found, timeout, too_large, sha_mismatch, redirect, git_failed, git_unavailable, busy, cache_unusable, unsupported, budget); empty otherwise"),
+				"reason":     str("fixed reason when skipped (auth, not_found, timeout, too_large, sha_mismatch, redirect, git_failed, git_unavailable, busy, cache_unusable, unsupported, budget, nothing_to_review); empty otherwise"),
 				"symbols":    integer("symbols searched (summed over the parts of a review in parts)"),
 				"references": integer("uses of those symbols shown to the model"),
 				"files":      integer("distinct files among the shown uses (summed over the parts of a review in parts)"),

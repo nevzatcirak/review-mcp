@@ -106,7 +106,7 @@ func TestEndToEndRealGit(t *testing.T) {
 	ref := provider.PRRef{Kind: provider.KindGitea, Namespace: "owner", Repo: "repo", Number: 7}
 	changed := []provider.FilePatch{{Path: "main.go", Type: provider.ChangeModified,
 		Patch: "@@ -1,3 +1,3 @@\n package main\n \n-func WidgetFactory() int { return 0 }\n+func WidgetFactory() int { return 1 }\n"}}
-	s := Open(cfg, nil, ref, nil, head, changed, nil, log)
+	s := Open(cfg, nil, ref, nil, head, changed, nil, nil, log)
 
 	found := s.Find(context.Background(), changed)
 	if found.Skipped != "" || found.Symbols != 1 || len(found.Hits) < 2 {
@@ -133,7 +133,7 @@ func TestEndToEndRealGit(t *testing.T) {
 	}
 
 	// A wrong head SHA is a fixed reason, not an error.
-	s2 := Open(cfg, nil, ref, nil, strings.Repeat("1", 40), changed, nil, log)
+	s2 := Open(cfg, nil, ref, nil, strings.Repeat("1", 40), changed, nil, nil, log)
 	if f := s2.Find(context.Background(), changed); f.Skipped == "" || len(f.Hits) != 0 {
 		t.Errorf("wrong head: %+v", f)
 	}

@@ -36,6 +36,22 @@ const Header = "Related code outside this pull request (read-only context; it ma
 	"Use it to judge the effect of the change on callers and implementations. " +
 	"Do not report issues in this code unless the pull request causes them."
 
+// ReasonNothingToReview is the reason of a review whose diff is empty after
+// filtering: no model call is made, so no repository context is either. It
+// is "skipped", not "off": "off" means only "disabled".
+const ReasonNothingToReview = "nothing_to_review"
+
+// MarkNotReviewed marks a use in a file of the pull request that no prompt
+// of the review carries (left out by the budget, too large for a part,
+// skipped by the provider). The text is shown after the entry's symbol.
+const MarkNotReviewed = "changed in this pull request; not reviewed"
+
+// MarkReviewedInPart marks a use in a file of the pull request that part j
+// of a review in parts reviews.
+func MarkReviewedInPart(j int) string {
+	return "changed in this pull request; reviewed in part " + strconv.Itoa(j)
+}
+
 // ReasonBudget is the reason of a block left out because the diff needs the
 // room (the diff always wins). The other reasons are gitctx's.
 const ReasonBudget = "budget"
@@ -45,8 +61,11 @@ const NoteBudget = "repository context skipped: the prompt has no room for it be
 
 // NoteFor returns the fixed note for a skip reason.
 func NoteFor(reason string) string {
-	if reason == ReasonBudget {
+	switch reason {
+	case ReasonBudget:
 		return NoteBudget
+	case ReasonNothingToReview:
+		return "repository context skipped: there is nothing to review"
 	}
 	return gitctx.Note(reason)
 }
@@ -90,6 +109,7 @@ type Session struct {
 	repoOK   bool
 	pr       gitctx.PR
 	exclude  []string
+	marks    map[string]string
 	flt      *filter.Filter
 	settings Settings
 	log      *slog.Logger
@@ -101,10 +121,13 @@ type Session struct {
 
 // Open returns the Session of a review of pr in ref. cfg.Context.Repo must be
 // enabled (the caller checks); backend nil selects the real gitctx runner.
-// files are every file of the pull request: their paths are excluded from the
-// search, being in the prompt already. Nothing is fetched until Find.
+// files are every reviewable file of the pull request: by default their
+// paths are excluded from the search, being in the prompt already (a Scope
+// narrows that for a part of a review in parts). skipped are the files the
+// provider did not hand over; a use in one is shown, marked MarkNotReviewed.
+// Nothing is fetched until Find.
 func Open(cfg *config.Config, backend Backend, ref provider.PRRef, p provider.Provider, headSHA string,
-	files []provider.FilePatch, flt *filter.Filter, log *slog.Logger) *Session {
+	files []provider.FilePatch, skipped []provider.SkippedFile, flt *filter.Filter, log *slog.Logger) *Session {
 	if backend == nil {
 		backend = gitctx.New(gitctx.OptionsFromConfig(cfg.Context.Repo))
 	}
@@ -112,14 +135,34 @@ func Open(cfg *config.Config, backend Backend, ref provider.PRRef, p provider.Pr
 		log = slog.New(slog.DiscardHandler)
 	}
 	repo, ok := gitctx.RepoFor(cfg, ref, p)
+	marks := map[string]string{}
+	for _, f := range skipped {
+		marks[f.Path] = MarkNotReviewed
+	}
 	return &Session{
 		backend: backend, repo: repo, repoOK: ok,
 		pr:       gitctx.PR{Number: ref.Number, HeadSHA: headSHA},
 		exclude:  gitctx.ChangedPaths(files),
+		marks:    marks,
 		flt:      flt,
 		settings: SettingsFrom(cfg.Context.Repo),
 		log:      log,
 	}
+}
+
+// Scope narrows a search to one prompt of a review in parts (X-19): the
+// files whose diff is in the prompt are excluded (they are in it already),
+// and the other files of the pull request are searched like any file and
+// marked. The zero Scope pointer (nil) is a review in one call: every file
+// of the pull request is excluded.
+type Scope struct {
+	// Exclude are the paths of the prompt's own files, old paths of renamed
+	// files included (gitctx.ChangedPaths).
+	Exclude []string
+	// Marks gives the text that follows the symbol of a use in a file of the
+	// pull request that this prompt does not carry (MarkReviewedInPart,
+	// MarkNotReviewed), by path.
+	Marks map[string]string
 }
 
 // Settings returns the session's settings.
@@ -165,6 +208,12 @@ func (s *Session) Ready(ctx context.Context) string { return s.ready(ctx) }
 // Find searches the uses of the symbols of files. With no symbol it does no
 // git work at all. A gitctx failure is Found.Skipped, never an error.
 func (s *Session) Find(ctx context.Context, files []provider.FilePatch) Found {
+	return s.FindIn(ctx, files, nil)
+}
+
+// FindIn is Find for a prompt of a review in parts (sc non-nil) or in one
+// call (sc nil).
+func (s *Session) FindIn(ctx context.Context, files []provider.FilePatch, sc *Scope) Found {
 	syms := s.Symbols(files)
 	if len(syms) == 0 {
 		return Found{}
@@ -173,8 +222,12 @@ func (s *Session) Find(ctx context.Context, files []provider.FilePatch) Found {
 		s.log.Debug("repository context: not available", "reason", reason)
 		return Found{Skipped: reason}
 	}
+	exclude := s.exclude
+	if sc != nil {
+		exclude = sc.Exclude
+	}
 	res, err := s.backend.Grep(ctx, s.co, gitctx.Query{
-		Symbols: syms, Exclude: s.exclude, Filter: s.flt, MaxHitsPerSymbol: s.settings.MaxHitsPerSymbol,
+		Symbols: syms, Exclude: exclude, Filter: s.flt, MaxHitsPerSymbol: s.settings.MaxHitsPerSymbol,
 	})
 	if err != nil {
 		reason := reasonOf(err)
@@ -220,6 +273,12 @@ type Block struct {
 // does not fit. maxTokens <= 0 or no hit yields an empty block; when not
 // even the first entry fits, the block is empty and every use is omitted.
 func Render(hits []gitctx.Hit, maxTokens int, factor float64) Block {
+	return RenderMarked(hits, maxTokens, factor, nil)
+}
+
+// RenderMarked is Render with marks: the text after the symbol of an entry
+// whose path is a key (see Scope.Marks).
+func RenderMarked(hits []gitctx.Hit, maxTokens int, factor float64, marks map[string]string) Block {
 	if len(hits) == 0 {
 		return Block{}
 	}
@@ -228,7 +287,7 @@ func Render(hits []gitctx.Hit, maxTokens int, factor float64) Block {
 	}
 	entries := make([]string, len(hits))
 	for i := range hits {
-		entries[i] = entry(&hits[i])
+		entries[i] = entry(&hits[i], marks[hits[i].Path])
 	}
 	// The largest prefix that fits, by bisection (an estimate per probe
 	// costs a tokenizer pass over the whole block), then verified downward:
@@ -271,10 +330,14 @@ func blockText(entries []string) string {
 
 const pathRunes = 200
 
-// entry is "[<path>:<line>] uses <symbol>" and the snippet.
-func entry(h *gitctx.Hit) string {
-	return "[" + cleanLine(h.Path, pathRunes) + ":" + strconv.Itoa(h.Line) + "] uses " + cleanLine(h.Symbol, pathRunes) +
-		"\n" + cleanText(h.Snippet)
+// entry is "[<path>:<line>] uses <symbol>", the mark in parentheses when
+// there is one, and the snippet.
+func entry(h *gitctx.Hit, mark string) string {
+	head := "[" + cleanLine(h.Path, pathRunes) + ":" + strconv.Itoa(h.Line) + "] uses " + cleanLine(h.Symbol, pathRunes)
+	if mark != "" {
+		head += " (" + mark + ")"
+	}
+	return head + "\n" + cleanText(h.Snippet)
 }
 
 // cleanText sanitizes repository text for the prompt, with the rules of the
@@ -331,11 +394,12 @@ type Outcome struct {
 // clipped by whole entries. render renders the final prompts with the block
 // and reports whether the guard trimmed the diff; a block that makes it do
 // so is dropped. A dropped block is Reason ReasonBudget, a gitctx failure
-// the gitctx reason; neither is an error.
-func (s *Session) Attach(ctx context.Context, files []provider.FilePatch, b tokens.Budget, request0 int,
+// the gitctx reason; neither is an error. sc is nil for a review in one call
+// and the Scope of the part otherwise (see Scope).
+func (s *Session) Attach(ctx context.Context, files []provider.FilePatch, sc *Scope, b tokens.Budget, request0 int,
 	trimmed0 bool, render func(block string) (trimmed bool, err error)) Outcome {
 	out := Outcome{Status: llmrun.RepoUsed}
-	found := s.Find(ctx, files)
+	found := s.FindIn(ctx, files, sc)
 	if found.Skipped != "" {
 		return Outcome{Status: llmrun.RepoSkipped, Reason: found.Skipped, Symbols: found.Symbols, Names: found.Names}
 	}
@@ -344,7 +408,11 @@ func (s *Session) Attach(ctx context.Context, files []provider.FilePatch, b toke
 	if trimmed0 {
 		room = 0
 	}
-	placed, err := Place(found.Hits, s.settings.MaxTokens, room, b.Factor, func(text string) (bool, error) {
+	marks := s.marks
+	if sc != nil {
+		marks = sc.Marks
+	}
+	placed, err := Place(found.Hits, marks, s.settings.MaxTokens, room, b.Factor, func(text string) (bool, error) {
 		trimmed, err := render(text)
 		return !trimmed, err
 	})
@@ -412,11 +480,11 @@ type Placed struct {
 // final prompts with the block and reports whether they still hold the whole
 // diff (the diff always wins). Uses that do not fit are dropped, all of them
 // with ReasonBudget.
-func Place(hits []gitctx.Hit, maxTokens, room int, factor float64, try func(block string) (bool, error)) (Placed, error) {
+func Place(hits []gitctx.Hit, marks map[string]string, maxTokens, room int, factor float64, try func(block string) (bool, error)) (Placed, error) {
 	if len(hits) == 0 {
 		return Placed{}, nil
 	}
-	b := Render(hits, min(maxTokens, room), factor)
+	b := RenderMarked(hits, min(maxTokens, room), factor, marks)
 	if b.Entries == 0 {
 		return Placed{Block: b, Reason: ReasonBudget}, nil
 	}

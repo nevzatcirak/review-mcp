@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 
+	"github.com/nevzatcirak/review-mcp/internal/gitctx"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/repoctx"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
@@ -28,9 +29,9 @@ import (
 // without the block. It returns the prompt input and the fitted prompt to
 // use, and the outcome.
 func placeRepo(ctx context.Context, sess *repoctx.Session, in PromptInput, files []provider.FilePatch,
-	diff string, fit0 *fitted, b tokens.Budget) (PromptInput, *fitted, repoctx.Outcome) {
+	sc *repoctx.Scope, diff string, fit0 *fitted, b tokens.Budget) (PromptInput, *fitted, repoctx.Outcome) {
 	in1, fit1 := in, fit0
-	out := sess.Attach(ctx, files, b, fit0.requestTokens, fit0.keptLines >= 0, func(block string) (bool, error) {
+	out := sess.Attach(ctx, files, sc, b, fit0.requestTokens, fit0.keptLines >= 0, func(block string) (bool, error) {
 		cand := in
 		cand.RepoContext = block
 		f, err := fitPrompts(cand, diff, b)
@@ -45,6 +46,10 @@ func placeRepo(ctx context.Context, sess *repoctx.Session, in PromptInput, files
 	}
 	return in1, fit1, out
 }
+
+// gitctxPaths are the paths of files and the old paths of renamed ones
+// (gitctx.ChangedPaths), for the exclusion of a search.
+func gitctxPaths(files []provider.FilePatch) []string { return gitctx.ChangedPaths(files) }
 
 // diffFiles returns the files of all whose content is in the prepared diff
 // (included or clipped), in the order of all.

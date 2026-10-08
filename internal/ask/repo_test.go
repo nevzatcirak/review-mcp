@@ -125,3 +125,40 @@ func TestAskRepoContext(t *testing.T) {
 		}
 	}
 }
+
+// TestAskRepoContextEmptyDiffAndStage: an empty diff with context enabled is
+// skipped (nothing_to_review), not off; the fetch has its own progress stage
+// before "preparing diff", only when the diff defines a symbol.
+func TestAskRepoContextEmptyDiffAndStage(t *testing.T) {
+	h := newHarness("The answer.")
+	h.deps.Config.Context.Repo.Enabled = true
+	fb := &fakeRepo{}
+	h.deps.RepoContext = fb
+	h.prov.files = []provider.FilePatch{{Path: "vendor/x.go", Type: provider.ChangeAdded, Patch: "@@ -0,0 +1 @@\n+func Vend() {}\n"}}
+	pl, err := Prepare(context.Background(), h.deps, h.args())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pl.Empty || pl.Result.Coverage.RepoContext != (llmrun.RepoContext{Status: "skipped", Reason: "nothing_to_review"}) || fb.ensures != 0 {
+		t.Errorf("empty %v, coverage.repo_context = %+v, ensures %d", pl.Empty, pl.Result.Coverage.RepoContext, fb.ensures)
+	}
+
+	stages := func(files []provider.FilePatch) string {
+		h := newHarness("The answer.")
+		h.deps.Config.Context.Repo.Enabled = true
+		h.deps.RepoContext = &fakeRepo{}
+		h.prov.files = files
+		var got []string
+		h.deps.Progress = func(s string) { got = append(got, s) }
+		if _, err := Prepare(context.Background(), h.deps, h.args()); err != nil {
+			t.Fatal(err)
+		}
+		return strings.Join(got, "|")
+	}
+	if got, want := stages([]provider.FilePatch{defFile("pkg/a.go", "func Alpha() {}")}), "fetching|fetching repository context|preparing diff"; got != want {
+		t.Errorf("stages = %q, want %q", got, want)
+	}
+	if got := stages(sampleFiles()); strings.Contains(got, "repository") {
+		t.Errorf("no symbol, yet stages = %q", got)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -37,6 +38,10 @@ func (f *fakeRepo) Grep(_ context.Context, _ gitctx.Checkout, q gitctx.Query) (g
 	files := map[string]bool{}
 	for _, s := range q.Symbols {
 		for _, h := range f.hits[s.Name] {
+			// Like gitctx: never a hit in an excluded file.
+			if slices.Contains(q.Exclude, h.Path) {
+				continue
+			}
 			res.Hits = append(res.Hits, h)
 			files[h.Path] = true
 		}
@@ -81,7 +86,13 @@ func repoHarness(files []provider.FilePatch, hits map[string][]gitctx.Hit) (*har
 
 func prepareOK(t *testing.T, h *harness) *Plan {
 	t.Helper()
-	pl, err := Prepare(context.Background(), h.deps, Args{PRURL: testPRURL})
+	return prepareWith(t, h, Args{})
+}
+
+func prepareWith(t *testing.T, h *harness, args Args) *Plan {
+	t.Helper()
+	args.PRURL = testPRURL
+	pl, err := Prepare(context.Background(), h.deps, args)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,8 +158,12 @@ func TestRepoContextBlockInPrompt(t *testing.T) {
 	if d := m.PromptTokens - om.PromptTokens; d < block-40 || d > block+40 {
 		t.Errorf("prompt tokens grew by %d, the block is about %d", d, block)
 	}
-	if pl.Budget != off.Budget {
-		t.Errorf("the diff budget changed: %+v vs %+v", pl.Budget, off.Budget)
+	// max_chunks > 1: the block's budget is reserved up front, as for the
+	// parts of a review in parts; nothing else about the budget changes.
+	want := off.Budget
+	want.PromptTokens += h.deps.Config.Context.Repo.MaxTokens
+	if pl.Budget != want {
+		t.Errorf("the diff budget is %+v, want the one without context plus the reservation: %+v", pl.Budget, want)
 	}
 	if h.logs.Len() > 0 {
 		h.checkNoLeaks(t)
@@ -212,6 +227,10 @@ func TestRepoContextFailureIsANote(t *testing.T) {
 			off := offBaseline(t, h)
 			if h.llm.calls[0].user != off.Prompts.User {
 				t.Error("the prompt differs from the one without repository context")
+			}
+			// Nothing is reserved when the head is not ready.
+			if pl := prepareOK(t, h); pl.Budget != off.Budget || pl.Result.Metadata != off.Result.Metadata {
+				t.Errorf("a failed fetch changed the budget or the metadata")
 			}
 			if res.Review == nil {
 				t.Error("no review")
@@ -292,8 +311,12 @@ func TestRepoContextYieldsToTheDiff(t *testing.T) {
 			window := off.Result.Metadata.RequestTokens + soft + tc.room
 			h.deps.Config.LLM.ContextWindow = window
 			base := offBaseline(t, h)
-			pl := prepareOK(t, h)
+			// review.max_chunks = 1: no reservation, the diff always wins.
+			pl := prepareWith(t, h, Args{MaxChunks: 1})
 			rc := pl.Result.Coverage.RepoContext
+			if pl.Budget != base.Budget {
+				t.Errorf("the budget changed with max_chunks 1: %+v vs %+v", pl.Budget, base.Budget)
+			}
 			if base.Result.Metadata.DiffTokens != off.Result.Metadata.DiffTokens || base.Result.Metadata.DiffTrimmed {
 				t.Fatalf("test setup: the baseline diff changed with the window: %+v", base.Result.Metadata)
 			}
@@ -485,5 +508,154 @@ func TestRepoContextPartsSkipped(t *testing.T) {
 		if strings.Contains(c.user, repoctx.Header) {
 			t.Errorf("part %d has a block", i+1)
 		}
+	}
+}
+
+// TestRepoContextReservationWithParts: with review.max_chunks > 1 the block's
+// budget is reserved up front; a file the reservation pushes out goes to a
+// further part, so nothing is lost and the context is kept. With
+// review.max_chunks = 1 nothing is reserved (the diff always wins): the file
+// stays in the one call.
+func TestRepoContextReservationWithParts(t *testing.T) {
+	newH := func() *harness {
+		h, _ := repoHarness(bigDefFiles(2), symHits(2))
+		h.deps.Config.Context.Repo.MaxTokens = 600
+		return h
+	}
+	// A window in which both files fit one call without context, with 100
+	// tokens to spare, but not with the reservation.
+	probe := newHarness(goodAnswer)
+	probe.prov.files = bigDefFiles(2)
+	pm := prepareOK(t, probe).Result.Metadata
+	window := 1500 + pm.PromptTokens + pm.DiffTokens + 100
+
+	h := newH()
+	h.deps.Config.LLM.ContextWindow = window
+	off := offBaseline(t, h)
+	if len(off.parts) != 1 || off.Result.Coverage.Partial {
+		t.Fatalf("test setup: without context the review is %d part(s), partial %v", len(off.parts), off.Result.Coverage.Partial)
+	}
+
+	// max_chunks 8: two parts, both files reviewed, the context kept.
+	pl := prepareOK(t, h)
+	cov := pl.Result.Coverage
+	if len(pl.parts) != 2 || cov.Partial || cov.ReviewedFiles != 2 || cov.ModelCalls != 2 {
+		t.Errorf("parts %d, coverage %+v; want two parts and both files reviewed", len(pl.parts), cov)
+	}
+	if rc := cov.RepoContext; rc.Status != "used" || rc.References != 2 {
+		t.Errorf("coverage.repo_context = %+v", rc)
+	}
+	for i, pt := range pl.parts {
+		if !strings.Contains(pt.fit.prompts.User, repoctx.Header) {
+			t.Errorf("part %d has no block", i+1)
+		}
+	}
+
+	// max_chunks 1: one call, no reservation, no file lost.
+	h1 := newH()
+	h1.deps.Config.LLM.ContextWindow = window
+	pl1 := prepareWith(t, h1, Args{MaxChunks: 1})
+	if len(pl1.parts) != 1 || pl1.Result.Coverage.Partial || pl1.Result.Coverage.ReviewedFiles != 2 {
+		t.Errorf("max_chunks 1: parts %d, coverage %+v; want one call with both files", len(pl1.parts), pl1.Result.Coverage)
+	}
+	if pl1.Budget != off.Budget {
+		t.Errorf("max_chunks 1 reserved room: %+v vs %+v", pl1.Budget, off.Budget)
+	}
+}
+
+// TestRepoContextCrossPartUses: in a review in parts a part excludes only
+// its own files from the search. A use in a file another part reviews is
+// shown, marked with that part (the head SHA holds the new version); a use
+// in a file no part reviews is marked as not reviewed; a use in the part's
+// own file never appears. In one call every file of the pull request stays
+// excluded.
+func TestRepoContextCrossPartUses(t *testing.T) {
+	hits := map[string][]gitctx.Hit{
+		"Sym00": {useHit("Sym00", "src/f04.go", 5), useHit("Sym00", "src/f00.go", 9), useHit("Sym00", "src/f07.go", 2)},
+	}
+	h, fb := repoHarness(bigDefFiles(6), hits)
+	capTokens := 2000
+	h.deps.Config.Diff.MaxTokens = &capTokens
+	f := &partLLM{answers: map[int]string{}, errs: map[int]error{}}
+	h.deps.LLM = f
+	runChunked(t, h, Args{})
+	user := f.calls[0].user
+	if !strings.Contains(user, "[src/f04.go:5] uses Sym00 (changed in this pull request; reviewed in part 3)\n") {
+		t.Errorf("part 1 lacks the use in part 3's file:\n%s", user)
+	}
+	if strings.Contains(user, "src/f00.go:9") {
+		t.Error("part 1 shows a use in its own file")
+	}
+	if ex := fb.queries[0].Exclude; !slices.Equal(ex, []string{"src/f00.go", "src/f01.go"}) {
+		t.Errorf("part 1 excludes %v, want its own files only", ex)
+	}
+
+	// Files no part reviews (max_chunks 2 leaves f04 and f05 out).
+	hits = map[string][]gitctx.Hit{"Sym00": {useHit("Sym00", "src/f05.go", 5), useHit("Sym00", "src/f02.go", 6)}}
+	h, _ = repoHarness(bigDefFiles(6), hits)
+	h.deps.Config.Diff.MaxTokens = &capTokens
+	f = &partLLM{answers: map[int]string{}, errs: map[int]error{}}
+	h.deps.LLM = f
+	runChunked(t, h, Args{MaxChunks: 2})
+	user = f.calls[0].user
+	if !strings.Contains(user, "[src/f05.go:5] uses Sym00 (changed in this pull request; not reviewed)\n") ||
+		!strings.Contains(user, "[src/f02.go:6] uses Sym00 (changed in this pull request; reviewed in part 2)\n") {
+		t.Errorf("part 1 lacks the marked uses:\n%s", user)
+	}
+
+	// One call: the whole pull request is excluded.
+	h, fb = repoHarness(defFiles(), map[string][]gitctx.Hit{"Alpha": {useHit("Alpha", "pkg/b.go", 3), useHit("Alpha", "pkg/use.go", 4)}})
+	pl := prepareWith(t, h, Args{MaxChunks: 1})
+	if strings.Contains(pl.Prompts.User, "pkg/b.go:3") || !strings.Contains(pl.Prompts.User, "pkg/use.go:4") ||
+		strings.Contains(pl.Prompts.User, "changed in this pull request") {
+		t.Errorf("one call:\n%s", pl.Prompts.User)
+	}
+	if ex := fb.queries[0].Exclude; !slices.Equal(ex, []string{"pkg/a.go", "pkg/b.go"}) {
+		t.Errorf("one call excludes %v", ex)
+	}
+}
+
+// TestRepoContextEmptyDiff: nothing to review with context enabled is
+// skipped (nothing_to_review), not off; disabled it stays off.
+func TestRepoContextEmptyDiff(t *testing.T) {
+	h, fb := repoHarness([]provider.FilePatch{{Path: "vendor/x.go", Type: provider.ChangeAdded, Patch: "@@ -0,0 +1 @@\n+func Vend() {}\n"}}, nil)
+	pl := prepareOK(t, h)
+	if !pl.Empty || pl.Result.Coverage.RepoContext != (llmrun.RepoContext{Status: "skipped", Reason: "nothing_to_review"}) {
+		t.Errorf("empty %v, coverage.repo_context = %+v", pl.Empty, pl.Result.Coverage.RepoContext)
+	}
+	if fb.ensures != 0 {
+		t.Error("the head was fetched for an empty review")
+	}
+	h.deps.Config.Context.Repo.Enabled = false
+	if pl := prepareOK(t, h); pl.Result.Coverage.RepoContext.Status != "off" {
+		t.Errorf("disabled: %+v", pl.Result.Coverage.RepoContext)
+	}
+}
+
+// TestRepoContextProgressStage: the fetch has its own stage before
+// "preparing diff", reported only when context is on and the diff defines a
+// symbol; the per-part searches add none.
+func TestRepoContextProgressStage(t *testing.T) {
+	run := func(h *harness) []string {
+		var stages []string
+		h.deps.Progress = func(s string) { stages = append(stages, s) }
+		if _, err := Run(context.Background(), h.deps, Args{PRURL: testPRURL}); err != nil {
+			t.Fatal(err)
+		}
+		return stages
+	}
+	h, _ := repoHarness(defFiles(), nil)
+	got := strings.Join(run(h), "|")
+	if want := "fetching|fetching repository context|preparing diff|calling model"; got != want {
+		t.Errorf("stages = %q, want %q", got, want)
+	}
+	h, _ = repoHarness(sampleFiles(), nil)
+	if got := strings.Join(run(h), "|"); strings.Contains(got, "repository") {
+		t.Errorf("no symbol, yet stages = %q", got)
+	}
+	h, _ = repoHarness(defFiles(), nil)
+	h.deps.Config.Context.Repo.Enabled = false
+	if got := strings.Join(run(h), "|"); strings.Contains(got, "repository") {
+		t.Errorf("disabled, yet stages = %q", got)
 	}
 }

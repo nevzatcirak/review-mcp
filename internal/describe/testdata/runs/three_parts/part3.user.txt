@@ -1,0 +1,169 @@
+
+
+PR Info:
+
+Previous title: 'Retry more TITLE-MARKER-4d2e'
+
+Previous description:
+=====
+Raises the retry count. DESC-MARKER-8b1f
+=====
+
+Branch: 'feature/retry'
+
+Target branch: 'main'
+
+Commit messages:
+=====
+1. Raise the retry count
+
+Three is safer. COMMIT-MARKER-61aa
+2. Add a retry test
+=====
+
+This pull request is large and is described in 3 parts. This is part 3 of 3. Describe only the files in the diff below; the other files are described separately.
+
+
+The PR Git Diff:
+=====
+
+
+## File: 'src/f04.go'
+
+@@ -1,2 +1,60 @@
+ a
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
+
+
+
+## File: 'src/f05.go'
+
+@@ -1,2 +1,60 @@
+ a
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
++some added line of code here
+
+=====
+
+Note that lines in the diff body are prefixed with a symbol that represents the type of change: '-' for deletions, '+' for additions, and ' ' (a space) for unchanged lines.
+
+
+Response (should be a valid YAML, and nothing else):
+```yaml

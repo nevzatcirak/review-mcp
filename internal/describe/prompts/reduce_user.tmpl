@@ -1,0 +1,46 @@
+{{- /*
+User prompt of the reduce call of pr_describe (v2 spec §3.3, Y-6).
+
+NOT ADAPTED FROM AN UPSTREAM PROMPT (see reduce_system.tmpl). The PR Info
+block and the final line with its open ```yaml fence are those of user.tmpl
+(adapted from [pr_description_prompt] user @ 8e5a929, MIT; NOTICE), so the
+reduce call sees the same PR text as the parts. In place of the diff it
+gets the files walkthrough (.walkthrough, rendered by the pipeline): per
+described file, in part order, a "## File: '<path>'" line, the file's title
+and, unless they were left out to fit the context window, its summary. The
+one re-ask inserts its note on its own line before the final line.
+*/}}
+
+PR Info:
+
+Previous title: '{{ .title }}'
+{{- if .description }}
+
+Previous description:
+=====
+{{ trim .description }}
+=====
+{{- end }}
+
+Branch: '{{ .branch }}'
+{{- if .target_branch }}
+
+Target branch: '{{ .target_branch }}'
+{{- end }}
+{{- if .commit_messages }}
+
+Commit messages:
+=====
+{{ trim .commit_messages }}
+=====
+{{- end }}
+
+
+Files walkthrough:
+=====
+{{ .walkthrough }}
+=====
+
+
+Response (should be a valid YAML, and nothing else):
+```yaml

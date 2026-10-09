@@ -238,6 +238,14 @@ func newFakeGiteaHost(t *testing.T) *fakeServer {
 			} else {
 				_, _ = io.WriteString(w, "package main\nvar a = 1\nfunc main() {}\n")
 			}
+		case r.Method == "GET" && p == api+"/pulls/7/commits":
+			// pr_describe reads the commit messages (newest first, as Gitea
+			// lists them).
+			commits := []any{}
+			if r.URL.Query().Get("page") == "1" {
+				commits = append(commits, map[string]any{"commit": map[string]any{"message": "Change the constant\n"}})
+			}
+			writeJ(commits)
 		case r.Method == "GET" && p == "/api/v1/user":
 			writeJ(map[string]any{"id": 42, "login": "review-bot"})
 		case r.Method == "POST" && p == api+"/issues/7/comments":

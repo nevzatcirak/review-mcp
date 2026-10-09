@@ -1,0 +1,13 @@
+{
+  "kind": "call",
+  "language": "tr-TR",
+  "title": "Raise the retry count",
+  "branch": "feature/retry",
+  "target_branch": "main",
+  "description": "Raises the retry count to three.\n\nSee the design note.\n",
+  "commit_messages": "1. Raise the retry count\n2. Document the retries",
+  "files_only": false,
+  "part_header": "",
+  "diff": "## File: 'src/app.go'\n\n@@ -10,3 +10,3 @@ func retry() {\n line 10\n-retries := 1\n+retries := 3\n line 12\n\n## File: 'docs/retry.md'\n\n@@ -0,0 +1,2 @@\n+# Retries\n+Three attempts.\n",
+  "walkthrough": ""
+}

@@ -97,6 +97,9 @@ commands:
             the token budget report without calling the model
   diag ask <PR_URL> --question <TEXT> [--dry-run] [--show-prompt] [--publish]
             answer a question about the pull request with the configured LLM
+  diag describe <PR_URL> [--dry-run] [--show-prompt] [--json]
+            describe the pull request with the configured LLM (nothing is
+            posted)
   diag cache [--prune]
             list the repository-context cache; --prune deletes idle and
             least-recently-used repositories

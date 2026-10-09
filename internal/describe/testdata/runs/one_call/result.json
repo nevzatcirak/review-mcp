@@ -1,0 +1,70 @@
+{
+  "title": "Raise the retry count and test it",
+  "type": [
+    "Enhancement",
+    "Tests"
+  ],
+  "description": "- Raise the retry count to three\n- Add a retry test ANSWER-MARKER-f7e5",
+  "files": [
+    {
+      "path": "src/app.go",
+      "title": "Raise the retry count",
+      "summary": "- Raise `retries` from 1 to 3",
+      "label": "enhancement"
+    },
+    {
+      "path": "src/app_test.go",
+      "title": "Add a retry test",
+      "summary": "- Add `TestRetries`",
+      "label": "tests"
+    }
+  ],
+  "coverage": {
+    "included": [
+      "src/app.go",
+      "src/app_test.go"
+    ],
+    "clipped": [],
+    "deleted_listed": [],
+    "omitted": {
+      "added": [],
+      "modified": [],
+      "deleted": []
+    },
+    "skipped": [],
+    "filtered": [
+      {
+        "path": "vendor/lib.go",
+        "reason": "ignore_glob"
+      }
+    ],
+    "partial": false,
+    "reviewed_files": 2,
+    "total_files": 2,
+    "not_reviewed_files": 0,
+    "model_calls": 1,
+    "failed_parts": 0,
+    "repo_context": {
+      "status": "off",
+      "reason": "",
+      "symbols": 0,
+      "references": 0,
+      "files": 0
+    }
+  },
+  "notes": [],
+  "metadata": {
+    "model": "test-model",
+    "context_window": 32000,
+    "prompt_tokens": 1146,
+    "diff_tokens": 111,
+    "request_tokens": 1256,
+    "fast_path": true,
+    "llm_calls": 1,
+    "commit_messages": 2,
+    "repair_tactic": "direct",
+    "reasked": false,
+    "truncated": false,
+    "diff_trimmed": false
+  }
+}

@@ -11,6 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/nevzatcirak/review-mcp/internal/ask"
+	"github.com/nevzatcirak/review-mcp/internal/describe"
 	"github.com/nevzatcirak/review-mcp/internal/jobs"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 	"github.com/nevzatcirak/review-mcp/internal/tools"
@@ -18,16 +19,17 @@ import (
 
 // Tool names of the LLM tools whose run may continue in the background.
 const (
-	toolPRReview  = "pr_review"
-	toolPRAsk     = "pr_ask"
-	toolJobResult = "job_result"
+	toolPRReview   = "pr_review"
+	toolPRAsk      = "pr_ask"
+	toolPRDescribe = "pr_describe"
+	toolJobResult  = "job_result"
 )
 
 // jobResultDescription is the tool description from spec P8 §2.3.
-const jobResultDescription = "Returns the result of a long-running pr_review or pr_ask call that answered with a job_id, waiting up to wait_seconds for it to finish." + partialSentence
+const jobResultDescription = "Returns the result of a long-running pr_review, pr_ask or pr_describe call that answered with a job_id, waiting up to wait_seconds for it to finish." + partialSentence + describePartialSentence
 
 // Jobs is the background job store of stdio mode (X-16, P8 spec §2). A
-// pr_review or pr_ask call starts its run as a job and waits at most
+// pr_review, pr_ask or pr_describe call starts its run as a job and waits at most
 // wait_seconds for it; a run still going then answers with a job id that
 // job_result reads later. The store lives as long as the stdio server: the
 // caller creates it, passes it in Deps.Jobs, and closes it at shutdown,
@@ -50,14 +52,15 @@ func (j *Jobs) Close() {
 	}
 }
 
-// background reports whether pr_review and pr_ask may answer with a job id:
+// background reports whether pr_review, pr_ask and pr_describe may answer
+// with a job id:
 // stdio mode with a job store. serve mode never does (X-10: a request's
 // credentials must not outlive it), so it ignores Jobs.
 func (d Deps) background() bool { return !d.Serve && d.Jobs != nil }
 
 // jobOutcome is a finished run: exactly what the synchronous handler
-// returns, the client markdown and the structured value (a review.Result or
-// an ask.Result). Each answer builds a fresh *mcp.CallToolResult from it and
+// returns, the client markdown and the structured value (a review.Result,
+// an ask.Result or a describe.Result). Each answer builds a fresh *mcp.CallToolResult from it and
 // hands the value to the SDK, which marshals and validates it the same way
 // for the original tool and for job_result, so both carry the same bytes.
 type jobOutcome struct {
@@ -69,13 +72,14 @@ func (o jobOutcome) result() (*mcp.CallToolResult, any, error) {
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: o.text}}}, o.out, nil
 }
 
-// llmRun is the part of a pr_review or pr_ask call after its checks: the
+// llmRun is the part of a pr_review, pr_ask or pr_describe call after its
+// checks: the
 // probe, the provider and LLM I/O, the publish and the rendering. Its error
 // text is already the classified client sentence.
 type llmRun func(ctx context.Context, progress func(stage string)) (jobOutcome, error)
 
-// RunningResult is the structured content of a pr_review, pr_ask or
-// job_result call whose run is still going (X-16).
+// RunningResult is the structured content of a pr_review, pr_ask,
+// pr_describe or job_result call whose run is still going (X-16).
 type RunningResult struct {
 	Status         string `json:"status"`
 	JobID          string `json:"job_id"`
@@ -145,7 +149,7 @@ func askOutputSchema(deps Deps) any {
 	return askResultSchema()
 }
 
-// answerCall runs one pr_review or pr_ask call after its checks passed and
+// answerCall runs one pr_review, pr_ask or pr_describe call after its checks passed and
 // owns sc from then on.
 //
 // serve mode (and a server without a job store) runs synchronously, as
@@ -209,8 +213,11 @@ func (j *Jobs) answer(ctx context.Context, req *mcp.CallToolRequest, log *slog.L
 // that names the stage, the elapsed time and the job id, and RunningResult.
 func runningResult(snap jobs.Snapshot[jobOutcome]) (*mcp.CallToolResult, any, error) {
 	noun := "review"
-	if snap.Tag == toolPRAsk {
+	switch snap.Tag {
+	case toolPRAsk:
 		noun = "answer"
+	case toolPRDescribe:
+		noun = "description"
 	}
 	stage := snap.Stage
 	if stage == "" {
@@ -224,7 +231,7 @@ func runningResult(snap jobs.Snapshot[jobOutcome]) (*mcp.CallToolResult, any, er
 }
 
 type jobResultInput struct {
-	JobID       string `json:"job_id" jsonschema:"the job_id a pr_review or pr_ask call answered with"`
+	JobID       string `json:"job_id" jsonschema:"the job_id a pr_review, pr_ask or pr_describe call answered with"`
 	WaitSeconds *int   `json:"wait_seconds,omitempty" jsonschema:"seconds to wait for the result, 0 to 600; replaces llm.wait_seconds (default 45) for this call"`
 }
 
@@ -242,7 +249,7 @@ func registerJobResult(s *mcp.Server, deps Deps) {
 			DestructiveHint: &f,
 			OpenWorldHint:   &f,
 		},
-		OutputSchema: withRunning(review.ResultSchema(), askResultSchema()),
+		OutputSchema: withRunning(review.ResultSchema(), askResultSchema(), describe.ResultSchema()),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in jobResultInput) (*mcp.CallToolResult, any, error) {
 		wait, err := tools.WaitSeconds(in.WaitSeconds, deps.Config)
 		if err != nil {

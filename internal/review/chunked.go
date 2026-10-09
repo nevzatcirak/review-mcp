@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/nevzatcirak/review-mcp/internal/diffpipe"
-	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/repoctx"
@@ -75,30 +74,13 @@ func noteTotalCap(n int) string {
 		" not shown because of review.max_total_findings."
 }
 
-// failureClass is the fixed class of a part's error for its note: the class
-// of a classified pipeline or LLM error, else "unclassified". It never
-// carries error text (X-6).
-func failureClass(err error) string {
-	var pe *llmrun.Error
-	if errors.As(err, &pe) {
-		return string(pe.Class)
-	}
-	if c, ok := llm.ClassOf(err); ok {
-		return string(c)
-	}
-	var prov *provider.Error
-	if errors.As(err, &prov) {
-		return string(prov.Class)
-	}
-	return "unclassified"
-}
+// failureClass is the fixed class of a part's error for its note
+// (llmrun.FailureClass, shared with pr_describe).
+func failureClass(err error) string { return llmrun.FailureClass(err) }
 
 // leavesFilesOut reports whether a prepared diff left files for a further
-// part: the budget omitted them. A clipped file is not given to a further
-// part (PrepareChunks).
-func leavesFilesOut(p *diffpipe.Prepared) bool {
-	return len(p.Omitted.Added)+len(p.Omitted.Modified)+len(p.Omitted.Deleted) > 0
-}
+// part (llmrun.LeavesFilesOut, shared with pr_describe).
+func leavesFilesOut(p *diffpipe.Prepared) bool { return llmrun.LeavesFilesOut(p) }
 
 // planParts tries to plan the review in parts. It reports false, leaving pl
 // as it was, when the review stays one call: the scaffolding with the part
@@ -220,47 +202,20 @@ func (pl *Plan) planParts(ctx context.Context, dIn diffpipe.Input, in PromptInpu
 
 func leftOut(o diffpipe.Omitted) bool { return len(o.Added)+len(o.Modified)+len(o.Deleted) > 0 }
 
-// partsCoverage is the coverage of a review in parts (X-19 honesty): the
-// parts' files in part order, then the files no part reviewed. failed marks
-// the parts whose model call failed (nil: none); their files are Skipped
-// with reason model_call_failed. Skipped holds the provider's and the
-// renderer's skips first, then the files too large for a part of their own
-// (too_large), then the files of failed parts.
+// partsCoverage is the coverage of a review in parts (X-19 honesty,
+// llmrun.PartsCoverage, shared with pr_describe): the parts' files in part
+// order, then the files no part reviewed. failed marks the parts whose model
+// call failed (nil: none); their files are Skipped with reason
+// model_call_failed. The repository context summed over the parts is added.
 func (pl *Plan) partsCoverage(failed []bool) Coverage {
-	ch := pl.chunks
-	c := llmrun.BuildCoverage(&diffpipe.Prepared{Skipped: ch.Skipped}, pl.flt)
-	var lost []SkippedFile
+	covs := make([]Coverage, len(pl.parts))
 	for i, pt := range pl.parts {
-		if failed != nil && failed[i] {
-			for _, f := range concat(pt.cov.Included, pt.cov.Clipped, pt.cov.DeletedListed) {
-				lost = append(lost, SkippedFile{Path: f, Reason: llmrun.SkipModelCallFailed})
-			}
-		} else {
-			c.Included = append(c.Included, pt.cov.Included...)
-			c.Clipped = append(c.Clipped, pt.cov.Clipped...)
-			c.DeletedListed = append(c.DeletedListed, pt.cov.DeletedListed...)
-		}
-		c.Omitted.Added = append(c.Omitted.Added, pt.cov.Omitted.Added...)
-		c.Omitted.Modified = append(c.Omitted.Modified, pt.cov.Omitted.Modified...)
-		c.Omitted.Deleted = append(c.Omitted.Deleted, pt.cov.Omitted.Deleted...)
+		covs[i] = pt.cov
 	}
-	c.Omitted.Added = append(c.Omitted.Added, ch.Omitted.Added...)
-	c.Omitted.Modified = append(c.Omitted.Modified, ch.Omitted.Modified...)
-	c.Omitted.Deleted = append(c.Omitted.Deleted, ch.Omitted.Deleted...)
-	for _, f := range ch.TooLarge {
-		c.Skipped = append(c.Skipped, SkippedFile{Path: f, Reason: diffpipe.SkipTooLarge})
-	}
-	c.Skipped = append(c.Skipped, lost...)
-	c.ModelCalls = len(pl.parts)
+	c := llmrun.PartsCoverage(pl.chunks, covs, failed, pl.flt)
 	if pl.repoCtx.Status != "" {
 		c.RepoContext = pl.repoCtx
 	}
-	for _, f := range failed {
-		if f {
-			c.FailedParts++
-		}
-	}
-	c.Finalize()
 	return c
 }
 

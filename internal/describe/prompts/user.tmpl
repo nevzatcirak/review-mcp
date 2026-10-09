@@ -1,0 +1,70 @@
+{{- /*
+User prompt of pr_describe (one call, and the part-mode variant).
+
+Adapted from PR-Agent (https://github.com/The-PR-Agent/pr-agent),
+pr_agent/settings/pr_description_prompts.toml @ 8e5a929
+([pr_description_prompt] user). MIT License; see NOTICE for the copyright
+and permission notice.
+
+Changes from upstream (v2 spec §3.1, X-26): the related-ticket block, the
+omitted-ticket notice and the duplicated example
+(duplicate_prompt_examples) are removed. Kept verbatim: the PR Info block
+(the previous title, the previous description fenced with =====, the
+branch, the commit messages fenced with =====), the diff fenced with =====
+and its one-line explanation of the prefixes, and the final line followed
+by an open ```yaml fence (DQ-7; the YAML loader's sign-off handling depends
+on it). The pipeline's one re-ask inserts its note on its own line before
+the final line. Jinja whitespace control is reproduced with {{- and -}}.
+
+Intentional deviation (v2 spec §3.2, "branch names"): upstream sends the
+source branch only. When the pull request has a target branch, one line
+"Target branch: '<name>'" follows the Branch line; without one nothing is
+rendered.
+
+Intentional deviation (v2 spec §3.3, Y-6, X-19): upstream's large-PR path
+uses separate prompt sets that were not ported. When a pull request is
+described in several parts, each part's prompt gets one line (.part_header,
+the fixed sentence of PartHeader) right before the diff, telling the model
+which part it sees. With one part nothing is rendered, so the prompt is
+byte-identical to the one without the feature.
+*/}}
+
+PR Info:
+
+Previous title: '{{ .title }}'
+{{- if .description }}
+
+Previous description:
+=====
+{{ trim .description }}
+=====
+{{- end }}
+
+Branch: '{{ .branch }}'
+{{- if .target_branch }}
+
+Target branch: '{{ .target_branch }}'
+{{- end }}
+{{- if .commit_messages }}
+
+Commit messages:
+=====
+{{ trim .commit_messages }}
+=====
+{{- end }}
+{{- if .part_header }}
+
+{{ .part_header }}
+{{- end }}
+
+
+The PR Git Diff:
+=====
+{{ .diff }}
+=====
+
+Note that lines in the diff body are prefixed with a symbol that represents the type of change: '-' for deletions, '+' for additions, and ' ' (a space) for unchanged lines.
+
+
+Response (should be a valid YAML, and nothing else):
+```yaml

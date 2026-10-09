@@ -56,6 +56,17 @@ func TestPartialSentenceInToolDescriptions(t *testing.T) {
 		if _, ok := tools["job_result"]; ok == (mode == "serve") {
 			t.Errorf("%s: job_result registered = %v", mode, ok)
 		}
+		// pr_describe (and job_result, which returns its results) carry the
+		// "described" sentence of Y-7.
+		describeNames := []string{"pr_describe"}
+		if mode == "stdio" {
+			describeNames = append(describeNames, "job_result")
+		}
+		for _, name := range describeNames {
+			if d := tools[name]; !strings.Contains(d, describePartialSentence) {
+				t.Errorf("%s %s: description lacks the describe partial sentence: %q", mode, name, d)
+			}
+		}
 		// The job sentence of stdio mode follows the partial sentence.
 		if mode == "stdio" && !strings.Contains(tools["pr_review"], partialSentenceText+" A review that takes longer") {
 			t.Errorf("stdio pr_review description order: %q", tools["pr_review"])
@@ -84,8 +95,8 @@ func coverageSchemas(v any, out *[]map[string]any) {
 }
 
 // TestOutputSchemasCarryThePartialFields: every output schema that has a
-// coverage object (pr_review and pr_ask, plain and stdio oneOf, and both
-// branches of job_result) declares the four X-18 fields, the X-20 list
+// coverage object (pr_review, pr_ask and pr_describe, plain and stdio
+// oneOf, and the three result branches of job_result) declares the four X-18 fields, the X-20 list
 // deleted_listed and the X-19 counts model_calls and failed_parts as
 // required, and the RC-9 object repo_context with its five required fields.
 func TestOutputSchemasCarryThePartialFields(t *testing.T) {
@@ -148,6 +159,8 @@ func TestOutputSchemasCarryThePartialFields(t *testing.T) {
 	stdio := withJobs(t, Deps{}, nil)
 	check("stdio pr_review", reviewOutputSchema(stdio), 1)
 	check("stdio pr_ask", askOutputSchema(stdio), 1)
+	check("serve pr_describe", describeOutputSchema(serve), 1)
+	check("stdio pr_describe", describeOutputSchema(stdio), 1)
 
 	cs := connect(t, withJobs(t, realDeps(validEnv(), nil), nil))
 	list, err := cs.ListTools(context.Background(), nil)
@@ -158,8 +171,10 @@ func TestOutputSchemasCarryThePartialFields(t *testing.T) {
 		switch tl.Name {
 		case "pr_review", "pr_ask":
 			check("listed "+tl.Name, tl.OutputSchema, 1)
+		case "pr_describe":
+			check("listed pr_describe", tl.OutputSchema, 1)
 		case "job_result":
-			check("listed job_result", tl.OutputSchema, 2)
+			check("listed job_result", tl.OutputSchema, 3)
 		}
 	}
 }

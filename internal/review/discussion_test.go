@@ -76,21 +76,42 @@ func TestOwnMarked(t *testing.T) {
 		body   string
 		want   bool
 	}{
-		"our overview":              {botUser, "text\n\n" + OverviewMarker, true},
-		"our fingerprint":           {botUser, "text\n\n" + fp, true},
-		"our comment without":       {botUser, "a plain comment", false},
-		"marker not on the last":    {botUser, OverviewMarker + "\nmore", false},
-		"foreign overview":          {mallory, "text\n\n" + OverviewMarker, false},
-		"foreign fingerprint":       {mallory, "text\n\n" + fp, false},
-		"our login, another id":     {provider.User{ID: "6", Name: "review-bot"}, "t\n\n" + fp, false},
-		"our id, no login (by id)":  {provider.User{ID: "5"}, "t\n\n" + fp, true},
-		"no ids, other login":       {provider.User{Name: "someone"}, "t\n\n" + fp, false},
-		"fingerprint with bad hash": {botUser, "t\n\n[//]: # (review-mcp:finding:XYZ)", false},
+		"our overview":             {botUser, "text\n\n" + OverviewMarker, true},
+		"our fingerprint":          {botUser, "text\n\n" + fp, true},
+		"our comment without":      {botUser, "a plain comment", false},
+		"marker not on the last":   {botUser, OverviewMarker + "\nmore", false},
+		"foreign overview":         {mallory, "text\n\n" + OverviewMarker, false},
+		"foreign fingerprint":      {mallory, "text\n\n" + fp, false},
+		"our login, another id":    {provider.User{ID: "6", Name: "review-bot"}, "t\n\n" + fp, false},
+		"our id, no login (by id)": {provider.User{ID: "5"}, "t\n\n" + fp, true},
+		"no ids, other login":      {provider.User{Name: "someone"}, "t\n\n" + fp, false},
+		"finding marker, any hash": {botUser, "t\n\n[//]: # (review-mcp:finding:XYZ)", true},
+		"our improve overview":     {botUser, "t\n\n[//]: # (review-mcp:improve:v1)", true},
+		"our improve suggestion":   {botUser, "t\n\n[//]: # (review-mcp:suggestion:0123456789ab)", true},
+		"foreign improve marker":   {mallory, "t\n\n[//]: # (review-mcp:suggestion:0123456789ab)", false},
+		"not a review-mcp marker":  {botUser, "t\n\n[//]: # (other:thing)", false},
 	} {
 		c := citem(tc.author, 0, tc.body)
 		if got := ownMarked(&c, botUser); got != tc.want {
 			t.Errorf("%s: ownMarked = %v, want %v", name, got, tc.want)
 		}
+	}
+}
+
+// TestHumanThreadsDropsImproveMarkers: a thread whose last comment carries
+// an improve marker of ours is not shown to the model as human; the same
+// marker typed by someone else stays.
+func TestHumanThreadsDropsImproveMarkers(t *testing.T) {
+	sug := "**Cap it**\n\n[//]: # (review-mcp:suggestion:0123456789ab)"
+	ov := "## Improve\n\n[//]: # (review-mcp:improve:v1)"
+	in := []provider.Thread{
+		inlineThread("src/app.go", 3, false, citem(botUser, 0, sug)),
+		general(citem(botUser, 1, ov)),
+		general(citem(mallory, 2, "typed by hand\n\n"+ov)),
+	}
+	got := humanThreads(in, botUser)
+	if len(got) != 1 || got[0].Comments[0].Author != "mallory" {
+		t.Errorf("threads = %+v, want only mallory's", got)
 	}
 }
 

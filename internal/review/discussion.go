@@ -28,19 +28,14 @@ func noteDiscussionLeftOut(n int) string {
 		" left out of the prompt to stay within the discussion token budget."
 }
 
-// ownMarked reports whether c is a comment of ours that the review wrote: its
-// last line is the overview marker or a fingerprint marker and its author is
-// the token's own user. A marker in anyone else's comment proves nothing,
-// since anyone can type it (spec P7 §4.2, §5.1).
+// ownMarked reports whether c is a comment of ours written by a review-mcp
+// tool: its last line is the marker of any tool (pr_review's overview and
+// fingerprint markers, and pr_describe's, pr_improve's overview and
+// suggestion markers: llmrun.HasToolMarkerLastLine) and its author is the
+// token's own user. A marker in anyone else's comment proves nothing, since
+// anyone can type it (spec P7 §4.2, §5.1), so the author check stays.
 func ownMarked(c *provider.CommentItem, me provider.User) bool {
-	if !provider.IsUser(me, c.AuthorID, c.AuthorLogin) {
-		return false
-	}
-	if HasOverviewMarker(c.Body) {
-		return true
-	}
-	_, ok := ParseFingerprintMarker(c.Body)
-	return ok
+	return provider.IsUser(me, c.AuthorID, c.AuthorLogin) && llmrun.HasToolMarkerLastLine(c.Body)
 }
 
 // humanThreads returns the threads that make up the discussion: every

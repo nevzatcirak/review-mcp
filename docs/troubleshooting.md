@@ -395,7 +395,7 @@ setting to check may follow.
 | the LLM endpoint reports a context window below the 4096-token minimum; set llm.context_window if the endpoint is wrong | `llm_protocol` | 90 % of the reported window is below 4096. Use a model with a larger window, or, if the endpoint reports it wrongly, set `llm.context_window` (at least 4096). |
 | could not complete the request to the LLM endpoint | `llm_transport` | Network, DNS, TLS or proxy problem between you and the endpoint. |
 | the LLM endpoint sent an unexpected response | `llm_protocol` | The endpoint is not OpenAI-compatible at `llm.base_url`, or it answered with an empty message. |
-| the pull request diff does not fit the configured context window | `diff_does_not_fit` | Raise `llm.context_window`, or narrow the PR. Nothing was sent to the model. Applies to `pr_review` and `pr_ask`. |
+| the pull request diff does not fit the configured context window | `diff_does_not_fit` | Raise `llm.context_window`, or narrow the PR. Nothing was sent to the model. Applies to `pr_review`, `pr_ask` and `pr_describe`. |
 | the model's answer could not be parsed as a review, also after one retry | `review_unparseable` | Try again, or use a model that follows YAML output instructions. |
 | output_language must be a locale code such as en-US or tr-TR / max_findings must be an integer from 1 to 20 / wait_seconds must be an integer from 0 to 600 | (argument) | Fix the argument; nothing was sent anywhere. |
 
@@ -432,6 +432,100 @@ If the configuration is invalid, `pr_ask` returns the same "review-mcp
 configuration is invalid" sentence as `pr_review` and sends nothing. The
 "the pull request diff does not fit" sentence also applies; a long question
 leaves less room for the diff.
+
+## `pr_describe`
+
+`pr_describe` fails with the provider and LLM sentences above (the diff does
+not fit, an LLM error, an unparseable answer) or, for a bad argument, with one
+of the argument sentences in [Every error sentence](#every-error-sentence).
+Everything that goes wrong while **publishing** is different: the description
+is still returned, and the reason is the fixed sentence in `publish.error`
+(also in the Publishing section of the text, as "not written: ..."), with
+`published: false`. Notes are in the `notes` list and the Notes section. See
+[Describing pull requests](describe.md) for how publishing works.
+
+### Publish outcomes
+
+| Sentence | What it means and what to do |
+|---|---|
+| The pull request description contains a damaged review-mcp region; fix or remove it and run again. | `publish_mode=description` found marker lines that are not exactly one `[//]: # (review-mcp:describe:start)` line followed by one `[//]: # (review-mcp:describe:end)` line: two or more starts or ends, an end before a start, a start without an end, or an end without a start. Nothing was written. Open the description in the web UI and fix it: either delete both marker lines and everything between them (the next run appends a fresh region), or restore the missing marker. A marker is a line that equals the marker text once spaces and tabs at its ends are removed. **Fences are not special:** a marker line inside a fenced code block, for example a pasted copy of an earlier description in a code block, counts too, and also makes the region damaged. Remove or change that line (adding a character to it is enough). |
+| The pull request description changed while it was being updated; nothing was written. | Someone edited the description (or, on Bitbucket Server, changed the pull request) between the read and the write, twice in a row. review-mcp never overwrites such an edit. Nothing was written; wait until the editing is done and run again. |
+| Nothing was described, so the pull request description was not changed. | `publish_mode=description` with no described file and no summary: an empty region would replace an earlier good one, so nothing was sent. Look at the Not described section and the notes for why (`not_returned`, a failed part, a diff that did not fit), fix that, and run again. `publish_mode=comment` still publishes the coverage and the notes. |
+| This provider does not support editing the pull request description; use publish_mode=comment. | The provider has no description edit (the capability `DescriptionEdit`). Gitea and Bitbucket Server both have it, so you see this only with a provider that does not. Use `publish_mode=comment`. No request was made. |
+| authentication failed: check the token and its scopes (HTTP 403) | The token may read the pull request but not write it. Description mode needs write access to the pull request, comment mode write access to comments; see [Token scopes](#token-scopes). |
+| the server sent an unexpected response: a reviewer cannot be named, so the update was not sent | Bitbucket Server only. The update is a full `PUT` that sends the reviewers back by user name, and one reviewer in the server's answer has none. review-mcp refuses rather than send a list that would drop that reviewer. Nothing was written; use `publish_mode=comment`, or edit the description by hand. |
+| the description could not be published to the pull request | An error that is not one of the classified provider errors. Rerun with `REVIEW_MCP_LOG_LEVEL=debug`; the log names the failing step, never content. |
+
+Another provider sentence from [Error messages](#error-messages), such as
+`not_found` or `upstream`, can also appear as the outcome, with its usual
+meaning.
+
+### Notes after publishing
+
+| Note | What it means and what to do |
+|---|---|
+| Bitbucket Server changed the reviewer list or a review state while the description was updated; check the pull request. | The description was written, but when the reviewers were read after the write one was missing or had another state than before (for example an approval was reset). It cannot be undone by review-mcp. Open the pull request, check the reviewers and ask them to approve again. The update sends the reviewer list back by name and relies on the server to keep their verdicts; if you see this note, please report it with your Bitbucket Server version. |
+| The reviewers could not be read around the description update, so a change to the reviewer list or a review state could not be ruled out; check the pull request. | The description was written, but the reviewers could not be read before or after (a failed request, or a server that did not return them), so review-mcp cannot say whether anything changed. Check the reviewers by hand. |
+| The title was not generated, so the pull request title was not changed. | `update_title=true`, but no title came back (the summary call of a description in parts failed, or the answer had none). The description was published; run again to try the title. |
+| The previous description comment could not be updated; a new one was posted. | Comment mode: the comment of an earlier run could not be edited (for example it was deleted, or the token cannot edit it), so a new comment was posted. The old one stays. |
+| The existing description comment could not be looked up; a new one was posted. | Comment mode: the comments could not be read, so an earlier description comment could not be found and a new one was posted. Delete the duplicate by hand if the earlier one is still there. |
+| 1 older description comment by the same user was left unchanged. (or "N older description comments by the same user were left unchanged.") | Comment mode found several comments of yours with the description marker. The newest was edited; the others are never deleted by review-mcp. Delete them in the web UI if you do not want them. |
+
+The notes about the description itself (a part that failed, files that were
+not returned, the summary that could not be generated) are listed in
+[Describing pull requests](describe.md#not-described-and-why).
+
+### The title lost its work-in-progress prefix
+
+On Gitea a pull request is a draft when its title starts with a
+work-in-progress prefix. With `update_title=true`, review-mcp keeps that
+prefix in front of the generated title, so the draft state does not change, and
+removes a `WIP:` or `[WIP]` that the model put at the start of the generated
+title. Two limits:
+
+- Only the default prefixes `WIP:` and `[WIP]` (in any case) are known. Gitea
+  does not report its `WORK_IN_PROGRESS_PREFIXES` setting, so if your server
+  uses other prefixes, a draft that is a draft through one of them loses its
+  prefix, and with it the draft state, when the title is replaced. Do not use
+  `update_title` on such pull requests, or set the title back by hand.
+- The prefix is kept only when the server reports the pull request as a draft.
+
+Bitbucket Server keeps the draft state as a flag, and the update sends it back
+unchanged.
+
+### Describe errors and arguments
+
+| Sentence | Class | What to check |
+|---|---|---|
+| the model's answer could not be parsed as a pull request description, also after one retry; try again, or check that llm.model follows the YAML output instructions | `describe_unparseable` | Try again, or use a model that follows YAML output instructions. For a part of a description in parts it is the class in "Part I of N failed (describe_unparseable)"; for the summary call it makes the fallback in the notes. |
+| publish_mode must be comment or description | (argument) | Fix `publish_mode`. Nothing was sent anywhere. |
+| update_title needs publish=true and publish_mode=description | (argument) | Set both, or drop `update_title`. Nothing was sent anywhere. |
+
+The description says "Partial description" for the files that were not
+described; the causes and fixes are those of [the review says
+partial](#the-review-says-partial), with "describe" for "review". Files the
+model was shown but did not describe are listed with reason `not_returned`;
+that is the model's answer, not a limit: run again or use a model that follows
+the output instructions. A description in parts takes one model call per part
+and one more for the summary ([The review took several
+minutes](#the-review-took-several-minutes) applies).
+
+## Describe a pull request with `diag describe`
+
+```sh
+review-mcp diag describe <PR_URL> --dry-run
+review-mcp diag describe <PR_URL>
+```
+
+`--dry-run` runs everything up to the model calls and prints a JSON report with
+the budget, the prompt and diff token estimates, the coverage and the number of
+commit messages; the model is not called. Without `--dry-run` it prints the
+markdown the `pr_describe` tool returns, or with `--json` the structured
+result, and `--show-prompt` prints the rendered prompts of the first call after
+the output (never to the log). It never writes to the pull request; there is no
+publish option. `--dry-run` with `--json`, a missing PR URL and an unknown flag
+are usage errors: exit 2, nothing is sent. See
+[Describing pull requests](describe.md#checking-the-budget-with-diag-describe).
 
 ## Error messages
 
@@ -491,18 +585,21 @@ table also covers the configuration, argument and serve-mode errors.
 | the LLM endpoint does not list the configured model; check llm.model | `llm_not_found` | The endpoint's model list (`GET {llm.base_url}/models`) has no entry whose `id` equals `llm.model` exactly. Fix `llm.model`, or set `llm.context_window` to skip the lookup. |
 | the LLM endpoint does not report the model's context window; set llm.context_window | `llm_protocol` | `llm.context_window` is unset and the endpoint's entry for the model has none of `max_model_len`, `context_length`, `context_window`, `max_context_length` (training-size fields are never used). Set `llm.context_window` to the window your server runs; for Ollama, its `num_ctx`. |
 | the LLM endpoint reports a context window below the 4096-token minimum; set llm.context_window if the endpoint is wrong | `llm_protocol` | 90 % of the reported window is below 4096. Use a model with a larger window, or, if the endpoint reports it wrongly, set `llm.context_window` (at least 4096). |
-| too many background jobs are running; wait for one to finish | (job limit) | stdio only. Four `pr_review` or `pr_ask` runs are already going in the background. Collect one with `job_result`, or wait for it to finish; nothing ran for this call. |
+| too many background jobs are running; wait for one to finish | (job limit) | stdio only. Four `pr_review`, `pr_ask` or `pr_describe` runs are already going in the background. Collect one with `job_result`, or wait for it to finish; nothing ran for this call. |
 | unknown or expired job_id | (job) | `job_result` got an id the server never issued, one older than 30 minutes after it finished, one evicted (only 64 results are kept), or one from before a restart. Jobs live in memory; run the review again. |
-| wait_seconds must be an integer from 0 to 600 | (argument) | Fix `wait_seconds` (`pr_review`, `pr_ask`, `job_result`); the same range applies to `llm.wait_seconds`. |
+| wait_seconds must be an integer from 0 to 600 | (argument) | Fix `wait_seconds` (`pr_review`, `pr_ask`, `pr_describe`, `job_result`); the same range applies to `llm.wait_seconds`. |
 | review-mcp is shutting down; no new background job can start | (shutdown) | The server received SIGINT or SIGTERM, or its client closed it. Restart it; running jobs were cancelled. |
 | could not complete the request to the LLM endpoint | `llm_transport` | Network, DNS, TLS or proxy between you and `llm.base_url`. |
 | the LLM endpoint sent an unexpected response | `llm_protocol` | `llm.base_url` is not an OpenAI-compatible endpoint, or the answer was empty. |
 | the pull request diff does not fit the configured context window; raise llm.context_window (REVIEW_MCP_LLM_CONTEXT_WINDOW) or narrow the pull request | `diff_does_not_fit` | `llm.context_window`, `llm.max_output_tokens`, `diff.large_patch_policy`; or narrow the PR. Nothing was sent to the model. |
 | the model's answer could not be parsed as a review, also after one retry | `review_unparseable` | Retry, or use a model that follows YAML output instructions. |
-| output_language must be a locale code such as en-US or tr-TR | argument | Fix `output_language` (`pr_review`, `pr_ask`). |
+| the model's answer could not be parsed as a pull request description, also after one retry; try again, or check that llm.model follows the YAML output instructions | `describe_unparseable` | Retry, or use a model that follows YAML output instructions (`pr_describe`). |
+| output_language must be a locale code such as en-US or tr-TR | argument | Fix `output_language` (`pr_review`, `pr_ask`, `pr_describe`). |
 | max_findings must be an integer from 1 to 20 | argument | Fix `max_findings` (`pr_review`). |
 | question must not be empty | argument | Pass a non-blank `question` (`pr_ask`). |
 | question is too long: at most 8000 characters are allowed | argument | Shorten the question. |
+| publish_mode must be comment or description | argument | Fix `publish_mode` (`pr_describe`). |
+| update_title needs publish=true and publish_mode=description | argument | Set both, or drop `update_title` (`pr_describe`). |
 | no Gitea token in this request: set the X-Review-MCP-Gitea-Token header in your MCP client configuration | `credentials_missing` | Serve mode: the request carried no Gitea token. Add the header to the client configuration ([Serve mode](serve.md#client-configuration-for-a-remote-server)); `server_info` shows which headers arrived. No outbound request was made. |
 | no Bitbucket Server token in this request: set the X-Review-MCP-Bitbucket-Server-Token header in your MCP client configuration | `credentials_missing` | Same, for a Bitbucket Server URL. |
 | no LLM API key in this request: set the X-Review-MCP-LLM-API-Key header in your MCP client configuration | `credentials_missing` | Same, for the LLM key. Only when `serve.llm_key_source = header`; with `server` the server's own key is used. |
@@ -517,7 +614,7 @@ table also covers the configuration, argument and serve-mode errors.
 
 The MCP client gave up waiting for the tool call; the server did not fail.
 
-- **stdio:** `pr_review` and `pr_ask` answer within `wait_seconds` (default 45)
+- **stdio:** `pr_review`, `pr_ask` and `pr_describe` answer within `wait_seconds` (default 45)
   with a result or a `job_id`, so a call stays under a typical 60-second client
   timeout whatever the model speed. If you still see `-32001`, your client
   timeout is shorter than that: lower `llm.wait_seconds` (or pass a smaller
@@ -544,12 +641,15 @@ A3) has verified them.
   (`read:issue`, for PR-level comments) and to your user (`read:user`, to
   identify the token's own comments), plus write access to issues
   (`write:issue`, for posting and editing PR comments) and to the repository
-  (`write:repository`, for inline comments, which are posted as a review).
-  The write part is needed only for publishing (`publish`),
+  (`write:repository`, for inline comments, which are posted as a review, and
+  for `pr_describe` with `publish_mode=description`, which edits the pull
+  request). The write part is needed only for publishing (`publish`),
   `pr_comment_reply`, `pr_comment_create` and `diag comment`; reading a PR needs
   only read access.
 - **Bitbucket Server / Data Center:** an HTTP access token with repository
-  read permission, plus write permission only for comments. The token is sent
+  read permission, plus write permission only for comments and for
+  `pr_describe` with `publish_mode=description`, which updates the pull
+  request. The token is sent
   as `Authorization: Bearer ...`; basic authentication is not supported.
 
 Which call fails tells you which scope is missing: if `diag pr` works but
@@ -602,3 +702,24 @@ Never logged, at any level: tokens and other secrets (including the LLM API
 key), `Authorization` headers, request and response bodies, tool arguments and
 results, diff content, PR titles and descriptions, and prompts or model
 responses. Still, skim a log before pasting it into a public issue.
+
+### Capturing the log in Windows PowerShell
+
+In Windows PowerShell, `review-mcp diag pr <PR_URL> 2> debug.log` wraps the
+first stderr line of the command in a `NativeCommandError` record, so the file
+starts with PowerShell's own error text (the command name, `At line:...`,
+`CategoryInfo`, `FullyQualifiedErrorId : NativeCommandError`) before the log
+lines. This is how PowerShell treats the stderr of a native command; it is
+harmless, the log lines follow it, and review-mcp has not failed. To get a
+clean file, let `cmd.exe` do the redirection:
+
+```powershell
+$env:REVIEW_MCP_LOG_LEVEL = "debug"
+cmd /c "review-mcp diag pr <PR_URL> 2> debug.log"
+```
+
+or turn each stderr record back into its text before writing it:
+
+```powershell
+review-mcp diag pr <PR_URL> 2>&1 | ForEach-Object { "$_" } | Out-File debug.log
+```

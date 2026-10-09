@@ -157,7 +157,8 @@ uses of the changed symbols from the rest of the repository to the prompt; see
 | `pr_comment_create` | Posts a new comment on a pull request, PR-level or on a changed line (`file` and `line`). |
 | `pr_review` | Reviews a pull request with your LLM; see [Reviewing pull requests](review.md). The PR's title, description, existing comments and diff are sent to `llm.base_url`. |
 | `pr_ask` | Answers a question about a pull request with your LLM, grounded in its title, description and diff; see [Asking questions](ask.md). The PR content and the question are sent to `llm.base_url`. |
-| `job_result` | stdio only. Returns the result of a `pr_review` or `pr_ask` call that answered with a `job_id` because it took longer than `wait_seconds`; see [Slow endpoints](review.md#slow-endpoints). |
+| `pr_describe` | Describes a pull request with your LLM (title, change types, summary, files walkthrough); see [Describing pull requests](describe.md). By default it only reads; `publish=true` writes to the pull request. The PR content is sent to `llm.base_url`. |
+| `job_result` | stdio only. Returns the result of a `pr_review`, `pr_ask` or `pr_describe` call that answered with a `job_id` because it took longer than `wait_seconds`; see [Slow endpoints](review.md#slow-endpoints). |
 
 For reviews, the recommended sampling setting is `REVIEW_MCP_LLM_TEMPERATURE=0.2`
 (it is not sent unless you set it).

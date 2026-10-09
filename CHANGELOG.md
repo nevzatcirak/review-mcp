@@ -5,6 +5,135 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.1] - Unreleased
+
+First v2 release candidate, built on 1.1.0 (the npm dist-tag `next`;
+`latest` moves only at 2.0.0). One new tool, `pr_describe`, and the groundwork
+that later providers need. Nothing in the existing tools or in the
+configuration is removed or renamed.
+
+### Added
+
+- `pr_describe` (X-26), a tool in stdio and serve mode that describes a pull
+  request with your LLM: a title, the change types (`Bug fix`, `Tests`,
+  `Enhancement`, `Documentation`, `Other`), a short summary and a walkthrough of
+  the changed files (path, label, one-line title and summary). The prompts are
+  adapted from PR-Agent's `/describe` prompts (see `NOTICE`). The guide is
+  [Describing pull requests](docs/describe.md).
+  - Arguments: `pr_url`, `output_language`, `publish` (default `false`),
+    `publish_mode` (`comment`, the default, or `description`), `update_title`
+    (default `false`) and, in stdio mode, `wait_seconds`. The structured result
+    has `title`, `type`, `description`, `files`, `coverage`, `notes`,
+    `metadata` and, when publishing was requested, `publish`; it is in the
+    output schema and in `job_result` (`pr_describe` is a background job in
+    stdio mode like `pr_review` and `pr_ask`, and counts toward the same job
+    limit). Not marked read-only, because `publish=true` writes; not
+    destructive.
+  - Sent to the LLM: the PR's title, description (cut to
+    `diff.max_description_tokens`), source and target branch, commit messages
+    (numbered, cut to `diff.max_commits_tokens`) and the plain diff. Not sent:
+    comments, repository context, tokens.
+  - Large pull requests (Y-6): when the diff leaves files out and
+    `review.max_chunks` is above 1, the files are described in parts, packed as
+    `pr_review` packs them. Each part describes only its own files; one more
+    call, which carries no diff, writes the title, the types and the summary
+    from the parts' walkthrough. If that call fails, `title` and `type` are
+    `null`, the description is the files' titles and a note says "The summary
+    could not be generated; the walkthrough lists the described files." A
+    failed part makes its files not described (`model_call_failed`), as in a
+    review.
+  - Honesty (Y-7): every changed file is described, listed under "Not
+    described" with its reason, or filtered on purpose. A file the model was
+    shown but did not describe is listed with the new skip reason
+    `not_returned`; no placeholder entry is written for it. A partial
+    description leads with "Partial description: R of T changed files were
+    described. N files were not described (see Coverage)."; the walkthrough
+    entry of a clipped file ends with "(partial: only part of this file was
+    shown)" and still counts as not described.
+  - Validation: types outside the list are dropped, walkthrough entries for a
+    file the call was not shown are dropped (in parts: the part's own files),
+    the first entry of a path wins, labels are one line of at most 40
+    characters; each is counted in a note.
+  - `coverage.model_calls` counts the calls with a diff; `metadata.llm_calls`
+    counts every completion, the summary call and re-asks included.
+- Publishing `pr_describe` (X-26).
+  - `publish_mode=comment`: one comment whose last line is
+    `[//]: # (review-mcp:describe:v1)`, found by that marker and its author and
+    edited in place on later runs; older duplicates are noted and never
+    deleted.
+  - `publish_mode=description`: the pull request description gets a region
+    between `[//]: # (review-mcp:describe:start)` and
+    `[//]: # (review-mcp:describe:end)`, appended after the author's text and one
+    blank line on the first run and replaced on later runs. The author's text is
+    never changed (byte for byte, CRLF and trailing spaces included). To remove
+    the region, delete both marker lines and everything between them. Marker
+    lines inside a fenced code block count. A description with a damaged region
+    is refused and nothing is written.
+  - `update_title=true` replaces the title with the generated one. On Gitea the
+    default draft prefixes `WIP:` and `[WIP]` are kept in front of the new title
+    when the pull request is a draft, and a generated one is removed, so the
+    draft state does not change.
+  - Concurrent edits are never overwritten: the pull request is read again right
+    before the write, the region is recomputed once if the description changed
+    (on Bitbucket Server a version conflict uses the same retry), and a second
+    change ends with "The pull request description changed while it was being
+    updated; nothing was written."
+  - Bitbucket Server updates a pull request with a full `PUT`; review-mcp sends
+    the reviewers (by name) and the draft flag back and compares the reviewers
+    and their states before and after, with a note when one changed or could not
+    be checked.
+  - When nothing was described, description mode writes nothing ("Nothing was
+    described, so the pull request description was not changed."); comment mode
+    publishes the coverage.
+  - Needs write access to the pull request on Gitea and Bitbucket Server; see
+    the [Setup guide](docs/setup.md#2-create-tokens).
+- `review-mcp diag describe <PR_URL> [--dry-run] [--show-prompt] [--json]`. It
+  never publishes.
+- Provider contract suite (X-24). `internal/provider/contract` holds the tests
+  every provider must pass (metadata, file list and change types, hunks,
+  threads and replies, ownership check on edit, inline results, review status,
+  line URLs, error classes with no token or server text in an error, and the
+  pull request update), run against fake servers for Gitea and Bitbucket
+  Server. A new provider adds only a fixture. A guard fails the build if a
+  production package imports it.
+- Nested namespaces and capabilities (X-25). `PRRef.Namespace` may hold several
+  segments, and what a provider does is driven by `Capabilities`, never by its
+  name:
+  - New capabilities: `SuggestionBlocks`, `QuickActions`,
+    `InlineThreadResolution` and `GeneralThreadResolution` (resolution is split
+    by thread kind), and `DescriptionEdit`. Gitea: inline resolution and
+    `DescriptionEdit`; Bitbucket Server: both resolution flags and
+    `DescriptionEdit`; no provider has the others yet.
+  - Slash sanitisation: with `QuickActions`, every published body (overview,
+    inline, reply, new comment, describe) gets a space in front of a line that
+    starts with `/`. No provider sets it, so published output is unchanged;
+    `pr_ask` keeps sanitising on every provider.
+  - Nested namespaces are escaped per segment in clone URLs, and the
+    repository-context cache stores a nested namespace as one directory with its
+    segments joined by `+`.
+- Docs: [Describing pull requests](docs/describe.md), a `pr_describe` section in
+  the troubleshooting guide, and a note on capturing the debug log in Windows
+  PowerShell (`2> file` wraps the first stderr line in a `NativeCommandError`
+  record; redirect through `cmd /c` instead).
+
+### Changed
+
+- A Gitea or Bitbucket Server URL with an escaped slash (`%2F`) in the owner,
+  project or repository segment is now refused as "the URL matches a configured
+  provider but is not a pull request URL". Both URL shapes have exactly one
+  segment there, and the escaped slash used to be accepted.
+- `Provider.GetDiff` documents the two valid shapes of a file the limits cut
+  (listed with `not_fetched_*` statuses and a patch, or skipped with
+  `size_limit` or `file_limit`), and `FilePatch.Patch` documents that the
+  `\ No newline at end of file` marker is present only when the host provides it
+  (Bitbucket Server does not). Behaviour is unchanged.
+- `job_result`, the job limit and the tool descriptions name `pr_describe`
+  next to `pr_review` and `pr_ask`. The server has nine tools in stdio mode and
+  eight in serve mode (the serve guide said six).
+- The Provider interface gains `UpdatePullRequest` (Gitea `PATCH`, Bitbucket
+  Server `PUT`), and the overview-marker logic shared by `pr_review` and
+  `pr_describe` moved to `internal/llmrun`; review output is unchanged.
+
 ## [1.1.0]
 
 Second stable release. The code is the same as `1.1.0-rc.1`; the release
@@ -372,6 +501,7 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[2.0.0-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.0.0-rc.1
 [1.1.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v1.1.0
 [1.1.0-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v1.1.0-rc.1
 [1.0.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v1.0.0

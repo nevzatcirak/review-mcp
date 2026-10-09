@@ -496,7 +496,7 @@ and are published separately.
 - `pr_agent/tools/pr_description.py:PRDescription._get_description_coverage_footer` @ 8e5a929
 - `pr_agent/tools/pr_description.py:PRDescription._prepare_data,_validate_description_schema` @ 8e5a929
 - `pr_agent/tools/pr_description.py:PRDescription._prepare_labels,_prepare_file_labels` @ 8e5a929
-- `pr_agent/tools/pr_description.py:PRDescription._prepare_pr_answer,_prepare_pr_answer_with_markers,process_pr_files_prediction` (rendering; WP-2d) @ 8e5a929
+- `pr_agent/tools/pr_description.py:PRDescription._prepare_pr_answer,_prepare_pr_answer_with_markers,process_pr_files_prediction` (rendering; as implemented in WP-2d, see the porting notes) @ 8e5a929
 - `pr_agent/tools/pr_description.py:sanitize_diagram,apply_diagram_direction` (mermaid diagram; not ported) @ 8e5a929
 
 **Data flow**
@@ -536,6 +536,19 @@ merged YAML.
 - `keys_fix` is kept without `language:` (not in the schema); no first/last
   key, as upstream's describe path passes none.
 - One model: review-mcp has no weak-model setting; describe uses `llm.model`.
+- Publishing (WP-2d, X-26): upstream's description markers
+  (`use_description_markers`) and its overwrite of the description are not
+  ported; review-mcp owns only a region between `[//]: # (review-mcp:describe:start)`
+  and `[//]: # (review-mcp:describe:end)`, appended after the author's text and
+  replaced on later runs, with the text outside it untouched
+  (`publish_mode=description`). The comment path
+  (`publish_description_as_comment`) is `publish_mode=comment`, one comment
+  edited in place by a marker (`[//]: # (review-mcp:describe:v1)`) and the
+  author check of X-12. `generate_ai_title` is the `update_title` argument.
+  Labels are not published (Y-4). The published text is escaped as
+  `pr_review` escapes its findings, and the Bitbucket Server update sends the
+  reviewer list back, as this study's note on upstream's PR update requires.
+  Guide: `docs/describe.md`.
 - Commit messages: numbered `N. message` (upstream's GitHub provider format),
   clipped to `diff.max_commits_tokens` (default 500).
 
@@ -554,7 +567,7 @@ cover ("n/s").
 | `pr_description.enable_pr_description` | true | always on (no key) |
 | `pr_description.publish_labels` / `config.enable_custom_labels` | n/s | drop (labels are not set in v2, Y-4) |
 | `pr_description.extra_instructions` | n/s | drop (no argument or key; spec §3.7) |
-| `pr_description.publish_description_as_comment` (+`_persistent`) | n/s | `publish_mode=comment` (WP-2d) |
+| `pr_description.publish_description_as_comment` (+`_persistent`) | n/s | `publish_mode=comment` (WP-2d; always edited in place) |
 | `pr_description.generate_ai_title` | n/s | `update_title` argument (WP-2d) |
 | `pr_description.use_description_markers` | n/s | replaced by the managed region markers (WP-2d) |
 | `pr_description.add_original_user_description` | n/s | n/a: the author's text is never replaced (Y-5) |

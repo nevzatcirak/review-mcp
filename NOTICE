@@ -82,6 +82,7 @@ as new adapted material lands.
 - internal/describe/prompts/user.tmpl
 - internal/describe/prompts/reduce_system.tmpl and internal/describe/prompts/reduce_user.tmpl (written for review-mcp; they reuse sentences, the schema field descriptions and the example of the two templates above)
 - internal/describe/convert.go (the YAML repair key list of the describe schema)
+- internal/describe/render/provider.go (emoji map of the Gitea provider profile, shared with the review and ask renderers)
 - internal/describe/testdata/ (renderings of the adapted describe prompts; no upstream renderings)
 
 Tokenizer vocabulary (third-party data)

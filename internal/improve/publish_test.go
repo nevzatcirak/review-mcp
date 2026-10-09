@@ -516,9 +516,9 @@ func TestAnchorFor(t *testing.T) {
 	}{
 		"context line":                    {file(provider.ChangeModified, two), 1, 1, "n.go:1:context"},
 		"added line":                      {file(provider.ChangeModified, two), 2, 2, "n.go:2:added"},
-		"context to added":                {file(provider.ChangeModified, two), 1, 4, "n.go:1:context"},
-		"across a removed line":           {file(provider.ChangeModified, two), 1, 3, "n.go:1:context"},
-		"whole second hunk":               {file(provider.ChangeModified, two), 21, 23, "n.go:21:context"},
+		"context to added":                {file(provider.ChangeModified, two), 1, 4, "n.go:1-4:context"},
+		"across a removed line":           {file(provider.ChangeModified, two), 1, 3, "n.go:1-3:context"},
+		"whole second hunk":               {file(provider.ChangeModified, two), 21, 23, "n.go:21-23:context"},
 		"leaves the first hunk":           {file(provider.ChangeModified, two), 4, 6, ""},
 		"gap between hunks":               {file(provider.ChangeModified, two), 5, 21, ""},
 		"only in the gap":                 {file(provider.ChangeModified, two), 10, 11, ""},
@@ -537,7 +537,11 @@ func TestAnchorFor(t *testing.T) {
 		c, ok := anchorFor(tc.fp, tc.start, tc.end)
 		got := ""
 		if ok {
-			got = c.Path + ":" + strconv.Itoa(c.Line) + ":" + string(c.LineType)
+			got = c.Path + ":" + strconv.Itoa(c.Line)
+			if c.EndLine != 0 {
+				got += "-" + strconv.Itoa(c.EndLine)
+			}
+			got += ":" + string(c.LineType)
 		}
 		if got != tc.want {
 			t.Errorf("%s: %q, want %q", name, got, tc.want)

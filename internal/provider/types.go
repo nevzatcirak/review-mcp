@@ -210,7 +210,14 @@ type Comment struct {
 type Capabilities struct {
 	GFM, MarkdownTables, Labels, InlineComments bool
 	// SuggestionBlocks: an inline comment can carry a native suggestion block.
+	// It is true exactly when SuggestionStyle is not SuggestionStyleNone (the
+	// contract suite checks this); code that renders a block reads the
+	// syntax through NativeSuggestionStyle.
 	SuggestionBlocks bool
+	// SuggestionStyle is the syntax of the native suggestion block, and
+	// with it which lines the block replaces; SuggestionStyleNone without
+	// SuggestionBlocks.
+	SuggestionStyle SuggestionStyle
 	// QuickActions: a published line that starts with "/" runs a quick
 	// action, so every published body is slash-sanitised (SanitizeBody).
 	QuickActions bool
@@ -223,6 +230,35 @@ type Capabilities struct {
 	// DescriptionEdit: the PR description can be updated through the API.
 	DescriptionEdit bool
 }
+
+// NativeSuggestionStyle returns the suggestion style an inline comment may
+// use: SuggestionStyle when SuggestionBlocks is set, and SuggestionStyleNone
+// otherwise (no native block, whatever SuggestionStyle says).
+func (c Capabilities) NativeSuggestionStyle() SuggestionStyle {
+	if !c.SuggestionBlocks {
+		return SuggestionStyleNone
+	}
+	return c.SuggestionStyle
+}
+
+// SuggestionStyle is the syntax of a provider's native suggestion block
+// (design §5, the suggestion-block precondition). The values name the
+// syntax, never a provider, so that code branches on the capability.
+type SuggestionStyle string
+
+// Suggestion styles.
+const (
+	// SuggestionStyleNone: the provider has no native suggestion block.
+	SuggestionStyleNone SuggestionStyle = ""
+	// SuggestionStyleRange: a fence with the info string "suggestion" that
+	// replaces every line the comment is attached to, InlineComment.Line to
+	// InlineComment.EndLine (GitHub's start_line to line).
+	SuggestionStyleRange SuggestionStyle = "range"
+	// SuggestionStyleOffset: the comment sits on one line, and the info
+	// string "suggestion:-0+N" says the block replaces that line and the N
+	// lines below it (GitLab).
+	SuggestionStyleOffset SuggestionStyle = "offset"
+)
 
 // SanitizeBody returns body ready to be published for a provider with caps.
 // When caps.QuickActions is set it puts a space in front of every line that
@@ -340,8 +376,16 @@ type InlineComment struct {
 	// OldPath is the file's old path for a rename, and "" otherwise.
 	// Bitbucket Server sends it as the anchor's srcPath; Gitea ignores it.
 	OldPath string
-	// Line is the absolute new-side line number.
-	Line     int
+	// Line is the absolute new-side line number: the comment's line, or the
+	// first line of its range.
+	Line int
+	// EndLine is the last new-side line of a multi-line range, which runs
+	// from Line to EndLine inside one hunk; 0 (or Line) for a comment on one
+	// line. A provider that can anchor a comment on a range (GitHub's
+	// start_line and line) uses it; the others ignore it and post on Line
+	// (Gitea, Bitbucket Server).
+	EndLine int
+	// LineType is the type of Line.
 	LineType LineType
 	Body     string
 }

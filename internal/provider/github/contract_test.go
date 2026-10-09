@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,8 +21,8 @@ import (
 
 // TestContract runs the provider contract suite against a fake GitHub
 // Enterprise Server API that serves each contract.Spec. The read path is
-// WP-2j and the comments WP-2k; the cases of the later work packages are
-// declared pending.
+// WP-2j, the comments WP-2k and the inline comments WP-2l; the cases of the
+// later work packages are declared pending.
 func TestContract(t *testing.T) {
 	contract.Run(t, ctFixture{})
 }
@@ -50,23 +51,30 @@ func (ctFixture) Kind() provider.Kind { return provider.KindGitHub }
 func (ctFixture) Traits() contract.Traits {
 	return contract.Traits{
 		BaseStrategies: github.BaseStrategies(),
+		InlineRanges:   true,
 		Pending: map[string]string{
-			"inline_anchoring":          "WP-2l",
-			"review_status":             "WP-2m",
-			"update_pull_request":       "WP-2m",
-			"errors/PostInlineComments": "WP-2l",
-			"errors/UpdatePullRequest":  "WP-2m",
-			"errors/GetReviewStatus":    "WP-2m",
+			"review_status":            "WP-2m",
+			"update_pull_request":      "WP-2m",
+			"errors/UpdatePullRequest": "WP-2m",
+			"errors/GetReviewStatus":   "WP-2m",
 		},
 	}
 }
 
 func (ctFixture) Serve(t *testing.T, pr contract.Spec) (provider.Provider, provider.PRRef) {
 	t.Helper()
+	p, ref, _ := serveCt(t, pr)
+	return p, ref
+}
+
+// serveCt serves pr through a new fake and also returns the fake.
+func serveCt(t *testing.T, pr contract.Spec) (provider.Provider, provider.PRRef, *ctGitHub) {
+	t.Helper()
+	g := newCtGitHub(t, pr)
 	cfg := config.Defaults()
 	// The web base is the fake's origin; the API base is derived from it
 	// as for GitHub Enterprise Server ({base}/api/v3).
-	cfg.GitHub.BaseURL = contract.StartServer(t, pr, newCtGitHub(t, pr))
+	cfg.GitHub.BaseURL = contract.StartServer(t, pr, g)
 	cfg.Secrets.GitHubToken = config.NewSecret(pr.Env.Token)
 	cfg.Diff.MaxFilesFullContent = pr.Env.MaxFiles
 	cfg.Diff.MaxFileBytes = pr.Env.MaxFileBytes
@@ -74,7 +82,61 @@ func (ctFixture) Serve(t *testing.T, pr contract.Spec) (provider.Provider, provi
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	return p, provider.PRRef{Kind: provider.KindGitHub, Namespace: "octo", Repo: "demo", Number: 7}
+	return p, provider.PRRef{Kind: provider.KindGitHub, Namespace: "octo", Repo: "demo", Number: 7}, g
+}
+
+// TestContractInlineRequests: on the contract fake, inline comments that
+// all fit the diff cost exactly one write (the review); when one does not,
+// GitHub refuses the review (422) and each item is then posted alone: the
+// review plus one write per item. Only the refused item is unanchorable.
+func TestContractInlineRequests(t *testing.T) {
+	const path = "src/app.go"
+	spec := contract.Spec{
+		Title: "T", Author: contract.User{ID: 101, Login: "alice"}, SourceBranch: "f", TargetBranch: "main",
+		HeadSHA: "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1", BaseSHA: "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+		TokenUser: contract.User{ID: 900, Login: "review-bot"},
+		Files: []contract.File{{
+			Path: path, Type: provider.ChangeModified,
+			Base:  "a\nb\nc\n",
+			Head:  "a\nB\nc\n",
+			Hunks: "@@ -1,3 +1,3 @@\n a\n-b\n+B\n c\n",
+		}},
+		Env: contract.Env{Token: "tok-FAKE-wp2l", MaxFiles: 10, MaxFileBytes: 4096}, //nolint:gosec // synthetic test value
+	}
+	pr := &provider.PullRequest{HeadSHA: spec.HeadSHA}
+	good := []provider.InlineComment{
+		{Path: path, Line: 2, LineType: provider.LineAdded, Body: "One line."},
+		{Path: path, Line: 1, EndLine: 3, LineType: provider.LineContext, Body: "Three lines."},
+	}
+	outside := provider.InlineComment{Path: path, Line: 9, LineType: provider.LineContext, Body: "Outside."}
+	const reviews, comments = "POST " + ctPull + "/reviews", "POST " + ctPull + "/comments"
+
+	p, ref, g := serveCt(t, spec)
+	res, err := p.PostInlineComments(t.Context(), ref, pr, good)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, r := range res {
+		if !r.Posted || r.ID == "" || r.Reason != provider.InlineReasonPosted {
+			t.Errorf("item %d: %+v, want posted with an id", i, r)
+		}
+	}
+	if want := []string{reviews}; !slices.Equal(g.writesSoFar(), want) {
+		t.Errorf("writes %q, want %q", g.writesSoFar(), want)
+	}
+
+	p, ref, g = serveCt(t, spec)
+	items := []provider.InlineComment{good[0], outside, good[1]}
+	if res, err = p.PostInlineComments(t.Context(), ref, pr, items); err != nil {
+		t.Fatal(err)
+	}
+	reasons := []provider.InlineReason{res[0].Reason, res[1].Reason, res[2].Reason}
+	if want := []provider.InlineReason{provider.InlineReasonPosted, provider.InlineReasonUnanchorable, provider.InlineReasonPosted}; !slices.Equal(reasons, want) {
+		t.Errorf("reasons %q, want %q", reasons, want)
+	}
+	if want := []string{reviews, comments, comments, comments}; !slices.Equal(g.writesSoFar(), want) {
+		t.Errorf("writes %q, want %q", g.writesSoFar(), want)
+	}
 }
 
 // ctGitHub is a fake GitHub REST API v3 that serves one contract.Spec. It
@@ -90,6 +152,8 @@ type ctGitHub struct {
 	issue  []contract.Comment
 	inline []ctInline
 	nextID int64
+	// writes records every request other than a GET, as "METHOD path".
+	writes []string
 }
 
 type ctInline struct {
@@ -97,6 +161,9 @@ type ctInline struct {
 	path    string
 	line    int
 	replyTo int64
+	// review is the id of the review the comment was created in; 0 for a
+	// comment of the Spec or one posted alone.
+	review int64
 }
 
 // ctFirstID is the first id of a comment created by a request.
@@ -245,7 +312,10 @@ func (g *ctGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		contract.WriteError(w, http.StatusUnauthorized)
 		return
 	}
-	if g.serveComments(w, r, path) {
+	if r.Method != http.MethodGet {
+		g.writes = append(g.writes, r.Method+" "+path)
+	}
+	if g.serveInline(w, r, path) || g.serveComments(w, r, path) {
 		return
 	}
 	if r.Method != http.MethodGet {
@@ -419,6 +489,154 @@ func (g *ctGitHub) serveComments(w http.ResponseWriter, r *http.Request, path st
 		g.ctPage(w, r, nil, ctRepoByID+"/pulls/7/reviews")
 	case get && strings.HasPrefix(path, ctPull+"/reviews/"):
 		contract.WriteError(w, http.StatusNotFound)
+	default:
+		return false
+	}
+	return true
+}
+
+// writesSoFar returns a copy of writes.
+func (g *ctGitHub) writesSoFar() []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return slices.Clone(g.writes)
+}
+
+// ctPosition is a comment position as GitHub's review endpoints take it.
+type ctPosition struct {
+	CommitID  string `json:"commit_id"`
+	Path      string `json:"path"`
+	Body      string `json:"body"`
+	Line      int    `json:"line"`
+	Side      string `json:"side"`
+	StartLine int    `json:"start_line"`
+	StartSide string `json:"start_side"`
+	// Position is the deprecated diff-relative position; review-mcp must
+	// not send it.
+	Position *int `json:"position"`
+}
+
+// anchorable reports whether GitHub would accept c on the head commit: the
+// file is in the diff, both sides are RIGHT and every line from start_line
+// (or line) to line is a new-side line of one hunk.
+func (g *ctGitHub) anchorable(c ctPosition) bool {
+	if c.Side != "RIGHT" || c.Position != nil || c.Line <= 0 || strings.TrimSpace(c.Body) == "" {
+		return false
+	}
+	start := c.Line
+	if c.StartLine != 0 {
+		if c.StartSide != "RIGHT" || c.StartLine >= c.Line {
+			return false
+		}
+		start = c.StartLine
+	}
+	for i := range g.pr.Files {
+		f := &g.pr.Files[i]
+		if f.Path != c.Path || f.Type == provider.ChangeDeleted || f.Binary {
+			continue
+		}
+		hunk := ctHunks(f.Hunks)
+		h, ok := hunk[start]
+		for n := start; ok && n <= c.Line; n++ {
+			if hn, in := hunk[n]; !in || hn != h {
+				return false
+			}
+		}
+		return ok
+	}
+	return false
+}
+
+// ctHunks maps every new-side line of hunks to the number of its hunk.
+func ctHunks(hunks string) map[int]int {
+	out := map[int]int{}
+	n, h := 0, 0
+	for _, l := range strings.Split(hunks, "\n") {
+		switch {
+		case strings.HasPrefix(l, "@@"):
+			h++
+			_, rest, _ := strings.Cut(l, " +")
+			end := strings.IndexAny(rest, ", ")
+			if end < 0 {
+				end = len(rest)
+			}
+			n, _ = strconv.Atoi(rest[:end])
+		case strings.HasPrefix(l, "+"), strings.HasPrefix(l, " "):
+			out[n] = h
+			n++
+		}
+	}
+	return out
+}
+
+// create stores c as a review comment of the token's user.
+func (g *ctGitHub) create(c ctPosition, review int64) ctInline {
+	in := ctInline{Comment: contract.Comment{ID: g.nextID, Author: g.pr.TokenUser, Body: c.Body, Created: time.Now().UTC()},
+		path: c.Path, line: c.Line, review: review}
+	g.nextID++
+	g.inline = append(g.inline, in)
+	return in
+}
+
+// serveInline serves the inline writes (WP-2l) and reports whether it
+// answered the request. Like GitHub, POST /reviews creates the review and
+// all its comments, or, when any comment cannot be placed on the diff,
+// nothing (422); POST /comments places one comment.
+func (g *ctGitHub) serveInline(w http.ResponseWriter, r *http.Request, path string) bool {
+	switch {
+	case r.Method == http.MethodPost && path == ctPull+"/reviews":
+		var in struct {
+			CommitID string       `json:"commit_id"`
+			Event    string       `json:"event"`
+			Body     *string      `json:"body"`
+			Comments []ctPosition `json:"comments"`
+		}
+		if json.NewDecoder(r.Body).Decode(&in) != nil || in.CommitID != g.pr.HeadSHA || in.Event != "COMMENT" ||
+			in.Body != nil || len(in.Comments) == 0 {
+			g.t.Errorf("unexpected review request: commit %q, event %q, body set %v, %d comments",
+				in.CommitID, in.Event, in.Body != nil, len(in.Comments))
+			contract.WriteError(w, http.StatusUnprocessableEntity)
+			return true
+		}
+		for _, c := range in.Comments {
+			if c.CommitID != "" {
+				g.t.Errorf("a review comment carries its own commit_id")
+			}
+			if !g.anchorable(c) {
+				contract.WriteError(w, http.StatusUnprocessableEntity)
+				return true
+			}
+		}
+		rid := g.nextID
+		g.nextID++
+		for _, c := range in.Comments {
+			g.create(c, rid)
+		}
+		ctJSON(w, http.StatusOK, map[string]any{"id": rid, "state": "COMMENTED", "user": ctUser(g.pr.TokenUser),
+			"html_url": "https://github.example.com/octo/demo/pull/7#pullrequestreview-" + strconv.FormatInt(rid, 10)})
+	case r.Method == http.MethodGet && strings.HasPrefix(path, ctPull+"/reviews/") && strings.HasSuffix(path, "/comments"),
+		r.Method == http.MethodGet && strings.HasPrefix(path, ctRepoByID+"/pulls/7/reviews/") && strings.HasSuffix(path, "/comments"):
+		id := strings.TrimSuffix(path, "/comments")
+		id = id[strings.LastIndexByte(id, '/')+1:]
+		var out []any
+		for _, c := range g.inline {
+			if c.review != 0 && strconv.FormatInt(c.review, 10) == id {
+				out = append(out, g.inlineJSON(c))
+			}
+		}
+		g.ctPage(w, r, out, ctRepoByID+"/pulls/7/reviews/"+id+"/comments")
+	case r.Method == http.MethodPost && path == ctPull+"/comments":
+		var c ctPosition
+		if json.NewDecoder(r.Body).Decode(&c) != nil || c.CommitID != g.pr.HeadSHA {
+			g.t.Errorf("unexpected comment request: commit %q", c.CommitID)
+			contract.WriteError(w, http.StatusUnprocessableEntity)
+			return true
+		}
+		if !g.anchorable(c) {
+			contract.WriteError(w, http.StatusUnprocessableEntity)
+			return true
+		}
+		ctJSON(w, http.StatusCreated, g.inlineJSON(g.create(c, 0)))
 	default:
 		return false
 	}

@@ -138,6 +138,15 @@ func (s *suite) capabilities(t *testing.T) {
 	spec := samplePR()
 	p, ref, _ := s.serve(t, spec)
 	caps := p.Capabilities()
+	if caps.SuggestionBlocks != (caps.SuggestionStyle != provider.SuggestionStyleNone) {
+		t.Errorf("Capabilities().SuggestionBlocks is %v but SuggestionStyle is %q: a provider with native suggestion "+
+			"blocks names their style, and only such a provider does", caps.SuggestionBlocks, caps.SuggestionStyle)
+	}
+	switch caps.SuggestionStyle {
+	case provider.SuggestionStyleNone, provider.SuggestionStyleRange, provider.SuggestionStyleOffset:
+	default:
+		t.Errorf("Capabilities().SuggestionStyle %q is not a known style", caps.SuggestionStyle)
+	}
 	got, err := p.ListThreads(t.Context(), ref)
 	if err != nil {
 		t.Fatalf("ListThreads: %v", err)
@@ -778,7 +787,10 @@ func (s *suite) updatePullRequest(t *testing.T) {
 }
 
 // inline: comments on an added and a context line are posted; a comment on
-// a line outside the hunks is not, with a fixed sentence.
+// a line outside the hunks is not, with a fixed sentence. A comment on a
+// range of new-side lines of one hunk (InlineComment.EndLine) is posted
+// too, and listed at its last line by a provider with Traits.InlineRanges,
+// at its first line by any other.
 func (s *suite) inline(t *testing.T) {
 	spec := samplePR()
 	p, ref, _ := s.serve(t, spec)
@@ -803,10 +815,17 @@ func (s *suite) inline(t *testing.T) {
 	for lines[outside] != "" {
 		outside++
 	}
+	// The range runs from the line before the added line to the line after
+	// it: three new-side lines of the one hunk.
+	added := pick(provider.LineAdded)
+	if lines[added-1] == "" || lines[added+1] == "" {
+		t.Fatalf("the sample hunk has no new-side lines around line %d", added)
+	}
 	items := []provider.InlineComment{
-		{Path: f.Path, Line: pick(provider.LineAdded), LineType: provider.LineAdded, Body: "On the added line."},
+		{Path: f.Path, Line: added, LineType: provider.LineAdded, Body: "On the added line."},
 		{Path: f.Path, Line: pick(provider.LineContext), LineType: provider.LineContext, Body: "On a context line."},
 		{Path: f.Path, Line: outside, LineType: provider.LineContext, Body: "Outside the hunks."},
+		{Path: f.Path, Line: added - 1, EndLine: added + 1, LineType: lines[added-1], Body: "On a range of lines."},
 	}
 	res, err := p.PostInlineComments(t.Context(), ref, pr, items)
 	if err != nil {
@@ -831,6 +850,29 @@ func (s *suite) inline(t *testing.T) {
 			t.Errorf("line %d: reason %q, want %q", items[2].Line, r.Reason, provider.InlineReasonUnanchorable)
 		}
 		checkCleanText(t, "InlineResult.Error", r.Error)
+	})
+	t.Run("range_posted", func(t *testing.T) {
+		it, r := items[3], res[3]
+		if !r.Posted || r.ID == "" || r.Error != "" || r.Reason != provider.InlineReasonPosted {
+			t.Fatalf("lines %d-%d: %+v, want posted with an id and the reason %q", it.Line, it.EndLine, r, provider.InlineReasonPosted)
+		}
+		threads, err := p.ListThreads(t.Context(), ref)
+		if err != nil {
+			t.Fatalf("ListThreads: %v", err)
+		}
+		want := it.Line
+		if s.tr.InlineRanges {
+			want = it.EndLine
+		}
+		var at []int
+		for _, th := range threads {
+			if th.Kind == provider.ThreadInline && th.Path == it.Path && len(th.Comments) > 0 && th.Comments[0].Body == it.Body {
+				at = append(at, th.Line)
+			}
+		}
+		if len(at) != 1 || at[0] != want {
+			t.Errorf("the range comment is listed at lines %v, want once at line %d (Traits.InlineRanges %v)", at, want, s.tr.InlineRanges)
+		}
 	})
 }
 

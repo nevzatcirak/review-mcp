@@ -40,6 +40,11 @@ type Traits struct {
 	// (FilePatch.Patch); the expected hunks here lack those marker lines and
 	// everything else stays byte for byte.
 	OmitsNoNewlineMarker bool
+	// InlineRanges is true for a provider that anchors an inline comment on
+	// its whole range, InlineComment.Line to EndLine, and lists the thread
+	// at the range's last line (GitHub's line). Without it the provider
+	// ignores EndLine: the comment is posted on Line and listed there.
+	InlineRanges bool
 	// Pending maps a case, or one call of the errors case, to the work
 	// package that will implement it, while a provider is built up over
 	// several packages. Run skips each with "pending: <package>" instead of

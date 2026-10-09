@@ -52,11 +52,15 @@ func TestResolveGoldens(t *testing.T) {
 		{"added line", modified(), 11, 11, Anchor{Path: "src/app.go", Line: 11, LineType: provider.LineAdded}, true},
 		{"context line", modified(), 10, 10, Anchor{Path: "src/app.go", Line: 10, LineType: provider.LineContext}, true},
 		{"last context line", modified(), 13, 13, Anchor{Path: "src/app.go", Line: 13, LineType: provider.LineContext}, true},
-		{"range starting before a hunk", modified(), 5, 12, Anchor{Path: "src/app.go", Line: 10, LineType: provider.LineContext}, true},
-		{"range spanning two hunks", twoHunks(), 5, 22, Anchor{Path: "src/two.go", Line: 20, LineType: provider.LineContext}, true},
+		{"range starting before a hunk", modified(), 5, 12, Anchor{Path: "src/app.go", Line: 10, EndLine: 12, LineType: provider.LineContext}, true},
+		{"range spanning two hunks", twoHunks(), 5, 22, Anchor{Path: "src/two.go", Line: 20, EndLine: 22, LineType: provider.LineContext}, true},
 		{"range ending in the second hunk's added line", twoHunks(), 5, 21,
-			Anchor{Path: "src/two.go", Line: 20, LineType: provider.LineContext}, true},
-		{"range inside the first of two hunks", twoHunks(), 3, 22, Anchor{Path: "src/two.go", Line: 3, LineType: provider.LineAdded}, true},
+			Anchor{Path: "src/two.go", Line: 20, EndLine: 21, LineType: provider.LineContext}, true},
+		{"range inside the first of two hunks", twoHunks(), 3, 22, Anchor{Path: "src/two.go", Line: 3, EndLine: 4, LineType: provider.LineAdded}, true},
+		{"range inside one hunk", modified(), 10, 12, Anchor{Path: "src/app.go", Line: 10, EndLine: 12, LineType: provider.LineContext}, true},
+		{"range past the end of a hunk", modified(), 11, 16, Anchor{Path: "src/app.go", Line: 11, EndLine: 13, LineType: provider.LineAdded}, true},
+		{"range across a removed line", twoHunks(), 2, 4, Anchor{Path: "src/two.go", Line: 2, EndLine: 4, LineType: provider.LineContext}, true},
+		{"range of one line", modified(), 12, 12, Anchor{Path: "src/app.go", Line: 12, LineType: provider.LineContext}, true},
 		{"range entirely outside the hunks", modified(), 15, 18, Anchor{}, false},
 		{"range between two hunks", twoHunks(), 5, 19, Anchor{}, false},
 		{"context line outside the server's hunk", modified(), 8, 8, Anchor{}, false},
@@ -115,8 +119,8 @@ func TestExtendedContextIsVisibleToTheModel(t *testing.T) {
 }
 
 func TestAnchorComment(t *testing.T) {
-	a := Anchor{Path: "src/renamed.go", OldPath: "src/old_name.go", Line: 2, LineType: provider.LineContext}
-	want := provider.InlineComment{Path: "src/renamed.go", OldPath: "src/old_name.go", Line: 2,
+	a := Anchor{Path: "src/renamed.go", OldPath: "src/old_name.go", Line: 2, EndLine: 4, LineType: provider.LineContext}
+	want := provider.InlineComment{Path: "src/renamed.go", OldPath: "src/old_name.go", Line: 2, EndLine: 4,
 		LineType: provider.LineContext, Body: "body"}
 	if got := a.Comment("body"); got != want {
 		t.Errorf("Comment = %+v", got)

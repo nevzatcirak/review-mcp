@@ -8,9 +8,10 @@
 //
 // This package holds the read path (WP-2j): pull request metadata, the base
 // revision, the diff with contents, the commit messages and the token's
-// user. Comments, threads, inline posting, review status and description
-// edits come with WP-2k, WP-2l and WP-2m; until then those methods fail
-// with a fixed error before any request (see errNotImplemented).
+// user; comments and threads (WP-2k); and inline comments posted in one
+// review, on single lines or ranges (WP-2l). Review status and description
+// edits come with WP-2m; until then those methods fail with a fixed error
+// before any request (see errNotImplemented).
 package github
 
 import (
@@ -187,11 +188,12 @@ func (*Provider) Kind() provider.Kind { return provider.KindGitHub }
 
 // Capabilities implements provider.Provider. GitHub renders GFM with tables
 // and has labels. Thread resolution is not readable through REST (Y-14), so
-// both resolution flags stay false. InlineComments, SuggestionBlocks and
-// DescriptionEdit are switched on by the packages that implement them
-// (WP-2l, WP-2m).
+// both resolution flags stay false. Inline comments can carry a native
+// suggestion block that replaces the comment's whole range (start_line to
+// line, SuggestionStyleRange). DescriptionEdit is switched on by WP-2m.
 func (*Provider) Capabilities() provider.Capabilities {
-	return provider.Capabilities{GFM: true, MarkdownTables: true, Labels: true}
+	return provider.Capabilities{GFM: true, MarkdownTables: true, Labels: true, InlineComments: true,
+		SuggestionBlocks: true, SuggestionStyle: provider.SuggestionStyleRange}
 }
 
 // BaseStrategies returns the provider.PullRequest.BaseStrategy values this

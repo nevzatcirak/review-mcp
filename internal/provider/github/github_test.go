@@ -714,10 +714,6 @@ func TestPendingMethodsSendNothing(t *testing.T) {
 	pr := &provider.PullRequest{HeadSHA: "h", BaseSHA: "b"}
 	title := "T"
 	for name, call := range map[string]func() error{
-		"PostInlineComments": func() error {
-			_, err := p.PostInlineComments(ctx, ref, pr, []provider.InlineComment{{Path: "a", Line: 1, LineType: provider.LineAdded, Body: "x"}})
-			return err
-		},
 		"UpdatePullRequest": func() error { return p.UpdatePullRequest(ctx, ref, provider.UpdatePR{Title: &title}) },
 	} {
 		err := call()
@@ -732,7 +728,7 @@ func TestPendingMethodsSendNothing(t *testing.T) {
 	if got := f.requests(); len(got) != 0 {
 		t.Errorf("requests = %q, want none", got)
 	}
-	if c := p.Capabilities(); c.InlineComments || c.DescriptionEdit || c.SuggestionBlocks || c.InlineThreadResolution || c.GeneralThreadResolution {
+	if c := p.Capabilities(); c.DescriptionEdit || c.InlineThreadResolution || c.GeneralThreadResolution {
 		t.Errorf("capabilities = %+v: a feature of a later work package is switched on", c)
 	}
 }

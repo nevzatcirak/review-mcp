@@ -5,6 +5,136 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.2] - Unreleased
+
+Second v2 release candidate, built on 2.0.0-rc.1 (the npm dist-tag `next`;
+`latest` moves only at 2.0.0). One new tool, `pr_improve`. Nothing in the
+existing tools or in the configuration is removed or renamed.
+
+### Added
+
+- `pr_improve` (X-27), a tool in stdio and serve mode that suggests code changes
+  for a pull request with your LLM: for each suggestion the existing code, the
+  improved code, a label and a score from 0 to 10 given by a second model call,
+  the self-review. The prompts are adapted from PR-Agent's `/improve` prompts
+  (see `NOTICE`). The guide is [Suggesting code changes](docs/improve.md).
+  - Arguments: `pr_url`, `output_language`, `publish` (default `false`) and, in
+    stdio mode, `wait_seconds`. The structured result has `suggestions`,
+    `coverage`, `notes`, `metadata` and, when publishing was requested,
+    `publish`; it is in the output schema and in `job_result` (`pr_improve` is
+    a background job in stdio mode like the other LLM tools, and counts toward
+    the same job limit; the running status says "suggestion job"). Not marked
+    read-only, because `publish=true` writes; not destructive. The server now has
+    ten tools in stdio mode and nine in serve mode.
+  - Sent to the LLM: the PR's title, today's date, source and target branch,
+    description (cut to `diff.max_description_tokens`), the numbered diff (the
+    form `pr_review` sends, with new-file line numbers), the discussion block
+    (`review.max_discussion_tokens`) and, when enabled, the repository context.
+    The self-review call gets the part's numbered diff and that part's
+    suggestions, and **neither the discussion nor the repository context**. Not
+    sent: commit messages, tokens.
+  - Large pull requests: when the diff leaves files out and `review.max_chunks`
+    is above 1, the files are improved in parts, packed as `pr_review` packs
+    them. Each part asks for at most `improve.max_suggestions_per_part`
+    suggestions for its own files and has its own self-review call. A failed
+    part makes its files not reviewed (`model_call_failed`), as in a review.
+  - Self-review (Y-9): a suggestion scoring below `improve.min_score` is dropped
+    and counted in the note "N suggestions were dropped by the self-review score
+    (below 7)." A suggestion that got no score is kept and shown as unscored,
+    never dropped: when a part's self-review call fails ("Part I's suggestions
+    were not scored (the self-review call failed)."; for one call "The
+    suggestions were not scored (the self-review call failed)."), or when the
+    answer does not score it ("N suggestions got no usable self-review score and
+    are kept unscored."). Entries are matched to suggestions by a
+    `suggestion_number` added to upstream's schema, checked against the file and
+    the summary; "N self-review entries did not match a suggestion and were
+    ignored."
+  - Ranking: one global ranking over all parts, the scored suggestions by score
+    (ties: part order, then the model's order), then the unscored ones; duplicates
+    (same file, summary and existing code) are dropped on that ranking; the
+    result is capped at `improve.max_suggestions`, so the cap never keeps a lower
+    score from an earlier part and cuts a higher score from a later one.
+  - Validation: entries without a file, a summary or the code, entries for a
+    file the call was not shown, and entries whose improved code equals the
+    existing code are dropped; labels are one line of at most 40 characters;
+    each drop is counted in a note.
+  - Verification before anchoring (Y-10): the quoted code must equal the head
+    file at the lines the self-review gave (after normalising trailing white
+    space, CRLF and common indentation); otherwise a unique match elsewhere in
+    the file corrects the range ("N suggestion line ranges were corrected."),
+    and no match (`not_found`) or several (`ambiguous`) leave the suggestion
+    unverified. For a file whose head content was not fetched, a given range is
+    verified through the patch when every line of it is a new-side line of the
+    patch and equals the quoted code; there is no search in that mode, and
+    anything else is `head_unavailable`. Unverified suggestions stay in the
+    result and the overview, marked "not anchored: the quoted code was not found
+    at the given lines" (or "... the head file was not available to check the
+    quoted code"), and are never posted inline.
+  - `coverage.model_calls` counts the suggestion calls; `metadata.llm_calls`
+    counts every completion, the self-review calls and re-asks included, and
+    `metadata.self_review_calls` the self-review part of it.
+- Publishing `pr_improve` (X-27).
+  - One overview comment whose last line is `[//]: # (review-mcp:improve:v1)`,
+    found by that marker and its author and edited in place on later runs; older
+    duplicates are noted and never deleted. It has a table of the suggestions
+    (label, file with a line link, summary, score, status), the full text of
+    those without an inline comment, the coverage and the notes.
+  - An inline comment only for a verified suggestion whose whole range is on
+    new-side lines of one hunk of the provider's diff. The comment is a summary,
+    the explanation and a fenced `diff` block from the existing to the improved
+    code (Gitea, Bitbucket Server). A native suggestion block is rendered when a
+    provider has the `SuggestionBlocks` capability; no provider sets it yet, so
+    this is exercised only with a fake capability, and the GitHub and GitLab
+    providers will turn it on.
+  - Each inline comment ends with `[//]: # (review-mcp:suggestion:<key>)`. The
+    already-posted key is a hash of the file, the normalised existing code and
+    the normalised improved code, **without the summary**, so a rerun whose
+    model reworded the summary still recognises its own comment; a marker with
+    the older key (file, summary and existing code) is recognised as well. An
+    already-posted suggestion is `skipped_duplicate`.
+  - Each suggestion gets an `anchor` (`status` `posted`, `skipped_duplicate`,
+    `unanchorable` or `failed`, with `line`, `comment_id`, `url`, `error`), and
+    the result a `publish` object (`published`, `comment_id`, `url`, `error`,
+    `updated` and `inline` with the four counts).
+  - If the PR's comments or the token's user cannot be read, no inline comment is
+    posted (it could repeat one): the overview is posted, the suggestions that
+    would have been posted are `failed`, and a note says so. Publishing never
+    fails the run.
+  - Needs comment write (Gitea `write:issue`) for the overview and the write
+    scope for inline comments (Gitea `write:repository`); see the
+    [Setup guide](docs/setup.md#2-create-tokens).
+- Settings `improve.max_suggestions` (`REVIEW_MCP_IMPROVE_MAX_SUGGESTIONS`,
+  default 8, 1 to 30), `improve.max_suggestions_per_part`
+  (`REVIEW_MCP_IMPROVE_MAX_SUGGESTIONS_PER_PART`, default 4, 1 to 10) and
+  `improve.min_score` (`REVIEW_MCP_IMPROVE_MIN_SCORE`, default 7, 0 to 10; 0 keeps
+  every scored suggestion). They are shown in `server_info`.
+- `review-mcp diag improve <PR_URL> [--dry-run] [--show-prompt] [--json]`. It
+  never publishes.
+- `provider.InlineResult.Reason` (`posted`, `unanchorable` or `failed`), set by
+  both providers and checked by the contract suite. A server's refusal of one
+  comment's request (a 4xx answer that is not an authentication, not-found or
+  rate-limit failure, and on Gitea a 500, its answer for a position outside the
+  diff) is `unanchorable`; authentication, rate-limit, transport and unknown
+  outcomes are `failed`. `pr_review` ignores the field and its output is
+  unchanged.
+- Docs: [Suggesting code changes](docs/improve.md) and a `pr_improve` section in
+  the troubleshooting guide with every note and fixed sentence.
+
+### Changed
+
+- The discussion block of `pr_review` now leaves out the token user's comments
+  that carry the marker of **any** review-mcp tool, not only `pr_review`'s own.
+  Before, the `pr_describe` comment and the `pr_improve` overview and inline
+  suggestions of the same token would have been shown to the review model as
+  threads written by people. The prompt changes only on a pull request that has
+  such comments; the review output otherwise is unchanged.
+- `job_result`, the job limit and the tool descriptions name `pr_improve` next to
+  `pr_review`, `pr_ask` and `pr_describe`.
+- The discussion rendering, the fingerprint and the head-content line helpers
+  moved from `internal/review` to `internal/llmrun` and the Markdown helpers of
+  the describe renderer to `internal/mdutil`, shared with `pr_improve`; review
+  and describe output is unchanged.
+
 ## [2.0.0-rc.1]
 
 First v2 release candidate, built on 1.1.0 (the npm dist-tag `next`;
@@ -501,6 +631,7 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[2.0.0-rc.2]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.0.0-rc.2
 [2.0.0-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.0.0-rc.1
 [1.1.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v1.1.0
 [1.1.0-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v1.1.0-rc.1

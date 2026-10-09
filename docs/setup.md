@@ -85,16 +85,17 @@ own. Create one token per provider you use, give it the least access that
 works, and keep it in a secret manager or your shell profile, never in a file
 that is checked in.
 
-Use a read-only token to start. `pr_review`, `pr_ask` and `pr_describe` need
-write access only when you pass `publish=true`, and `pr_comment_reply` and
+Use a read-only token to start. `pr_review`, `pr_ask`, `pr_describe` and
+`pr_improve` need write access only when you pass `publish=true`, and `pr_comment_reply` and
 `pr_comment_create` always write.
 
 ### What each token needs
 
 | Use | Needs |
 |---|---|
-| Read only: `pr_comments`, `pr_info`, `pr_review`, `pr_ask` and `pr_describe` with `publish=false` | the read scopes below |
+| Read only: `pr_comments`, `pr_info`, `pr_review`, `pr_ask`, `pr_describe` and `pr_improve` with `publish=false` | the read scopes below |
 | Read and write: `publish=true`, `pr_comment_reply`, `pr_comment_create` | the read scopes plus the write scope |
+| `pr_improve` with `publish=true` | the same as `pr_review` with `publish=true`: comment write for the overview (Gitea `write:issue`) and the write scope for the inline comments (Gitea `write:repository`); see [Suggesting code changes](improve.md#permissions) |
 | `pr_describe` with `publish=true` and `publish_mode=description` (also `update_title`) | the read scopes plus write access to the pull request itself, not only to its comments (see the `PATCH` and `PUT` rows below) |
 
 > **Every scope in this guide is unconfirmed.** They are derived from the API
@@ -132,7 +133,7 @@ Endpoints the Gitea provider calls (under `{base_url}/api/v1/repos/{owner}/{repo
 | `DELETE /pulls/{n}/reviews/{id}` | delete a pending review of the token's user that a failed post left behind | `write:repository` | `internal/provider/gitea/write.go` (`deletePending`) |
 | `GET /issues/{n}/comments` | PR-level comments (`pr_comments`) | `read:issue` | `internal/provider/gitea/comments.go` (`ListThreads`) |
 | `GET /issues/comments/{id}` | find the comment a reply refers to (`pr_comment_reply`); re-read a comment and check its author before editing it | `read:issue` | `internal/provider/gitea/comments.go` (`ReplyToComment`), `internal/provider/gitea/write.go` (`EditComment`) |
-| `PATCH /issues/comments/{id}` | edit a PR comment the token's user wrote (the review overview) | `write:issue` | `internal/provider/gitea/write.go` (`EditComment`) |
+| `PATCH /issues/comments/{id}` | edit a PR comment the token's user wrote (the overview of `pr_review` and `pr_improve`, the comment of `pr_describe`) | `write:issue` | `internal/provider/gitea/write.go` (`EditComment`) |
 | `PATCH /pulls/{n}` | `pr_describe` with `publish_mode=description`: set the description (the author's text plus the marked region) and, with `update_title`, the title. Only the fields being changed are sent, so reviewers, labels and the base branch are not touched. The pull request is read again with `GET /pulls/{n}` right before | `write:repository`; verify at the v2 acceptance (item N3) | `internal/provider/gitea/write.go` (`UpdatePullRequest`) |
 | `GET /api/v1/user` | the token's own user | `read:user` | `internal/provider/gitea/write.go` (`CurrentUser`) |
 | `GET /pulls/{n}` (again), `GET /pulls/{n}/reviews`, and `GET /pulls/{n}/reviews/{id}/comments` for the token user's own comment-only reviews | `pr_info`: requested reviewers, each reviewer's state, and the check whether a review of the token's user is review-mcp's own (comment bodies are looked at for markers and never kept) | `read:repository` | `internal/provider/gitea/status.go` (`GetReviewStatus`) |
@@ -178,7 +179,7 @@ includes your context path):
 | `POST .../pull-requests/{id}/comments` with `parent` | reply inside a thread (`pr_comment_reply`) | write | `internal/provider/bitbucketserver/comments.go` (`ReplyToComment`) |
 | `POST .../pull-requests/{id}/comments` with `anchor` | inline comment on a changed or context line, one request per comment (`publish=true`, and `pr_comment_create` with `file` and `line`) | read (to be confirmed at A3) | `internal/provider/bitbucketserver/write.go` (`PostInlineComments`) |
 | `GET .../pull-requests/{id}/comments/{commentId}` | a comment's version and author, read before editing it | read | `internal/provider/bitbucketserver/write.go` (`EditComment`) |
-| `PUT .../pull-requests/{id}/comments/{commentId}` | edit a comment the token's user wrote (the review overview) | read (to be confirmed at A3) | `internal/provider/bitbucketserver/write.go` (`EditComment`) |
+| `PUT .../pull-requests/{id}/comments/{commentId}` | edit a comment the token's user wrote (the overview of `pr_review` and `pr_improve`, the comment of `pr_describe`) | read (to be confirmed at A3) | `internal/provider/bitbucketserver/write.go` (`EditComment`) |
 | `PUT .../pull-requests/{id}` | `pr_describe` with `publish_mode=description`: update the description and, with `update_title`, the title. It is a full update: after a fresh `GET`, the request carries the version, the title, the description, the reviewers (by user name) and the draft flag, never the target branch. A stale version is answered with a conflict. The reviewers are read before and after to check that none was dropped | write; verify at the v2 acceptance (item N3) | `internal/provider/bitbucketserver/write.go` (`UpdatePullRequest`) |
 
 `pr_comment_create` uses the comment rows above plus the read rows for the
@@ -221,7 +222,7 @@ no built-in default for the URL or the model; the window size is read from the e
 | `REVIEW_MCP_LLM_MAX_OUTPUT_TOKENS` | `2000` | optional; how long an answer you allow |
 
 The pull request's title, description and diff are sent to this endpoint when
-you call `pr_review`, `pr_ask` or `pr_describe`. Use an endpoint you trust with that code.
+you call `pr_review`, `pr_ask`, `pr_describe` or `pr_improve`. Use an endpoint you trust with that code.
 
 ### Context window auto-detection
 
@@ -449,8 +450,10 @@ layer that is broken.
 
 Ask a question the same way with `pr_ask` ([Asking questions](ask.md)), get a
 title, summary and files walkthrough with `pr_describe` ([Describing pull
-requests](describe.md); it only reads unless you pass `publish=true`), and
-read comment threads with `pr_comments`. Ask which branch a pull request merges
+requests](describe.md); it only reads unless you pass `publish=true`), get
+scored code suggestions that were checked against the head file with
+`pr_improve` ([Suggesting code changes](improve.md); it too only reads unless
+you pass `publish=true`), and read comment threads with `pr_comments`. Ask which branch a pull request merges
 into and who has approved it with `pr_info` ([Pull request status](pr-info.md)).
 
 **Optional: repository context.** To show the model where the symbols a pull

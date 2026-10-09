@@ -19,7 +19,7 @@ import (
 
 // runDiagImprove parses "diag improve" arguments and runs the command.
 // Usage errors exit 2 before the configuration is loaded, so nothing is
-// sent. There is no --publish: publishing is WP-2h.
+// sent. There is no --publish: diag improve never posts.
 func runDiagImprove(rest []string, stdout, stderr io.Writer, load configLoader) int {
 	fs := flag.NewFlagSet("diag improve", flag.ContinueOnError)
 	fs.SetOutput(stderr)

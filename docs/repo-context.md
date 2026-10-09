@@ -1,9 +1,11 @@
 # Repository context
 
 A diff shows what changed, not who depends on it. With **repository context**
-turned on, `pr_review` and `pr_ask` also show the model where the symbols that
-the pull request changes are used in the rest of the project: the callers of a
-changed function, the other implementations of a changed interface.
+turned on, `pr_review`, `pr_ask` and `pr_improve` also show the model where
+the symbols that the pull request changes are used in the rest of the project:
+the callers of a changed function, the other implementations of a changed
+interface. `pr_improve` gives the block to its suggestion calls only, not to the
+self-review calls (see [Suggesting code changes](improve.md#what-is-sent-to-the-llm)).
 
 It is **opt-in** (off by default) and **stdio only**: it is a startup error in
 [serve mode](serve.md#repository-context-is-not-available). It needs the

@@ -88,6 +88,7 @@ as new adapted material lands.
 - internal/improve/prompts/system.tmpl and internal/improve/prompts/user.tmpl (code suggestions)
 - internal/improve/prompts/reflect_system.tmpl and internal/improve/prompts/reflect_user.tmpl (self-review of code suggestions)
 - internal/improve/prompts/diff_hunk_format.tmpl (the numbered diff-format fragment, the same text as in internal/review/prompts/system.tmpl)
+- internal/improve/render/provider.go (emoji map of the Gitea provider profile, shared with the review, ask and describe renderers)
 - internal/improve/convert.go (the YAML repair key list of the code-suggestion schema and the label rewrite of focus_only_on_problems)
 - internal/improve/testdata/ (renderings of the adapted improve prompts; no upstream renderings)
 

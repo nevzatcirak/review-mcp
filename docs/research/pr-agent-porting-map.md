@@ -728,13 +728,39 @@ position → threshold → per-file cap → publish (section E).
   higher-ranked occurrence is kept; then a total cap
   `improve.max_suggestions` with a note.
   The per-file cap is not ported.
-- Line ranges come from the self-review; WP-2g verifies them against the
-  complete head file (Y-10): `existing_code` must equal the lines after
-  normalising trailing white space, CRLF and common indentation, else a
-  unique match elsewhere corrects the range (with a note), and none or
-  several leave the suggestion unverified. Upstream does not verify. A
-  head file whose content was not fetched leaves the suggestion
-  unverified (`head_unavailable`). `anchor` is WP-2h (section E).
+- Line ranges come from the self-review and are verified (WP-2g, Y-10)
+  against the complete head file: `existing_code` must equal the lines after
+  normalising trailing white space, CRLF, white-space-only lines and common
+  indentation, else a unique match elsewhere corrects the range (with a
+  note), and none (`not_found`) or several (`ambiguous`, never the first)
+  leave the suggestion unverified. Upstream compares the dedented quote with
+  the head file at the given range and demotes a mismatch to a plain
+  comment; it never searches. For a file whose head content was not fetched
+  (a size or file limit, a failed fetch), a **given** range is verified when
+  every line of it is a new-side line of the patch and equals the quote
+  (upstream's patch walk, `head_file_is_complete=false`), with no search and
+  no correction; anything else, and a binary file, is `head_unavailable`.
+- Publishing (WP-2h, Y-11; section E for upstream): one overview comment with
+  the marker `review-mcp:improve:v1`, edited in place (upstream's persistent
+  summary comment), with a table of the suggestions and the full text of the
+  ones that have no inline comment. Upstream's unanchorable suggestions are
+  silently skipped from its table; here they stay in the overview. An inline
+  comment is posted only for a verified suggestion whose whole range is on
+  new-side lines of one hunk of the provider's own diff, on the first line of
+  the range: a native suggestion block with the `SuggestionBlocks` capability
+  (no provider sets it yet; upstream's `suggestion` fence), otherwise a
+  `diff` block from the existing to the improved code (upstream's Bitbucket
+  Server downgrade, applied to Gitea as well). The inline comments go in one
+  call of the provider (one review on Gitea, upstream posts one review per
+  suggestion). Re-indenting `improved_code` to the real lines (upstream's
+  `dedent_code` and `_shift_code_indentation`) is not done and is a
+  precondition for native blocks. Cross-run dedup ports upstream's marker
+  scheme (a link-reference marker line, the fallback upstream already
+  provides) with its own key: the file, the normalised `existing_code` and the
+  normalised `improved_code`, **without the summary**, so a reworded rerun
+  still recognises its comment; the merge dedup keeps the X-13 fingerprint
+  with the summary. Every review-mcp tool marker counts as the tool's own in
+  every tool's discussion block.
 
 **Config knobs**
 
@@ -867,7 +893,7 @@ DESIGN-QUESTION: Parse-failure retry semantics
 
 ## E. Line anchoring for /improve (v2 — document only)
 
-Scope: how PR-Agent v0.47.0 (commit 8e5a929) turns an LLM "code suggestion" into a provider inline comment on an exact file+line, and everything that can go wrong on the way. `/improve` itself is deferred to review-mcp v2; this section is the porting map for that pipeline.
+Scope: how PR-Agent v0.47.0 (commit 8e5a929) turns an LLM "code suggestion" into a provider inline comment on an exact file+line, and everything that can go wrong on the way. `/improve` itself is deferred to review-mcp v2; this section is the porting map for that pipeline. As implemented in v2 (`pr_improve`, X-27), see the /improve section of C above.
 
 **Mechanism**
 

@@ -448,8 +448,15 @@ note). Only comments by the token's own user count.
 
 Before it calls the model, `pr_review` reads the PR's comment threads (general
 and inline, resolved ones marked as resolved) and puts them in the prompt, so
-the model does not report what people already raised. Its own earlier
-comments (marker and author) are left out.
+the model does not report what people already raised. The token user's
+comments that carry a marker of **any** review-mcp tool are left out: the
+`pr_review` overview and findings, and also the comments of `pr_describe`
+(`review-mcp:describe:v1`) and of `pr_improve` (`review-mcp:improve:v1` and
+`review-mcp:suggestion:`), so one tool's comments are never shown to another
+tool's model as something a person said. The test is the author (the token's
+own user) plus a last line that starts with `[//]: # (review-mcp:` and ends with
+`)`; a marker in anyone else's comment is not left out. People's replies to such
+a comment stay in the block, without the comment they answer.
 
 **The comment text is untrusted data.** It is written by third parties and may
 try to steer the model ("ignore previous instructions..."). The block is

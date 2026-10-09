@@ -643,3 +643,17 @@ violations are reported together in one token-free startup error.
 | Shared package for the P2e sanitizers duplicated in `internal/review` (v1.0.x) | None; a refactor |
 | `/improve` (DQ-11; DQ-13, 14, 15, 18 were decided in P7) | Hunk model with multiple renderers (DQ-10) |
 | Additional review fields | Field-descriptor table (X-4, DQ-6) |
+
+## 8. Rejected options
+
+Recorded so that they are not proposed again without new arguments.
+
+| ID | Option | Decision |
+|---|---|---|
+| R-1 | Building or running pull request code on the user's machine to check whether it compiles or its tests pass | Rejected (owner decision, 2026-10-10) |
+
+#### R-1 — Building or running pull request code (rejected)
+- **Option:** clone the pull request, install its toolchain and dependencies, and build or test it, so that a review can say whether the change works.
+- **Decision:** rejected, permanently. review-mcp never executes code from a pull request.
+- **Rationale:** the server runs with the user's own credentials and file system. A pull request is untrusted input: its build scripts, dependency hooks and tests can run arbitrary commands, so building it locally turns a malicious pull request into code execution on the reviewer's machine. Sandboxing it safely needs hosted, isolated infrastructure, which a stdio tool with per-user tokens does not have and should not grow.
+- **Replacement:** the build and check results the repository's own CI already produced are read from the provider's API (phase 2F, `docs/design/v2-design.md`).

@@ -188,7 +188,7 @@ tagged). Design note: `docs/design/v1.1-repo-context.md`.
 
 ## v2 backlog (explicitly out of v1 scope)
 
-Design note: `docs/design/v2-design.md` (draft, 2026-10-08): provider contract suite, `pr_describe`, `pr_improve`, GitHub, GitLab.
+Design note: `docs/design/v2-design.md` (draft, 2026-10-08): provider contract suite, `pr_describe`, `pr_improve`, GitHub, review quality (2F, added 2026-10-10: CI status, project guidelines and file tree, focused reviews), GitLab.
 
 - `pr_describe` (cheapest next tool — no line anchoring).
 - `pr_improve` (code suggestions). Its anchoring builds on P7's inline anchors.

@@ -9,7 +9,7 @@
 
 ## 0. Release model (owner decision, 2026-10-08)
 
-- **Y-0 — One 2.0 release.** The four additions ship together as `v2.0.0`. Each phase still gets its own release candidate (`v2.0.0-rc.N`, npm `next`) so that it is accepted in use as soon as it lands; `latest` moves only at `v2.0.0`. Nothing planned here breaks the tool surface or the configuration; if a phase must break something, its spec says so and the CHANGELOG lists it under "Breaking".
+- **Y-0 — One 2.0 release.** The additions ship together as `v2.0.0`. Each phase still gets its own release candidate (`v2.0.0-rc.N`, npm `next`) so that it is accepted in use as soon as it lands; `latest` moves only at `v2.0.0`. Nothing planned here breaks the tool surface or the configuration; if a phase must break something, its spec says so and the CHANGELOG lists it under "Breaking".
 - **Branching.** v2 phase PRs stay unmerged until `v1.1.0` is tagged (the v1.1 merge rule, repeated). After that they merge to `main` one phase at a time; v1.1.x fixes, if any, are cut from the `v1.1.0` tag on a `release/1.1` branch.
 
 ## 1. Order (owner decision, 2026-10-08: tools first)
@@ -20,7 +20,8 @@
 | 2D | `pr_describe` | v2.0.0-rc.1 | Useful at once on the providers already in use; no line anchoring. |
 | 2E | `pr_improve` | v2.0.0-rc.2 | Reuses P7 anchors and X-19 parts; the highest review value after `pr_review`. |
 | 2B | GitHub provider | v2.0.0-rc.3 | Dogfooding: this repository's own PRs are a personal test instance. |
-| 2C | GitLab provider | v2.0.0-rc.4 | Largest API surface (nested groups, positions, quick actions). |
+| 2F | Review quality: CI status, project guidelines and file tree, focused reviews | v2.0.0-rc.4 | Added 2026-10-10 (owner decision). After GitHub so that every provider-specific read is designed for three providers at once; before GitLab so that GitLab ships with it. |
+| 2C | GitLab provider | v2.0.0-rc.5 | Largest API surface (nested groups, positions, quick actions). |
 
 
 ## 2. Phase 2A — Provider contract
@@ -61,6 +62,15 @@
 - **Y-16 — Repository context.** Clone `{web}/{owner}/{repo}.git`, ref `refs/pull/{n}/head`, Basic `x-access-token:<token>` through `http.extraHeader` (X-22 rules unchanged).
 - **Acceptance:** this repository's own PRs on github.com.
 
+## 5a. Phase 2F — Review quality (scope; design pending)
+
+Origin: the owner's proposal that a review should know whether the change builds, whether it fits the project, and look at it from specialist angles (security, architecture, performance, UX). Market reference points: CodeRabbit (linters plus path instructions), Greptile (codebase graph; hosted sandbox execution), Qodo Merge / PR-Agent (best-practices file, CI feedback, ticket compliance), multi-agent review plugins. The design note and the spec follow; the entries below fix the scope only.
+
+- **Y-22 — CI and check status.** Read the statuses and checks of the head commit from the provider API (Gitea commit statuses; Bitbucket Server build statuses; GitHub check runs and commit statuses; GitLab pipelines when 2C lands) and give the review a short, budgeted summary: which checks failed or are pending, never raw logs. Reported in the result and the overview; a missing permission is a note, never a failed review. Building or running the code ourselves is rejected (R-1).
+- **Y-23 — Project guidelines and file tree.** A repository guidelines file (default candidates such as `.review-mcp/guidelines.md` and `CONTRIBUTING.md`, configurable) read at the base revision, and a budgeted file tree of the directories the change touches, both given to the model as fenced untrusted data (the X-13 pattern), so a review can say that a file is in the wrong place or that a change breaks a stated convention. Reading from the base revision means a pull request cannot rewrite the rules it is judged by.
+- **Y-24 — Focused reviews.** `pr_review` gains an optional `focus` (`security`, `architecture`, `performance`, `ux` or free text). A client agent may run several focused reviews in parallel subagents; those calls do not publish and return structured findings that carry their anchors, and one agent merges them and publishes once (single writer; anchored findings inline, the rest in the overview, the X-14 fallback keeps every finding). The pattern is offered to clients through the MCP `instructions` field, the tool description and an MCP prompt (`multi_perspective_review`); the server never fans out on its own. Open question for the design: whether publishing merged findings needs a dedicated mode or the existing tools suffice.
+- **Acceptance:** in use on all three providers available by then (Gitea, Bitbucket Server, GitHub).
+
 ## 6. Phase 2C — GitLab provider
 
 - **Y-17 — Addressing.** MR URL `{base}/{group}/{subgroup…}/{project}/-/merge_requests/{iid}`, self-managed with a context path supported. Project id is the URL-encoded full path. API v4. Token header `PRIVATE-TOKEN` (personal, project or group tokens).
@@ -80,3 +90,4 @@
 1. Order: tools first (2A → 2D → 2E → 2B → 2C).
 2. One `v2.0.0` release, with a release candidate per phase.
 3. `pr_describe` may edit PR descriptions, only inside its marked region; the default stays `comment`.
+4. (2026-10-10) Phase 2F, review quality, is added between 2B and 2C (`v2.0.0-rc.4`; GitLab moves to `rc.5`). Building or running pull request code is rejected (R-1 in the decisions document).

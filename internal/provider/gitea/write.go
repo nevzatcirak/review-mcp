@@ -104,6 +104,30 @@ func (p *Provider) EditComment(ctx context.Context, ref provider.PRRef, commentI
 	return p.client.SendJSON(ctx, http.MethodPatch, path, map[string]string{"body": body}, nil)
 }
 
+// UpdatePullRequest implements provider.Provider with PATCH
+// /repos/{owner}/{repo}/pulls/{index}, which sends only the fields that are
+// set: Gitea's EditPullRequestOption leaves an absent field as it is, so the
+// reviewers, labels, assignees and the base branch are never named, let
+// alone changed. Gitea has no version: up.Version is ignored, and the
+// caller detects a concurrent edit by comparing the text it read.
+func (p *Provider) UpdatePullRequest(ctx context.Context, ref provider.PRRef, up provider.UpdatePR) error {
+	if err := provider.ValidateUpdatePR(up); err != nil {
+		return err
+	}
+	path, err := prPath(ref)
+	if err != nil {
+		return err
+	}
+	in := map[string]string{}
+	if up.Title != nil {
+		in["title"] = *up.Title
+	}
+	if up.Description != nil {
+		in["body"] = *up.Description
+	}
+	return p.client.SendJSON(ctx, http.MethodPatch, path, in, nil)
+}
+
 type apiReviewCommentIn struct {
 	Path        string `json:"path"`
 	Body        string `json:"body"`

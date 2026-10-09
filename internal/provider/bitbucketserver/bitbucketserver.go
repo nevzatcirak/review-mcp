@@ -238,6 +238,9 @@ type apiPR struct {
 			DisplayName string `json:"displayName"`
 		} `json:"user"`
 	} `json:"author"`
+	// Version is the PR's optimistic-locking counter; UpdatePullRequest
+	// sends it back.
+	Version   *int  `json:"version"`
 	Draft     *bool `json:"draft"`
 	Reviewers []struct {
 		User               apiPerson `json:"user"`
@@ -287,6 +290,10 @@ func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*pro
 	if len(in.Links.Self) > 0 {
 		webURL = in.Links.Self[0].Href
 	}
+	version := ""
+	if in.Version != nil {
+		version = strconv.Itoa(*in.Version)
+	}
 	p.logger.Debug("bitbucket server base revision chosen", "strategy", strategy)
 	return &provider.PullRequest{
 		Title:        in.Title,
@@ -301,6 +308,7 @@ func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*pro
 		State:        in.State,
 		Draft:        in.Draft,
 		Merged:       strings.EqualFold(in.State, "MERGED"),
+		Version:      version,
 	}, nil
 }
 

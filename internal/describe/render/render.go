@@ -30,6 +30,7 @@ const (
 	TextSummary      = "Summary"
 	TextWalkthrough  = "Walkthrough"
 	TextNotDescribed = "Not described"
+	TextPublishing   = "Publishing"
 	textNotGenerated = "(not generated)"
 	textNoFiles      = "No file was described."
 
@@ -104,9 +105,10 @@ func Client(res *describe.Result) string {
 		}
 	}
 
-	writeNotDescribed(&b, &res.Coverage)
+	writeNotDescribedAt(&b, &res.Coverage, "## ")
 	llmrender.DescribeCoverage(&b, "## "+llmrender.TextCoverage, &res.Coverage)
 	llmrender.Notes(&b, "## "+llmrender.TextNotes, res.Notes)
+	writePublish(&b, res.Publish)
 	return b.String()
 }
 
@@ -163,14 +165,14 @@ func skipReason(reason string) string {
 	return "skipped: " + mdutil.Literal(reason)
 }
 
-// writeNotDescribed writes the "Not described" section when files were not
-// described.
-func writeNotDescribed(b *strings.Builder, c *describe.Coverage) {
+// writeNotDescribedAt writes the "Not described" section, under a heading
+// that starts with hashes, when files were not described.
+func writeNotDescribedAt(b *strings.Builder, c *describe.Coverage, hashes string) {
 	list := notDescribedOf(c)
 	if len(list) == 0 {
 		return
 	}
-	b.WriteString("\n## " + TextNotDescribed + "\n\n")
+	b.WriteString("\n" + hashes + TextNotDescribed + "\n\n")
 	shown := min(len(list), llmrender.MaxListedFiles)
 	for _, nd := range list[:shown] {
 		b.WriteString("- " + mdutil.Literal(nd.path) + ": " + nd.reason + "\n")
@@ -178,6 +180,42 @@ func writeNotDescribed(b *strings.Builder, c *describe.Coverage) {
 	if rest := len(list) - shown; rest > 0 {
 		b.WriteString("\nand " + strconv.Itoa(rest) + " more (not listed; at most " +
 			strconv.Itoa(llmrender.MaxListedFiles) + " files are listed)\n")
+	}
+}
+
+// writePublish writes what publishing did, when it was requested: the mode,
+// the outcome as a fixed sentence and the URL. The structured result has the
+// same facts; this keeps a client that shows only the text from believing
+// that something was published when it was not.
+func writePublish(b *strings.Builder, p *describe.PublishResult) {
+	if p == nil {
+		return
+	}
+	b.WriteString("\n## " + TextPublishing + "\n\n")
+	what := "comment"
+	if p.Mode == describe.PublishModeDescription {
+		what = "description"
+	}
+	line := "- Pull request " + what + ": "
+	switch {
+	case p.Published && p.Updated:
+		line += "updated in place"
+	case p.Published && what == "comment":
+		line += "posted"
+	case p.Published:
+		line += "written"
+	default:
+		line += "not written"
+		if e := strings.TrimSpace(p.Error); e != "" {
+			line += ": " + mdutil.Inline(e)
+		}
+	}
+	if p.Published && p.URL != "" {
+		line += " (" + mdutil.Literal(p.URL) + ")"
+	}
+	b.WriteString(line + "\n")
+	if p.TitleUpdated {
+		b.WriteString("- Pull request title: replaced with the generated one\n")
 	}
 }
 

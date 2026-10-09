@@ -88,5 +88,14 @@ func ResultSchema() map[string]any {
 			"diff_trimmed":    boolean("whether the request-size guard shortened the diff"),
 		}, "model", "context_window", "prompt_tokens", "diff_tokens", "request_tokens", "fast_path", "llm_calls",
 			"commit_messages", "repair_tactic", "reasked", "truncated", "diff_trimmed"),
+		"publish": object("publishing outcome; present when publish was requested", map[string]any{
+			"published":     boolean("whether the comment was posted or edited, or the description region was written"),
+			"comment_id":    str("id of the description comment; publish_mode=comment only"),
+			"url":           str("URL of the description comment, or of the pull request for publish_mode=description"),
+			"error":         str("why nothing was published, a fixed sentence; the description is still returned"),
+			"mode":          map[string]any{"type": "string", "enum": []any{PublishModeComment, PublishModeDescription}, "description": "the publish_mode that ran"},
+			"updated":       boolean("true when the comment of an earlier run was edited in place, or the region of an earlier run was replaced, instead of a new comment being posted or a region appended"),
+			"title_updated": boolean("true when update_title replaced the pull request title"),
+		}, "published", "mode"),
 	}, "title", "type", "description", "files", "coverage", "notes", "metadata")
 }

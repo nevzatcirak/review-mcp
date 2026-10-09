@@ -15,9 +15,11 @@ func TestPRDescribeArgsValidate(t *testing.T) {
 		{"bad mode", PRDescribeArgs{PublishMode: "Comment"}, InvalidPublishModeMessage},
 		{"update_title without publish", PRDescribeArgs{UpdateTitle: true, PublishMode: PublishModeDescription}, InvalidUpdateTitleMessage},
 		{"update_title in comment mode", PRDescribeArgs{UpdateTitle: true, Publish: true}, InvalidUpdateTitleMessage},
-		{"publish refused", PRDescribeArgs{Publish: true}, DescribePublishUnavailableMessage},
-		{"publish description refused", PRDescribeArgs{Publish: true, PublishMode: PublishModeDescription, UpdateTitle: true}, DescribePublishUnavailableMessage},
-		// The argument checks come before the publish refusal.
+		// Publishing is available (WP-2d): no argument refuses it.
+		{"publish", PRDescribeArgs{Publish: true}, ""},
+		{"publish comment", PRDescribeArgs{Publish: true, PublishMode: PublishModeComment}, ""},
+		{"publish description", PRDescribeArgs{Publish: true, PublishMode: PublishModeDescription}, ""},
+		{"publish description with title", PRDescribeArgs{Publish: true, PublishMode: PublishModeDescription, UpdateTitle: true}, ""},
 		{"order", PRDescribeArgs{Publish: true, PublishMode: "x"}, InvalidPublishModeMessage},
 	}
 	for _, c := range cases {

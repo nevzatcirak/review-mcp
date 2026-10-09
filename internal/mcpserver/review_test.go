@@ -92,6 +92,12 @@ type fakeServer struct {
 	// large, when set, replaces the PR's one file with these added files
 	// (path -> head content), for a review in parts (X-19).
 	large map[string]string
+	// patched is set by the first PATCH of the PR (pr_describe's
+	// publish_mode=description); title and body then replace the defaults.
+	patched     bool
+	prTitle     string
+	prBody      string
+	prPatchBody []string
 }
 
 // setGhost makes the files endpoint list a file the provider cannot read.
@@ -192,9 +198,29 @@ func newFakeGiteaHost(t *testing.T) *fakeServer {
 		}
 		p := r.URL.Path
 		switch {
+		case r.Method == "PATCH" && p == api+"/pulls/7":
+			f.mu.Lock()
+			if !f.patched {
+				f.patched, f.prTitle, f.prBody = true, "Change the constant "+titleMarker, "Please look. "+descMarker
+			}
+			if v, ok := body["title"].(string); ok {
+				f.prTitle = v
+			}
+			if v, ok := body["body"].(string); ok {
+				f.prBody = v
+			}
+			f.prPatchBody = append(f.prPatchBody, raw)
+			f.mu.Unlock()
+			writeJ(map[string]any{"title": f.prTitle})
 		case r.Method == "GET" && p == api+"/pulls/7":
+			f.mu.Lock()
+			title, desc := "Change the constant "+titleMarker, "Please look. "+descMarker
+			if f.patched {
+				title, desc = f.prTitle, f.prBody
+			}
+			f.mu.Unlock()
 			writeJ(map[string]any{
-				"title": "Change the constant " + titleMarker, "body": "Please look. " + descMarker, "state": "open",
+				"title": title, "body": desc, "state": "open",
 				"html_url": "https://your-gitea.example/octo/demo/pulls/7", "merge_base": "mergesha",
 				"user": map[string]any{"login": "alice"},
 				"head": map[string]any{"ref": "feature-" + branchMarker, "sha": "headsha"},

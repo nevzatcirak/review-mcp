@@ -34,6 +34,8 @@ type Spec struct {
 	// TokenUser is the user the token authenticates as.
 	TokenUser User
 	Reviewers []Reviewer
+	// Draft marks a draft pull request, on a host that has the flag.
+	Draft bool
 	// Env is the harness side of the Spec: not pull request data.
 	Env Env
 }

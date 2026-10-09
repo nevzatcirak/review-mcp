@@ -80,6 +80,8 @@ type ctBBS struct {
 	roots  []*ctComment
 	byID   map[int64]*ctComment
 	nextID int64
+	// version is the PR's version, raised by every update.
+	version int
 }
 
 func newCtBBS(t *testing.T, pr contract.Spec) *ctBBS {
@@ -171,7 +173,8 @@ func (b *ctBBS) prJSON() map[string]any {
 			"approved": status == "APPROVED", "lastReviewedCommit": last})
 	}
 	return map[string]any{
-		"title": b.pr.Title, "description": b.pr.Description, "state": "OPEN", "draft": false,
+		"title": b.pr.Title, "description": b.pr.Description, "state": "OPEN", "draft": b.pr.Draft,
+		"version":   b.version,
 		"author":    map[string]any{"user": ctUser(b.pr.Author)},
 		"reviewers": reviewers,
 		"fromRef":   map[string]any{"displayId": b.pr.SourceBranch, "latestCommit": b.pr.HeadSHA},
@@ -242,6 +245,8 @@ func (b *ctBBS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ctJSON(w, http.StatusOK, map[string]any{"version": "8.9.0"})
 	case get && path == ctPull:
 		ctJSON(w, http.StatusOK, b.prJSON())
+	case r.Method == http.MethodPut && path == ctPull:
+		b.putPR(w, r)
 	case get && path == ctLatest+"/merge-base":
 		ctJSON(w, http.StatusOK, map[string]any{"id": b.pr.BaseSHA})
 	case get && path == ctPull+"/changes":
@@ -262,6 +267,58 @@ func (b *ctBBS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		b.t.Errorf("unexpected request %s %s", r.Method, path)
 		contract.WriteError(w, http.StatusNotFound)
 	}
+}
+
+// putPR is PUT /pull-requests/{id}, modelled on the risky reading of the
+// endpoint so that the contract suite catches a request shape that would
+// do harm: the version is enforced (409 on a stale one), an update without
+// a title is refused, and a field the request omits is lost: no
+// "description" clears the description, no "reviewers" removes every
+// reviewer, a reviewer left out of the list is removed, and no "draft"
+// makes the PR a ready one. Retained reviewers keep their verdicts.
+func (b *ctBBS) putPR(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Version     *int    `json:"version"`
+		Title       *string `json:"title"`
+		Description *string `json:"description"`
+		Reviewers   *[]struct {
+			User struct {
+				Name string `json:"name"`
+			} `json:"user"`
+		} `json:"reviewers"`
+		Draft *bool `json:"draft"`
+	}
+	if json.NewDecoder(r.Body).Decode(&in) != nil || in.Version == nil || in.Title == nil || strings.TrimSpace(*in.Title) == "" {
+		contract.WriteError(w, http.StatusBadRequest)
+		return
+	}
+	if *in.Version != b.version {
+		contract.WriteError(w, http.StatusConflict)
+		return
+	}
+	named := map[string]bool{}
+	if in.Reviewers != nil {
+		for _, rv := range *in.Reviewers {
+			named[strings.ToLower(rv.User.Name)] = true
+		}
+	}
+	var kept []contract.Reviewer
+	for _, rv := range b.pr.Reviewers {
+		// Dismissed and own reviews are not served, so they are not part of
+		// the reviewer set.
+		if rv.Dismissed || rv.Own || named[strings.ToLower(rv.User.Login)] {
+			kept = append(kept, rv)
+		}
+	}
+	b.pr.Reviewers = kept
+	b.pr.Title = *in.Title
+	b.pr.Description = ""
+	if in.Description != nil {
+		b.pr.Description = *in.Description
+	}
+	b.pr.Draft = in.Draft != nil && *in.Draft
+	b.version++
+	ctJSON(w, http.StatusOK, b.prJSON())
 }
 
 // serveRaw answers a raw content request; content the Spec does not have

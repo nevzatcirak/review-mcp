@@ -12,8 +12,8 @@ import (
 
 // Values of the publish_mode argument of pr_describe (v2 spec §3.7).
 const (
-	PublishModeComment     = "comment"
-	PublishModeDescription = "description"
+	PublishModeComment     = describe.PublishModeComment
+	PublishModeDescription = describe.PublishModeDescription
 )
 
 // Fixed sentences for invalid pr_describe arguments (X-6). They never echo
@@ -21,16 +21,6 @@ const (
 const (
 	InvalidPublishModeMessage = "publish_mode must be comment or description"
 	InvalidUpdateTitleMessage = "update_title needs publish=true and publish_mode=description"
-	// DescribePublishUnavailableMessage refuses publish=true until
-	// publishing lands (WP-2d).
-	//
-	// DESIGN-QUESTION: what does publish=true do before WP-2d? — chose a
-	// refusal with this fixed sentence before any network call, so that a
-	// client never believes something was written; the alternatives were
-	// to ignore the flag (silently not doing what was asked) or to return
-	// the description with a note (the run's cost for a call the client
-	// will likely repeat).
-	DescribePublishUnavailableMessage = "publishing pr_describe results is not available yet; call pr_describe with publish=false (the default) and nothing is written to the pull request"
 )
 
 // PRDescribeArgs are the arguments of pr_describe (v2 spec §3.7).
@@ -45,9 +35,11 @@ type PRDescribeArgs struct {
 }
 
 // Validate checks the arguments before any network call, in order: the
-// output language, publish_mode, update_title (only with publish=true and
-// publish_mode=description), then publish itself, which is refused until
-// WP-2d. Its error text is one of the fixed sentences above.
+// output language, publish_mode, then update_title (only with publish=true
+// and publish_mode=description). Its error text is one of the fixed
+// sentences above. Whether the provider can edit the description is known
+// only after the URL is resolved, and is an outcome of the publish, not an
+// argument error.
 func (a PRDescribeArgs) Validate() error {
 	if a.OutputLanguage != "" && !config.ValidLocale(a.OutputLanguage) {
 		return &ArgumentError{InvalidOutputLanguageMessage}
@@ -61,9 +53,6 @@ func (a PRDescribeArgs) Validate() error {
 	}
 	if a.UpdateTitle && (!a.Publish || mode != PublishModeDescription) {
 		return &ArgumentError{InvalidUpdateTitleMessage}
-	}
-	if a.Publish {
-		return &ArgumentError{DescribePublishUnavailableMessage}
 	}
 	return nil
 }
@@ -106,6 +95,7 @@ func PreparePRDescribe(deps DescribeDeps, a PRDescribeArgs) (*DescribeCall, erro
 	deps.Resolver = resolver
 	return &DescribeCall{deps: deps, client: client, args: describe.Args{
 		PRURL: a.PRURL, OutputLanguage: a.OutputLanguage,
+		Publish: a.Publish, PublishMode: a.PublishMode, UpdateTitle: a.UpdateTitle,
 	}}, nil
 }
 
@@ -119,6 +109,8 @@ func (c *DescribeCall) Run(ctx context.Context, progress func(stage string)) (*d
 		Resolver: c.deps.Resolver,
 		LLM:      c.client,
 		Progress: progress,
+		// The provider-profile rendering of what is published.
+		RenderProvider: describerender.Provider,
 	}, c.args)
 	if err != nil {
 		return nil, "", err

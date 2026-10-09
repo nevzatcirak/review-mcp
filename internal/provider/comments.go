@@ -29,6 +29,29 @@ func ValidateEdit(commentID, body string) error {
 	return ValidateReply(commentID, body)
 }
 
+// ValidateUpdatePR checks the arguments of Provider.UpdatePullRequest.
+// Providers call it before any request is sent. At least one of Title and
+// Description must be set; a title must not be empty, whitespace-only or
+// contain a control character (it is one line); a description must not
+// contain a NUL. A Version, when set, must be a positive integer (providers
+// that require one check that it is set). The error is a protocol error
+// with a fixed hint; the content is never part of it.
+func ValidateUpdatePR(up UpdatePR) error {
+	switch {
+	case up.Title == nil && up.Description == nil:
+		return &Error{Class: ClassProtocol, Hint: "nothing to update"}
+	case up.Title != nil && strings.TrimSpace(*up.Title) == "":
+		return &Error{Class: ClassProtocol, Hint: "empty title"}
+	case up.Title != nil && !validPath(*up.Title):
+		return &Error{Class: ClassProtocol, Hint: "invalid title"}
+	case up.Description != nil && strings.ContainsRune(*up.Description, 0):
+		return &Error{Class: ClassProtocol, Hint: "invalid description"}
+	case up.Version != "" && !isVersion(up.Version):
+		return &Error{Class: ClassProtocol, Hint: "invalid pull request version"}
+	}
+	return nil
+}
+
 // ValidateInlineComments checks the items of Provider.PostInlineComments.
 // Providers call it before any request is sent. Every item needs a path (and
 // an old path, when set) without control characters, a positive line, the
@@ -50,6 +73,12 @@ func ValidateInlineComments(items []InlineComment) error {
 		}
 	}
 	return nil
+}
+
+// isVersion reports whether s is a non-negative base-10 integer written with
+// ASCII digits only (Bitbucket Server numbers versions from 0).
+func isVersion(s string) bool {
+	return s == "0" || IsPositiveInt(s)
 }
 
 func validPath(p string) bool {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,7 +16,8 @@ import (
 
 // TestResultSchemaMatchesStructs: every struct in Result has exactly the
 // properties the schema declares, recursively, and every property is
-// required.
+// required except those the struct marks omitempty (publish and its
+// optional fields, as in pr_review's schema).
 func TestResultSchemaMatchesStructs(t *testing.T) {
 	var walk func(path string, s map[string]any, typ reflect.Type)
 	walk = func(path string, s map[string]any, typ reflect.Type) {
@@ -47,8 +49,8 @@ func TestResultSchemaMatchesStructs(t *testing.T) {
 			req = append(req, r.(string))
 		}
 		slices.Sort(req)
-		if !slices.Equal(req, want) {
-			t.Errorf("%s: required %v, want every property %v", path, req, want)
+		if wantReq := requiredKeys(typ); !slices.Equal(req, wantReq) {
+			t.Errorf("%s: required %v, want every property without omitempty %v", path, req, wantReq)
 		}
 		for i := range typ.NumField() {
 			f := typ.Field(i)
@@ -68,6 +70,19 @@ func jsonName(f reflect.StructField) string {
 		}
 	}
 	return n
+}
+
+// requiredKeys are the json keys of typ without omitempty.
+func requiredKeys(typ reflect.Type) []string {
+	var out []string
+	for i := range typ.NumField() {
+		f := typ.Field(i)
+		if n := jsonName(f); n != "" && n != "-" && !strings.Contains(f.Tag.Get("json"), "omitempty") {
+			out = append(out, n)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 func sortedKeys(m map[string]any) []string {

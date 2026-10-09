@@ -74,6 +74,7 @@ func Run(t *testing.T, f Fixture) {
 		{"inline_anchoring", s.inline},
 		{"review_status", s.reviewStatus},
 		{"file_line_url", s.fileLineURL},
+		{"update_pull_request", s.updatePullRequest},
 		{"errors", s.errorCases},
 	}
 	for _, c := range cases {

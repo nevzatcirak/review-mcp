@@ -26,6 +26,15 @@ const (
 	// NoteReduceWithoutSummaries: the reduce call was sent the files'
 	// titles only, because the summaries did not fit the context window.
 	NoteReduceWithoutSummaries = "The summary was generated from the files' titles only; their summaries did not fit the context window."
+	// NoteTitleNotGenerated: update_title was asked for, but there is no
+	// generated title, so the PR title was not touched.
+	NoteTitleNotGenerated = "The title was not generated, so the pull request title was not changed."
+	// NoteCommentReplaced: the description comment found on the PR could not
+	// be edited, so a new one was posted.
+	NoteCommentReplaced = "The previous description comment could not be updated; a new one was posted."
+	// NoteCommentLookupFailed: the PR's comments or the token's user could
+	// not be read, so an existing description comment could not be found.
+	NoteCommentLookupFailed = "The existing description comment could not be looked up; a new one was posted."
 	// NoteCommitsUnavailable: the commit messages could not be read; the
 	// prompts have no commit-message block.
 	NoteCommitsUnavailable = "The commit messages could not be read from the provider; the description was generated without them."
@@ -107,6 +116,29 @@ type Result struct {
 	// Notes are user-facing sentences.
 	Notes    []string `json:"notes"`
 	Metadata Metadata `json:"metadata"`
+	// Publish is set when publishing was requested.
+	Publish *PublishResult `json:"publish,omitempty"`
+}
+
+// PublishResult is the outcome of publishing (v2 spec §4): the comment
+// posted or edited, or the region written, or the fixed sentence of why
+// nothing was. A failed or refused publish never discards the description.
+// The first four fields are those of llmrun.PublishResult, which pr_review
+// and pr_ask share.
+type PublishResult struct {
+	Published bool   `json:"published"`
+	CommentID string `json:"comment_id,omitempty"`
+	URL       string `json:"url,omitempty"`
+	Error     string `json:"error,omitempty"`
+	// Mode is the publish_mode that ran: PublishModeComment or
+	// PublishModeDescription.
+	Mode string `json:"mode"`
+	// Updated is true when the comment of an earlier run was edited in
+	// place (X-12), or the region of an earlier run was replaced, instead of
+	// a new comment being posted or a region appended.
+	Updated bool `json:"updated,omitempty"`
+	// TitleUpdated is true when update_title replaced the PR title.
+	TitleUpdated bool `json:"title_updated,omitempty"`
 }
 
 // File is one walkthrough entry.

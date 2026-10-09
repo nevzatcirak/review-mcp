@@ -60,11 +60,14 @@ type Deps struct {
 	// Progress, when set, is called with a Stage* word (or CallingModelPart)
 	// as the pipeline advances. Nil is ignored. It must not block.
 	Progress func(stage string)
+	// RenderProvider renders the markdown published with Args.Publish (a
+	// comment, or the body of the description region). Nil makes a publish
+	// fail with the fixed message.
+	RenderProvider ProviderRenderer
 }
 
 // Args are the per-call arguments. Zero values fall back to the
-// configuration. Publishing (publish, publish_mode, update_title) is WP-2d:
-// the tool layer validates and refuses it before the pipeline runs.
+// configuration.
 type Args struct {
 	PRURL string
 	// OutputLanguage replaces output.language when non-empty. It applies to
@@ -74,6 +77,15 @@ type Args struct {
 	// (X-19); 0 or less takes review.max_chunks, and 1 describes in one
 	// call.
 	MaxChunks int
+	// Publish writes the description to the PR (v2 spec §4). The tool layer
+	// validates PublishMode and UpdateTitle before the pipeline runs.
+	Publish bool
+	// PublishMode is "" (PublishModeComment), PublishModeComment or
+	// PublishModeDescription.
+	PublishMode string
+	// UpdateTitle, with PublishModeDescription, replaces the PR title with
+	// the generated one.
+	UpdateTitle bool
 }
 
 // errNoWiring reports a caller bug: Run needs a resolver and an LLM.
@@ -136,6 +148,10 @@ type Plan struct {
 	// chunks is the packing of a description in parts; nil for one call.
 	chunks *diffpipe.Chunks
 	flt    *filter.Filter
+	ref    provider.PRRef
+	p      provider.Provider
+	// pr is the PR as it was read at the start of the run.
+	pr *provider.PullRequest
 	// in is the PR text of the prompts, for the reduce call.
 	in  PromptInput
 	log *slog.Logger
@@ -171,13 +187,24 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 	}
 	if pl.Empty {
 		// Nothing to describe: no model call.
+		//
+		// DESIGN-QUESTION: is this empty description published when publish
+		// is set? — chose yes, as pr_review does: the comment or region then
+		// shows the coverage and the note.
 		pl.Result.Notes = append(pl.Result.Notes, NoteNoReviewableChanges)
+		pl.publish(ctx, deps, args)
 		return pl.Result, nil
 	}
+	finish := pl.finishParts
 	if len(pl.parts) == 1 {
-		return pl.finishOne(ctx, deps)
+		finish = pl.finishOne
 	}
-	return pl.finishParts(ctx, deps)
+	res, err := finish(ctx, deps)
+	if err != nil {
+		return nil, err
+	}
+	pl.publish(ctx, deps, args)
+	return res, nil
 }
 
 // Prepare runs the steps up to the model calls: configuration, resolution,
@@ -293,7 +320,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		"fast_path", prep.FastPath, "prompt_tokens", promptTokens, "diff_tokens", prep.Tokens,
 		"commit_messages", len(commits))
 
-	pl := &Plan{Result: res, Budget: budget, flt: flt, in: in, log: log}
+	pl := &Plan{Result: res, Budget: budget, flt: flt, ref: ref, p: p, pr: pr, in: in, log: log}
 	if prep.Text == "" {
 		pl.Empty = true
 		res.Notes = append(res.Notes, partialNotes(llmrun.PartialNotes(&res.Coverage, budget))...)

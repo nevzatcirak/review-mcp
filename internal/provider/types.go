@@ -72,6 +72,23 @@ type PullRequest struct {
 	// Mergeable is the provider's own verdict carried by the PR itself
 	// (Gitea); nil when the PR payload has none.
 	Mergeable *bool
+
+	// Version is the provider's optimistic-locking token for the PR, in
+	// decimal; "" when the provider has none (Gitea). Bitbucket Server
+	// requires it back in UpdatePR.Version and answers a stale one with a
+	// conflict. It is filled by GetPullRequest.
+	Version string
+}
+
+// UpdatePR is the request of Provider.UpdatePullRequest. A nil Title or
+// Description leaves that field as it is; an empty (non-nil) Description
+// clears the description.
+type UpdatePR struct {
+	Title       *string
+	Description *string
+	// Version is PullRequest.Version of the read the update is based on.
+	// Providers that have a version require it (see ValidateUpdatePR).
+	Version string
 }
 
 // ChangeType is the kind of change applied to a file.

@@ -44,6 +44,15 @@ type Provider interface {
 	// comment or review bodies. A part that cannot be read is left nil with
 	// a fixed note instead of failing the call.
 	GetReviewStatus(ctx context.Context, ref PRRef, pr *PullRequest, opts ReviewStatusOptions) *ReviewStatus
+	// UpdatePullRequest changes the PR's title and/or description; a nil
+	// field is left as it is (it never clears a field the caller did not
+	// name, nor the reviewers or approvals). It validates its input with
+	// ValidateUpdatePR before any request is sent. A change made by someone
+	// else since the read the update is based on is a conflict error where
+	// the provider can tell (a stale Version); a provider without a version
+	// cannot, and the caller compares the text it read (see
+	// internal/describe). Callers need Capabilities().DescriptionEdit.
+	UpdatePullRequest(ctx context.Context, ref PRRef, up UpdatePR) error
 	// FileLineURL is pure: no I/O.
 	FileLineURL(ref PRRef, pr *PullRequest, path string, line int) string
 }

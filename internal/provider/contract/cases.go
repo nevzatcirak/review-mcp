@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"reflect"
 	"slices"
 	"sort"
 	"strconv"
@@ -607,6 +608,175 @@ func (s *suite) editOwnership(t *testing.T) {
 	})
 }
 
+// prSnapshot is what an update of the title or description must not
+// disturb besides the field it names: the other field, the draft flag and
+// the reviewers with their verdicts.
+type prSnapshot struct {
+	title, description string
+	draft              *bool
+	version            string
+	reviewers          []provider.Reviewer
+}
+
+func (s *suite) snapshot(t *testing.T, p provider.Provider, ref provider.PRRef, spec Spec) prSnapshot {
+	t.Helper()
+	pr := mustPR(t, p, ref)
+	me := provider.User{ID: strconv.FormatInt(spec.TokenUser.ID, 10), Name: spec.TokenUser.Login}
+	st := p.GetReviewStatus(t.Context(), ref, pr, provider.ReviewStatusOptions{
+		Me:    &me,
+		IsOwn: func(body string) bool { return strings.Contains(body, OwnMarker) },
+	})
+	if st == nil || st.Reviewers == nil {
+		t.Fatalf("no reviewers read: %+v", st)
+	}
+	return prSnapshot{title: pr.Title, description: pr.Description, draft: pr.Draft, version: pr.Version, reviewers: st.Reviewers}
+}
+
+// sameUntouched fails t when the draft flag or the reviewers differ between
+// two snapshots: an update never drops a reviewer, a verdict or the draft
+// flag.
+func sameUntouched(t *testing.T, before, after prSnapshot) {
+	t.Helper()
+	if !reflect.DeepEqual(before.reviewers, after.reviewers) {
+		t.Errorf("the reviewers changed:\nbefore %+v\nafter  %+v", before.reviewers, after.reviewers)
+	}
+	if (before.draft == nil) != (after.draft == nil) || (before.draft != nil && *before.draft != *after.draft) {
+		t.Errorf("the draft flag changed: %s -> %s", fmtBoolPtr(before.draft), fmtBoolPtr(after.draft))
+	}
+}
+
+func strPtr(s string) *string { return &s }
+
+// updatePullRequest: the title and the description can be updated
+// separately or together and nothing else changes (not the other field, not
+// the draft flag, not the reviewers and their verdicts); input is validated
+// before any request; a stale version is a conflict that changes nothing,
+// on a host that has versions; errors map to their classes (see
+// errorCases). Whether the host has versions is read from the pull request
+// (PullRequest.Version), not from its kind.
+func (s *suite) updatePullRequest(t *testing.T) {
+	spec := samplePR()
+	spec.Draft = true
+	// A description with CRLF, trailing spaces, an emoji and a code fence
+	// must come back byte for byte.
+	newDesc := "First line  \r\n\r\n```go\r\nfunc main() {}\r\n```\r\n\r\nEmoji \U0001F680 and <b>markup</b> & more\r\n"
+	serve := func(t *testing.T) (provider.Provider, provider.PRRef, *requestLog) {
+		p, ref, log := s.serve(t, spec)
+		if !p.Capabilities().DescriptionEdit {
+			t.Skip("the provider cannot edit the pull request description")
+		}
+		return p, ref, log
+	}
+
+	t.Run("title_only", func(t *testing.T) {
+		p, ref, log := serve(t)
+		before := s.snapshot(t, p, ref, spec)
+		_, w0 := log.count()
+		if err := p.UpdatePullRequest(t.Context(), ref, provider.UpdatePR{Title: strPtr("A new title \U0001F680"), Version: before.version}); err != nil {
+			t.Fatalf("UpdatePullRequest: %v", err)
+		}
+		if _, w := log.count(); w-w0 != 1 {
+			t.Errorf("%d write requests, want 1", w-w0)
+		}
+		after := s.snapshot(t, p, ref, spec)
+		if after.title != "A new title \U0001F680" || after.description != before.description {
+			t.Errorf("title %q description %q, want the new title and the old description %q", after.title, after.description, before.description)
+		}
+		sameUntouched(t, before, after)
+	})
+	t.Run("description_only", func(t *testing.T) {
+		p, ref, _ := serve(t)
+		before := s.snapshot(t, p, ref, spec)
+		if err := p.UpdatePullRequest(t.Context(), ref, provider.UpdatePR{Description: &newDesc, Version: before.version}); err != nil {
+			t.Fatalf("UpdatePullRequest: %v", err)
+		}
+		after := s.snapshot(t, p, ref, spec)
+		if after.description != newDesc || after.title != before.title {
+			t.Errorf("title %q description %q, want the old title %q and the new description %q", after.title, after.description, before.title, newDesc)
+		}
+		sameUntouched(t, before, after)
+	})
+	t.Run("title_and_description", func(t *testing.T) {
+		p, ref, _ := serve(t)
+		before := s.snapshot(t, p, ref, spec)
+		if err := p.UpdatePullRequest(t.Context(), ref, provider.UpdatePR{Title: strPtr("Both"), Description: strPtr(""), Version: before.version}); err != nil {
+			t.Fatalf("UpdatePullRequest: %v", err)
+		}
+		after := s.snapshot(t, p, ref, spec)
+		if after.title != "Both" || after.description != "" {
+			t.Errorf("title %q description %q, want %q and an empty description", after.title, after.description, "Both")
+		}
+		sameUntouched(t, before, after)
+	})
+	t.Run("two_updates_in_a_row", func(t *testing.T) {
+		p, ref, _ := serve(t)
+		first := mustPR(t, p, ref)
+		if err := p.UpdatePullRequest(t.Context(), ref, provider.UpdatePR{Title: strPtr("One"), Version: first.Version}); err != nil {
+			t.Fatalf("first update: %v", err)
+		}
+		second := mustPR(t, p, ref)
+		if err := p.UpdatePullRequest(t.Context(), ref, provider.UpdatePR{Description: strPtr("Two"), Version: second.Version}); err != nil {
+			t.Fatalf("second update on the fresh read: %v", err)
+		}
+		if got := mustPR(t, p, ref); got.Title != "One" || got.Description != "Two" {
+			t.Errorf("title %q description %q", got.Title, got.Description)
+		}
+	})
+	t.Run("validated_before_any_request", func(t *testing.T) {
+		p, ref, log := serve(t)
+		version := mustPR(t, p, ref).Version
+		n0, w0 := log.count()
+		bad := []struct {
+			name string
+			up   provider.UpdatePR
+		}{
+			{"nothing_to_update", provider.UpdatePR{Version: version}},
+			{"empty_title", provider.UpdatePR{Title: strPtr(""), Version: version}},
+			{"blank_title", provider.UpdatePR{Title: strPtr(" \t "), Version: version}},
+			{"multiline_title", provider.UpdatePR{Title: strPtr("two\nlines"), Version: version}},
+			{"nul_in_description", provider.UpdatePR{Description: strPtr("a\x00b"), Version: version}},
+			{"malformed_version", provider.UpdatePR{Title: strPtr("T"), Version: "v1"}},
+		}
+		if version != "" {
+			// A host with versions refuses an update that names none.
+			bad = append(bad, struct {
+				name string
+				up   provider.UpdatePR
+			}{"missing_version", provider.UpdatePR{Title: strPtr("T")}})
+		}
+		for _, c := range bad {
+			err := p.UpdatePullRequest(t.Context(), ref, c.up)
+			if !errors.Is(err, provider.ErrProtocol) {
+				t.Errorf("%s: error %v, want protocol", c.name, err)
+			}
+			checkClean(t, c.name, err)
+		}
+		if n, w := log.count(); n != n0 || w != w0 {
+			t.Errorf("%d requests (%d writes) were sent for invalid input, want none", n-n0, w-w0)
+		}
+	})
+	t.Run("stale_version_is_a_conflict", func(t *testing.T) {
+		p, ref, _ := serve(t)
+		stale := mustPR(t, p, ref)
+		if stale.Version == "" {
+			t.Skip("the provider has no pull request version")
+		}
+		if err := p.UpdatePullRequest(t.Context(), ref, provider.UpdatePR{Title: strPtr("Winner"), Version: stale.Version}); err != nil {
+			t.Fatalf("first update: %v", err)
+		}
+		before := s.snapshot(t, p, ref, spec)
+		err := p.UpdatePullRequest(t.Context(), ref, provider.UpdatePR{Title: strPtr("Loser"), Description: strPtr("Lost"), Version: stale.Version})
+		if !errors.Is(err, provider.ErrConflict) {
+			t.Fatalf("stale update: error %v, want conflict", err)
+		}
+		checkClean(t, "stale update", err)
+		after := s.snapshot(t, p, ref, spec)
+		if !reflect.DeepEqual(before, after) || after.title != "Winner" {
+			t.Errorf("a refused update changed the pull request:\nbefore %+v\nafter  %+v", before, after)
+		}
+	})
+}
+
 // inline: comments on an added and a context line are posted; a comment on
 // a line outside the hunks is not, with a fixed sentence.
 func (s *suite) inline(t *testing.T) {
@@ -829,6 +999,9 @@ func (s *suite) checkFailures(t *testing.T, p provider.Provider, ref provider.PR
 			return err
 		}},
 		{"EditComment", func() error { return p.EditComment(ctx, ref, strconv.Itoa(idGeneralOwn), "An edit.") }},
+		{"UpdatePullRequest", func() error {
+			return p.UpdatePullRequest(ctx, ref, provider.UpdatePR{Title: strPtr("A title."), Version: "0"})
+		}},
 	}
 	for _, c := range calls {
 		err := c.call()

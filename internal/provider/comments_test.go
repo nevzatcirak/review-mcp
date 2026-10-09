@@ -121,3 +121,33 @@ func TestThreadJSONShape(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateUpdatePR(t *testing.T) {
+	s := func(v string) *string { return &v }
+	for name, tc := range map[string]struct {
+		up   UpdatePR
+		hint string
+	}{
+		"title":            {UpdatePR{Title: s("T")}, ""},
+		"description":      {UpdatePR{Description: s("")}, ""},
+		"version 0":        {UpdatePR{Title: s("T"), Version: "0"}, ""},
+		"version 12":       {UpdatePR{Title: s("T"), Version: "12"}, ""},
+		"emoji and fence":  {UpdatePR{Title: s("Fix \U0001F680"), Description: s("a\r\n```\r\nb  \r\n```")}, ""},
+		"nothing":          {UpdatePR{Version: "1"}, "nothing to update"},
+		"empty title":      {UpdatePR{Title: s("")}, "empty title"},
+		"blank title":      {UpdatePR{Title: s(" \t")}, "empty title"},
+		"multi-line title": {UpdatePR{Title: s("a\nb")}, "invalid title"},
+		"NUL":              {UpdatePR{Description: s("a\x00")}, "invalid description"},
+		"version text":     {UpdatePR{Title: s("T"), Version: "x"}, "invalid pull request version"},
+		"negative version": {UpdatePR{Title: s("T"), Version: "-1"}, "invalid pull request version"},
+	} {
+		err := ValidateUpdatePR(tc.up)
+		var pe *Error
+		switch {
+		case tc.hint == "" && err != nil:
+			t.Errorf("%s: unexpected error %v", name, err)
+		case tc.hint != "" && (!errors.As(err, &pe) || pe.Class != ClassProtocol || pe.Hint != tc.hint):
+			t.Errorf("%s: err = %v, want protocol %q", name, err, tc.hint)
+		}
+	}
+}

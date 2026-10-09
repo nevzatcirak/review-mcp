@@ -144,7 +144,7 @@ func (g *ctGitea) prJSON() map[string]any {
 		}
 	}
 	return map[string]any{
-		"title": g.pr.Title, "body": g.pr.Description, "state": "open", "html_url": ctWebPR,
+		"title": g.pr.Title, "body": g.pr.Description, "state": "open", "html_url": ctWebPR, "draft": g.pr.Draft,
 		"merge_base": g.pr.BaseSHA, "mergeable": true, "user": ctUser(g.pr.Author),
 		"requested_reviewers": requested,
 		"head":                map[string]any{"ref": g.pr.SourceBranch, "sha": g.pr.HeadSHA},
@@ -263,6 +263,8 @@ func (g *ctGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ctJSON(w, http.StatusOK, ctUser(g.pr.TokenUser))
 	case get && path == ctPull:
 		ctJSON(w, http.StatusOK, g.prJSON())
+	case r.Method == http.MethodPatch && path == ctPull:
+		g.patchPR(w, r)
 	case get && path == ctPull+".diff":
 		_, _ = io.WriteString(w, g.diff())
 	case get && path == ctPull+"/files":
@@ -294,6 +296,27 @@ func (g *ctGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.t.Errorf("unexpected request %s %s", r.Method, path)
 		contract.WriteError(w, http.StatusNotFound)
 	}
+}
+
+// patchPR is PATCH /pulls/{n}: like Gitea's EditPullRequestOption, a field
+// that is absent stays as it is, and a title cannot be emptied. The reviews,
+// the reviewers and the draft flag are not part of it.
+func (g *ctGitea) patchPR(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Title *string `json:"title"`
+		Body  *string `json:"body"`
+	}
+	if json.NewDecoder(r.Body).Decode(&in) != nil || (in.Title != nil && strings.TrimSpace(*in.Title) == "") {
+		contract.WriteError(w, http.StatusUnprocessableEntity)
+		return
+	}
+	if in.Title != nil {
+		g.pr.Title = *in.Title
+	}
+	if in.Body != nil {
+		g.pr.Description = *in.Body
+	}
+	ctJSON(w, http.StatusCreated, g.prJSON())
 }
 
 // serveRaw answers a raw content request; content the Spec does not have

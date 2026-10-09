@@ -43,13 +43,15 @@ func TestPRDescribeToolDefinition(t *testing.T) {
 	if tl == nil {
 		t.Fatal("pr_describe is not registered")
 	}
-	const want = "Describes a pull request with the configured LLM: a title, the change types, a short summary and a walkthrough of the changed files. By default it only reads: nothing is written to the pull request. Publishing (publish=true) writes to the pull request (a comment, or a marked region of its description) and is not available yet: it is refused. The PR's title, description, branch names, commit messages and diff are sent to the configured LLM endpoint. If the result says the description is partial, tell the user how many files were not described and never present the walkthrough as covering those files."
+	const want = "Describes a pull request with the configured LLM: a title, the change types, a short summary and a walkthrough of the changed files. By default it only reads: nothing is written to the pull request. Publishing (publish=true) writes to the pull request: publish_mode=comment (default) posts one comment and edits it in place on later runs; publish_mode=description writes a marked region at the end of the pull request description, leaves the rest of the description unchanged and, with update_title=true, also replaces the title. The PR's title, description, branch names, commit messages and diff are sent to the configured LLM endpoint. If the result says the description is partial, tell the user how many files were not described and never present the walkthrough as covering those files."
 	if tl.Description != want {
 		t.Errorf("description = %q", tl.Description)
 	}
-	// Read-only: publish=false is the default and the only path that runs.
+	// As pr_review: publishing writes to the pull request, so the tool is
+	// not read-only, and it is not destructive (it edits its own comment or
+	// region only).
 	a := tl.Annotations
-	if a == nil || !a.ReadOnlyHint || !a.IdempotentHint || a.DestructiveHint == nil || *a.DestructiveHint ||
+	if a == nil || a.ReadOnlyHint || a.IdempotentHint || a.DestructiveHint == nil || *a.DestructiveHint ||
 		a.OpenWorldHint == nil || !*a.OpenWorldHint {
 		t.Errorf("annotations = %+v", a)
 	}
@@ -87,7 +89,7 @@ func TestPRDescribeToolDefinition(t *testing.T) {
 		outProps = append(outProps, k)
 	}
 	sort.Strings(outProps)
-	if got := strings.Join(outProps, ","); got != "coverage,description,files,metadata,notes,title,type" {
+	if got := strings.Join(outProps, ","); got != "coverage,description,files,metadata,notes,publish,title,type" {
 		t.Errorf("output schema properties = %s", got)
 	}
 }
@@ -131,8 +133,9 @@ func TestPRDescribeCall(t *testing.T) {
 	}
 }
 
-// TestPRDescribeArgumentErrors: invalid arguments and publish=true fail
-// with fixed sentences before any request to the provider or the LLM.
+// TestPRDescribeArgumentErrors: invalid arguments fail with fixed sentences
+// before any request to the provider or the LLM. (publish=true is no longer
+// refused: WP-2d.)
 func TestPRDescribeArgumentErrors(t *testing.T) {
 	g, l := newFakeGiteaHost(t), newFakeLLMHost(t, 200, describeAnswer)
 	cs := connect(t, realDeps(reviewEnv(g, l), nil))
@@ -140,8 +143,6 @@ func TestPRDescribeArgumentErrors(t *testing.T) {
 		args map[string]any
 		want string
 	}{
-		{map[string]any{"publish": true}, tools.DescribePublishUnavailableMessage},
-		{map[string]any{"publish": true, "publish_mode": "description", "update_title": true}, tools.DescribePublishUnavailableMessage},
 		{map[string]any{"publish_mode": "wiki"}, tools.InvalidPublishModeMessage},
 		{map[string]any{"update_title": true}, tools.InvalidUpdateTitleMessage},
 		{map[string]any{"publish": true, "update_title": true}, tools.InvalidUpdateTitleMessage},
@@ -290,5 +291,99 @@ func TestDescribeStagesShareTheReviewFormat(t *testing.T) {
 	}
 	if _, ok := review.StageParts(describe.StageSummarizing); ok {
 		t.Errorf("the summary stage parses as a part stage")
+	}
+}
+
+// describeComments returns the bodies of the PR-level comments that carry
+// the description comment marker, by id order.
+func (f *fakeServer) describeComments() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []string
+	for id := int64(1); id <= f.nextComment; id++ {
+		if c, ok := f.comments[id]; ok && strings.HasSuffix(strings.TrimSpace(c.body), describe.CommentMarker) {
+			out = append(out, c.body)
+		}
+	}
+	return out
+}
+
+// TestPRDescribePublishComment: publish=true posts one comment with the
+// marker, rendered for Gitea, and the second call edits it in place with the
+// same bytes; the PR itself is not written.
+func TestPRDescribePublishComment(t *testing.T) {
+	g, l := newFakeGiteaHost(t), newFakeLLMHost(t, 200, describeAnswer)
+	cs := connect(t, realDeps(reviewEnv(g, l), nil))
+	args := map[string]any{"pr_url": reviewPRURL(g), "publish": true}
+
+	res := callTool(t, cs, "pr_describe", args)
+	if res.IsError {
+		t.Fatalf("tool error: %s", textOf(t, res))
+	}
+	var got describe.Result
+	decodeStructured(t, res, &got)
+	if got.Publish == nil || !got.Publish.Published || got.Publish.Updated || got.Publish.Mode != "comment" || got.Publish.CommentID == "" {
+		t.Fatalf("publish = %+v", got.Publish)
+	}
+	if want := describerender.Client(&got); textOf(t, res) != want || !strings.Contains(want, "- Pull request comment: posted") {
+		t.Errorf("text is not the client rendering with the publish section:\n%s", textOf(t, res))
+	}
+	first := g.describeComments()
+	if len(first) != 1 || !strings.Contains(first[0], "## PR Description 📝") || !strings.Contains(first[0], "Change the constant") {
+		t.Fatalf("comments = %q", first)
+	}
+
+	res = callTool(t, cs, "pr_describe", args)
+	decodeStructured(t, res, &got)
+	if got.Publish == nil || !got.Publish.Published || !got.Publish.Updated {
+		t.Fatalf("second publish = %+v", got.Publish)
+	}
+	if second := g.describeComments(); len(second) != 1 || second[0] != first[0] {
+		t.Errorf("the second run did not edit the comment in place with the same bytes: %q", second)
+	}
+	for _, w := range g.writeLog() {
+		if strings.Contains(w, "/pulls/7") && !strings.Contains(w, "/reviews") {
+			t.Errorf("comment mode wrote to the PR: %s", w)
+		}
+	}
+}
+
+// TestPRDescribePublishDescription: publish_mode=description appends the
+// region below the author's text, replaces the title with update_title, and
+// the second call writes nothing new.
+func TestPRDescribePublishDescription(t *testing.T) {
+	g, l := newFakeGiteaHost(t), newFakeLLMHost(t, 200, describeAnswer)
+	cs := connect(t, realDeps(reviewEnv(g, l), nil))
+	args := map[string]any{"pr_url": reviewPRURL(g), "publish": true, "publish_mode": "description", "update_title": true}
+
+	res := callTool(t, cs, "pr_describe", args)
+	if res.IsError {
+		t.Fatalf("tool error: %s", textOf(t, res))
+	}
+	var got describe.Result
+	decodeStructured(t, res, &got)
+	if got.Publish == nil || !got.Publish.Published || got.Publish.Updated || !got.Publish.TitleUpdated || got.Publish.Mode != "description" {
+		t.Fatalf("publish = %+v", got.Publish)
+	}
+	g.mu.Lock()
+	body, title, patches := g.prBody, g.prTitle, len(g.prPatchBody)
+	g.mu.Unlock()
+	if !strings.HasPrefix(body, "Please look. "+descMarker+"\n\n"+describe.RegionStart+"\n") || !strings.HasSuffix(body, "\n"+describe.RegionEnd) {
+		t.Errorf("body = %q", body)
+	}
+	if title != "Change the constant "+describeTitleMarker || patches != 1 {
+		t.Errorf("title %q, %d PATCH requests", title, patches)
+	}
+
+	res = callTool(t, cs, "pr_describe", args)
+	decodeStructured(t, res, &got)
+	g.mu.Lock()
+	again, patches2 := g.prBody, len(g.prPatchBody)
+	g.mu.Unlock()
+	if !got.Publish.Published || !got.Publish.Updated || again != body || patches2 != 1 {
+		t.Errorf("second run: %+v, same body %v, %d PATCH requests", got.Publish, again == body, patches2)
+	}
+	if len(g.describeComments()) != 0 {
+		t.Errorf("description mode posted a comment")
 	}
 }

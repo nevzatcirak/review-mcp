@@ -52,7 +52,8 @@ Commit: `feat(improve): verify suggestions against the head file before anchorin
 2. **Inline (Y-11), only verified suggestions on head-side lines inside one hunk:**
    - `SuggestionBlocks` capability: a native suggestion block (GitHub/GitLab later, no provider sets it today) — the renderer exists and is tested with a fake capability.
    - Otherwise (Gitea, Bitbucket Server): summary, `suggestion_content`, and a fenced `diff` block of `existing_code` → `improved_code` (adaptive fence).
-   - Fingerprint marker per suggestion (X-13 pattern, own prefix `review-mcp:suggestion:`); an already-posted or human-raised suggestion is not posted again (`skipped_duplicate`).
+   - Marker per suggestion (own prefix `review-mcp:suggestion:`). **Already-posted key (amended in the WP-2h review):** file + normalised `existing_code` + normalised `improved_code`, without the summary, so a reworded rerun still recognises its own comment; the X-13 fingerprint (with summary) stays for the merge dedup. An already-posted suggestion is `skipped_duplicate`; human-raised points are handled through the discussion block, as in `pr_review`.
+   - Every review-mcp tool marker counts as "own" in every tool's discussion block (`pr_review` included), so one tool's comments are never shown to another tool's model as human threads.
    - `InlineResult` gains `Reason` (`posted`, `unanchorable`, `failed`), decided in the WP-2a review; `pr_review` maps to it without changing its output.
 3. **Sanitising:** title/labels escaped; text through the published-text rules of WP-2d item 9; `provider.SanitizeBody` everywhere.
 4. **Annotations:** `readOnlyHint=false`, `destructiveHint=false`.

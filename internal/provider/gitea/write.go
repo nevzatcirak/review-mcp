@@ -226,13 +226,13 @@ func (p *Provider) PostInlineComments(ctx context.Context, ref provider.PRRef, p
 			msg = errPendingLeft
 		}
 		for i := range results {
-			results[i] = provider.InlineResult{Error: msg}
+			results[i] = provider.InlineResult{Error: msg, Reason: provider.InlineReasonFailed}
 		}
 		return results, nil
 	}
 	if provider.StopsBatch(err) {
 		for i := range results {
-			results[i] = provider.InlineResult{Error: provider.ItemError(err)}
+			results[i] = provider.InlineResult{Error: provider.ItemError(err), Reason: provider.InlineReasonFailed}
 		}
 		return results, nil
 	}
@@ -240,7 +240,7 @@ func (p *Provider) PostInlineComments(ctx context.Context, ref provider.PRRef, p
 	posted, stopMsg := 0, ""
 	for i := range items {
 		if stopMsg != "" {
-			results[i] = provider.InlineResult{Error: stopMsg}
+			results[i] = provider.InlineResult{Error: stopMsg, Reason: provider.InlineReasonFailed}
 			continue
 		}
 		rev, err := p.postReview(ctx, pp, pr.HeadSHA, items[i:i+1])
@@ -249,10 +249,10 @@ func (p *Provider) PostInlineComments(ctx context.Context, ref provider.PRRef, p
 			posted++
 			continue
 		}
-		msg := errPendingDeleted
+		msg, reason := errPendingDeleted, provider.InlineReasonFailed
 		switch {
 		case err != nil && rejected(err):
-			msg = provider.ItemError(err)
+			msg, reason = provider.ItemError(err), provider.RejectedReason(err, true)
 		case err != nil:
 			msg = errOutcomeUnknown
 		}
@@ -263,10 +263,11 @@ func (p *Provider) PostInlineComments(ctx context.Context, ref provider.PRRef, p
 			if msg != errOutcomeUnknown {
 				msg = errPendingLeft
 			}
+			reason = provider.InlineReasonFailed
 		case err != nil && provider.StopsBatch(err):
 			stopMsg = provider.ItemError(err)
 		}
-		results[i] = provider.InlineResult{Error: msg}
+		results[i] = provider.InlineResult{Error: msg, Reason: reason}
 	}
 	p.logger.Debug("gitea inline comments posted", "items", len(items), "mode", "per_item", "posted", posted)
 	return results, nil
@@ -323,7 +324,7 @@ func (p *Provider) deletePending(ctx context.Context, pp string, me provider.Use
 // result keeps the review's URL and an empty id.
 func (p *Provider) fillResults(ctx context.Context, pp string, rev *apiPostedReview, items []provider.InlineComment, results []provider.InlineResult) {
 	for i := range results {
-		results[i] = provider.InlineResult{Posted: true, URL: rev.HTMLURL}
+		results[i] = provider.InlineResult{Posted: true, URL: rev.HTMLURL, Reason: provider.InlineReasonPosted}
 	}
 	if rev.ID == 0 {
 		return

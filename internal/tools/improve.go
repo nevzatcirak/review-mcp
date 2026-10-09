@@ -10,11 +10,6 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/review"
 )
 
-// ImprovePublishUnavailableMessage refuses publish=true until publishing
-// lands (WP-2h), as pr_describe refused it before WP-2d: before any network
-// call, so that a client never believes something was written.
-const ImprovePublishUnavailableMessage = "publishing pr_improve results is not available yet; call pr_improve with publish=false (the default) and nothing is written to the pull request"
-
 // PRImproveArgs are the arguments of pr_improve (v2 spec §1.8).
 type PRImproveArgs struct {
 	PRURL          string
@@ -22,15 +17,11 @@ type PRImproveArgs struct {
 	Publish        bool
 }
 
-// Validate checks the arguments before any network call, in order: the
-// output language, then publish, which is refused until WP-2h. Its error
-// text is one of the fixed sentences.
+// Validate checks the arguments before any network call: the output
+// language. Its error text is one of the fixed sentences.
 func (a PRImproveArgs) Validate() error {
 	if a.OutputLanguage != "" && !config.ValidLocale(a.OutputLanguage) {
 		return &ArgumentError{InvalidOutputLanguageMessage}
-	}
-	if a.Publish {
-		return &ArgumentError{ImprovePublishUnavailableMessage}
 	}
 	return nil
 }
@@ -72,7 +63,7 @@ func PreparePRImprove(deps ImproveDeps, a PRImproveArgs) (*ImproveCall, error) {
 	}
 	deps.Resolver = resolver
 	return &ImproveCall{deps: deps, client: client, args: improve.Args{
-		PRURL: a.PRURL, OutputLanguage: a.OutputLanguage,
+		PRURL: a.PRURL, OutputLanguage: a.OutputLanguage, Publish: a.Publish,
 	}}, nil
 }
 
@@ -86,6 +77,9 @@ func (c *ImproveCall) Run(ctx context.Context, progress func(stage string)) (*im
 		Resolver: c.deps.Resolver,
 		LLM:      c.client,
 		Progress: progress,
+		// The provider-profile renderings of what is published.
+		RenderOverview: improverender.Overview,
+		RenderInline:   improverender.Inline,
 	}, c.args)
 	if err != nil {
 		return nil, "", err

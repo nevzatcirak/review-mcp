@@ -110,8 +110,9 @@ func jsonKeys(typ reflect.Type) []string {
 // resolves the schema and validates every structured result against it: a
 // one-call result, a three-part result, a result whose self-review failed
 // (null scores), an empty result and a verified result. A score outside 0
-// to 10, an unknown unverified_reason and an anchor with a field are
-// rejected.
+// to 10, an unknown unverified_reason, an anchor without a status and one
+// with an unknown status are rejected; a published result, with its anchors
+// and publish outcome, is accepted.
 func TestResultSchemaAcceptedBySDK(t *testing.T) {
 	results := map[string]any{}
 	results["one call"] = newHarness(oneCallAnswers()).run(t, Args{})
@@ -129,6 +130,12 @@ func TestResultSchemaAcceptedBySDK(t *testing.T) {
 		t.Fatal("the verified result has no verified suggestion")
 	}
 
+	ph, _ := newPubHarness(t, giteaCaps, publishAnswers())
+	results["published"] = ph.run(t, Args{Publish: true})
+	if pub := results["published"].(*Result); pub.Publish == nil || pub.Publish.Inline == nil || pub.Suggestions[0].Anchor == nil {
+		t.Fatal("the published result has no publish outcome or anchor")
+	}
+
 	bad := *results["one call"].(*Result)
 	bad.Suggestions = append([]Suggestion(nil), bad.Suggestions...)
 	eleven := 11
@@ -144,6 +151,11 @@ func TestResultSchemaAcceptedBySDK(t *testing.T) {
 		t.Fatal(err)
 	}
 	results["invalid anchor"] = anchored
+	var badStatus map[string]any
+	if err := json.Unmarshal([]byte(strings.Replace(raw, `"anchor": null`, `"anchor": {"status": "maybe"}`, 1)), &badStatus); err != nil {
+		t.Fatal(err)
+	}
+	results["invalid anchor status"] = badStatus
 
 	type in struct {
 		Name string `json:"name"`
@@ -185,9 +197,10 @@ func TestResultSchemaAcceptedBySDK(t *testing.T) {
 	}
 }
 
-// TestInterimFields: until WP-2h every suggestion has a null anchor; the
-// JSON carries it and the verification fields on every suggestion.
-func TestInterimFields(t *testing.T) {
+// TestUnpublishedFields: without publish every suggestion has a null anchor
+// and the result has no publish outcome; the JSON carries the anchor and the
+// verification fields on every suggestion.
+func TestUnpublishedFields(t *testing.T) {
 	res := newHarness(oneCallAnswers()).run(t, Args{})
 	if len(res.Suggestions) == 0 {
 		t.Fatal("no suggestion")
@@ -198,6 +211,9 @@ func TestInterimFields(t *testing.T) {
 		}
 	}
 	raw := marshal(t, res)
+	if res.Publish != nil || strings.Contains(raw, `"publish"`) {
+		t.Errorf("a publish outcome without publish")
+	}
 	if strings.Count(raw, `"anchor": null`) != len(res.Suggestions) || strings.Count(raw, `"verified": `) != len(res.Suggestions) ||
 		strings.Count(raw, `"unverified_reason": `) != len(res.Suggestions) {
 		t.Errorf("JSON lacks the anchor or the verification fields:\n%s", raw)

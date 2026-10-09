@@ -144,6 +144,35 @@ type Result struct {
 	// Notes are user-facing sentences.
 	Notes    []string `json:"notes"`
 	Metadata Metadata `json:"metadata"`
+	// Publish is set when publishing was requested.
+	Publish *PublishResult `json:"publish,omitempty"`
+}
+
+// PublishResult is the outcome of publishing (v2 spec §3): the overview
+// comment posted or edited in place, or the classified error, and the
+// inline comments. A failed publish never discards the suggestions. The
+// first four fields are those of llmrun.PublishResult.
+type PublishResult struct {
+	Published bool   `json:"published"`
+	CommentID string `json:"comment_id,omitempty"`
+	URL       string `json:"url,omitempty"`
+	Error     string `json:"error,omitempty"`
+	// Updated is true when the overview of an earlier run was edited in
+	// place (X-12) instead of a new one being posted.
+	Updated bool `json:"updated,omitempty"`
+	// Inline is set when the verified suggestions were considered for
+	// inline comments: the overview was posted, or an earlier one was found
+	// to update.
+	Inline *InlineSummary `json:"inline,omitempty"`
+}
+
+// InlineSummary counts the verified suggestions of an inline publish. Every
+// verified suggestion is in exactly one of the counts.
+type InlineSummary struct {
+	Posted           int `json:"posted"`
+	SkippedDuplicate int `json:"skipped_duplicate"`
+	Unanchorable     int `json:"unanchorable"`
+	Failed           int `json:"failed"`
 }
 
 // Suggestion is one code suggestion.
@@ -185,15 +214,44 @@ type Suggestion struct {
 	// UnverifiedNotFound, UnverifiedAmbiguous or UnverifiedHeadUnavailable;
 	// "" when verified.
 	UnverifiedReason string `json:"unverified_reason"`
-	// Anchor is where the suggestion is posted inline (Y-11). It is filled
-	// by WP-2h; until then it is always nil.
+	// Anchor says what publishing did with the suggestion's inline
+	// comment (Y-11); nil when nothing was published, or when the
+	// suggestion was not considered for an inline comment (it is not
+	// verified).
 	Anchor *Anchor `json:"anchor"`
 }
 
-// Anchor is the inline anchor of a published suggestion. It is a
-// placeholder until WP-2h defines it: no field, and Suggestion.Anchor is
-// always nil.
-type Anchor struct{}
+// Anchor statuses.
+const (
+	// AnchorPosted: the inline comment was posted.
+	AnchorPosted = "posted"
+	// AnchorSkippedDuplicate: a comment with the suggestion's fingerprint by
+	// the token's user is already on the PR; nothing was posted.
+	AnchorSkippedDuplicate = "skipped_duplicate"
+	// AnchorUnanchorable: the verified range is not on head-side lines of
+	// one hunk of the PR's diff (or the server refused the position), so
+	// the suggestion is in the overview only.
+	AnchorUnanchorable = "unanchorable"
+	// AnchorFailed: the inline comment could not be posted (or could not be
+	// attempted); the suggestion is in the overview only.
+	AnchorFailed = "failed"
+)
+
+// Anchor is the inline anchor of a published suggestion: the outcome of its
+// inline comment.
+type Anchor struct {
+	// Status is one of the Anchor* constants.
+	Status string `json:"status"`
+	// Line is the head-side line the comment sits on: the first line of the
+	// suggestion's range. 0 (omitted) for an unanchorable suggestion.
+	Line int `json:"line,omitempty"`
+	// CommentID and URL are the posted comment's, as far as the server
+	// reported them.
+	CommentID string `json:"comment_id,omitempty"`
+	URL       string `json:"url,omitempty"`
+	// Error is the fixed sentence of a failed post.
+	Error string `json:"error,omitempty"`
+}
 
 // Metadata describes the run. It holds names and numbers only.
 type Metadata struct {

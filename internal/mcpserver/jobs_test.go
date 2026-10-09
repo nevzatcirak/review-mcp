@@ -355,14 +355,14 @@ func TestJobResultToolDefinition(t *testing.T) {
 	}
 
 	// In stdio mode pr_review and pr_ask say that a slow call answers with a
-	// job id and still publishes, pr_describe and pr_improve that it answers
-	// with a job id (pr_improve publishes nothing yet; pr_describe's sentence
-	// predates its publishing), and their output schema allows the running
-	// status next to the unchanged result schema.
+	// job id and still publishes, pr_improve likewise, pr_describe that it
+	// answers with a job id (its sentence predates its publishing), and their
+	// output schema allows the running status next to the unchanged result
+	// schema.
 	for name, base := range map[string]string{"pr_review": prReviewDescription, "pr_ask": prAskDescription,
 		"pr_describe": prDescribeDescription, "pr_improve": prImproveDescription} {
 		tl := byName[name]
-		publishes := name != "pr_describe" && name != "pr_improve"
+		publishes := name != "pr_describe"
 		if !strings.HasPrefix(tl.Description, base+" ") || !strings.Contains(tl.Description, "job_result") ||
 			strings.Contains(tl.Description, "even if job_result is never called") != publishes {
 			t.Errorf("%s description = %q", name, tl.Description)

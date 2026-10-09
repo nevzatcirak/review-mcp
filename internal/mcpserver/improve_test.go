@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/nevzatcirak/review-mcp/internal/improve"
 	improverender "github.com/nevzatcirak/review-mcp/internal/improve/render"
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 	"github.com/nevzatcirak/review-mcp/internal/tools"
 )
@@ -92,12 +94,15 @@ func TestPRImproveToolDefinition(t *testing.T) {
 	if tl == nil {
 		t.Fatal("pr_improve is not registered")
 	}
-	if tl.Description != prImproveDescription || !strings.Contains(tl.Description, "Publishing (publish=true) is not available yet: it is refused.") {
+	if tl.Description != prImproveDescription || strings.Contains(tl.Description, "not available yet") ||
+		!strings.Contains(tl.Description, "Publishing (publish=true) writes to the pull request: one overview comment") ||
+		!strings.Contains(tl.Description, "inline comment") {
 		t.Errorf("description = %q", tl.Description)
 	}
-	// Read-only until publishing lands (WP-2h).
+	// As pr_review: publish=true writes, so the tool is not read-only and not
+	// idempotent, and it deletes nothing.
 	a := tl.Annotations
-	if a == nil || !a.ReadOnlyHint || !a.IdempotentHint || a.DestructiveHint == nil || *a.DestructiveHint ||
+	if a == nil || a.ReadOnlyHint || a.IdempotentHint || a.DestructiveHint == nil || *a.DestructiveHint ||
 		a.OpenWorldHint == nil || !*a.OpenWorldHint {
 		t.Errorf("annotations = %+v", a)
 	}
@@ -135,7 +140,7 @@ func TestPRImproveToolDefinition(t *testing.T) {
 		outProps = append(outProps, k)
 	}
 	sort.Strings(outProps)
-	if got := strings.Join(outProps, ","); got != "coverage,metadata,notes,suggestions" {
+	if got := strings.Join(outProps, ","); got != "coverage,metadata,notes,publish,suggestions" {
 		t.Errorf("output schema properties = %s", got)
 	}
 }
@@ -180,8 +185,74 @@ func TestPRImproveCall(t *testing.T) {
 	}
 }
 
-// TestPRImproveArgumentErrors: invalid arguments and publish=true fail with
-// fixed sentences before any request to the provider or the LLM.
+// TestPRImprovePublish runs the whole publish flow end to end with the real
+// Gitea provider: the first call posts the overview with its marker, posts
+// the verified suggestion as an inline comment (a review with one comment
+// carrying its fingerprint marker) and edits the overview with the link; the
+// second call edits the same overview in place and posts nothing else, the
+// suggestion being already on the PR. A foreign comment carrying the
+// overview marker is never touched.
+func TestPRImprovePublish(t *testing.T) {
+	answer := strings.Replace(improveAnswer, "existing_code: |\n    var a = 2\n", "existing_code: |\n    var a = 2 // "+diffMarker+"\n", 1)
+	g, l := newFakeGiteaHost(t), newImproveLLMHost(t, answer, improveReflection)
+	foreignBody := "Not ours.\n\n" + improve.OverviewMarker
+	g.plantComment("mallory", 77, foreignBody)
+	cs := connect(t, realDeps(reviewEnv(g, l), nil))
+	call := func() improve.Result {
+		t.Helper()
+		res := callTool(t, cs, "pr_improve", map[string]any{"pr_url": reviewPRURL(g), "publish": true})
+		if res.IsError {
+			t.Fatalf("tool error: %s", textOf(t, res))
+		}
+		var got improve.Result
+		decodeStructured(t, res, &got)
+		return got
+	}
+	const api = "/api/v1/repos/octo/demo"
+	first := call()
+	if p := first.Publish; p == nil || !p.Published || p.Updated || p.CommentID != "56" || p.Error != "" ||
+		p.Inline == nil || *p.Inline != (improve.InlineSummary{Posted: 1}) {
+		t.Fatalf("first publish = %+v", first.Publish)
+	}
+	if len(first.Suggestions) != 1 || !first.Suggestions[0].Verified || first.Suggestions[0].Anchor == nil ||
+		first.Suggestions[0].Anchor.Status != improve.AnchorPosted || first.Suggestions[0].Anchor.Line != 2 ||
+		first.Suggestions[0].Anchor.URL == "" {
+		t.Fatalf("suggestion = %+v", first.Suggestions)
+	}
+	wantFirst := []string{"POST " + api + "/issues/7/comments", "POST " + api + "/pulls/7/reviews", "PATCH " + api + "/issues/comments/56"}
+	if got := g.writeLog(); !slices.Equal(got, wantFirst) {
+		t.Errorf("first writes %v, want %v", got, wantFirst)
+	}
+	var overviews []string
+	for _, b := range g.commentBodies() {
+		if llmrun.HasMarkerLastLine(b, improve.OverviewMarker) {
+			overviews = append(overviews, b)
+		}
+	}
+	if len(overviews) != 2 || overviews[0] != foreignBody || !strings.Contains(overviews[1], "## Code Suggestions 💡") ||
+		!strings.Contains(overviews[1], first.Suggestions[0].Anchor.URL) || !strings.Contains(overviews[1], improveSummaryMarker) {
+		t.Fatalf("overviews after the first call: %q", overviews)
+	}
+	if reviews := g.reviewBodies(); len(reviews) != 1 || !strings.Contains(reviews[0], "```diff\n-var a = 2 // "+diffMarker) ||
+		!strings.Contains(reviews[0], "(review-mcp:suggestion:") {
+		t.Fatalf("inline comments = %q", reviews)
+	}
+
+	second := call()
+	if p := second.Publish; p == nil || !p.Published || !p.Updated || p.CommentID != "56" ||
+		p.Inline == nil || *p.Inline != (improve.InlineSummary{SkippedDuplicate: 1}) {
+		t.Errorf("second publish = %+v", second.Publish)
+	}
+	if a := second.Suggestions[0].Anchor; a == nil || a.Status != improve.AnchorSkippedDuplicate {
+		t.Errorf("second anchor = %+v", a)
+	}
+	if got, want := g.writeLog(), append(wantFirst, "PATCH "+api+"/issues/comments/56"); !slices.Equal(got, want) {
+		t.Errorf("writes %v, want %v", got, want)
+	}
+}
+
+// TestPRImproveArgumentErrors: invalid arguments fail with fixed sentences
+// before any request to the provider or the LLM.
 func TestPRImproveArgumentErrors(t *testing.T) {
 	g, l := newFakeGiteaHost(t), newImproveLLMHost(t, improveAnswer, improveReflection)
 	cs := connect(t, realDeps(reviewEnv(g, l), nil))
@@ -189,7 +260,6 @@ func TestPRImproveArgumentErrors(t *testing.T) {
 		args map[string]any
 		want string
 	}{
-		{map[string]any{"publish": true}, tools.ImprovePublishUnavailableMessage},
 		{map[string]any{"output_language": "Turkish"}, tools.InvalidOutputLanguageMessage},
 		{map[string]any{"output_language": "Turkish", "publish": true}, tools.InvalidOutputLanguageMessage},
 	} {

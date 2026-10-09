@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -72,6 +73,11 @@ func partialResult(t *testing.T) *improve.Result {
 		{Path: "src/f03.go", Reason: llmrun.SkipModelCallFailed}}
 	c.FailedParts = 1
 	c.Finalize()
+	// A failed part's files were not reviewed, so no suggestion is left for
+	// them (the pipeline never produces one).
+	res.Suggestions = slices.DeleteFunc(res.Suggestions, func(s improve.Suggestion) bool {
+		return slices.ContainsFunc(c.Skipped, func(f llmrun.SkippedFile) bool { return f.Path == s.File })
+	})
 	res.Notes = []string{"Part 2 of 3 failed (llm_timeout); its files were not reviewed."}
 	return res
 }

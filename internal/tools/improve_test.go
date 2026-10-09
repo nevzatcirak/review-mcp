@@ -11,9 +11,9 @@ func TestPRImproveArgsValidate(t *testing.T) {
 		{"defaults", PRImproveArgs{}, ""},
 		{"language", PRImproveArgs{OutputLanguage: "tr-TR"}, ""},
 		{"bad locale", PRImproveArgs{OutputLanguage: "tr_TR"}, InvalidOutputLanguageMessage},
-		{"publish refused", PRImproveArgs{Publish: true}, ImprovePublishUnavailableMessage},
-		// The argument check comes before the publish refusal.
-		{"order", PRImproveArgs{Publish: true, OutputLanguage: "x_y"}, InvalidOutputLanguageMessage},
+		// publish=true is an argument like any other: it is not refused.
+		{"publish", PRImproveArgs{Publish: true}, ""},
+		{"publish and a bad locale", PRImproveArgs{Publish: true, OutputLanguage: "x_y"}, InvalidOutputLanguageMessage},
 	}
 	for _, c := range cases {
 		err := c.a.Validate()

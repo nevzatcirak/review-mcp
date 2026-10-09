@@ -48,8 +48,15 @@ func ResultSchema() map[string]any {
 				"verified":      boolean("whether existing_code was found in the head file at start_line to end_line (after normalising trailing white space, line endings and common indentation); an unverified suggestion is never posted inline"),
 				"unverified_reason": map[string]any{"type": "string", "enum": []any{"", UnverifiedNotFound, UnverifiedAmbiguous, UnverifiedHeadUnavailable},
 					"description": "why the suggestion is not verified: not_found (the code is neither at the given lines nor elsewhere in the head file), ambiguous (not at the given lines, and at several places in the head file), head_unavailable (the head file's content was not fetched); empty when verified"},
-				"anchor": map[string]any{"type": []any{"object", "null"}, "properties": map[string]any{}, "required": []any{},
-					"additionalProperties": false, "description": "where the suggestion is posted inline; not available yet, always null"},
+				"anchor": map[string]any{"type": []any{"object", "null"}, "description": "what publishing did with the suggestion's inline comment; null when nothing was published or the suggestion is not verified",
+					"properties": map[string]any{
+						"status": map[string]any{"type": "string", "enum": []any{AnchorPosted, AnchorSkippedDuplicate, AnchorUnanchorable, AnchorFailed},
+							"description": "posted, skipped_duplicate (a comment with the same fingerprint by the token's user is already on the PR), unanchorable (the range is not on head-side lines of one hunk, or the server refused the position), or failed (the comment could not be posted)"},
+						"line":       integer("the head-side line the comment sits on: the first line of the range; omitted when unanchorable"),
+						"comment_id": str("id of the posted comment, when the server reported one"),
+						"url":        str("URL of the posted comment, when the server reported one"),
+						"error":      str("why the post failed, a fixed sentence"),
+					}, "required": []any{"status"}, "additionalProperties": false},
 			}, "file", "language", "label", "summary", "content", "existing_code", "improved_code", "start_line", "end_line",
 				"score", "why", "verified", "unverified_reason", "anchor")},
 		"coverage": object("what the model saw (X-3, X-18)", map[string]any{
@@ -95,5 +102,18 @@ func ResultSchema() map[string]any {
 			"already_discussed": integer("discussion threads shown to the model (X-13)"),
 		}, "model", "context_window", "prompt_tokens", "diff_tokens", "request_tokens", "fast_path", "llm_calls",
 			"self_review_calls", "repair_tactic", "reasked", "truncated", "diff_trimmed", "already_discussed"),
+		"publish": object("publishing outcome; present when publish was requested", map[string]any{
+			"published":  boolean("whether the overview comment was posted or edited in place"),
+			"comment_id": str("id of the overview comment"),
+			"url":        str("URL of the overview comment"),
+			"error":      str("why the overview was not published, a fixed sentence; the suggestions are still returned"),
+			"updated":    boolean("true when the overview of an earlier run was edited in place instead of a new one being posted"),
+			"inline": object("what happened to the verified suggestions' inline comments; present when they were considered", map[string]any{
+				"posted":            integer("suggestions with a posted inline comment"),
+				"skipped_duplicate": integer("suggestions whose fingerprint is already on the PR, not posted again"),
+				"unanchorable":      integer("suggestions whose range is not on head-side lines of one hunk, or whose position the server refused"),
+				"failed":            integer("suggestions whose inline comment could not be posted"),
+			}, "posted", "skipped_duplicate", "unanchorable", "failed"),
+		}, "published"),
 	}, "suggestions", "coverage", "notes", "metadata")
 }

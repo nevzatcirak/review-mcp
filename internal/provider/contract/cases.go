@@ -817,8 +817,8 @@ func (s *suite) inline(t *testing.T) {
 	}
 	for i, name := range []string{"added_line_posted", "context_line_posted"} {
 		t.Run(name, func(t *testing.T) {
-			if !res[i].Posted || res[i].ID == "" || res[i].Error != "" {
-				t.Errorf("line %d: %+v, want posted with an id", items[i].Line, res[i])
+			if !res[i].Posted || res[i].ID == "" || res[i].Error != "" || res[i].Reason != provider.InlineReasonPosted {
+				t.Errorf("line %d: %+v, want posted with an id and the reason %q", items[i].Line, res[i], provider.InlineReasonPosted)
 			}
 		})
 	}
@@ -826,6 +826,9 @@ func (s *suite) inline(t *testing.T) {
 		r := res[2]
 		if r.Posted || r.Error == "" || r.ID != "" || r.URL != "" {
 			t.Errorf("line %d: %+v, want not posted, with an error sentence and no id or URL", items[2].Line, r)
+		}
+		if r.Reason != provider.InlineReasonUnanchorable {
+			t.Errorf("line %d: reason %q, want %q", items[2].Line, r.Reason, provider.InlineReasonUnanchorable)
 		}
 		checkCleanText(t, "InlineResult.Error", r.Error)
 	})
@@ -1030,6 +1033,9 @@ func (s *suite) checkFailures(t *testing.T, p provider.Provider, ref provider.PR
 		for _, r := range res {
 			if r.Posted || !strings.HasPrefix(r.Error, class.Error()) {
 				t.Errorf("PostInlineComments: %+v, want not posted with %q", r, class.Error())
+			}
+			if r.Reason != provider.InlineReasonFailed {
+				t.Errorf("PostInlineComments: reason %q, want %q", r.Reason, provider.InlineReasonFailed)
 			}
 			checkCleanText(t, "InlineResult.Error", r.Error)
 		}

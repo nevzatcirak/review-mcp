@@ -23,28 +23,7 @@ Improved code:
 some added line of code here // f00
 ```
 
-### 2. Annotate the line in f02
-
-- File: `src/f02.go` (line 2; checked against the head file)
-- Label: general
-- Score: 9 of 10
-- Why: Checked.
-
-Explain the line in `f02`.
-
-Existing code:
-
-```go
-some added line of code here
-```
-
-Improved code:
-
-```go
-some added line of code here // f02
-```
-
-### 3. Annotate the line in f04
+### 2. Annotate the line in f04
 
 - File: `src/f04.go` (line 2; checked against the head file)
 - Label: general
@@ -65,7 +44,7 @@ Improved code:
 some added line of code here // f04
 ```
 
-### 4. Annotate the line in f01
+### 3. Annotate the line in f01
 
 - File: `src/f01.go` (line 2; checked against the head file)
 - Label: general
@@ -86,7 +65,7 @@ Improved code:
 some added line of code here // f01
 ```
 
-### 5. Annotate the line in f05
+### 4. Annotate the line in f05
 
 - File: `src/f05.go` (line 2; checked against the head file)
 - Label: general

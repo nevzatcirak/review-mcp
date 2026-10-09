@@ -153,6 +153,19 @@ func (f *fakeServer) overviewBodies() []string {
 	return out
 }
 
+// reviewBodies returns the bodies of the inline comments of every review.
+func (f *fakeServer) reviewBodies() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []string
+	for _, rv := range f.reviews {
+		for _, c := range rv["comments"].([]any) {
+			out = append(out, c.(map[string]any)["body"].(string))
+		}
+	}
+	return out
+}
+
 // plantComment adds a PR-level comment by another account.
 func (f *fakeServer) plantComment(login string, userID int64, body string) int64 {
 	f.mu.Lock()

@@ -322,11 +322,30 @@ type InlineComment struct {
 	Body     string
 }
 
+// InlineReason says why an inline comment was or was not posted.
+type InlineReason string
+
+// Inline reasons.
+const (
+	// InlineReasonPosted: the comment was posted (InlineResult.Posted).
+	InlineReasonPosted InlineReason = "posted"
+	// InlineReasonUnanchorable: the server definitely refused the comment's
+	// position (a line that is not on the head side of its diff); nothing
+	// was posted for the item.
+	InlineReasonUnanchorable InlineReason = "unanchorable"
+	// InlineReasonFailed: the comment was not posted for any other reason,
+	// or its outcome is unknown.
+	InlineReasonFailed InlineReason = "failed"
+)
+
 // InlineResult is the outcome of one InlineComment. When Posted is false,
 // Error is a fixed sentence (X-6) and ID and URL are empty. When Posted is
 // true, ID or URL may still be empty if the server did not report them.
+// Reason is InlineReasonPosted exactly when Posted is true, and otherwise
+// InlineReasonUnanchorable or InlineReasonFailed.
 type InlineResult struct {
 	Posted  bool
 	ID, URL string
 	Error   string
+	Reason  InlineReason
 }

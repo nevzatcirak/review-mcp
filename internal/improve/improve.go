@@ -16,8 +16,11 @@
 //
 // The kept suggestions are verified against the head file (v2 spec §2,
 // Y-10): the quoted code must be at the self-review's lines, or uniquely
-// elsewhere in the file (the range is then corrected). Nothing is published
-// yet (WP-2h): every suggestion has no anchor.
+// elsewhere in the file (the range is then corrected). With Args.Publish the
+// result is published (publish.go): one overview comment, edited in place on
+// later runs, and an inline comment per verified suggestion whose range is
+// on head-side lines of one hunk, each marked by its fingerprint so that a
+// later run does not post it again.
 //
 // Dependency rule (deps_test.go): nothing in this package's dependency
 // closure may import internal/review, internal/ask, internal/describe or
@@ -79,6 +82,13 @@ type Deps struct {
 	// selects the real one. It is used only when context.repo.enabled is
 	// set.
 	RepoContext repoctx.Backend
+	// RenderOverview renders the overview comment published with
+	// Args.Publish. Nil makes a publish record a failure (nothing is
+	// written).
+	RenderOverview OverviewRenderer
+	// RenderInline renders the body of a suggestion's inline comment
+	// published with Args.Publish. Nil posts no inline comments.
+	RenderInline InlineRenderer
 }
 
 // Args are the per-call arguments. Zero values fall back to the
@@ -91,6 +101,10 @@ type Args struct {
 	// MaxChunks is the most suggestion calls (parts) of the run (X-19); 0
 	// or less takes review.max_chunks, and 1 makes one call.
 	MaxChunks int
+	// Publish posts the overview comment (edited in place on later runs)
+	// and the inline comments of the verified suggestions. The outcome is
+	// Result.Publish; a failure never fails the run.
+	Publish bool
 }
 
 // errNoWiring reports a caller bug: Run needs a resolver and an LLM.
@@ -175,6 +189,9 @@ type Plan struct {
 	repoCtx llmrun.RepoContext
 	ref     provider.PRRef
 	p       provider.Provider
+	// pr is the pull request as read, for the file-line links and the
+	// inline comments of a publish.
+	pr *provider.PullRequest
 	// files are the diff's files by path: the head content the suggestions
 	// are verified against (v2 spec §2).
 	files map[string]*provider.FilePatch
@@ -215,9 +232,15 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 	}
 	if pl.Empty {
 		pl.Result.Notes = append(pl.Result.Notes, NoteNoReviewableChanges)
+		pl.publish(ctx, deps, args)
 		return pl.Result, nil
 	}
-	return pl.finish(ctx, deps)
+	res, err := pl.finish(ctx, deps)
+	if err != nil {
+		return nil, err
+	}
+	pl.publish(ctx, deps, args)
+	return res, nil
 }
 
 // Prepare runs the steps up to the model calls: configuration, resolution,
@@ -289,7 +312,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 	progress(deps, StagePreparingDiff)
 
-	pl := &Plan{ref: ref, p: p, flt: flt, language: language, minScore: cfg.Improve.MinScore,
+	pl := &Plan{ref: ref, p: p, pr: pr, flt: flt, language: language, minScore: cfg.Improve.MinScore,
 		maxTotal: cfg.Improve.MaxSuggestions, files: fileIndex(d.Files), log: log}
 	// The PR's discussion (X-13), budgeted by review.max_discussion_tokens;
 	// a failure never fails the run.

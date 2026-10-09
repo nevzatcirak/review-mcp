@@ -11,17 +11,17 @@ import (
 )
 
 // prImproveDescription is the tool description of pr_improve (v2 spec
-// §1.8). It says that publishing is refused until WP-2h.
-const prImproveDescription = "Suggests code changes for a pull request with the configured LLM: each suggestion has the existing and the improved code, a label and a self-review score from 0 to 10; suggestions scoring below improve.min_score are dropped and counted in a note, and suggestions the self-review could not score are kept and marked unscored. By default it only reads: nothing is written to the pull request. Publishing (publish=true) is not available yet: it is refused. The PR's title, description, branch names, existing comments and diff are sent to the configured LLM endpoint." + partialSentence
+// §1.8, §3). It says that publishing writes to the pull request and how.
+const prImproveDescription = "Suggests code changes for a pull request with the configured LLM: each suggestion has the existing and the improved code, a label and a self-review score from 0 to 10; suggestions scoring below improve.min_score are dropped and counted in a note, and suggestions the self-review could not score are kept and marked unscored. By default it only reads: nothing is written to the pull request. Publishing (publish=true) writes to the pull request: one overview comment (a table of the suggestions, edited in place on later runs) and, for each verified suggestion whose lines are inside one changed hunk, an inline comment with the change (not repeated on later runs). The PR's title, description, branch names, existing comments and diff are sent to the configured LLM endpoint." + partialSentence
 
 // prImproveJobSentence ends the pr_improve description in stdio mode (see
 // prReviewJobSentence).
-const prImproveJobSentence = " A run that takes longer than wait_seconds answers with a job_id instead: call job_result for the result."
+const prImproveJobSentence = " A run that takes longer than wait_seconds answers with a job_id instead: call job_result for the result. The run keeps running and, with publish=true, still posts its comments even if job_result is never called."
 
 type prImproveInput struct {
 	PRURL          string `json:"pr_url" jsonschema:"URL of the pull request, on a configured Gitea or Bitbucket Server host"`
 	OutputLanguage string `json:"output_language,omitempty" jsonschema:"locale code for the suggestion text, for example en-US or tr-TR; replaces output.language for this call"`
-	Publish        bool   `json:"publish,omitempty" jsonschema:"post the suggestions to the pull request (default false); not available yet: true is refused"`
+	Publish        bool   `json:"publish,omitempty" jsonschema:"post the suggestions to the pull request (default false): an overview comment, edited in place on later runs, and inline comments for the verified suggestions"`
 	WaitSeconds    *int   `json:"wait_seconds,omitempty" jsonschema:"seconds to wait for the result before answering with a job_id for job_result, 0 to 600; replaces llm.wait_seconds (default 45) for this call; ignored in serve mode"`
 }
 
@@ -30,11 +30,12 @@ func registerPRImprove(s *mcp.Server, deps Deps) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        toolPRImprove,
 		Description: toolDescription(deps, prImproveDescription, prImproveJobSentence),
-		// Read-only: publish=false is the default and, until WP-2h, the only
-		// path that runs (publish=true is refused before any request).
+		// As pr_review: publish=true writes to the pull request, so the tool
+		// is not read-only and not idempotent (an inline comment is added
+		// once; a run edits its overview in place), and nothing is deleted.
 		Annotations: &mcp.ToolAnnotations{
-			ReadOnlyHint:    true,
-			IdempotentHint:  true,
+			ReadOnlyHint:    false,
+			IdempotentHint:  false,
 			DestructiveHint: &f,
 			OpenWorldHint:   &tr,
 		},
@@ -52,7 +53,7 @@ func registerPRImprove(s *mcp.Server, deps Deps) {
 			return nil, nil, toolError("review-mcp has no LLM wiring; this is a bug")
 		}
 		// Everything that fails without network I/O fails here, before a
-		// job exists (see pr_review), the publish refusal included.
+		// job exists (see pr_review).
 		call, err := tools.PreparePRImprove(tools.ImproveDeps{
 			Config:   sc.cfg,
 			Resolver: sc.resolver,
@@ -78,7 +79,8 @@ func registerPRImprove(s *mcp.Server, deps Deps) {
 			}
 			// Counts only: never the suggestions, prompts or PR content.
 			log.Debug("pr_improve", "suggestions", len(res.Suggestions), "llm_calls", res.Metadata.LLMCalls,
-				"notes", len(res.Notes), "partial", res.Coverage.Partial)
+				"notes", len(res.Notes), "partial", res.Coverage.Partial,
+				"published", res.Publish != nil && res.Publish.Published)
 			return jobOutcome{text: text, out: *res}, nil
 		})
 	})

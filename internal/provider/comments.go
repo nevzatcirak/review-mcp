@@ -136,6 +136,25 @@ func ItemError(err error) string {
 	return genericItemError
 }
 
+// RejectedReason is the InlineResult.Reason of an item whose own request
+// failed with err (the item was attempted alone, or its outcome is known):
+// InlineReasonUnanchorable when the server answered with a refusal of the
+// request itself (a 4xx status that is not an auth or rate-limit failure,
+// class protocol) and, where serverErrorRefuses is set, with a 5xx status
+// too (Gitea answers 500 for a position outside the diff); otherwise
+// InlineReasonFailed. A failure without a server answer (transport, a
+// canceled context) is never unanchorable.
+func RejectedReason(err error, serverErrorRefuses bool) InlineReason {
+	var pe *Error
+	if !errors.As(err, &pe) || pe.Status == 0 || StopsBatch(err) {
+		return InlineReasonFailed
+	}
+	if pe.Class == ClassProtocol || (serverErrorRefuses && pe.Class == ClassUpstream) {
+		return InlineReasonUnanchorable
+	}
+	return InlineReasonFailed
+}
+
 // IsPositiveInt reports whether s is a positive base-10 int64 written with
 // ASCII digits only (no sign, no "+", no spaces).
 func IsPositiveInt(s string) bool {

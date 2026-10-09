@@ -2,8 +2,11 @@ package improve
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
@@ -17,9 +20,9 @@ import (
 // place on later runs (X-12).
 const OverviewMarker = "[//]: # (review-mcp:improve:v1)"
 
-// Suggestion fingerprint markers (X-13 pattern, their own prefix): the last
-// line of every inline comment, "[//]: # (review-mcp:suggestion:<fp>)" with
-// the 12 hex digits of SuggestionFingerprint.
+// Suggestion markers (X-13 pattern, their own prefix): the last line of every
+// inline comment, "[//]: # (review-mcp:suggestion:<key>)" with the 12 hex
+// digits of SuggestionFingerprint.
 const (
 	suggestionMarkerPrefix = "[//]: # (review-mcp:suggestion:"
 	suggestionMarkerSuffix = ")"
@@ -83,9 +86,46 @@ type OverviewRenderer func(res *Result, caps provider.Capabilities, link func(pa
 // render.Inline.
 type InlineRenderer func(s *Suggestion, caps provider.Capabilities) string
 
-// SuggestionFingerprint identifies a suggestion across parts and runs (X-13,
-// llmrun.Fingerprint over its file, summary and existing code).
+// SuggestionFingerprint is the already-posted key of a suggestion (spec
+// 2E §3.2): the file plus the normalised existing_code plus the normalised
+// improved_code. The summary is not part of it, so that a rerun whose model
+// reworded the summary still recognises its own comment. The merge dedup
+// (finish.go) keeps the X-13 fingerprint with the summary.
+//
+// The key is the first 12 hex digits of a SHA-256, as llmrun.Fingerprint's.
+// The hashed input is three fields in a fixed order (file, existing code,
+// improved code), each written as its decimal byte length, ":", and its text,
+// so that no field content can run into the next. A code field is split into
+// lines at "\n", the lines are normalised by normalizeSnippet (trailing white
+// space, CRLF and common indentation removed), blank lines at both ends are
+// dropped, and the lines are joined with "\n".
 func SuggestionFingerprint(s *Suggestion) string {
+	var b strings.Builder
+	for _, f := range []string{s.File, normalizedCode(s.ExistingCode), normalizedCode(s.ImprovedCode)} {
+		b.WriteString(strconv.Itoa(len(f)))
+		b.WriteByte(':')
+		b.WriteString(f)
+	}
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:])[:fingerprintHexLen]
+}
+
+// normalizedCode is a code snippet in the form SuggestionFingerprint hashes.
+func normalizedCode(code string) string {
+	lines := normalizeSnippet(strings.Split(code, "\n"))
+	for len(lines) > 0 && lines[0] == "" {
+		lines = lines[1:]
+	}
+	for len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// legacySuggestionFingerprint is the key the previous build wrote in its
+// markers: the X-13 fingerprint over file, summary and existing code. A
+// comment carrying it is still recognised (planInline checks both keys).
+func legacySuggestionFingerprint(s *Suggestion) string {
 	return llmrun.Fingerprint(s.File, s.Summary, s.ExistingCode)
 }
 
@@ -115,7 +155,7 @@ func ParseSuggestionMarker(body string) (string, bool) {
 	return fp, true
 }
 
-// postedSuggestions collects the fingerprints of the suggestion comments by
+// postedSuggestions collects the keys (current or legacy) of the suggestion comments by
 // the token's own user on the PR (as pr_review's fingerprintsOf does for
 // findings): every comment of every inline thread is examined, since Gitea
 // groups the comments of one line into one thread. A marker in anyone else's
@@ -251,8 +291,8 @@ func (pl *Plan) readComments(ctx context.Context) ([]provider.Thread, provider.U
 // planInline resolves the inline comment of every verified suggestion and
 // records the outcome of the ones that are not posted in Suggestion.Anchor:
 // a range that is not on head-side lines of one hunk is unanchorable, one
-// whose fingerprint is in posted is skipped as a duplicate. When unchecked is
-// set the PR's comments could not be read, so nothing is posted and every
+// whose key (current or legacy) is in posted is skipped as a duplicate. When
+// unchecked is set the PR's comments could not be read, so nothing is posted and every
 // anchorable suggestion is counted failed. A suggestion that is not verified
 // is not considered and keeps no anchor.
 func (pl *Plan) planInline(render InlineRenderer, posted map[string]bool, unchecked bool) ([]inlineItem, *InlineSummary) {
@@ -276,7 +316,7 @@ func (pl *Plan) planInline(render InlineRenderer, posted map[string]bool, unchec
 			sum.Failed++
 			s.Anchor = &Anchor{Status: AnchorFailed, Line: a.Line, Error: errInlineNotChecked}
 			continue
-		case posted[fp]:
+		case posted[fp] || posted[legacySuggestionFingerprint(s)]:
 			sum.SkippedDuplicate++
 			s.Anchor = &Anchor{Status: AnchorSkippedDuplicate, Line: a.Line}
 			continue

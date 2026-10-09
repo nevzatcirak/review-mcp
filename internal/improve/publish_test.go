@@ -562,3 +562,131 @@ func TestSuggestionMarker(t *testing.T) {
 		}
 	}
 }
+
+// rewordedAnswers is publishAnswers with every summary reworded; the code is
+// the same.
+func rewordedAnswers() map[int][]string {
+	d, tt, u := sugDelay, sugTest, sugUnverified
+	d.summary, tt.summary, u.summary = "Bound the retry delay", "Make the test able to fail", "Cover the missing case"
+	return map[int][]string{
+		0: {suggestionsAnswer(d, tt, u)},
+		reflectKind(0): {reflectionAnswer(
+			fb{number: 1, summary: d.summary, file: "src/app.go", start: 12, end: 12, score: 8, why: "An unbounded `delay` can stall callers."},
+			fb{number: 2, summary: tt.summary, file: "src/app_test.go", start: 2, end: 2, score: 9, why: "The test cannot fail."},
+			fb{number: 3, summary: u.summary, file: "src/app.go", start: 12, end: 12, score: 8, why: "A case is missing."},
+		)},
+	}
+}
+
+// TestPublishRewordedSummaryIsDuplicate: the already-posted key leaves the
+// summary out, so a rerun whose model reworded every summary (same code)
+// posts nothing again.
+func TestPublishRewordedSummaryIsDuplicate(t *testing.T) {
+	h, p := newPubHarness(t, giteaCaps, publishAnswers())
+	h.run(t, Args{Publish: true})
+	batches := len(p.batches)
+
+	h.llm.seen = nil
+	h.llm.answers = rewordedAnswers()
+	second := h.run(t, Args{Publish: true})
+
+	if len(p.batches) != batches {
+		t.Errorf("inline comments were posted again: %+v", p.batches[batches:])
+	}
+	if in := second.Publish.Inline; in == nil || *in != (InlineSummary{SkippedDuplicate: 2}) {
+		t.Errorf("inline = %+v, want 2 skipped duplicates", in)
+	}
+	want := map[string]string{"Bound the retry delay": AnchorSkippedDuplicate,
+		"Make the test able to fail": AnchorSkippedDuplicate, "Cover the missing case": "<nil>"}
+	if got := anchorStatuses(second); !mapEqual(got, want) {
+		t.Errorf("anchors = %v, want %v", got, want)
+	}
+}
+
+// TestPublishLegacyKeyIsDuplicate: a comment whose marker carries the key of
+// the previous build (X-13 fingerprint with the summary) is still recognised.
+func TestPublishLegacyKeyIsDuplicate(t *testing.T) {
+	h, p := newPubHarness(t, giteaCaps, publishAnswers())
+	first := h.run(t, Args{Publish: true})
+	// Rewrite the stored inline markers to the legacy keys.
+	for i := range p.stored {
+		if !p.stored[i].inline {
+			continue
+		}
+		var legacy string
+		for j := range first.Suggestions {
+			s := &first.Suggestions[j]
+			if strings.HasSuffix(p.stored[i].body, SuggestionMarker(SuggestionFingerprint(s))) {
+				legacy = legacySuggestionFingerprint(s)
+			}
+		}
+		if legacy == "" {
+			t.Fatalf("no suggestion for stored comment %q", p.stored[i].body)
+		}
+		b := p.stored[i].body
+		p.stored[i].body = b[:strings.LastIndex(b, suggestionMarkerPrefix)] + SuggestionMarker(legacy)
+	}
+	batches := len(p.batches)
+	h.llm.seen = nil
+	second := h.run(t, Args{Publish: true})
+	if len(p.batches) != batches || second.Publish.Inline == nil || *second.Publish.Inline != (InlineSummary{SkippedDuplicate: 2}) {
+		t.Errorf("legacy markers not recognised: inline = %+v", second.Publish.Inline)
+	}
+}
+
+// TestPublishDifferentImprovedCodeIsNew: the same existing code with another
+// replacement is a new suggestion.
+func TestPublishDifferentImprovedCodeIsNew(t *testing.T) {
+	h, p := newPubHarness(t, giteaCaps, publishAnswers())
+	h.run(t, Args{Publish: true})
+	batches := len(p.batches)
+
+	d := sugDelay
+	d.improved = "delay := min(retries*50, 500)"
+	tt := sugTest
+	h.llm.seen = nil
+	h.llm.answers = map[int][]string{
+		0: {suggestionsAnswer(d, tt)},
+		reflectKind(0): {reflectionAnswer(
+			fb{number: 1, summary: d.summary, file: "src/app.go", start: 12, end: 12, score: 8, why: "x"},
+			fb{number: 2, summary: tt.summary, file: "src/app_test.go", start: 2, end: 2, score: 9, why: "y"},
+		)},
+	}
+	second := h.run(t, Args{Publish: true})
+	if len(p.batches) != batches+1 || len(p.batches[batches]) != 1 || p.batches[batches][0].Path != "src/app.go" {
+		t.Fatalf("batches = %+v", p.batches[batches:])
+	}
+	if in := second.Publish.Inline; in == nil || *in != (InlineSummary{Posted: 1, SkippedDuplicate: 1}) {
+		t.Errorf("inline = %+v", in)
+	}
+}
+
+// TestSuggestionFingerprintKey: the key ignores the summary and the white
+// space and indentation of the code, and nothing else.
+func TestSuggestionFingerprintKey(t *testing.T) {
+	base := Suggestion{File: "a.go", Summary: "one", ExistingCode: "if x {\n\ty()\n}", ImprovedCode: "if x {\n\tz()\n}"}
+	key := SuggestionFingerprint(&base)
+	same := map[string]Suggestion{
+		"summary":     {File: "a.go", Summary: "other", ExistingCode: base.ExistingCode, ImprovedCode: base.ImprovedCode},
+		"indentation": {File: "a.go", ExistingCode: "    if x {\n    \ty()\n    }", ImprovedCode: "\t\tif x {\n\t\t\tz()\n\t\t}"},
+		"trailing":    {File: "a.go", ExistingCode: "if x {  \r\n\ty()\t\r\n}\r\n", ImprovedCode: "\nif x {\n\tz()\n}\n\n"},
+	}
+	for name, s := range same {
+		if got := SuggestionFingerprint(&s); got != key {
+			t.Errorf("%s changes the key", name)
+		}
+	}
+	differ := map[string]Suggestion{
+		"file":     {File: "b.go", ExistingCode: base.ExistingCode, ImprovedCode: base.ImprovedCode},
+		"existing": {File: "a.go", ExistingCode: "if x {\n\tq()\n}", ImprovedCode: base.ImprovedCode},
+		"improved": {File: "a.go", ExistingCode: base.ExistingCode, ImprovedCode: "if x {\n\tq()\n}"},
+		"swapped":  {File: "a.go", ExistingCode: base.ImprovedCode, ImprovedCode: base.ExistingCode},
+		"relative": {File: "a.go", ExistingCode: "if x {\n\ty()\n\t}", ImprovedCode: base.ImprovedCode},
+		"boundary": {File: "a.go", ExistingCode: base.ExistingCode + base.ImprovedCode[:1], ImprovedCode: base.ImprovedCode[1:]},
+	}
+	for name, s := range differ {
+		if SuggestionFingerprint(&s) == key {
+			t.Errorf("%s does not change the key", name)
+		}
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -125,6 +126,38 @@ func TestNotDescribedSection(t *testing.T) {
 	full := Client(loadRun(t, "one_call"))
 	if strings.Contains(full, "Partial description") || strings.Contains(full, TextNotDescribed) {
 		t.Errorf("complete result renders a banner or the section:\n%s", full)
+	}
+}
+
+// TestClientMarksClippedEntry: the walkthrough entry of a clipped file ends
+// with the partial marker, an entry of any other file does not, and the file
+// still counts as not described.
+func TestClientMarksClippedEntry(t *testing.T) {
+	res := loadRun(t, "one_call")
+	res.Coverage.Included = []string{"src/app_test.go"}
+	res.Coverage.Clipped = []string{"src/app.go"}
+	res.Coverage.Finalize()
+	out := Client(res)
+	if n := strings.Count(out, TextPartial); n != 1 {
+		t.Fatalf("marker appears %d times, want 1:\n%s", n, out)
+	}
+	_, walk, _ := strings.Cut(out, "\n## "+TextWalkthrough+"\n\n")
+	walk, _, _ = strings.Cut(walk, "\n\n")
+	var entries []string
+	for _, line := range strings.Split(walk, "\n") {
+		if strings.HasPrefix(line, "- ") {
+			entries = append(entries, line)
+		}
+	}
+	want := []string{
+		"- `src/app.go` (enhancement): Raise the retry count " + TextPartial,
+		"- `src/app_test.go` (tests): Add a retry test",
+	}
+	if !slices.Equal(entries, want) {
+		t.Errorf("walkthrough entries =\n%s", strings.Join(entries, "\n"))
+	}
+	if res.Coverage.NotReviewedFiles == 0 || !strings.Contains(out, "`src/app.go`: included only in part") {
+		t.Errorf("the clipped file is not counted as not described:\n%s", out)
 	}
 }
 

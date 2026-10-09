@@ -11,6 +11,7 @@
 package render
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -31,6 +32,10 @@ const (
 	TextNotDescribed = "Not described"
 	textNotGenerated = "(not generated)"
 	textNoFiles      = "No file was described."
+
+	// TextPartial marks a walkthrough entry of a clipped file: the model
+	// saw only part of it, and coverage counts it as not described.
+	TextPartial = "(partial: only part of this file was shown)"
 )
 
 // Client renders res for the MCP client:
@@ -39,7 +44,8 @@ const (
 //   - "## Title", "## Type" and "## Summary", each "(not generated)" when
 //     its value is null;
 //   - "## Walkthrough": per described file its path, label and title, then
-//     its summary indented below;
+//     its summary indented below; the line of a clipped file ends with
+//     TextPartial (see MarkPartial);
 //   - "## Not described" (Y-7), when files were not described: every such
 //     file with the reason of its coverage category, at most
 //     llmrender.MaxListedFiles listed;
@@ -92,7 +98,7 @@ func Client(res *describe.Result) string {
 		if t := strings.TrimSpace(f.Title); t != "" {
 			line += ": " + mdutil.Inline(t)
 		}
-		b.WriteString(line + "\n")
+		b.WriteString(MarkPartial(line, f.Path, &res.Coverage) + "\n")
 		if s := strings.TrimSpace(f.Summary); s != "" {
 			b.WriteString(indent(s, "  ") + "\n")
 		}
@@ -102,6 +108,17 @@ func Client(res *describe.Result) string {
 	llmrender.DescribeCoverage(&b, "## "+llmrender.TextCoverage, &res.Coverage)
 	llmrender.Notes(&b, "## "+llmrender.TextNotes, res.Notes)
 	return b.String()
+}
+
+// MarkPartial returns the walkthrough line of the entry for path with
+// TextPartial appended when path is a clipped file of c, and line unchanged
+// otherwise. Every rendering of the walkthrough uses it, so an entry never
+// reads as complete next to a "not described" count that includes it.
+func MarkPartial(line, path string, c *describe.Coverage) string {
+	if slices.Contains(c.Clipped, path) {
+		return line + " " + TextPartial
+	}
+	return line
 }
 
 // notDescribed is one file that was not described and the reason.

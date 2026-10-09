@@ -40,6 +40,12 @@ type pubProvider struct {
 	failList bool
 	failPost bool
 	me       provider.User
+
+	// reviewers is what GetReviewStatus reports; statusCalls counts its
+	// calls; statusFail makes the n-th call report unreadable reviewers.
+	reviewers   []provider.Reviewer
+	statusCalls int
+	statusFail  int
 }
 
 type pubComment struct {
@@ -80,6 +86,14 @@ func (p *pubProvider) GetPullRequest(context.Context, provider.PRRef) (*provider
 		pr.Version = strconv.Itoa(p.version)
 	}
 	return &pr, nil
+}
+
+func (p *pubProvider) GetReviewStatus(context.Context, provider.PRRef, *provider.PullRequest, provider.ReviewStatusOptions) *provider.ReviewStatus {
+	p.statusCalls++
+	if p.statusCalls == p.statusFail {
+		return &provider.ReviewStatus{Notes: []string{provider.NoteReviewsUnreadable}}
+	}
+	return &provider.ReviewStatus{Reviewers: append([]provider.Reviewer(nil), p.reviewers...)}
 }
 
 // edit simulates someone else changing the description: the version moves.
@@ -604,6 +618,72 @@ func TestPublishSanitisesQuickActions(t *testing.T) {
 		h.run(t, descArgs(false))
 		if strings.Contains(p.desc, "\n/") || !strings.Contains(p.desc, "\n /approve\n- text\n /merge\n"+RegionEnd) {
 			t.Errorf("description = %q", p.desc)
+		}
+	})
+}
+
+// A full-replace provider (one that reports a Version) can lose reviewer
+// state while the description is written: the note says so, and the publish
+// still counts as published.
+func TestPublishDescriptionReviewerGuard(t *testing.T) {
+	alice := provider.Reviewer{User: provider.User{ID: "1", Name: "alice"}, State: provider.ReviewApproved}
+	bob := provider.Reviewer{User: provider.User{ID: "2", Name: "bob"}, State: provider.ReviewPending}
+	setup := func(update func(p *pubProvider)) (*Result, *pubProvider) {
+		h, p := publishHarness(bbsCaps)
+		p.versioned, p.version = true, 3
+		p.reviewers = []provider.Reviewer{alice, bob}
+		p.beforeUpdate = func(int) {
+			if update != nil {
+				update(p)
+			}
+		}
+		return h.run(t, descArgs(false)), p
+	}
+	t.Run("unchanged reviewers: no note", func(t *testing.T) {
+		res, p := setup(nil)
+		if !res.Publish.Published || contains(res.Notes, NoteReviewersChanged) || contains(res.Notes, NoteReviewersUnchecked) {
+			t.Errorf("publish %+v notes %q", res.Publish, res.Notes)
+		}
+		if p.statusCalls != 2 {
+			t.Errorf("status reads = %d, want one before and one after the write", p.statusCalls)
+		}
+	})
+	t.Run("a verdict reset during the update", func(t *testing.T) {
+		res, _ := setup(func(p *pubProvider) { p.reviewers[0].State = provider.ReviewPending })
+		if !res.Publish.Published || !contains(res.Notes, NoteReviewersChanged) {
+			t.Errorf("publish %+v notes %q", res.Publish, res.Notes)
+		}
+	})
+	t.Run("a reviewer dropped during the update", func(t *testing.T) {
+		res, _ := setup(func(p *pubProvider) { p.reviewers = p.reviewers[:1] })
+		if !res.Publish.Published || !contains(res.Notes, NoteReviewersChanged) {
+			t.Errorf("publish %+v notes %q", res.Publish, res.Notes)
+		}
+	})
+	t.Run("the after-read fails: a different note", func(t *testing.T) {
+		h, p := publishHarness(bbsCaps)
+		p.versioned, p.version, p.reviewers, p.statusFail = true, 3, []provider.Reviewer{alice}, 2
+		res := h.run(t, descArgs(false))
+		if !res.Publish.Published || contains(res.Notes, NoteReviewersChanged) || !contains(res.Notes, NoteReviewersUnchecked) {
+			t.Errorf("publish %+v notes %q", res.Publish, res.Notes)
+		}
+	})
+	t.Run("no version: no extra reads", func(t *testing.T) {
+		h, p := publishHarness(giteaCaps)
+		p.reviewers = []provider.Reviewer{alice}
+		res := h.run(t, descArgs(false))
+		if !res.Publish.Published || p.statusCalls != 0 {
+			t.Errorf("publish %+v status reads %d", res.Publish, p.statusCalls)
+		}
+	})
+	t.Run("nothing written: no after-read", func(t *testing.T) {
+		h, p := publishHarness(bbsCaps)
+		p.versioned, p.version, p.reviewers = true, 3, []provider.Reviewer{alice}
+		h.run(t, descArgs(false))
+		p.statusCalls = 0
+		h.run(t, descArgs(false)) // idempotent: the region is current
+		if p.statusCalls != 0 {
+			t.Errorf("status reads = %d on an idempotent run", p.statusCalls)
 		}
 	})
 }

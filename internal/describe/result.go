@@ -35,6 +35,12 @@ const (
 	// NoteCommentLookupFailed: the PR's comments or the token's user could
 	// not be read, so an existing description comment could not be found.
 	NoteCommentLookupFailed = "The existing description comment could not be looked up; a new one was posted."
+	// NoteReviewersChanged: after a description write the reviewers or a
+	// review state differ from those read before it. It cannot be undone.
+	NoteReviewersChanged = "Bitbucket Server changed the reviewer list or a review state while the description was updated; check the pull request."
+	// NoteReviewersUnchecked: the reviewers could not be read before or
+	// after the write, so a change could not be ruled out.
+	NoteReviewersUnchecked = "The reviewers could not be read around the description update, so a change to the reviewer list or a review state could not be ruled out; check the pull request."
 	// NoteCommitsUnavailable: the commit messages could not be read; the
 	// prompts have no commit-message block.
 	NoteCommitsUnavailable = "The commit messages could not be read from the provider; the description was generated without them."

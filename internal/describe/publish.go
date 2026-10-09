@@ -3,6 +3,7 @@ package describe
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
@@ -139,6 +140,10 @@ func noteOlderComments(n int) string {
 //   - when the text changes or conflicts a second time, nothing is written
 //     and the outcome is MsgChangedWhileUpdating.
 //
+// After a successful write by a provider that reports a PR Version (a full
+// replace), the reviewers are compared with those read just before the write
+// (checkReviewers).
+//
 // DESIGN-QUESTION: Bitbucket Server's "409 is retried once" and Gitea's
 // "recompute once" are one rule here: two computations at most, each
 // followed by a re-read, and a repeat refuses. Chose it so the two
@@ -202,10 +207,20 @@ func (pl *Plan) publishDescription(ctx context.Context, args Args, render func(p
 			log.Debug("describe: description already up to date")
 			return
 		}
+		// A provider that reports a Version replaces the whole PR on a
+		// write and can lose reviewer state in doing so: take the reviewers
+		// now, to compare them after the write.
+		var before *provider.ReviewStatus
+		if fresh.Version != "" {
+			before = p.GetReviewStatus(ctx, pl.ref, fresh, provider.ReviewStatusOptions{})
+		}
 		err = p.UpdatePullRequest(ctx, pl.ref, up)
 		switch {
 		case err == nil:
 			pub.Published, pub.Updated, pub.URL = true, replaced, fresh.WebURL
+			if before != nil {
+				pl.checkReviewers(ctx, fresh, before)
+			}
 			pub.TitleUpdated = up.Title != nil
 			log.Debug("describe: description written", "replaced", replaced, "title", up.Title != nil)
 			return
@@ -226,6 +241,46 @@ func (pl *Plan) publishDescription(ctx context.Context, args Args, render func(p
 	}
 	pub.Error = MsgChangedWhileUpdating
 	log.Debug("describe: description changed twice, nothing written")
+}
+
+// checkReviewers re-reads the reviewers after a successful write of a
+// full-replace provider and compares them with the read taken before it. A
+// dropped reviewer or a changed state cannot be undone, so it is reported
+// (NoteReviewersChanged); a comparison that cannot be made is reported too
+// (NoteReviewersUnchecked). The publish still counts as published.
+func (pl *Plan) checkReviewers(ctx context.Context, pr *provider.PullRequest, before *provider.ReviewStatus) {
+	res := pl.Result
+	after := pl.p.GetReviewStatus(ctx, pl.ref, pr, provider.ReviewStatusOptions{})
+	if !reviewersRead(before) || !reviewersRead(after) {
+		res.Notes = append(res.Notes, NoteReviewersUnchecked)
+		pl.log.Debug("describe: reviewers could not be compared")
+		return
+	}
+	if reviewersChanged(before.Reviewers, after.Reviewers) {
+		res.Notes = append(res.Notes, NoteReviewersChanged)
+		pl.log.Debug("describe: reviewers changed during the update", "before", len(before.Reviewers), "after", len(after.Reviewers))
+	}
+}
+
+// reviewersRead reports whether the reviewers of st were read.
+func reviewersRead(st *provider.ReviewStatus) bool {
+	return st != nil && !slices.Contains(st.Notes, provider.NoteReviewsUnreadable)
+}
+
+// reviewersChanged reports whether a reviewer of before is missing from
+// after or has another state. A reviewer that appears only in after is not a
+// loss and is ignored.
+func reviewersChanged(before, after []provider.Reviewer) bool {
+	now := make(map[string]provider.ReviewState, len(after))
+	for _, r := range after {
+		now[r.User.ID+"\x00"+r.User.Name] = r.State
+	}
+	for _, r := range before {
+		if st, ok := now[r.User.ID+"\x00"+r.User.Name]; !ok || st != r.State {
+			return true
+		}
+	}
+	return false
 }
 
 // generatedTitle returns the generated title as one line, or "" when there

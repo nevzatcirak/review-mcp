@@ -99,6 +99,6 @@ Commit: `docs: document pr_describe and the provider contract`
 ## 6. In-use acceptance (`v2.0.0-rc.1`, new record issue)
 - **N1** `pr_describe` without publish on a small and on a large PR (parts): every changed file is described or listed as not described; the summary reads as the whole PR.
 - **N2** `publish_mode=comment` twice: one comment, edited in place.
-- **N3** `publish_mode=description` on a PR with author text: the author text is unchanged byte for byte (compare before/after in the UI history), the region is replaced on the second run.
+- **N3** `publish_mode=description` on a PR with author text: the author text is unchanged byte for byte (compare before/after in the UI history), the region is replaced on the second run. On Bitbucket Server, with one reviewer approved and one on needs-work: both reviewers and both states survive the update. On Gitea, a WIP-prefixed draft keeps its prefix and draft state with `update_title=true`.
 - **N4** Edit the description by hand while a run is in progress (or simulate it): nothing is overwritten.
 - **N5** The contract suite runs in CI for both providers (recorded from CI, not live).

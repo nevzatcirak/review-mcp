@@ -101,6 +101,10 @@ func TestClientMarksUnscoredAndVerification(t *testing.T) {
 		t.Errorf("unscored rendering:\n%s", out)
 	}
 	res := loadRun(t, "one_call")
+	// The run's suggestions are patch-verified; make them head-unavailable.
+	for i := range res.Suggestions {
+		res.Suggestions[i].Verified, res.Suggestions[i].UnverifiedReason = false, improve.UnverifiedHeadUnavailable
+	}
 	if out = Client(res); !strings.Contains(out, "(line 12; "+TextNotAnchoredNoHead+")") || !strings.Contains(out, "- Score: 9 of 10\n") {
 		t.Errorf("head unavailable rendering:\n%s", out)
 	}

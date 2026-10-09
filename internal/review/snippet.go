@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
-	"github.com/nevzatcirak/review-mcp/internal/patch"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 )
 
@@ -40,7 +39,7 @@ func snippet(fp *provider.FilePatch, start, end int) (text, note string) {
 	if fp.HeadStatus == provider.ContentFull && fp.HeadContent != nil {
 		lines, ok = llmrun.HeadLines(*fp.HeadContent, start, end)
 	} else {
-		lines, ok = patchLines(fp.Patch, start, end)
+		lines, ok = llmrun.PatchLines(fp.Patch, start, end)
 	}
 	if !ok {
 		return "", SnippetNoteUnverified
@@ -49,36 +48,4 @@ func snippet(fp *provider.FilePatch, start, end int) (text, note string) {
 		lines, note = lines[:MaxSnippetLines], snippetNoteCut
 	}
 	return strings.Join(lines, "\n"), note
-}
-
-// patchLines resolves the range from the hunks' new side (context and
-// added lines). Every line must be present.
-func patchLines(p string, start, end int) ([]string, bool) {
-	hunks, err := patch.ParseHunks(p)
-	if err != nil {
-		return nil, false
-	}
-	byLine := map[int]string{}
-	for _, h := range hunks {
-		if h.Malformed() {
-			continue
-		}
-		n := h.NewStart
-		for _, l := range h.Lines {
-			switch l.Op {
-			case ' ', '+':
-				byLine[n] = strings.TrimSuffix(strings.TrimSuffix(l.Text, "\n"), "\r")
-				n++
-			}
-		}
-	}
-	out := make([]string, 0, min(end-start+1, MaxSnippetLines+1))
-	for n := start; n <= end; n++ {
-		l, ok := byLine[n]
-		if !ok {
-			return nil, false
-		}
-		out = append(out, l)
-	}
-	return out, true
 }

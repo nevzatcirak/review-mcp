@@ -404,7 +404,7 @@ func TestOneCallRun(t *testing.T) {
 		t.Errorf("suggestions = %v", got)
 	}
 	s := res.Suggestions[1]
-	if s.StartLine == nil || *s.StartLine != 12 || *s.EndLine != 12 || s.Verified || s.Anchor != nil ||
+	if s.StartLine == nil || *s.StartLine != 12 || *s.EndLine != 12 || !s.Verified || s.Anchor != nil ||
 		s.Why != "An unbounded `delay` can stall callers." || s.Label != "possible issue" {
 		t.Errorf("suggestion = %+v", s)
 	}

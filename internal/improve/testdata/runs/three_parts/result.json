@@ -12,8 +12,8 @@
       "end_line": 2,
       "score": 9,
       "why": "Checked.",
-      "verified": false,
-      "unverified_reason": "head_unavailable",
+      "verified": true,
+      "unverified_reason": "",
       "anchor": null
     },
     {
@@ -28,8 +28,8 @@
       "end_line": 2,
       "score": 9,
       "why": "Checked.",
-      "verified": false,
-      "unverified_reason": "head_unavailable",
+      "verified": true,
+      "unverified_reason": "",
       "anchor": null
     },
     {
@@ -44,8 +44,8 @@
       "end_line": 2,
       "score": 9,
       "why": "Checked.",
-      "verified": false,
-      "unverified_reason": "head_unavailable",
+      "verified": true,
+      "unverified_reason": "",
       "anchor": null
     },
     {
@@ -60,8 +60,8 @@
       "end_line": 2,
       "score": 8,
       "why": "Checked.",
-      "verified": false,
-      "unverified_reason": "head_unavailable",
+      "verified": true,
+      "unverified_reason": "",
       "anchor": null
     },
     {
@@ -76,8 +76,8 @@
       "end_line": 2,
       "score": 8,
       "why": "Checked.",
-      "verified": false,
-      "unverified_reason": "head_unavailable",
+      "verified": true,
+      "unverified_reason": "",
       "anchor": null
     }
   ],

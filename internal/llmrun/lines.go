@@ -1,6 +1,10 @@
 package llmrun
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/nevzatcirak/review-mcp/internal/patch"
+)
 
 // FileLines splits complete file content into its lines, as the numbered
 // diff counts them (architect decision D5): at "\n" only, a final newline
@@ -28,4 +32,46 @@ func HeadLines(content string, start, end int) (lines []string, ok bool) {
 		return nil, false
 	}
 	return all[start-1 : end], true
+}
+
+// patchLinesCapHint bounds the capacity PatchLines reserves for a range, so
+// a huge range does not allocate before the first missing line fails it. It
+// is review.MaxSnippetLines+1: pr_review cuts a snippet at 30 lines.
+const patchLinesCapHint = 31
+
+// PatchLines resolves the range start to end (1-based, inclusive) from the
+// new side of the patch's hunks (context and added lines), without line
+// endings. Every line of the range must be present: a removed-only
+// position, a gap between hunks or an unparsable patch gives ok false;
+// malformed hunks are skipped. It is the patch side of the DQ-12 snippet
+// resolver, which pr_review's snippets and pr_improve's verification share;
+// it moved here from internal/review.
+func PatchLines(p string, start, end int) ([]string, bool) {
+	hunks, err := patch.ParseHunks(p)
+	if err != nil {
+		return nil, false
+	}
+	byLine := map[int]string{}
+	for _, h := range hunks {
+		if h.Malformed() {
+			continue
+		}
+		n := h.NewStart
+		for _, l := range h.Lines {
+			switch l.Op {
+			case ' ', '+':
+				byLine[n] = strings.TrimSuffix(strings.TrimSuffix(l.Text, "\n"), "\r")
+				n++
+			}
+		}
+	}
+	out := make([]string, 0, min(end-start+1, patchLinesCapHint))
+	for n := start; n <= end; n++ {
+		l, ok := byLine[n]
+		if !ok {
+			return nil, false
+		}
+		out = append(out, l)
+	}
+	return out, true
 }

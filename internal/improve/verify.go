@@ -18,8 +18,9 @@ const (
 	// range was given), and the head file has it at more than one place.
 	UnverifiedAmbiguous = "ambiguous"
 	// UnverifiedHeadUnavailable: the head file's complete content was not
-	// fetched (a size or file limit, a fetch failure, a binary file), so
-	// nothing could be compared.
+	// fetched (a size or file limit, a fetch failure) and the patch does
+	// not verify the given range, or the file is binary; nothing could be
+	// compared.
 	UnverifiedHeadUnavailable = "head_unavailable"
 )
 
@@ -38,24 +39,41 @@ type verdict struct {
 // verify checks a suggestion's existing code against the head file (v2
 // spec §2, Y-10):
 //
-//   - The head file's complete content is needed (FilePatch.HeadStatus
-//     full); without it the suggestion is UnverifiedHeadUnavailable.
+//   - With the head file's complete content (FilePatch.HeadStatus full) the
+//     rules below apply. Without it, a binary file is
+//     UnverifiedHeadUnavailable; any other file is checked by walking its
+//     patch (the patch-walk rule, last).
+//
 //   - A given range (the self-review's new-file lines) that lies inside
 //     the file (1 <= start <= end <= the file's line count) and whose
 //     lines equal the existing code after normalizeSnippet is verified as
 //     it is.
+//
 //   - Otherwise, or without a range, the head file is searched for the
 //     existing code: every window of as many lines is compared after
 //     normalizeSnippet. A unique match gives the range (corrected when a
 //     range was given); none is UnverifiedNotFound, several are
 //     UnverifiedAmbiguous. The first of several is never taken.
 //
+//   - Patch-walk, for a file without full head content (a not_fetched_*
+//     status, a failed fetch) whose provider still listed a patch: a given
+//     range is verified, as it is, when every line of it is a new-side line
+//     of the patch (added or context, 1 <= start <= end) and those lines
+//     equal the existing code after normalizeSnippet. There is no search
+//     and no correction, because uniqueness cannot be proven without the
+//     whole file: a missing range, a range with a line the patch does not
+//     show (a removed-only position, a gap between hunks) or lines that do
+//     not match stay UnverifiedHeadUnavailable, as does a missing patch.
+//
 // A range outside the file is a range that does not match, so the search
 // may still find the code; the range a verified suggestion ends with always
-// lies inside the file.
+// lies inside the file (or, patch-walked, inside the patch's new side).
 func verify(fp *provider.FilePatch, existing string, start, end *int) verdict {
-	if fp == nil || fp.Binary || fp.HeadStatus != provider.ContentFull || fp.HeadContent == nil {
+	if fp == nil || fp.Binary {
 		return verdict{reason: UnverifiedHeadUnavailable}
+	}
+	if fp.HeadStatus != provider.ContentFull || fp.HeadContent == nil {
+		return verifyPatch(fp, existing, start, end)
 	}
 	file := llmrun.FileLines(*fp.HeadContent)
 	want := normalizeSnippet(strings.Split(strings.ReplaceAll(existing, "\r\n", "\n"), "\n"))
@@ -73,6 +91,25 @@ func verify(fp *provider.FilePatch, existing string, start, end *int) verdict {
 	default:
 		return verdict{reason: UnverifiedAmbiguous}
 	}
+}
+
+// verifyPatch is the patch-walk rule of verify: no head content, so the
+// given range must be shown by the patch's new side and equal the existing
+// code. It never searches or corrects.
+func verifyPatch(fp *provider.FilePatch, existing string, start, end *int) verdict {
+	unavailable := verdict{reason: UnverifiedHeadUnavailable}
+	if fp.Patch == "" || start == nil || end == nil {
+		return unavailable
+	}
+	s, e := *start, *end
+	if s < 1 || s > e {
+		return unavailable
+	}
+	lines, ok := llmrun.PatchLines(fp.Patch, s, e)
+	if !ok || !slices.Equal(normalizeSnippet(lines), normalizeSnippet(strings.Split(strings.ReplaceAll(existing, "\r\n", "\n"), "\n"))) {
+		return unavailable
+	}
+	return verdict{start: s, end: e, ok: true}
 }
 
 // search finds want (normalized) in the file's lines. It returns the

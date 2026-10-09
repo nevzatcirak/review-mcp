@@ -2,7 +2,7 @@
 
 ### 1. Assert the retry count
 
-- File: `src/app_test.go` (not anchored: the head file was not available to check the quoted code)
+- File: `src/app_test.go` (checked against the head file)
 - Label: possible issue
 - Score: unscored
 
@@ -26,7 +26,7 @@ func TestRetries(t *testing.T) {
 
 ### 2. Cap the retry delay
 
-- File: `src/app.go` (not anchored: the head file was not available to check the quoted code)
+- File: `src/app.go` (checked against the head file)
 - Label: possible issue
 - Score: unscored
 

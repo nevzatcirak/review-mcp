@@ -168,6 +168,103 @@ func TestVerify(t *testing.T) {
 
 func rngPtr(n int) *int { return &n }
 
+// patchOnlyFile is a size-limited file: no head content, a patch of two
+// hunks. New-side lines: hunk 1 is 3-7 (a context, b added, c context, d
+// added, e context; "gone" removed between c and d, so it has no new line),
+// hunk 2 is 20-22. Lines 8-19 are in no hunk. Hunk 3 only removes lines, so
+// it has no new-side line.
+func patchOnlyFile() *provider.FilePatch {
+	p := "@@ -3,5 +3,5 @@\n" +
+		" \tfirst := 1\n" + // 3
+		"+\tsecond := 2\n" + // 4
+		" \tthird := 3\n" + // 5
+		"-\tgone := 0\n" +
+		"+\tfourth := 4\n" + // 6
+		" \tfifth := 5\n" + // 7
+		"@@ -20,2 +20,3 @@\n" +
+		" \tlate := 1\n" + // 20
+		"+\tlater := 2\n" + // 21
+		" }\n" + // 22
+		"@@ -40,2 +39,0 @@\n" +
+		"-\tremoved := 1\n" +
+		"-\tremoved := 2\n"
+	return &provider.FilePatch{Path: "a.go", Type: provider.ChangeModified, HeadStatus: provider.ContentNotFetchedSizeCap, Patch: p}
+}
+
+// TestVerifyPatchWalk: without head content a given range is verified only
+// when the patch shows every line of it and they equal the existing code;
+// the range stays as given and is never corrected.
+func TestVerifyPatchWalk(t *testing.T) {
+	for name, tc := range map[string]struct {
+		existing   string
+		start, end int
+		want       string
+	}{
+		"added and context lines":    {"\tsecond := 2\n\tthird := 3", 4, 5, "ok 04-05"},
+		"one added line":             {"second := 2", 4, 4, "ok 04-04"},
+		"across a removed line":      {"\tthird := 3\n\tfourth := 4", 5, 6, "ok 05-06"},
+		"second hunk":                {"\tlater := 2\n}", 21, 22, "ok 21-22"},
+		"CRLF and indentation":       {"    second := 2\r\n    third := 3", 4, 5, "ok 04-05"},
+		"trailing white space":       {"\tfirst := 1   \n\tsecond := 2\t", 3, 4, "ok 03-04"},
+		"wrong range, code in patch": {"\tthird := 3", 4, 4, UnverifiedHeadUnavailable},
+		"wrong text":                 {"\tsecond := 22", 4, 4, UnverifiedHeadUnavailable},
+		"range one line short":       {"\tsecond := 2\n\tthird := 3", 4, 4, UnverifiedHeadUnavailable},
+		"crosses a hunk gap":         {"\tfifth := 5\n\tx\n\tlate := 1", 7, 20, UnverifiedHeadUnavailable},
+		"removed-only position":      {"\tremoved := 1", 39, 39, UnverifiedHeadUnavailable},
+		"gap lines only":             {"\tx", 10, 10, UnverifiedHeadUnavailable},
+		"starts before the patch":    {"\tx\n\tfirst := 1", 2, 3, UnverifiedHeadUnavailable},
+		"start zero":                 {"\tfirst := 1", 0, 3, UnverifiedHeadUnavailable},
+		"start after end":            {"\tsecond := 2", 5, 4, UnverifiedHeadUnavailable},
+		"no range":                   {"\tsecond := 2", 0, 0, UnverifiedHeadUnavailable},
+	} {
+		s, e := rng(tc.start, tc.end)
+		if name == "start zero" || name == "start after end" {
+			a, b := tc.start, tc.end
+			s, e = &a, &b
+		}
+		if got := verdictString(verify(patchOnlyFile(), tc.existing, s, e)); got != tc.want {
+			t.Errorf("%s: %s, want %s", name, got, tc.want)
+		}
+	}
+
+	// The removed text is not on the new side, wherever it is asked for.
+	if got := verdictString(verify(patchOnlyFile(), "\tgone := 0", rngPtr(6), rngPtr(6))); got != UnverifiedHeadUnavailable {
+		t.Errorf("removed text: %s", got)
+	}
+	// Only one end given.
+	if got := verdictString(verify(patchOnlyFile(), "\tsecond := 2", rngPtr(4), nil)); got != UnverifiedHeadUnavailable {
+		t.Errorf("start only: %s", got)
+	}
+
+	// No patch, a binary file, and a malformed patch.
+	noPatch := patchOnlyFile()
+	noPatch.Patch = ""
+	bin := patchOnlyFile()
+	bin.Binary = true
+	bad := patchOnlyFile()
+	bad.Patch = "not a patch"
+	for name, f := range map[string]*provider.FilePatch{"no patch": noPatch, "binary": bin, "malformed patch": bad} {
+		if got := verdictString(verify(f, "\tsecond := 2", rngPtr(4), rngPtr(4))); got != UnverifiedHeadUnavailable {
+			t.Errorf("%s: %s", name, got)
+		}
+	}
+
+	// A fetch failure walks the patch like a limit does.
+	failed := patchOnlyFile()
+	failed.HeadStatus = provider.ContentFetchFailed
+	if got := verdictString(verify(failed, "\tsecond := 2", rngPtr(4), rngPtr(4))); got != "ok 04-04" {
+		t.Errorf("fetch failed: %s", got)
+	}
+
+	// Full head content keeps the WP-2g rule: a wrong range is searched and
+	// corrected, even when a patch is present.
+	full := headFile(goFile...)
+	full.Patch = patchOnlyFile().Patch
+	if got := verdictString(verify(full, "\treturn 0", rngPtr(1), rngPtr(1))); got != "ok 16-16 corrected" {
+		t.Errorf("full content: %s", got)
+	}
+}
+
 // TestNormalizeSnippet: trailing white space and a final "\r" go, blank
 // lines become empty and do not count for the common indentation, which
 // is removed; tabs and spaces are not converted.

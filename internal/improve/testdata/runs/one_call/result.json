@@ -12,8 +12,8 @@
       "end_line": 2,
       "score": 9,
       "why": "The test cannot fail.",
-      "verified": false,
-      "unverified_reason": "head_unavailable",
+      "verified": true,
+      "unverified_reason": "",
       "anchor": null
     },
     {
@@ -28,8 +28,8 @@
       "end_line": 12,
       "score": 8,
       "why": "An unbounded `delay` can stall callers.",
-      "verified": false,
-      "unverified_reason": "head_unavailable",
+      "verified": true,
+      "unverified_reason": "",
       "anchor": null
     }
   ],

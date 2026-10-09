@@ -12,7 +12,7 @@ mode), are never logged and are never persisted. There is no telemetry and there
 are no embedded defaults for URLs or endpoints: everything comes from your
 configuration.
 
-**Status: stable (1.0.0).** Stable releases are published under the npm
+**Status: stable (1.1.0).** Stable releases are published under the npm
 dist-tag `latest`; release candidates of the next version under `next`. See the
 [changelog](CHANGELOG.md).
 
@@ -22,7 +22,7 @@ dist-tag `latest`; release candidates of the next version under `next`. See the
    ([Setup guide, steps 2 and 3](docs/setup.md#2-create-tokens)). A read-only
    token is enough for reviews and questions that are not published.
 2. Register the server with your client. With npm there is nothing to install.
-   Pin the exact version (for example `@nevzatcirak/review-mcp@1.0.0`) so that
+   Pin the exact version (for example `@nevzatcirak/review-mcp@1.1.0`) so that
    `npx` does not reuse an older cached copy; update the pin to upgrade.
 
    **Claude Code**
@@ -34,7 +34,7 @@ dist-tag `latest`; release candidates of the next version under `next`. See the
      --env REVIEW_MCP_GITEA_BASE_URL=https://your-gitea.example \
      --env REVIEW_MCP_LLM_API_KEY="$REVIEW_MCP_LLM_API_KEY" \
      --env REVIEW_MCP_GITEA_TOKEN="$REVIEW_MCP_GITEA_TOKEN" \
-     -- npx -y @nevzatcirak/review-mcp@1.0.0
+     -- npx -y @nevzatcirak/review-mcp@1.1.0
    ```
 
    **opencode** (`opencode.json`)
@@ -45,7 +45,7 @@ dist-tag `latest`; release candidates of the next version under `next`. See the
      "mcp": {
        "review-mcp": {
          "type": "local",
-         "command": ["npx", "-y", "@nevzatcirak/review-mcp@1.0.0"],
+         "command": ["npx", "-y", "@nevzatcirak/review-mcp@1.1.0"],
          "enabled": true,
          "environment": {
            "REVIEW_MCP_LLM_BASE_URL": "https://llm.example.com/v1",

@@ -10,9 +10,9 @@
 // one call, or each part) is followed by one self-review call on the same
 // diff and that call's suggestions; suggestions scoring below
 // improve.min_score are dropped with a note, and a failed self-review keeps
-// the suggestions unscored. The suggestions are merged in part order,
-// deduplicated by their X-13 fingerprint and capped at
-// improve.max_suggestions.
+// the suggestions unscored. The suggestions of every part are ranked
+// together (score descending, the unscored last), deduplicated by their
+// X-13 fingerprint and capped at improve.max_suggestions.
 //
 // Nothing is published yet (WP-2h), and the quoted code is not yet checked
 // against the head file (WP-2g): every suggestion has verified false and no

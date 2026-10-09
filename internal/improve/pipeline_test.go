@@ -502,8 +502,8 @@ func partSuggestion(file string) sug {
 
 // TestThreePartRun: a pull request that needs three parts gets three
 // suggestion calls, each followed by the self-review of that part's diff and
-// suggestions only; the merge keeps part order, drops the low score and
-// counts it. Pinned by goldens (testdata/runs/three_parts).
+// suggestions only; the merge ranks the parts' suggestions together by
+// score (equal scores in part order), drops the low score and counts it. Pinned by goldens (testdata/runs/three_parts).
 func TestThreePartRun(t *testing.T) {
 	h := threePartHarness(t)
 	res := h.run(t, Args{})
@@ -535,8 +535,8 @@ func TestThreePartRun(t *testing.T) {
 		CallingModelPart(2, 3), ScoringPart(2, 3), CallingModelPart(3, 3), ScoringPart(3, 3)}; !slices.Equal(h.stages, want) {
 		t.Errorf("stages = %v", h.stages)
 	}
-	if got := summaries(res); !slices.Equal(got, []string{"Annotate the line in f00=9", "Annotate the line in f01=8",
-		"Annotate the line in f02=9", "Annotate the line in f04=9", "Annotate the line in f05=8"}) {
+	if got := summaries(res); !slices.Equal(got, []string{"Annotate the line in f00=9", "Annotate the line in f02=9",
+		"Annotate the line in f04=9", "Annotate the line in f01=8", "Annotate the line in f05=8"}) {
 		t.Errorf("suggestions = %v", got)
 	}
 	if c := res.Coverage; c.ModelCalls != 3 || c.Partial || c.ReviewedFiles != 6 || res.Metadata.LLMCalls != 6 ||
@@ -654,8 +654,9 @@ func TestReflectionFailureKeepsUnscored(t *testing.T) {
 	if !slices.Contains(res.Notes, "Part 2's suggestions were not scored (the self-review call failed).") {
 		t.Errorf("notes = %q", res.Notes)
 	}
-	if got := summaries(res); !slices.Equal(got, []string{"Annotate the line in f00=9", "Annotate the line in f01=8",
-		"Annotate the line in f02=null", "Annotate the line in f03=null", "Annotate the line in f04=9", "Annotate the line in f05=8"}) {
+	// The unscored part 2 ranks after every scored suggestion.
+	if got := summaries(res); !slices.Equal(got, []string{"Annotate the line in f00=9", "Annotate the line in f04=9",
+		"Annotate the line in f01=8", "Annotate the line in f05=8", "Annotate the line in f02=null", "Annotate the line in f03=null"}) {
 		t.Errorf("suggestions = %v", got)
 	}
 }
@@ -771,8 +772,10 @@ func TestDedup(t *testing.T) {
 		t.Errorf("notes = %q", res.Notes)
 	}
 
-	// The merge across parts: the same suggestion in parts 1 and 3 is kept
-	// once, in part 1's place.
+	// The merge across parts: the same suggestion in parts 1 (score 8) and
+	// 3 (score 9) is kept once. Dedup runs on the global ranking, so the
+	// higher-ranked occurrence (part 3's 9) is the one kept; on the equal
+	// 9s, part 2's comes first.
 	pl := &Plan{Result: &Result{Notes: []string{}}, maxTotal: 8, minScore: 7, log: slog.New(slog.DiscardHandler)}
 	nine, eight := 9, 8
 	c := Candidate{File: "src/x.go", Summary: "Fix it", ExistingCode: "a := b"}
@@ -782,7 +785,7 @@ func TestDedup(t *testing.T) {
 		{kept: []scored{{part: 1, c: other, fb: &feedback{score: &nine}}}},
 		{kept: []scored{{part: 2, c: c, fb: &feedback{score: &nine}}}},
 	})
-	if got := summaries(pl.Result); !slices.Equal(got, []string{"Fix it=8", "Fix that=9"}) ||
+	if got := summaries(pl.Result); !slices.Equal(got, []string{"Fix that=9", "Fix it=9"}) ||
 		!slices.Contains(pl.Result.Notes, "1 duplicate suggestion was dropped; the first of each is kept.") {
 		t.Errorf("merged = %v notes %q", got, pl.Result.Notes)
 	}
@@ -808,7 +811,8 @@ func TestCap(t *testing.T) {
 	h := threePartHarness(t)
 	h.deps.Config.Improve.MaxSuggestions = 2
 	res := h.run(t, Args{})
-	if got := summaries(res); !slices.Equal(got, []string{"Annotate the line in f00=9", "Annotate the line in f01=8"}) {
+	// The two highest scores, from parts 1 and 2; part 1's 8 is cut.
+	if got := summaries(res); !slices.Equal(got, []string{"Annotate the line in f00=9", "Annotate the line in f02=9"}) {
 		t.Errorf("suggestions = %v", got)
 	}
 	if !slices.Contains(res.Notes, "3 further suggestions were not shown because of improve.max_suggestions.") {
@@ -819,6 +823,64 @@ func TestCap(t *testing.T) {
 	res = h.run(t, Args{})
 	if len(res.Suggestions) != 4 || !slices.Contains(res.Notes, "1 further suggestion was not shown because of improve.max_suggestions.") {
 		t.Errorf("suggestions %v notes %q", summaries(res), res.Notes)
+	}
+}
+
+// TestGlobalRanking [canary target]: the merge ranks every part's
+// suggestions together before the dedup and the cap. Part 1 has a 7 and
+// part 3 a 9; a per-part order would keep part 1's 7 and cut part 3's 9
+// under the cap. The full order pins the tie-breaks (equal scores: part
+// order, then the model's order) and the unscored suggestions (after every
+// scored one, in part order, then the model's order).
+func TestGlobalRanking(t *testing.T) {
+	score := func(v int) *feedback { return &feedback{score: &v} }
+	cand := func(name string) Candidate {
+		return Candidate{File: "src/" + name + ".go", Summary: name, ExistingCode: "code of " + name}
+	}
+	outs := func() []*partOutcome {
+		return []*partOutcome{
+			{kept: []scored{
+				{part: 0, c: cand("p1-seven"), fb: score(7)},
+				{part: 0, c: cand("p1-unscored-a")},
+				{part: 0, c: cand("p1-eight"), fb: score(8)},
+				{part: 0, c: cand("p1-unscored-b"), fb: &feedback{}},
+			}},
+			{kept: []scored{
+				{part: 1, c: cand("p2-unscored")},
+				{part: 1, c: cand("p2-eight-a"), fb: score(8)},
+				{part: 1, c: cand("p2-eight-b"), fb: score(8)},
+			}},
+			{kept: []scored{
+				{part: 2, c: cand("p3-nine"), fb: score(9)},
+				{part: 2, c: cand("p3-seven"), fb: score(7)},
+			}},
+		}
+	}
+	merge := func(maxTotal int) *Result {
+		pl := &Plan{Result: &Result{Notes: []string{}}, maxTotal: maxTotal, minScore: 7, log: slog.New(slog.DiscardHandler)}
+		pl.merge(outs())
+		return pl.Result
+	}
+
+	want := []string{"p3-nine=9", "p1-eight=8", "p2-eight-a=8", "p2-eight-b=8", "p1-seven=7", "p3-seven=7",
+		"p1-unscored-a=null", "p1-unscored-b=null", "p2-unscored=null"}
+	if got := summaries(merge(30)); !slices.Equal(got, want) {
+		t.Errorf("full order = %v\nwant %v", got, want)
+	}
+
+	// Under a cap of 5 the 9 of part 3 is kept, and the cut falls on the
+	// lower part-3 7 rather than on part 1's equal 7.
+	res := merge(5)
+	if got := summaries(res); !slices.Equal(got, want[:5]) {
+		t.Errorf("cap 5: suggestions = %v, want %v", got, want[:5])
+	}
+	if !slices.Contains(res.Notes, "4 further suggestions were not shown because of improve.max_suggestions.") {
+		t.Errorf("cap 5: notes = %q", res.Notes)
+	}
+
+	// A cap of 1 keeps the single highest score, from the last part.
+	if got := summaries(merge(1)); !slices.Equal(got, []string{"p3-nine=9"}) {
+		t.Errorf("cap 1: suggestions = %v, want part 3's 9", got)
 	}
 }
 
@@ -916,8 +978,8 @@ func TestFailedPart(t *testing.T) {
 	if h.llm.seen[reflectKind(2)] != 0 || h.llm.seen[reflectKind(3)] != 1 {
 		t.Errorf("self-review calls = %v", h.llm.seen)
 	}
-	if got := summaries(res); !slices.Equal(got, []string{"Annotate the line in f00=9", "Annotate the line in f01=8",
-		"Annotate the line in f04=9", "Annotate the line in f05=8"}) {
+	if got := summaries(res); !slices.Equal(got, []string{"Annotate the line in f00=9", "Annotate the line in f04=9",
+		"Annotate the line in f01=8", "Annotate the line in f05=8"}) {
 		t.Errorf("suggestions = %v", got)
 	}
 

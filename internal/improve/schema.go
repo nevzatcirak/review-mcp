@@ -32,7 +32,7 @@ func ResultSchema() map[string]any {
 
 	return object("pr_improve result", map[string]any{
 		"suggestions": map[string]any{"type": "array",
-			"description": "the code suggestions: part order, then score descending with the unscored ones last in their part; without duplicates; at most improve.max_suggestions",
+			"description": "the code suggestions, ranked across the parts: the scored ones by score descending (ties: part order, then the model's order), then the unscored ones in part order; without duplicates; at most improve.max_suggestions",
 			"items": object("one code suggestion", map[string]any{
 				"file":          str("file path, one of the files whose diff the suggestion's model call was shown"),
 				"language":      str("programming language of the file, as the model named it"),

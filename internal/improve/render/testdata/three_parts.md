@@ -21,28 +21,7 @@ Improved code:
 some added line of code here // f00
 ```
 
-### 2. Annotate the line in f01
-
-- File: `src/f01.go` (line 2, as given by the self-review; not checked against the file)
-- Label: general
-- Score: 8 of 10
-- Why: Checked.
-
-Explain the line in `f01`.
-
-Existing code:
-
-```go
-some added line of code here
-```
-
-Improved code:
-
-```go
-some added line of code here // f01
-```
-
-### 3. Annotate the line in f02
+### 2. Annotate the line in f02
 
 - File: `src/f02.go` (line 2, as given by the self-review; not checked against the file)
 - Label: general
@@ -63,7 +42,7 @@ Improved code:
 some added line of code here // f02
 ```
 
-### 4. Annotate the line in f04
+### 3. Annotate the line in f04
 
 - File: `src/f04.go` (line 2, as given by the self-review; not checked against the file)
 - Label: general
@@ -82,6 +61,27 @@ Improved code:
 
 ```go
 some added line of code here // f04
+```
+
+### 4. Annotate the line in f01
+
+- File: `src/f01.go` (line 2, as given by the self-review; not checked against the file)
+- Label: general
+- Score: 8 of 10
+- Why: Checked.
+
+Explain the line in `f01`.
+
+Existing code:
+
+```go
+some added line of code here
+```
+
+Improved code:
+
+```go
+some added line of code here // f01
 ```
 
 ### 5. Annotate the line in f05

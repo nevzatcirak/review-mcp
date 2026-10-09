@@ -135,9 +135,10 @@ type Coverage = llmrun.Coverage
 // Result is the outcome of one pr_improve call (v2 spec §1.7). It is the
 // MCP structuredContent of pr_improve; ResultSchema describes it.
 type Result struct {
-	// Suggestions are the merged suggestions: part order, then score
-	// descending with the unscored ones last in their part, without
-	// duplicates, capped at improve.max_suggestions.
+	// Suggestions are the merged suggestions, ranked across the parts: the
+	// scored ones by score descending (ties: part order, then the model's
+	// order), then the unscored ones in part order; without duplicates,
+	// capped at improve.max_suggestions.
 	Suggestions []Suggestion `json:"suggestions"`
 	Coverage    Coverage     `json:"coverage"`
 	// Notes are user-facing sentences.

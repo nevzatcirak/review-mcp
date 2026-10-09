@@ -170,18 +170,20 @@ func (pl *Plan) reflect(ctx context.Context, deps Deps, diff string, cands []Can
 // merge merges the parts' suggestions into the result (v2 spec §1.5) and
 // adds the notes of the validation, the self-review and the merge.
 //
-//   - Order: part order; within a part, score descending, the unscored
-//     suggestions last, and the model's order among equal scores.
+//   - Order: one global ranking over every part, not per part. First the
+//     scored suggestions, by score descending; equal scores keep the part
+//     order, then the model's order within the part. Then the unscored
+//     suggestions (not checked by the self-review), in part order, then
+//     the model's order.
 //   - Duplicates: a suggestion whose fingerprint (X-13: the file, the
-//     summary and the existing code) an earlier one in that order has is
-//     dropped, within a part as across parts.
-//   - Cap: improve.max_suggestions, with a note for the rest.
-//
-// DESIGN-QUESTION: where do unscored suggestions go in the order? — chose
-// last within their part: an unscored suggestion was not checked by the
-// self-review, so it should not come before a checked one of its part;
-// keeping the part order (the spec's first key) means a part whose
-// self-review failed still keeps its place among the parts.
+//     summary and the existing code) an earlier one in that ranking has is
+//     dropped, within a part as across parts. Dedup runs on the ranked
+//     list, so the occurrence kept is the higher-ranked one (the higher
+//     score; on equal scores, the earlier part and model position; a
+//     scored one before an unscored one).
+//   - Cap: improve.max_suggestions on the deduplicated ranking, with a
+//     note for the rest. So the cap never keeps a lower score of an
+//     earlier part while cutting a higher score of a later part.
 func (pl *Plan) merge(outs []*partOutcome) {
 	res := pl.Result
 	var all []scored
@@ -204,13 +206,13 @@ func (pl *Plan) merge(outs []*partOutcome) {
 				failNotes = append(failNotes, noteNotScoredPart(i+1))
 			}
 		}
-		kept := slices.Clone(o.kept)
-		slices.SortStableFunc(kept, func(a, b scored) int {
-			sa, sb := scoreOf(a), scoreOf(b)
-			return sb - sa
-		})
-		all = append(all, kept...)
+		// Part order, then the model's order: the tie-break of the ranking.
+		all = append(all, o.kept...)
 	}
+	// A stable sort over that order is the global ranking.
+	slices.SortStableFunc(all, func(a, b scored) int {
+		return scoreOf(b) - scoreOf(a)
+	})
 
 	seen := map[string]bool{}
 	dups := 0
@@ -260,8 +262,8 @@ func (pl *Plan) merge(outs []*partOutcome) {
 		"duplicates_dropped", dups, "capped", capped, "max_suggestions", pl.maxTotal)
 }
 
-// scoreOf orders a suggestion within its part: its score, or -1 when it is
-// unscored, so that unscored suggestions sort last.
+// scoreOf ranks a suggestion in the merge: its score (0-10), or -1 when it
+// is unscored, so that unscored suggestions sort after every scored one.
 func scoreOf(s scored) int {
 	if s.fb == nil || s.fb.score == nil {
 		return -1

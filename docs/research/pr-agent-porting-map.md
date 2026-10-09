@@ -721,9 +721,12 @@ position → threshold → per-file cap → publish (section E).
   a fixed note, never upstream's default 7; a suggestion the answer does not
   score is unscored too. Scores below `improve.min_score` are dropped and
   counted.
-- Merge: part order, then score descending (unscored last in their part);
-  X-13 fingerprint dedup over file, summary and existing code
-  (`llmrun.Fingerprint`); a total cap `improve.max_suggestions` with a note.
+- Merge: one global ranking over the parts — the scored suggestions by
+  score descending (ties: part order, then the model's order), then the
+  unscored ones in part order; X-13 fingerprint dedup over file, summary
+  and existing code (`llmrun.Fingerprint`) on that ranking, so the
+  higher-ranked occurrence is kept; then a total cap
+  `improve.max_suggestions` with a note.
   The per-file cap is not ported.
 - Line ranges come from the self-review only; `verified` and `anchor` are
   WP-2g and WP-2h (section E).

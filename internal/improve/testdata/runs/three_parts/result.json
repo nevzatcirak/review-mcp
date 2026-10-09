@@ -16,21 +16,6 @@
       "anchor": null
     },
     {
-      "file": "src/f01.go",
-      "language": "go",
-      "label": "general",
-      "summary": "Annotate the line in f01",
-      "content": "Explain the line in `f01`.",
-      "existing_code": "some added line of code here",
-      "improved_code": "some added line of code here // f01",
-      "start_line": 2,
-      "end_line": 2,
-      "score": 8,
-      "why": "Checked.",
-      "verified": false,
-      "anchor": null
-    },
-    {
       "file": "src/f02.go",
       "language": "go",
       "label": "general",
@@ -56,6 +41,21 @@
       "start_line": 2,
       "end_line": 2,
       "score": 9,
+      "why": "Checked.",
+      "verified": false,
+      "anchor": null
+    },
+    {
+      "file": "src/f01.go",
+      "language": "go",
+      "label": "general",
+      "summary": "Annotate the line in f01",
+      "content": "Explain the line in `f01`.",
+      "existing_code": "some added line of code here",
+      "improved_code": "some added line of code here // f01",
+      "start_line": 2,
+      "end_line": 2,
+      "score": 8,
       "why": "Checked.",
       "verified": false,
       "anchor": null

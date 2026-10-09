@@ -599,6 +599,28 @@ func TestPublishEmptyResultIsPublishedLikeReview(t *testing.T) {
 	}
 }
 
+// In description mode, with no described file and no summary, nothing is
+// written and no request is sent beyond the pipeline's own reads; comment
+// mode still publishes the coverage (above).
+func TestPublishDescriptionNothingDescribed(t *testing.T) {
+	for name, caps := range map[string]provider.Capabilities{"gitea": giteaCaps, "bitbucket": bbsCaps} {
+		t.Run(name, func(t *testing.T) {
+			h, p := publishHarness(caps)
+			p.versioned = caps == bbsCaps
+			h.deps.Config.Ignore.Glob = []string{"**"}
+			before := p.desc
+			res := h.run(t, descArgs(true))
+			pub := res.Publish
+			if pub.Published || pub.Error != MsgNothingDescribed || MsgNothingDescribed != "Nothing was described, so the pull request description was not changed." {
+				t.Errorf("publish = %+v", pub)
+			}
+			if p.gets != 1 || p.updates != 0 || p.writes != 0 || p.statusCalls != 0 || len(p.comments) != 0 || p.desc != before {
+				t.Errorf("requests: gets %d updates %d writes %d status %d comments %d", p.gets, p.updates, p.writes, p.statusCalls, len(p.comments))
+			}
+		})
+	}
+}
+
 // Published bodies are slash-sanitised on a provider with quick actions, in
 // both modes (provider.SanitizeBody).
 func TestPublishSanitisesQuickActions(t *testing.T) {

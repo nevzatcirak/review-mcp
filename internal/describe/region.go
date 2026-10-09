@@ -18,6 +18,9 @@ const (
 const (
 	// MsgNoDescriptionEdit: the provider cannot edit the PR description.
 	MsgNoDescriptionEdit = "This provider does not support editing the pull request description; use publish_mode=comment."
+	// MsgNothingDescribed: no file was described and there is no summary,
+	// so there is nothing to put into the description.
+	MsgNothingDescribed = "Nothing was described, so the pull request description was not changed."
 	// MsgDamagedRegion: the description has a region that is not exactly
 	// one start marker followed by one end marker.
 	MsgDamagedRegion = "The pull request description contains a damaged review-mcp region; fix or remove it and run again."

@@ -158,6 +158,13 @@ func (pl *Plan) publishDescription(ctx context.Context, args Args, render func(p
 		log.Debug("describe: provider cannot edit the description")
 		return
 	}
+	if len(res.Files) == 0 && (res.Description == nil || strings.TrimSpace(*res.Description) == "") {
+		// An empty region would replace an earlier good one: write nothing,
+		// and send no request.
+		pub.Error = MsgNothingDescribed
+		log.Debug("describe: nothing described, description not changed")
+		return
+	}
 	if render == nil {
 		pub.Error = publishFailedMessage
 		log.Debug("publish skipped, no provider renderer")

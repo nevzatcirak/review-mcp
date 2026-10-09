@@ -85,6 +85,7 @@ type PRCommentsResult struct {
 	PR        PRInfo      `json:"pr" jsonschema:"the pull request"`
 	Threads   []ThreadOut `json:"threads" jsonschema:"comment threads: general threads first, then inline threads by path and line"`
 	Truncated Truncation  `json:"truncated" jsonschema:"counts of omitted, cut and hidden items"`
+	Notes     []string    `json:"notes,omitempty" jsonschema:"fixed notes about what the provider cannot show"`
 }
 
 // PRComments lists the comment threads of the pull request at prURL.
@@ -106,6 +107,11 @@ func PRComments(ctx context.Context, resolver PRResolver, prURL string, includeR
 	res := PRCommentsResult{
 		PR:      PRInfo{Kind: string(ref.Kind), URL: logging.RedactURL(ref.URL)},
 		Threads: []ThreadOut{},
+	}
+	// A provider that reports resolution for neither kind of thread shows
+	// every thread; say so once.
+	if caps := p.Capabilities(); !caps.InlineThreadResolution && !caps.GeneralThreadResolution {
+		res.Notes = append(res.Notes, provider.NoteResolutionUnavailable)
 	}
 	kept := make([]provider.Thread, 0, len(threads))
 	for i := range threads {
@@ -231,8 +237,11 @@ func RenderPRCommentsMarkdown(r PRCommentsResult) string {
 	for i := range r.Threads {
 		renderThread(&b, &r.Threads[i])
 	}
-	if tr.ThreadsOmitted > 0 || tr.BodiesTruncated > 0 || tr.ResolvedHidden > 0 {
+	if tr.ThreadsOmitted > 0 || tr.BodiesTruncated > 0 || tr.ResolvedHidden > 0 || len(r.Notes) > 0 {
 		b.WriteString("\n---\n\n")
+		for _, n := range r.Notes {
+			b.WriteString("> Note: " + n + "\n")
+		}
 		if tr.ThreadsOmitted > 0 {
 			b.WriteString("> Note: " + strconv.Itoa(tr.ThreadsOmitted) + " older thread(s) omitted; at most " +
 				strconv.Itoa(MaxThreads) + " threads are shown.\n")

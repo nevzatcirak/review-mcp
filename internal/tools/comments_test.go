@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -93,7 +94,7 @@ func ids(ts []ThreadOut) []string {
 
 func list(t *testing.T, ts []provider.Thread, include bool) PRCommentsResult {
 	t.Helper()
-	res, err := PRComments(context.Background(), &fakeResolver{p: &fakeProvider{threads: ts}}, testPRURL, include)
+	res, err := PRComments(context.Background(), &fakeResolver{p: &fakeProvider{threads: ts, caps: provider.Capabilities{InlineThreadResolution: true}}}, testPRURL, include)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -612,5 +613,33 @@ func TestCommentBodiesSanitizedByCapability(t *testing.T) {
 		if fp.gotBody != want {
 			t.Errorf("create, QuickActions=%v: body = %q, want %q", qa, fp.gotBody, want)
 		}
+	}
+}
+
+// TestPRCommentsResolutionNote: a provider that reports resolution for no
+// kind of thread gets the fixed note once; one that reports either does not.
+func TestPRCommentsResolutionNote(t *testing.T) {
+	ts := []provider.Thread{inline("2", "a.go", 3, 2, nil, "x"), inline("3", "b.go", 1, 3, nil, "y")}
+	for name, tc := range map[string]struct {
+		caps provider.Capabilities
+		want []string
+	}{
+		"none":    {provider.Capabilities{}, []string{provider.NoteResolutionUnavailable}},
+		"inline":  {provider.Capabilities{InlineThreadResolution: true}, nil},
+		"general": {provider.Capabilities{GeneralThreadResolution: true}, nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			res, err := PRComments(context.Background(), &fakeResolver{p: &fakeProvider{threads: ts, caps: tc.caps}}, testPRURL, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(res.Notes, tc.want) {
+				t.Errorf("notes = %q, want %q", res.Notes, tc.want)
+			}
+			md := RenderPRCommentsMarkdown(res)
+			if got := strings.Count(md, provider.NoteResolutionUnavailable); got != len(tc.want) {
+				t.Errorf("note appears %d times in the markdown, want %d:\n%s", got, len(tc.want), md)
+			}
+		})
 	}
 }

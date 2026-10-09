@@ -28,6 +28,11 @@ type Reviewer struct {
 	At time.Time
 }
 
+// NoteResolutionUnavailable is the fixed note of pr_comments for a provider
+// that reports no resolved state for any thread (neither
+// InlineThreadResolution nor GeneralThreadResolution): all threads are shown.
+const NoteResolutionUnavailable = "Resolved state is not available on GitHub without GraphQL; all threads are shown."
+
 // Fixed notes of a ReviewStatus. They are the only text a provider adds.
 const (
 	NoteReviewsUnreadable = "The reviews could not be read, so the reviewers are not listed."

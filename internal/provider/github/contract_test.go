@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
@@ -19,7 +20,8 @@ import (
 
 // TestContract runs the provider contract suite against a fake GitHub
 // Enterprise Server API that serves each contract.Spec. The read path is
-// WP-2j; the cases of the later work packages are declared pending.
+// WP-2j and the comments WP-2k; the cases of the later work packages are
+// declared pending.
 func TestContract(t *testing.T) {
 	contract.Run(t, ctFixture{})
 }
@@ -49,18 +51,9 @@ func (ctFixture) Traits() contract.Traits {
 	return contract.Traits{
 		BaseStrategies: github.BaseStrategies(),
 		Pending: map[string]string{
-			"capabilities":              "WP-2k",
-			"threads":                   "WP-2k",
-			"reply_in_thread":           "WP-2k",
-			"general_reply":             "WP-2k",
-			"edit_ownership":            "WP-2k",
 			"inline_anchoring":          "WP-2l",
 			"review_status":             "WP-2m",
 			"update_pull_request":       "WP-2m",
-			"errors/ListThreads":        "WP-2k",
-			"errors/PostComment":        "WP-2k",
-			"errors/ReplyToComment":     "WP-2k",
-			"errors/EditComment":        "WP-2k",
 			"errors/PostInlineComments": "WP-2l",
 			"errors/UpdatePullRequest":  "WP-2m",
 			"errors/GetReviewStatus":    "WP-2m",
@@ -73,7 +66,7 @@ func (ctFixture) Serve(t *testing.T, pr contract.Spec) (provider.Provider, provi
 	cfg := config.Defaults()
 	// The web base is the fake's origin; the API base is derived from it
 	// as for GitHub Enterprise Server ({base}/api/v3).
-	cfg.GitHub.BaseURL = contract.StartServer(t, pr, &ctGitHub{t: t, pr: pr})
+	cfg.GitHub.BaseURL = contract.StartServer(t, pr, newCtGitHub(t, pr))
 	cfg.Secrets.GitHubToken = config.NewSecret(pr.Env.Token)
 	cfg.Diff.MaxFilesFullContent = pr.Env.MaxFiles
 	cfg.Diff.MaxFileBytes = pr.Env.MaxFileBytes
@@ -91,6 +84,40 @@ type ctGitHub struct {
 	t  *testing.T
 	pr contract.Spec
 	mu sync.Mutex
+
+	// issue are the issue comments (general threads); inline are the review
+	// comments, with the id of the root they reply to (0 for a root).
+	issue  []contract.Comment
+	inline []ctInline
+	nextID int64
+}
+
+type ctInline struct {
+	contract.Comment
+	path    string
+	line    int
+	replyTo int64
+}
+
+// ctFirstID is the first id of a comment created by a request.
+const ctFirstID = 1000
+
+func newCtGitHub(t *testing.T, pr contract.Spec) *ctGitHub {
+	g := &ctGitHub{t: t, pr: pr, nextID: ctFirstID}
+	for _, th := range pr.Threads {
+		if th.Kind == provider.ThreadGeneral {
+			g.issue = append(g.issue, th.Comments...)
+			continue
+		}
+		for i, c := range th.Comments {
+			in := ctInline{Comment: c, path: th.Path, line: th.Line}
+			if i > 0 {
+				in.replyTo = th.Comments[0].ID
+			}
+			g.inline = append(g.inline, in)
+		}
+	}
+	return g
 }
 
 func ctUser(u contract.User) map[string]any {
@@ -218,6 +245,9 @@ func (g *ctGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		contract.WriteError(w, http.StatusUnauthorized)
 		return
 	}
+	if g.serveComments(w, r, path) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		g.t.Errorf("unexpected request %s %s", r.Method, path)
 		contract.WriteError(w, http.StatusMethodNotAllowed)
@@ -262,4 +292,135 @@ func (g *ctGitHub) serveContents(w http.ResponseWriter, r *http.Request, escaped
 		}
 	}
 	contract.WriteError(w, http.StatusNotFound)
+}
+
+const (
+	ctIssueURL = "https://github.example.com/api/v3/repos/octo/demo/issues/7"
+	ctPullURL  = "https://github.example.com/api/v3/repos/octo/demo/pulls/7"
+)
+
+func (g *ctGitHub) issueJSON(c contract.Comment) map[string]any {
+	return map[string]any{"id": c.ID, "user": ctUser(c.Author), "body": c.Body,
+		"created_at": c.Created.Format(time.RFC3339), "updated_at": c.Created.Format(time.RFC3339),
+		"html_url":  "https://github.example.com/octo/demo/pull/7#issuecomment-" + strconv.FormatInt(c.ID, 10),
+		"issue_url": ctIssueURL}
+}
+
+func (g *ctGitHub) inlineJSON(c ctInline) map[string]any {
+	m := map[string]any{"id": c.ID, "user": ctUser(c.Author), "body": c.Body, "path": c.path,
+		"line": c.line, "original_line": c.line, "side": "RIGHT",
+		"created_at": c.Created.Format(time.RFC3339), "updated_at": c.Created.Format(time.RFC3339),
+		"html_url":         "https://github.example.com/octo/demo/pull/7#discussion_r" + strconv.FormatInt(c.ID, 10),
+		"pull_request_url": ctPullURL}
+	if c.replyTo != 0 {
+		m["in_reply_to_id"] = c.replyTo
+	}
+	return m
+}
+
+// ctBody decodes the {"body": ...} request body of a comment write.
+func ctBody(w http.ResponseWriter, r *http.Request) (string, bool) {
+	var in struct {
+		Body string `json:"body"`
+	}
+	if json.NewDecoder(r.Body).Decode(&in) != nil {
+		contract.WriteError(w, http.StatusUnprocessableEntity)
+		return "", false
+	}
+	return in.Body, true
+}
+
+// serveComments serves the comment endpoints (WP-2k) and reports whether it
+// answered the request. The reviews list is empty: the sample pull request
+// has no review with a body.
+func (g *ctGitHub) serveComments(w http.ResponseWriter, r *http.Request, path string) bool {
+	get, post, patch := r.Method == http.MethodGet, r.Method == http.MethodPost, r.Method == http.MethodPatch
+	switch {
+	case get && (path == ctRepo+"/issues/7/comments" || path == ctRepoByID+"/issues/7/comments"):
+		var out []any
+		for _, c := range g.issue {
+			out = append(out, g.issueJSON(c))
+		}
+		g.ctPage(w, r, out, ctRepoByID+"/issues/7/comments")
+	case post && path == ctRepo+"/issues/7/comments":
+		body, ok := ctBody(w, r)
+		if !ok {
+			return true
+		}
+		c := contract.Comment{ID: g.nextID, Author: g.pr.TokenUser, Body: body, Created: time.Now().UTC()}
+		g.nextID++
+		g.issue = append(g.issue, c)
+		ctJSON(w, http.StatusCreated, g.issueJSON(c))
+	case (get || patch) && strings.HasPrefix(path, ctRepo+"/issues/comments/"):
+		id := strings.TrimPrefix(path, ctRepo+"/issues/comments/")
+		for i := range g.issue {
+			c := &g.issue[i]
+			if strconv.FormatInt(c.ID, 10) != id {
+				continue
+			}
+			if patch {
+				body, ok := ctBody(w, r)
+				if !ok {
+					return true
+				}
+				c.Body = body
+			}
+			ctJSON(w, http.StatusOK, g.issueJSON(*c))
+			return true
+		}
+		contract.WriteError(w, http.StatusNotFound)
+	case get && (path == ctPull+"/comments" || path == ctRepoByID+"/pulls/7/comments"):
+		var out []any
+		for _, c := range g.inline {
+			out = append(out, g.inlineJSON(c))
+		}
+		g.ctPage(w, r, out, ctRepoByID+"/pulls/7/comments")
+	case (get || patch) && strings.HasPrefix(path, ctRepo+"/pulls/comments/"):
+		id := strings.TrimPrefix(path, ctRepo+"/pulls/comments/")
+		for i := range g.inline {
+			c := &g.inline[i]
+			if strconv.FormatInt(c.ID, 10) != id {
+				continue
+			}
+			if patch {
+				body, ok := ctBody(w, r)
+				if !ok {
+					return true
+				}
+				c.Body = body
+			}
+			ctJSON(w, http.StatusOK, g.inlineJSON(*c))
+			return true
+		}
+		contract.WriteError(w, http.StatusNotFound)
+	case post && strings.HasPrefix(path, ctPull+"/comments/") && strings.HasSuffix(path, "/replies"):
+		id := strings.TrimSuffix(strings.TrimPrefix(path, ctPull+"/comments/"), "/replies")
+		for _, root := range g.inline {
+			if strconv.FormatInt(root.ID, 10) != id {
+				continue
+			}
+			if root.replyTo != 0 { // GitHub: replies to a reply are refused
+				contract.WriteError(w, http.StatusUnprocessableEntity)
+				return true
+			}
+			body, ok := ctBody(w, r)
+			if !ok {
+				return true
+			}
+			c := ctInline{Comment: contract.Comment{ID: g.nextID, Author: g.pr.TokenUser, Body: body, Created: time.Now().UTC()},
+				path: root.path, line: root.line, replyTo: root.ID}
+			g.nextID++
+			g.inline = append(g.inline, c)
+			ctJSON(w, http.StatusCreated, g.inlineJSON(c))
+			return true
+		}
+		contract.WriteError(w, http.StatusNotFound)
+	case get && (path == ctPull+"/reviews" || path == ctRepoByID+"/pulls/7/reviews"):
+		g.ctPage(w, r, nil, ctRepoByID+"/pulls/7/reviews")
+	case get && strings.HasPrefix(path, ctPull+"/reviews/"):
+		contract.WriteError(w, http.StatusNotFound)
+	default:
+		return false
+	}
+	return true
 }

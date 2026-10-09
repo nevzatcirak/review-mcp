@@ -714,10 +714,6 @@ func TestPendingMethodsSendNothing(t *testing.T) {
 	pr := &provider.PullRequest{HeadSHA: "h", BaseSHA: "b"}
 	title := "T"
 	for name, call := range map[string]func() error{
-		"PostComment":    func() error { _, err := p.PostComment(ctx, ref, "x"); return err },
-		"ListThreads":    func() error { _, err := p.ListThreads(ctx, ref); return err },
-		"ReplyToComment": func() error { _, err := p.ReplyToComment(ctx, ref, "1", "x"); return err },
-		"EditComment":    func() error { return p.EditComment(ctx, ref, "1", "x") },
 		"PostInlineComments": func() error {
 			_, err := p.PostInlineComments(ctx, ref, pr, []provider.InlineComment{{Path: "a", Line: 1, LineType: provider.LineAdded, Body: "x"}})
 			return err

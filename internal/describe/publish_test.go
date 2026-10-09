@@ -46,6 +46,9 @@ type pubProvider struct {
 	reviewers   []provider.Reviewer
 	statusCalls int
 	statusFail  int
+
+	// draft is the draft flag GetPullRequest reports.
+	draft *bool
 }
 
 type pubComment struct {
@@ -81,6 +84,7 @@ func (p *pubProvider) GetPullRequest(context.Context, provider.PRRef) (*provider
 		p.beforeGet(p.gets)
 	}
 	pr := p.pr
+	pr.Draft = p.draft
 	pr.Title, pr.Description, pr.WebURL = p.title, p.desc, "https://your-gitea.example/octo/demo/pulls/7"
 	if p.versioned {
 		pr.Version = strconv.Itoa(p.version)
@@ -706,6 +710,47 @@ func TestPublishDescriptionReviewerGuard(t *testing.T) {
 		h.run(t, descArgs(false)) // idempotent: the region is current
 		if p.statusCalls != 0 {
 			t.Errorf("status reads = %d on an idempotent run", p.statusCalls)
+		}
+	})
+}
+
+// update_title never changes the draft state of a pull request that is a
+// draft because of its title prefix: the prefix is kept exactly as written.
+func TestPublishDescriptionTitleKeepsDraftPrefix(t *testing.T) {
+	const generated = "Raise the retry count and test it"
+	yes, no := true, false
+	for _, tc := range []struct {
+		name, title string
+		draft       *bool
+		want        string
+	}{
+		{"WIP colon", "WIP: retry more", &yes, "WIP: " + generated},
+		{"bracket", "[WIP] retry more", &yes, "[WIP] " + generated},
+		{"lower case", "wip: retry more", &yes, "wip: " + generated},
+		{"mixed case, leading space", "  [Wip]   retry more", &yes, "  [Wip]   " + generated},
+		{"no space after the prefix", "WIP:retry more", &yes, "WIP: " + generated},
+		{"draft flag without a prefix", "retry more", &yes, generated},
+		{"not a draft", "retry more", &no, generated},
+		{"flag unknown", "retry more", nil, generated},
+		{"prefix on a non-draft is replaced", "WIP: retry more", &no, generated},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, p := publishHarness(giteaCaps)
+			p.title, p.draft = tc.title, tc.draft
+			res := h.run(t, descArgs(true))
+			if !res.Publish.TitleUpdated || p.title != tc.want {
+				t.Errorf("publish %+v title %q, want %q", res.Publish, p.title, tc.want)
+			}
+		})
+	}
+	t.Run("a generated prefix cannot make a draft", func(t *testing.T) {
+		for _, gen := range []string{"WIP: " + generated, "[wip] wip: " + generated} {
+			if got := keepDraftPrefix(&provider.PullRequest{Title: "retry", Draft: &no}, stripDraftPrefix(gen)); got != generated {
+				t.Errorf("title for %q = %q", gen, got)
+			}
+		}
+		if got := stripDraftPrefix("WIP:"); got != "" {
+			t.Errorf("a bare prefix left %q", got)
 		}
 	})
 }

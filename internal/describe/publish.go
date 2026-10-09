@@ -174,7 +174,7 @@ func (pl *Plan) publishDescription(ctx context.Context, args Args, render func(p
 
 	var title *string
 	if args.UpdateTitle {
-		if t := generatedTitle(res); t != "" {
+		if t := stripDraftPrefix(generatedTitle(res)); t != "" {
 			title = &t
 		} else {
 			res.Notes = append(res.Notes, NoteTitleNotGenerated)
@@ -205,8 +205,10 @@ func (pl *Plan) publishDescription(ctx context.Context, args Args, render func(p
 		if next != fresh.Description {
 			up.Description = &next
 		}
-		if title != nil && *title != fresh.Title {
-			up.Title = title
+		if title != nil {
+			if t := keepDraftPrefix(fresh, *title); t != fresh.Title {
+				up.Title = &t
+			}
 		}
 		if up.Description == nil && up.Title == nil {
 			// Idempotent run: the region already says this.
@@ -288,6 +290,59 @@ func reviewersChanged(before, after []provider.Reviewer) bool {
 		}
 	}
 	return false
+}
+
+// draftPrefixes are the title prefixes that make a pull request a draft on a
+// host that derives the draft state from the title: Gitea's default
+// WORK_IN_PROGRESS_PREFIXES, matched case-insensitively at the start of the
+// title. The server does not report its setting, so a non-default list is
+// not known here.
+var draftPrefixes = []string{"WIP:", "[WIP]"}
+
+// draftPrefixLen returns the length of the draft prefix at the start of
+// title, with the whitespace around it, or 0 when there is none.
+func draftPrefixLen(title string) int {
+	rest := strings.TrimLeft(title, " \t")
+	lead := len(title) - len(rest)
+	for _, p := range draftPrefixes {
+		if len(rest) >= len(p) && strings.EqualFold(rest[:len(p)], p) {
+			after := title[lead+len(p):]
+			return len(title) - len(strings.TrimLeft(after, " \t"))
+		}
+	}
+	return 0
+}
+
+// stripDraftPrefix removes draft prefixes from the start of a generated
+// title, so that it cannot turn a pull request into a draft.
+func stripDraftPrefix(title string) string {
+	for {
+		n := draftPrefixLen(title)
+		if n == 0 {
+			return title
+		}
+		title = title[n:]
+	}
+}
+
+// keepDraftPrefix puts the draft prefix of the current title, exactly as it
+// is written, in front of the generated title when the pull request is a
+// draft, so that replacing the title never changes the draft state. Where
+// the draft state is a flag (Bitbucket Server echoes it on write), a title
+// without a prefix is returned as it is.
+func keepDraftPrefix(cur *provider.PullRequest, generated string) string {
+	if cur.Draft == nil || !*cur.Draft {
+		return generated
+	}
+	n := draftPrefixLen(cur.Title)
+	if n == 0 {
+		return generated
+	}
+	prefix := cur.Title[:n]
+	if prefix[len(prefix)-1] != ' ' && prefix[len(prefix)-1] != '\t' {
+		prefix += " "
+	}
+	return prefix + generated
 }
 
 // generatedTitle returns the generated title as one line, or "" when there

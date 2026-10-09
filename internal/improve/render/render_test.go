@@ -82,6 +82,60 @@ func partialResult(t *testing.T) *improve.Result {
 	return res
 }
 
+// withPublish is the one-call run with publishing's outcome p.
+func withPublish(t *testing.T, p *improve.PublishResult) *improve.Result {
+	t.Helper()
+	res := loadRun(t, "one_call")
+	res.Publish = p
+	return res
+}
+
+// TestClientPublishingSection: the Publishing section shows the overview's
+// outcome and the inline counts for each outcome, with singular and plural
+// forms, and is absent when publishing did not run, so that output without
+// publishing is unchanged.
+func TestClientPublishingSection(t *testing.T) {
+	const head = "\n## " + TextPublishing + "\n\n"
+	for _, tc := range []struct {
+		name string
+		p    *improve.PublishResult
+		want string
+	}{
+		{"posted", &improve.PublishResult{Published: true, URL: "https://h/c/1"},
+			"- Overview comment: posted (`https://h/c/1`)\n"},
+		{"posted without a link", &improve.PublishResult{Published: true},
+			"- Overview comment: posted\n"},
+		{"updated", &improve.PublishResult{Published: true, Updated: true, URL: "https://h/c/1"},
+			"- Overview comment: updated in place (`https://h/c/1`)\n"},
+		{"failed", &improve.PublishResult{Error: "the token is not allowed to write"},
+			"- Overview comment: not posted: the token is not allowed to write\n"},
+		{"failed without a sentence", &improve.PublishResult{},
+			"- Overview comment: not posted\n"},
+		{"counts", &improve.PublishResult{Published: true,
+			Inline: &improve.InlineSummary{Posted: 3, SkippedDuplicate: 2, Unanchorable: 1, Failed: 4}},
+			"- Overview comment: posted\n- Inline suggestions: 3 posted, 2 skipped as duplicates, 1 unanchorable, 4 failed\n"},
+		{"singular", &improve.PublishResult{Published: true,
+			Inline: &improve.InlineSummary{SkippedDuplicate: 1}},
+			"- Overview comment: posted\n- Inline suggestions: 0 posted, 1 skipped as a duplicate, 0 unanchorable, 0 failed\n"},
+	} {
+		out := Client(withPublish(t, tc.p))
+		if !strings.HasSuffix(out, head+tc.want) {
+			t.Errorf("%s: want the section %q in:\n%s", tc.name, head+tc.want, out)
+		}
+		if strings.Count(out, "## "+TextPublishing) != 1 || !strings.Contains(out, "## Coverage") ||
+			strings.Index(out, "## "+TextPublishing) < strings.Index(out, "## Coverage") {
+			t.Errorf("%s: the section is not once, after the coverage:\n%s", tc.name, out)
+		}
+	}
+	// A failed overview has no inline counts line, and no URL.
+	if out := Client(withPublish(t, &improve.PublishResult{Error: "x", URL: "https://h"})); strings.Contains(out, "Inline suggestions") || strings.Contains(out, "https://h") {
+		t.Errorf("failed overview:\n%s", out)
+	}
+	if out := Client(loadRun(t, "one_call")); strings.Contains(out, TextPublishing) {
+		t.Errorf("section without publishing:\n%s", out)
+	}
+}
+
 // TestClientGoldens pins the client rendering of the one-call and
 // three-part runs, of a failed self-review and of a partial result.
 func TestClientGoldens(t *testing.T) {
@@ -90,6 +144,8 @@ func TestClientGoldens(t *testing.T) {
 		"three_parts": loadRun(t, "three_parts"),
 		"unscored":    unscoredResult(t),
 		"partial":     partialResult(t),
+		"published": withPublish(t, &improve.PublishResult{Published: true, URL: "https://your-gitea.example/octo/demo/pulls/7#issuecomment-3",
+			Inline: &improve.InlineSummary{Posted: 1, SkippedDuplicate: 1, Failed: 1}}),
 		"empty": {Suggestions: []improve.Suggestion{}, Notes: []string{improve.NoteNoReviewableChanges},
 			Coverage: llmrun.Coverage{}},
 	} {

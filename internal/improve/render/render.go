@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/nevzatcirak/review-mcp/internal/improve"
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	llmrender "github.com/nevzatcirak/review-mcp/internal/llmrun/render"
 	"github.com/nevzatcirak/review-mcp/internal/mdutil"
 )
@@ -24,6 +25,7 @@ import (
 // Fixed English headings and texts.
 const (
 	TextSuggestions = "Suggestions"
+	TextPublishing  = "Publishing"
 	TextExisting    = "Existing code:"
 	TextImproved    = "Improved code:"
 	// TextUnscored marks a suggestion without a self-review score (v2 spec
@@ -53,7 +55,9 @@ const (
 //     and the reason, then the suggestion text and the existing and
 //     improved code in fences;
 //   - the coverage section (always) and the notes section (when there are
-//     notes).
+//     notes);
+//   - "## Publishing", last and only when publishing ran (res.Publish is
+//     set): the overview's outcome and the inline counts (see writePublish).
 func Client(res *improve.Result) string {
 	if res == nil {
 		return ""
@@ -71,7 +75,43 @@ func Client(res *improve.Result) string {
 	}
 	llmrender.Coverage(&b, "## "+llmrender.TextCoverage, &res.Coverage)
 	llmrender.Notes(&b, "## "+llmrender.TextNotes, res.Notes)
+	writePublish(&b, res.Publish)
 	return b.String()
+}
+
+// writePublish writes what publishing did, when it was requested, as
+// pr_describe does: the overview's outcome as a fixed sentence with its URL,
+// or "not posted" with the fixed error sentence, and, when the verified
+// suggestions were considered for inline comments, the four counts (all of
+// them, zeros included, so a failure is never left out). The structured
+// result has the same facts; this keeps a client that shows only the text
+// from believing that something was posted when it was not.
+func writePublish(b *strings.Builder, p *improve.PublishResult) {
+	if p == nil {
+		return
+	}
+	b.WriteString("\n## " + TextPublishing + "\n\n")
+	line := "- Overview comment: "
+	switch {
+	case p.Published && p.Updated:
+		line += "updated in place"
+	case p.Published:
+		line += "posted"
+	default:
+		line += "not posted"
+		if e := strings.TrimSpace(p.Error); e != "" {
+			line += ": " + mdutil.Inline(e)
+		}
+	}
+	if p.Published && p.URL != "" {
+		line += " (" + mdutil.Literal(p.URL) + ")"
+	}
+	b.WriteString(line + "\n")
+	if in := p.Inline; in != nil {
+		b.WriteString("- Inline suggestions: " + strconv.Itoa(in.Posted) + " posted, " +
+			llmrun.CountPhrase(in.SkippedDuplicate, "skipped as a duplicate", "skipped as duplicates") + ", " +
+			strconv.Itoa(in.Unanchorable) + " unanchorable, " + strconv.Itoa(in.Failed) + " failed\n")
+	}
 }
 
 func writeSuggestion(b *strings.Builder, n int, s *improve.Suggestion) {

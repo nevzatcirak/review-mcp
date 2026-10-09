@@ -347,7 +347,10 @@ label, the score ("Score: 9 of 10", or "Score: unscored") and the reason
 blocks. With no suggestion the section says "No suggestions." After it come the
 **Coverage** section, always (the one of a review, see
 [Coverage](review.md#coverage); "Reviewed in N model calls." when N is greater
-than 1), and **Notes**, when there are notes.
+than 1), and **Notes**, when there are notes. With `publish=true` a last
+**Publishing** section says what was written (see
+[The result of publishing](#the-result-of-publishing)); without it the text has
+no such section.
 
 ```text
 ## Suggestions
@@ -626,8 +629,27 @@ the two keys are not the same on purpose.
 
 ### The result of publishing
 
-The structured result gets a `publish` object (the client text has no
-Publishing section; the notes below are in its Notes section):
+The structured result gets a `publish` object. The client text gets a
+**Publishing** section, last, only when publishing ran (`publish=true`; without
+it the text is unchanged). It has the overview's outcome, and, when the verified
+suggestions were considered for inline comments, the four counts, zeros
+included. The notes below are in the Notes section.
+
+```text
+## Publishing
+
+- Overview comment: posted (`https://your-gitea.example/octo/demo/pulls/7#issuecomment-3`)
+- Inline suggestions: 1 posted, 1 skipped as a duplicate, 0 unanchorable, 1 failed
+```
+
+The fixed texts are:
+
+| Line | Text |
+|---|---|
+| Overview, posted | `- Overview comment: posted`, with the link in backticks in parentheses when the server reported one |
+| Overview, edited | `- Overview comment: updated in place`, with the link likewise |
+| Overview, failed | `- Overview comment: not posted: ` and the fixed sentence of `publish.error` (just `not posted` when there is none); no link |
+| Inline counts | `- Inline suggestions: N posted, N skipped as duplicates, N unanchorable, N failed`; only when `publish.inline` is present; "1 skipped as a duplicate" for one |
 
 | Field | Meaning |
 |---|---|

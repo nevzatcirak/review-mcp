@@ -546,8 +546,8 @@ func TestDiffFileShapes(t *testing.T) {
 		file("a/mode.sh", "changed", 0, 0, nil, ""),
 		file("a/huge.sql", "modified", 9000, 10, nil, ""),
 		file("a/logo.png", "modified", 0, 0, nil, ""),
-		file("a/blob.weird", "added", 0, 0, nil, ""),
-		file("a/blob.weird2", "modified", 0, 0, strPtr(""), ""),
+		file("a/empty.txt", "added", 0, 0, nil, ""),
+		file("a/empty2.txt", "modified", 0, 0, strPtr(""), ""),
 		file("a/headers.go", "modified", 1, 0, strPtr("diff --git a/x b/x\n@@ -1 +1,2 @@\n k\n+n\n\\ No newline at end of file"), ""),
 		file("a/nohunk.go", "modified", 1, 0, strPtr("garbage"), ""),
 		file("a/gone.go", "removed", 0, 1, strPtr("@@ -1 +0,0 @@\n-a"), ""),
@@ -580,6 +580,8 @@ func TestDiffFileShapes(t *testing.T) {
 		{"a/new.go", "a/old.go", provider.ChangeRenamed, "@@ -1,2 +1,2 @@\n k\n-a\n+b\n"},
 		{"a/moved.go", "a/was.go", provider.ChangeRenamed, ""},
 		{"a/mode.sh", "", provider.ChangeModified, ""},
+		{"a/empty.txt", "", provider.ChangeAdded, ""},
+		{"a/empty2.txt", "", provider.ChangeModified, ""},
 		{"a/headers.go", "", provider.ChangeModified, "@@ -1 +1,2 @@\n k\n+n\n\\ No newline at end of file\n"},
 		{"a/gone.go", "", provider.ChangeDeleted, "@@ -1 +0,0 @@\n-a\n"},
 		{"a/unchanged.go", "", provider.ChangeModified, "@@ -1 +1 @@\n k\n"},
@@ -590,8 +592,6 @@ func TestDiffFileShapes(t *testing.T) {
 	wantSkipped := []provider.SkippedFile{
 		{Path: "a/huge.sql", Reason: provider.SkipSizeLimit},
 		{Path: "a/logo.png", Reason: provider.SkipBinary},
-		{Path: "a/blob.weird", Reason: provider.SkipBinary},
-		{Path: "a/blob.weird2", Reason: provider.SkipBinary},
 		{Path: "a/nohunk.go", Reason: provider.SkipFetchFailed},
 		{Path: "a/filtered.go", Reason: provider.SkipFiltered},
 	}

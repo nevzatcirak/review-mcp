@@ -67,19 +67,18 @@ func binaryByExtension(p string) bool {
 
 // withoutPatch decides what a file without a patch is. GitHub omits the
 // patch of a binary file and of a diff too large to show. ok is true when
-// the file is still listed (with an empty patch): a pure rename or a mode
-// change, which have no line changes to show. Otherwise reason is binary
-// when the extension rule says so or when the file has no line changes at
-// all (GitHub's mark of a binary file), and size_limit else.
-func withoutPatch(f *apiFile, t provider.ChangeType) (reason string, ok bool) {
+// the file is still listed (with an empty patch, as Gitea does, so that
+// diffpipe labels it empty_diff): a file with no line changes that the
+// extension rule does not call binary, such as an empty added file, a pure
+// rename or a mode change. Otherwise reason is binary when the extension
+// rule says so, and size_limit for a file with line changes.
+func withoutPatch(f *apiFile) (reason string, ok bool) {
 	lineChanges := f.Additions+f.Deletions+f.Changes > 0
 	switch {
 	case binaryByExtension(f.Filename):
 		return provider.SkipBinary, false
-	case !lineChanges && (t == provider.ChangeRenamed || f.Status == "changed"):
-		return "", true
 	case !lineChanges:
-		return provider.SkipBinary, false
+		return "", true
 	}
 	return provider.SkipSizeLimit, false
 }
@@ -178,7 +177,7 @@ func (p *Provider) GetDiff(ctx context.Context, ref provider.PRRef, pr *provider
 			}
 		}
 		if f.Patch == nil || *f.Patch == "" {
-			reason, listed := withoutPatch(f, fp.Type)
+			reason, listed := withoutPatch(f)
 			if !listed {
 				out.Skipped = append(out.Skipped, provider.SkippedFile{Path: f.Filename, Reason: reason})
 				continue

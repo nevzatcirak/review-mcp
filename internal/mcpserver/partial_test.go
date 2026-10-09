@@ -34,8 +34,8 @@ func toolsByName(t *testing.T, deps Deps) map[string]string {
 	return out
 }
 
-// TestPartialSentenceInToolDescriptions: pr_review, pr_ask and job_result
-// tell the client model what to do with a partial result, in stdio mode (with
+// TestPartialSentenceInToolDescriptions: pr_review, pr_ask, pr_improve and
+// job_result tell the client model what to do with a partial result, in stdio mode (with
 // the job sentence after it) and in serve mode.
 func TestPartialSentenceInToolDescriptions(t *testing.T) {
 	stdio := realDeps(validEnv(), nil)
@@ -43,7 +43,7 @@ func TestPartialSentenceInToolDescriptions(t *testing.T) {
 	serve := realDeps(validEnv(), nil)
 	serve.Serve = true
 	for mode, tools := range map[string]map[string]string{"stdio": toolsByName(t, stdio), "serve": toolsByName(t, serve)} {
-		names := []string{"pr_review", "pr_ask"}
+		names := []string{"pr_review", "pr_ask", "pr_improve"}
 		if mode == "stdio" {
 			names = append(names, "job_result")
 		}
@@ -95,8 +95,8 @@ func coverageSchemas(v any, out *[]map[string]any) {
 }
 
 // TestOutputSchemasCarryThePartialFields: every output schema that has a
-// coverage object (pr_review, pr_ask and pr_describe, plain and stdio
-// oneOf, and the three result branches of job_result) declares the four X-18 fields, the X-20 list
+// coverage object (pr_review, pr_ask, pr_describe and pr_improve, plain and
+// stdio oneOf, and the four result branches of job_result) declares the four X-18 fields, the X-20 list
 // deleted_listed and the X-19 counts model_calls and failed_parts as
 // required, and the RC-9 object repo_context with its five required fields.
 func TestOutputSchemasCarryThePartialFields(t *testing.T) {
@@ -161,6 +161,8 @@ func TestOutputSchemasCarryThePartialFields(t *testing.T) {
 	check("stdio pr_ask", askOutputSchema(stdio), 1)
 	check("serve pr_describe", describeOutputSchema(serve), 1)
 	check("stdio pr_describe", describeOutputSchema(stdio), 1)
+	check("serve pr_improve", improveOutputSchema(serve), 1)
+	check("stdio pr_improve", improveOutputSchema(stdio), 1)
 
 	cs := connect(t, withJobs(t, realDeps(validEnv(), nil), nil))
 	list, err := cs.ListTools(context.Background(), nil)
@@ -171,10 +173,10 @@ func TestOutputSchemasCarryThePartialFields(t *testing.T) {
 		switch tl.Name {
 		case "pr_review", "pr_ask":
 			check("listed "+tl.Name, tl.OutputSchema, 1)
-		case "pr_describe":
-			check("listed pr_describe", tl.OutputSchema, 1)
+		case "pr_describe", "pr_improve":
+			check("listed "+tl.Name, tl.OutputSchema, 1)
 		case "job_result":
-			check("listed job_result", tl.OutputSchema, 3)
+			check("listed job_result", tl.OutputSchema, 4)
 		}
 	}
 }

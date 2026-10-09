@@ -100,6 +100,9 @@ commands:
   diag describe <PR_URL> [--dry-run] [--show-prompt] [--json]
             describe the pull request with the configured LLM (nothing is
             posted)
+  diag improve <PR_URL> [--dry-run] [--show-prompt] [--json]
+            suggest code changes for the pull request with the configured
+            LLM (nothing is posted)
   diag cache [--prune]
             list the repository-context cache; --prune deletes idle and
             least-recently-used repositories

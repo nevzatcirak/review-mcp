@@ -1,0 +1,85 @@
+{
+  "suggestions": [
+    {
+      "file": "src/app_test.go",
+      "language": "go",
+      "label": "possible issue",
+      "summary": "Assert the retry count",
+      "content": "The test asserts nothing; check the retry count.",
+      "existing_code": "func TestRetries(t *testing.T) {}",
+      "improved_code": "func TestRetries(t *testing.T) {\n\tif retries != 3 {\n\t\tt.Fatal(\"retries\")\n\t}\n}",
+      "start_line": 2,
+      "end_line": 2,
+      "score": 9,
+      "why": "The test cannot fail.",
+      "verified": false,
+      "anchor": null
+    },
+    {
+      "file": "src/app.go",
+      "language": "go",
+      "label": "possible issue",
+      "summary": "Cap the retry delay",
+      "content": "Cap the delay so that a large retry count cannot stall the caller.",
+      "existing_code": "delay := retries * 100",
+      "improved_code": "delay := min(retries*100, 1000)",
+      "start_line": 12,
+      "end_line": 12,
+      "score": 8,
+      "why": "An unbounded `delay` can stall callers.",
+      "verified": false,
+      "anchor": null
+    }
+  ],
+  "coverage": {
+    "included": [
+      "src/app.go",
+      "src/app_test.go"
+    ],
+    "clipped": [],
+    "deleted_listed": [],
+    "omitted": {
+      "added": [],
+      "modified": [],
+      "deleted": []
+    },
+    "skipped": [],
+    "filtered": [
+      {
+        "path": "vendor/lib.go",
+        "reason": "ignore_glob"
+      }
+    ],
+    "partial": false,
+    "reviewed_files": 2,
+    "total_files": 2,
+    "not_reviewed_files": 0,
+    "model_calls": 1,
+    "failed_parts": 0,
+    "repo_context": {
+      "status": "off",
+      "reason": "",
+      "symbols": 0,
+      "references": 0,
+      "files": 0
+    }
+  },
+  "notes": [
+    "1 suggestion was dropped by the self-review score (below 7)."
+  ],
+  "metadata": {
+    "model": "test-model",
+    "context_window": 32000,
+    "prompt_tokens": 3053,
+    "diff_tokens": 162,
+    "request_tokens": 1862,
+    "fast_path": true,
+    "llm_calls": 2,
+    "self_review_calls": 1,
+    "repair_tactic": "direct",
+    "reasked": false,
+    "truncated": false,
+    "diff_trimmed": false,
+    "already_discussed": 1
+  }
+}

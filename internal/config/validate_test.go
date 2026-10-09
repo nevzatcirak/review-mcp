@@ -51,6 +51,12 @@ func TestValidationRules(t *testing.T) {
 		{"max total findings high", map[string]string{"REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS": "51"}, "review.max_total_findings: 51 is out of range (1-50)"},
 		{"max total findings below max findings", map[string]string{"REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS": "4", "REVIEW_MCP_REVIEW_MAX_FINDINGS": "5"},
 			"review.max_total_findings: 4 must be at least review.max_findings (5)"},
+		{"improve max suggestions low", map[string]string{"REVIEW_MCP_IMPROVE_MAX_SUGGESTIONS": "0"}, "improve.max_suggestions: 0 is out of range (1-30)"},
+		{"improve max suggestions high", map[string]string{"REVIEW_MCP_IMPROVE_MAX_SUGGESTIONS": "31"}, "improve.max_suggestions: 31 is out of range (1-30)"},
+		{"improve per part low", map[string]string{"REVIEW_MCP_IMPROVE_MAX_SUGGESTIONS_PER_PART": "0"}, "improve.max_suggestions_per_part: 0 is out of range (1-10)"},
+		{"improve per part high", map[string]string{"REVIEW_MCP_IMPROVE_MAX_SUGGESTIONS_PER_PART": "11"}, "improve.max_suggestions_per_part: 11 is out of range (1-10)"},
+		{"improve min score negative", map[string]string{"REVIEW_MCP_IMPROVE_MIN_SCORE": "-1"}, "improve.min_score: -1 is out of range (0-10)"},
+		{"improve min score high", map[string]string{"REVIEW_MCP_IMPROVE_MIN_SCORE": "11"}, "improve.min_score: 11 is out of range (0-10)"},
 		{"log level", map[string]string{"REVIEW_MCP_LOG_LEVEL": "loud"}, "log.level: invalid log level"},
 		{"repo cache dir relative", map[string]string{"REVIEW_MCP_CONTEXT_REPO_CACHE_DIR": "cache/repos"}, `context.repo.cache_dir: "cache/repos" must be an absolute path`},
 		{"repo idle days zero", map[string]string{"REVIEW_MCP_CONTEXT_REPO_IDLE_DAYS": "0"}, "context.repo.idle_days: 0 is out of range (1-365)"},
@@ -125,6 +131,9 @@ func TestValidationBoundariesAccepted(t *testing.T) {
 		"REVIEW_MCP_REVIEW_MAX_FINDINGS":              "20",
 		"REVIEW_MCP_REVIEW_MAX_CHUNKS":                "32",
 		"REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS":        "50",
+		"REVIEW_MCP_IMPROVE_MAX_SUGGESTIONS":          "30",
+		"REVIEW_MCP_IMPROVE_MAX_SUGGESTIONS_PER_PART": "10",
+		"REVIEW_MCP_IMPROVE_MIN_SCORE":                "10",
 		"REVIEW_MCP_LLM_REASONING_EFFORT":             "high",
 		"REVIEW_MCP_IGNORE_REGEX":                     `^docs/.*\.md$`,
 		"REVIEW_MCP_DIFF_IGNORE_GENERATED_FRAMEWORKS": "protobuf",
@@ -141,6 +150,10 @@ func TestValidationBoundariesAccepted(t *testing.T) {
 	if got := EffectiveMaxTotalFindings(cfg.Review, cfg.Review.MaxFindings); got != 15 {
 		t.Errorf("effective max_total_findings = %d, want 15", got)
 	}
+	// The lower bounds of the improve.* keys: min_score 0 keeps every scored
+	// suggestion.
+	mustLoad(t, MemSource{Env: envWith(map[string]string{"REVIEW_MCP_IMPROVE_MAX_SUGGESTIONS": "1",
+		"REVIEW_MCP_IMPROVE_MAX_SUGGESTIONS_PER_PART": "1", "REVIEW_MCP_IMPROVE_MIN_SCORE": "0"})})
 	// wait_seconds 0 is valid: answer with a job id at once (X-16).
 	mustLoad(t, MemSource{Env: envWith(map[string]string{"REVIEW_MCP_LLM_WAIT_SECONDS": "0"})})
 }

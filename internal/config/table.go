@@ -83,6 +83,11 @@ var table = []entry{
 
 	{"ask.extra_instructions", "REVIEW_MCP_ASK_EXTRA_INSTRUCTIONS", func(c *Config) any { return &c.Ask.ExtraInstructions }},
 
+	// improve.* rows: v2 spec §1.9 (X-27).
+	{"improve.max_suggestions", "REVIEW_MCP_IMPROVE_MAX_SUGGESTIONS", func(c *Config) any { return &c.Improve.MaxSuggestions }},
+	{"improve.max_suggestions_per_part", "REVIEW_MCP_IMPROVE_MAX_SUGGESTIONS_PER_PART", func(c *Config) any { return &c.Improve.MaxSuggestionsPerPart }},
+	{"improve.min_score", "REVIEW_MCP_IMPROVE_MIN_SCORE", func(c *Config) any { return &c.Improve.MinScore }},
+
 	// context.repo.* rows: v1.1 design note §2 (X-22).
 	{"context.repo.enabled", "REVIEW_MCP_CONTEXT_REPO_ENABLED", func(c *Config) any { return &c.Context.Repo.Enabled }},
 	{"context.repo.cache_dir", "REVIEW_MCP_CONTEXT_REPO_CACHE_DIR", func(c *Config) any { return &c.Context.Repo.CacheDir }},

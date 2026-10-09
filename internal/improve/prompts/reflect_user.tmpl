@@ -1,0 +1,35 @@
+{{- /*
+User prompt of pr_improve's self-review call (one per part, Y-9).
+
+Adapted from PR-Agent (https://github.com/The-PR-Agent/pr-agent),
+pr_agent/settings/code_suggestions/pr_code_suggestions_reflect_prompts.toml
+@ 8e5a929 ([pr_code_suggestions_reflect_prompt] user). MIT License; see
+NOTICE for the copyright and permission notice.
+
+Changes from upstream (v2 spec §1.4, X-27):
+- the duplicated example (duplicate_prompt_examples) is removed;
+- the suggestions (.suggestions, SuggestionList) are listed as upstream
+  lists them, "suggestion N: " followed by the suggestion, one per
+  paragraph, but each suggestion is a JSON object with the seven schema
+  fields in schema order instead of the repr() of a Python dict: one line
+  per suggestion whatever its code contains, so a model-written text
+  cannot start a line of its own that looks like "suggestion N:".
+Kept verbatim: the diff fenced with ====== (the part's numbered diff, the
+same text as the suggestion call's), the count sentence, the list fenced
+with ======, and the final line followed by an open ```yaml fence (DQ-7).
+The pipeline's one re-ask inserts its note on its own line before the final
+line. Jinja whitespace control is reproduced with {{- and -}}.
+*/ -}}
+You are given a Pull Request (PR) code diff:
+======
+{{ .diff }}
+======
+
+
+Below are {{ .count }} AI-generated code suggestions for the Pull Request:
+======
+{{ trim .suggestions }}
+======
+
+Response (should be a valid YAML, and nothing else):
+```yaml

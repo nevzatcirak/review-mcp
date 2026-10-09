@@ -1,0 +1,85 @@
+{{- /*
+User prompt of pr_improve's suggestion call (one call, or one part).
+
+Adapted from PR-Agent (https://github.com/The-PR-Agent/pr-agent),
+pr_agent/settings/code_suggestions/pr_code_suggestions_prompts.toml @ 8e5a929
+([pr_code_suggestions_prompt] user). MIT License; see NOTICE for the
+copyright and permission notice.
+
+Changes from upstream (v2 spec §1.2, X-27): the duplicated example
+(duplicate_prompt_examples) is removed. Kept verbatim: the --PR Info--
+block with the title and today's date, the diff fenced with ====== under
+"The PR Diff:", and the final line followed by an open ```yaml fence (DQ-7;
+the YAML loader's sign-off handling depends on it). The pipeline's one
+re-ask inserts its note on its own line before the final line. Jinja
+whitespace control is reproduced with {{- and -}}.
+
+Intentional deviation (v2 spec §1.2, "title, description, branches"):
+upstream sends the title and the date only. The PR Info block also carries
+"Branch: '<source>'", "Target branch: '<target>'" (omitted when the pull
+request has none) and the description fenced with ====== under "PR
+Description:" (omitted when empty), worded as in pr_review's and
+pr_describe's prompts.
+
+Intentional deviation (v2 spec §1.2, X-13): upstream's
+suggestion_discussion_context block (prior code-suggestion threads as JSON
+data, with its instruction paragraph after the data) is replaced by
+pr_review's existing-discussion block (.discussion, already rendered: the
+fixed header DiscussionHeader, the only instruction in it, and the human
+threads inside an adaptive code fence). It sits where upstream's block
+sits, after the diff; without one nothing is rendered.
+
+Intentional deviation (v2 spec §1.2, X-22): when context.repo.enabled is set
+and uses of the changed symbols were found outside the pull request, the
+pipeline supplies pr_review's repository-context block (.repo_context:
+repoctx.Header and the fenced entries). As in pr_review, it follows the PR
+Info block and precedes the part line and the diff; without one nothing is
+rendered.
+
+Intentional deviation (v2 spec §1.3, X-19): when the pull request is
+improved in several parts, each part's prompt gets one line (.part_header,
+the fixed sentence of PartHeader) right before the diff. With one part
+nothing is rendered.
+*/ -}}
+--PR Info--
+
+Title: '{{ .title }}'
+{{- if .date }}
+
+Today's Date: {{ .date }}
+{{- end }}
+
+Branch: '{{ .branch }}'
+{{- if .target_branch }}
+
+Target branch: '{{ .target_branch }}'
+{{- end }}
+{{- if .description }}
+
+PR Description:
+======
+{{ trim .description }}
+======
+{{- end }}
+{{- if .repo_context }}
+
+{{ .repo_context }}
+{{- end }}
+{{- if .part_header }}
+
+{{ .part_header }}
+{{- end }}
+
+The PR Diff:
+======
+{{ .diff }}
+======
+{{- if .discussion }}
+
+
+{{ .discussion }}
+{{- end }}
+
+
+Response (should be a valid YAML, and nothing else):
+```yaml

@@ -65,13 +65,15 @@ func TestServerInfoValid(t *testing.T) {
 }
 
 // TestServerInfoListsPublishSettings: the effective configuration carries
-// the review.* rows of WP-PR-7f with their values and origins, in the
-// structured result and in the markdown.
+// the review.* rows of WP-PR-7f and the improve.* rows of v2 spec §1.9
+// with their values and origins, in the structured result and in the
+// markdown.
 func TestServerInfoListsPublishSettings(t *testing.T) {
 	env := validEnv()
 	env["REVIEW_MCP_REVIEW_INLINE_FINDINGS"] = "false"
 	env["REVIEW_MCP_DIFF_MAX_TOKENS"] = "24000"
 	env["REVIEW_MCP_REVIEW_MAX_CHUNKS"] = "4"
+	env["REVIEW_MCP_IMPROVE_MAX_SUGGESTIONS"] = "12"
 	cfg, rep, err := load(env)
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -85,6 +87,9 @@ func TestServerInfoListsPublishSettings(t *testing.T) {
 		{"review.max_chunks", "4", "env"},
 		{"review.max_total_findings", "10", "default"},
 		{"review.require_performance", "true", "default"},
+		{"improve.max_suggestions", "12", "env"},
+		{"improve.max_suggestions_per_part", "4", "default"},
+		{"improve.min_score", "7", "default"},
 		{"llm.wait_seconds", "45", "default"},
 		{"diff.max_tokens", "24000", "env"},
 		{"llm.timeout_seconds", "300", "default"},

@@ -18,11 +18,12 @@ const (
 // forbidden are the packages that must not be in the dependency closure of
 // internal/describe (and of internal/describe/render). pr_describe shares
 // with pr_review only through internal/llmrun (and the YAML loader), uses no
-// repository context (v2 spec §3.2) and knows nothing of the tool and
-// transport layers.
+// repository context (v2 spec §3.2) and knows nothing of pr_improve or of the
+// tool and transport layers.
 var forbidden = []string{
 	modulePath + "/internal/review",
 	modulePath + "/internal/ask",
+	modulePath + "/internal/improve",
 	modulePath + "/internal/repoctx",
 	modulePath + "/internal/gitctx",
 	modulePath + "/internal/tools",

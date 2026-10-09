@@ -21,6 +21,7 @@ type Config struct {
 	Ignore          Ignore          `toml:"ignore" json:"ignore"`
 	Review          Review          `toml:"review" json:"review"`
 	Ask             Ask             `toml:"ask" json:"ask"`
+	Improve         Improve         `toml:"improve" json:"improve"`
 	Context         Context         `toml:"context" json:"context"`
 	Log             Log             `toml:"log" json:"log"`
 	Serve           Serve           `toml:"serve" json:"serve"`
@@ -119,6 +120,19 @@ type Ask struct {
 	ExtraInstructions string `toml:"extra_instructions" json:"extra_instructions"`
 }
 
+// Improve configures the pr_improve tool (v2 spec §1.9, X-27).
+type Improve struct {
+	// MaxSuggestions caps the suggestions of a run after the parts are
+	// merged and deduplicated.
+	MaxSuggestions int `toml:"max_suggestions" json:"max_suggestions"`
+	// MaxSuggestionsPerPart is the most suggestions one model call (one
+	// part, or the whole run in one call) is asked for.
+	MaxSuggestionsPerPart int `toml:"max_suggestions_per_part" json:"max_suggestions_per_part"`
+	// MinScore drops the suggestions whose self-review score (0 to 10) is
+	// below it; unscored suggestions are kept.
+	MinScore int `toml:"min_score" json:"min_score"`
+}
+
 // Context configures the context added to prompts beyond the diff.
 type Context struct {
 	Repo ContextRepo `toml:"repo" json:"repo"`
@@ -195,6 +209,11 @@ func Defaults() *Config {
 			MaxDiscussionTokens:   1500,
 			MaxChunks:             8,
 			MaxTotalFindings:      10,
+		},
+		Improve: Improve{
+			MaxSuggestions:        8,
+			MaxSuggestionsPerPart: 4,
+			MinScore:              7,
 		},
 		Context: Context{Repo: ContextRepo{
 			IdleDays:            7,

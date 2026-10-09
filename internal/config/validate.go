@@ -54,6 +54,7 @@ func (l *loader) validate() {
 		l.problem("review.max_chunks: %d is out of range (%d-%d)", c.Review.MaxChunks, MinMaxChunks, MaxMaxChunks)
 	}
 	l.validateMaxTotalFindings()
+	l.validateImprove()
 	l.validateContextRepo()
 	if _, err := logging.ParseLevel(c.Log.Level); err != nil {
 		l.problem("log.level: %v", err)
@@ -104,6 +105,37 @@ func (l *loader) validateMaxTotalFindings() {
 // findings its own max_findings allowed.
 func EffectiveMaxTotalFindings(r Review, maxFindings int) int {
 	return max(r.MaxTotalFindings, maxFindings)
+}
+
+// Bounds of the improve.* keys (v2 spec §1.9).
+const (
+	MaxImproveSuggestions        = 30
+	MaxImproveSuggestionsPerPart = 10
+	MaxImproveMinScore           = 10
+)
+
+// validateImprove checks the improve.* keys: improve.max_suggestions 1 to
+// 30, improve.max_suggestions_per_part 1 to 10 and improve.min_score 0 to
+// 10 (the self-review score's range; 0 keeps every scored suggestion).
+//
+// DESIGN-QUESTION: what range does improve.max_suggestions_per_part take
+// (the spec gives only its default, 4)? — chose 1 to 10: upstream's
+// num_code_suggestions_per_chunk has no bound, but each suggestion carries
+// two code snippets in the answer and again in the self-review request, so
+// a larger number mostly spends output tokens on suggestions the score and
+// the total cap drop. It is not tied to improve.max_suggestions: the total
+// cap applies after the parts are merged.
+func (l *loader) validateImprove() {
+	c := l.cfg.Improve
+	if !l.bad["improve.max_suggestions"] && (c.MaxSuggestions < 1 || c.MaxSuggestions > MaxImproveSuggestions) {
+		l.problem("improve.max_suggestions: %d is out of range (1-%d)", c.MaxSuggestions, MaxImproveSuggestions)
+	}
+	if !l.bad["improve.max_suggestions_per_part"] && (c.MaxSuggestionsPerPart < 1 || c.MaxSuggestionsPerPart > MaxImproveSuggestionsPerPart) {
+		l.problem("improve.max_suggestions_per_part: %d is out of range (1-%d)", c.MaxSuggestionsPerPart, MaxImproveSuggestionsPerPart)
+	}
+	if !l.bad["improve.min_score"] && (c.MinScore < 0 || c.MinScore > MaxImproveMinScore) {
+		l.problem("improve.min_score: %d is out of range (0-%d)", c.MinScore, MaxImproveMinScore)
+	}
 }
 
 // Bounds of the context.repo.* keys (X-22).

@@ -152,8 +152,8 @@ func TestListToolsExactSet(t *testing.T) {
 		names = append(names, tl.Name)
 	}
 	sort.Strings(names)
-	if got := strings.Join(names, ","); got != "pr_ask,pr_comment_create,pr_comment_reply,pr_comments,pr_describe,pr_info,pr_review,server_info" {
-		t.Fatalf("tools = %s, want exactly pr_ask, pr_comment_create, pr_comment_reply, pr_comments, pr_describe, pr_info, pr_review, server_info", got)
+	if got := strings.Join(names, ","); got != "pr_ask,pr_comment_create,pr_comment_reply,pr_comments,pr_describe,pr_improve,pr_info,pr_review,server_info" {
+		t.Fatalf("tools = %s, want exactly pr_ask, pr_comment_create, pr_comment_reply, pr_comments, pr_describe, pr_improve, pr_info, pr_review, server_info", got)
 	}
 
 	type want struct {

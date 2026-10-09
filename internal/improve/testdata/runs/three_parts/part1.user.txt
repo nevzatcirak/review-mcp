@@ -1,0 +1,165 @@
+--PR Info--
+
+Title: 'Retry more TITLE-MARKER-5a1c'
+
+Today's Date: 2026-10-09
+
+Branch: 'feature/retry'
+
+Target branch: 'main'
+
+PR Description:
+======
+Raises the retry count. DESC-MARKER-9e2d
+======
+
+This pull request is large and is reviewed in 3 parts. This is part 1 of 3. Suggest changes only for the files in the diff below; the other files are reviewed separately.
+
+The PR Diff:
+======
+
+
+## File: 'src/f00.go'
+
+@@ -1,2 +1,60 @@
+__new hunk__
+1  a
+2 +some added line of code here
+3 +some added line of code here
+4 +some added line of code here
+5 +some added line of code here
+6 +some added line of code here
+7 +some added line of code here
+8 +some added line of code here
+9 +some added line of code here
+10 +some added line of code here
+11 +some added line of code here
+12 +some added line of code here
+13 +some added line of code here
+14 +some added line of code here
+15 +some added line of code here
+16 +some added line of code here
+17 +some added line of code here
+18 +some added line of code here
+19 +some added line of code here
+20 +some added line of code here
+21 +some added line of code here
+22 +some added line of code here
+23 +some added line of code here
+24 +some added line of code here
+25 +some added line of code here
+26 +some added line of code here
+27 +some added line of code here
+28 +some added line of code here
+29 +some added line of code here
+30 +some added line of code here
+31 +some added line of code here
+32 +some added line of code here
+33 +some added line of code here
+34 +some added line of code here
+35 +some added line of code here
+36 +some added line of code here
+37 +some added line of code here
+38 +some added line of code here
+39 +some added line of code here
+40 +some added line of code here
+41 +some added line of code here
+42 +some added line of code here
+43 +some added line of code here
+44 +some added line of code here
+45 +some added line of code here
+46 +some added line of code here
+47 +some added line of code here
+48 +some added line of code here
+49 +some added line of code here
+50 +some added line of code here
+51 +some added line of code here
+52 +some added line of code here
+53 +some added line of code here
+54 +some added line of code here
+55 +some added line of code here
+56 +some added line of code here
+57 +some added line of code here
+58 +some added line of code here
+59 +some added line of code here
+60 +some added line of code here
+61 +some added line of code here
+
+
+## File: 'src/f01.go'
+
+@@ -1,2 +1,60 @@
+__new hunk__
+1  a
+2 +some added line of code here
+3 +some added line of code here
+4 +some added line of code here
+5 +some added line of code here
+6 +some added line of code here
+7 +some added line of code here
+8 +some added line of code here
+9 +some added line of code here
+10 +some added line of code here
+11 +some added line of code here
+12 +some added line of code here
+13 +some added line of code here
+14 +some added line of code here
+15 +some added line of code here
+16 +some added line of code here
+17 +some added line of code here
+18 +some added line of code here
+19 +some added line of code here
+20 +some added line of code here
+21 +some added line of code here
+22 +some added line of code here
+23 +some added line of code here
+24 +some added line of code here
+25 +some added line of code here
+26 +some added line of code here
+27 +some added line of code here
+28 +some added line of code here
+29 +some added line of code here
+30 +some added line of code here
+31 +some added line of code here
+32 +some added line of code here
+33 +some added line of code here
+34 +some added line of code here
+35 +some added line of code here
+36 +some added line of code here
+37 +some added line of code here
+38 +some added line of code here
+39 +some added line of code here
+40 +some added line of code here
+41 +some added line of code here
+42 +some added line of code here
+43 +some added line of code here
+44 +some added line of code here
+45 +some added line of code here
+46 +some added line of code here
+47 +some added line of code here
+48 +some added line of code here
+49 +some added line of code here
+50 +some added line of code here
+51 +some added line of code here
+52 +some added line of code here
+53 +some added line of code here
+54 +some added line of code here
+55 +some added line of code here
+56 +some added line of code here
+57 +some added line of code here
+58 +some added line of code here
+59 +some added line of code here
+60 +some added line of code here
+61 +some added line of code here
+
+Additional modified files (insufficient token budget to process):
+
+src/f02.go
+src/f03.go
+src/f04.go
+src/f05.go
+======
+
+
+Response (should be a valid YAML, and nothing else):
+```yaml

@@ -31,6 +31,7 @@ const diagUsageText = `usage:
                          [--repo-context on|off]
   review-mcp diag ask <PR_URL> --question <TEXT> [--dry-run] [--show-prompt] [--publish]
   review-mcp diag describe <PR_URL> [--dry-run] [--show-prompt] [--json]
+  review-mcp diag improve <PR_URL> [--dry-run] [--show-prompt] [--json]
   review-mcp diag cache [--prune]
 
 diag pr      fetch a pull request and print a JSON connectivity report;
@@ -74,6 +75,11 @@ diag describe describe the pull request with the configured LLM (a title, the
               print the client markdown; nothing is posted. --dry-run,
               --show-prompt and --json behave as for diag review (the
               prompts shown are those of the first call)
+diag improve  suggest code changes for the pull request with the configured
+              LLM (each scored by a self-review call) and print the client
+              markdown; nothing is posted. --dry-run, --show-prompt and
+              --json behave as for diag review (the prompts shown are those
+              of the first suggestion call)
 diag cache    list the repository-context cache (context.repo.cache_dir) as
               JSON: each repository with its size, last use and idle days;
               --prune first deletes repositories idle longer than
@@ -185,6 +191,8 @@ func runDiag(args []string, stdout, stderr io.Writer, load configLoader) int {
 		return runDiagAsk(rest, stdout, stderr, load)
 	case "describe":
 		return runDiagDescribe(rest, stdout, stderr, load)
+	case "improve":
+		return runDiagImprove(rest, stdout, stderr, load)
 	case "cache":
 		return runDiagCache(rest, stdout, stderr, load)
 	default:

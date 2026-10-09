@@ -8,6 +8,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/nevzatcirak/review-mcp/internal/describe"
+	"github.com/nevzatcirak/review-mcp/internal/improve"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 	"github.com/nevzatcirak/review-mcp/internal/tools"
 )
@@ -55,7 +56,7 @@ func progressFunc(ctx context.Context, req *mcp.CallToolRequest, log *slog.Logge
 	if token == nil || req.Session == nil {
 		return nil
 	}
-	step, extra, parts, summary := 0, 0, 0, 0
+	step, extra, parts, summary, scoring := 0, 0, 0, 0, 0
 	return func(stage string) {
 		step++
 		// The repository-context fetch is one more stage, reported only
@@ -70,10 +71,16 @@ func progressFunc(ctx context.Context, req *mcp.CallToolRequest, log *slog.Logge
 		if stage == describe.StageSummarizing {
 			summary = 1
 		}
+		// pr_improve's self-review calls (Y-9) are one more stage each,
+		// reported after their part's model call and only when there is a
+		// suggestion to score.
+		if improve.IsScoringStage(stage) {
+			scoring++
+		}
 		if n, ok := review.StageParts(stage); ok {
 			parts = max(parts, n-1)
 		}
-		total := progressTotal + extra + parts + summary
+		total := progressTotal + extra + parts + summary + scoring
 		err := req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{
 			ProgressToken: token, Message: stage, Progress: float64(step), Total: float64(total),
 		})

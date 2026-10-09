@@ -1,0 +1,26 @@
+You are given a Pull Request (PR) code diff:
+======
+## File: 'src/app.go'
+
+@@ -10,3 +10,4 @@ 
+__new hunk__
+10  line 10
+11 +retries := 3
+12 +delay := retries * 100
+13  line 12
+__old hunk__
+ line 10
+-retries := 1
+ line 12
+======
+
+
+Below are 2 AI-generated code suggestions for the Pull Request:
+======
+suggestion 1: {"relevant_file":"src/app.go","language":"go","existing_code":"delay := retries * 100","suggestion_content":"Cap the delay.","improved_code":"delay := min(retries*100, 1000)","one_sentence_summary":"Cap the retry delay","label":"possible issue"}
+
+suggestion 2: {"relevant_file":"src/app.go","language":"go","existing_code":"retries := 3","suggestion_content":"Name the \"retry\" count <here>.","improved_code":"const maxRetries = 3\nretries := maxRetries","one_sentence_summary":"Name the retry count","label":"general"}
+======
+
+Response (should be a valid YAML, and nothing else):
+```yaml

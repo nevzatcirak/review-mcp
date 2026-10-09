@@ -741,3 +741,59 @@ func TestPostInlineCommentsUnknownItemOutcomeIsNotRetried(t *testing.T) {
 		t.Fatalf("posts = %d, copies of the second comment = %d", len(fr.posts), fr.countBody("second"))
 	}
 }
+
+func TestUpdatePullRequestSendsOnlyTheNamedFields(t *testing.T) {
+	title, desc := "New title", "New body\r\n```\r\ncode  \r\n```\r\n\U0001F680"
+	for name, c := range map[string]struct {
+		up   provider.UpdatePR
+		want string
+	}{
+		"title only":       {provider.UpdatePR{Title: &title}, `{"title":"New title"}`},
+		"description only": {provider.UpdatePR{Description: &desc}, `{"body":"New body\r\n` + "```" + `\r\ncode  \r\n` + "```" + `\r\n` + "\U0001F680" + `"}`},
+		"both":             {provider.UpdatePR{Title: &title, Description: new(string), Version: "9"}, `{"body":"","title":"New title"}`},
+	} {
+		f := newFake(t, "/gitea")
+		f.handleJSON("PATCH", prAPI, prJSON("m"))
+		if err := f.provider(t, nil).UpdatePullRequest(context.Background(), ref(), c.up); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		got := methods(f, "PATCH")
+		if len(got) != 1 || got[0].Path != prAPI || got[0].Body != c.want {
+			t.Errorf("%s: requests = %+v, want one PATCH %s", name, got, c.want)
+		}
+	}
+}
+
+func TestUpdatePullRequestIsValidatedBeforeAnyRequest(t *testing.T) {
+	empty, multi := " ", "a\nb"
+	f := newFake(t, "")
+	f.handleJSON("PATCH", prAPI, prJSON("m"))
+	p := f.provider(t, nil)
+	for name, up := range map[string]provider.UpdatePR{
+		"nothing":    {},
+		"blank":      {Title: &empty},
+		"multi line": {Title: &multi},
+		"version":    {Title: &multi, Version: "x"},
+	} {
+		if err := p.UpdatePullRequest(context.Background(), ref(), up); !errors.Is(err, provider.ErrProtocol) {
+			t.Errorf("%s: err = %v", name, err)
+		}
+	}
+	if n := len(f.requests()); n != 0 {
+		t.Errorf("%d requests were sent", n)
+	}
+}
+
+func TestUpdatePullRequestErrors(t *testing.T) {
+	title := "T"
+	for status, want := range map[int]*provider.Error{401: provider.ErrAuth, 403: provider.ErrAuth, 404: provider.ErrNotFound, 500: provider.ErrUpstream} {
+		f := newFake(t, "")
+		f.handle("PATCH", prAPI, func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, testMarker+" "+testToken, status)
+		})
+		err := f.provider(t, nil).UpdatePullRequest(context.Background(), ref(), provider.UpdatePR{Title: &title})
+		if !errors.Is(err, want) || strings.Contains(err.Error(), testMarker) || strings.Contains(err.Error(), testToken) {
+			t.Errorf("%d: err = %v", status, err)
+		}
+	}
+}

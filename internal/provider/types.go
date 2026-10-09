@@ -5,7 +5,11 @@
 // I/O; this package never does.
 package provider
 
-import "time"
+import (
+	"net/url"
+	"strings"
+	"time"
+)
 
 // Kind identifies a provider implementation. The string values are shared
 // with server_info and must not change.
@@ -21,14 +25,30 @@ const (
 // PRRef identifies one pull request.
 //
 // Namespace is the Gitea owner or the Bitbucket project key ("~user" for
-// personal repositories). URL is the user-supplied PR URL; it may only be
-// logged through logging.RedactURL.
+// personal repositories). It may contain "/" (nested groups, such as
+// "group/sub/team" on GitLab); each Factory.ParsePRPath decides how many
+// URL segments are namespace, and Gitea and Bitbucket Server accept exactly
+// one. Whatever builds a URL, a cache path or a log field from it escapes it
+// per segment (EscapeNamespace), never as one string. URL is the
+// user-supplied PR URL; it may only be logged through logging.RedactURL.
 type PRRef struct {
 	Kind      Kind
 	Namespace string
 	Repo      string
 	Number    int64
 	URL       string
+}
+
+// EscapeNamespace escapes a namespace for use in a URL path: every segment
+// between "/" is escaped with url.PathEscape and the segments are joined
+// with "/". A namespace without "/" is escaped exactly as url.PathEscape
+// does.
+func EscapeNamespace(ns string) string {
+	segs := strings.Split(ns, "/")
+	for i, s := range segs {
+		segs[i] = url.PathEscape(s)
+	}
+	return strings.Join(segs, "/")
 }
 
 // PullRequest is the provider-neutral PR metadata. BaseSHA is the revision
@@ -52,6 +72,23 @@ type PullRequest struct {
 	// Mergeable is the provider's own verdict carried by the PR itself
 	// (Gitea); nil when the PR payload has none.
 	Mergeable *bool
+
+	// Version is the provider's optimistic-locking token for the PR, in
+	// decimal; "" when the provider has none (Gitea). Bitbucket Server
+	// requires it back in UpdatePR.Version and answers a stale one with a
+	// conflict. It is filled by GetPullRequest.
+	Version string
+}
+
+// UpdatePR is the request of Provider.UpdatePullRequest. A nil Title or
+// Description leaves that field as it is; an empty (non-nil) Description
+// clears the description.
+type UpdatePR struct {
+	Title       *string
+	Description *string
+	// Version is PullRequest.Version of the read the update is based on.
+	// Providers that have a version require it (see ValidateUpdatePR).
+	Version string
 }
 
 // ChangeType is the kind of change applied to a file.
@@ -87,8 +124,10 @@ type FilePatch struct {
 	OldPath string
 	Type    ChangeType
 	// Patch is a hunk-only unified diff: it starts at the first "@@" line and
-	// has no diff --git, index, --- or +++ lines. "\ No newline at end of
-	// file" lines are kept verbatim.
+	// has no diff --git, index, --- or +++ lines. The contents stay
+	// byte-exact. The "\ No newline at end of file" marker is present only
+	// when the host provides it (a provider that builds patches from file
+	// contents omits it); consumers must not rely on it.
 	Patch     string
 	Additions int
 	Deletions int
@@ -142,9 +181,53 @@ type Comment struct {
 	URL string
 }
 
-// Capabilities describes what a provider's markup supports (DQ-16).
+// Capabilities describes what a provider's markup and API support (DQ-16,
+// Y-3). Code branches on these flags, never on the provider's Kind.
 type Capabilities struct {
 	GFM, MarkdownTables, Labels, InlineComments bool
+	// SuggestionBlocks: an inline comment can carry a native suggestion block.
+	SuggestionBlocks bool
+	// QuickActions: a published line that starts with "/" runs a quick
+	// action, so every published body is slash-sanitised (SanitizeBody).
+	QuickActions bool
+	// InlineThreadResolution: the provider reports whether an inline thread
+	// is resolved.
+	InlineThreadResolution bool
+	// GeneralThreadResolution: the provider reports whether a general
+	// (PR-level) thread is resolved.
+	GeneralThreadResolution bool
+	// DescriptionEdit: the PR description can be updated through the API.
+	DescriptionEdit bool
+}
+
+// SanitizeBody returns body ready to be published for a provider with caps.
+// When caps.QuickActions is set it puts a space in front of every line that
+// starts with "/", so that no published line triggers a quick action
+// (upstream's answer sanitization, pr_questions.py _prepare_pr_answer @
+// 8e5a929). Lines are split at "\n" and at "\r"; a body that starts with "/"
+// is covered too. Without QuickActions body is returned unchanged.
+//
+// It is the one place where published bodies are sanitised: pr_review (the
+// overview and the inline comments), pr_comment_create, pr_comment_reply,
+// pr_ask and pr_describe all publish through it.
+func SanitizeBody(caps Capabilities, body string) string {
+	if !caps.QuickActions {
+		return body
+	}
+	return SanitizeQuickActions(body)
+}
+
+// SanitizeQuickActions puts a space in front of every line of s that starts
+// with "/", unconditionally. SanitizeBody applies it by capability; pr_ask
+// also applies it to the question and the answer on every provider (the v1
+// behaviour), so that its published output does not depend on QuickActions.
+func SanitizeQuickActions(s string) string {
+	s = strings.ReplaceAll(s, "\n/", "\n /")
+	s = strings.ReplaceAll(s, "\r/", "\r /")
+	if strings.HasPrefix(s, "/") {
+		s = " " + s
+	}
+	return s
 }
 
 // ThreadKind says whether a comment thread is PR-level or anchored to code.

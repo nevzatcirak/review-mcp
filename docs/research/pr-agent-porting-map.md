@@ -297,7 +297,7 @@ Upstream layers constant soft/hard buffers (1500/1000) with a per-handler `get_o
 DESIGN-QUESTION: Accurate counting endpoint
 Some OpenAI-compatible gateways expose no token-count API, and the OpenAI API itself has none. Options: (a) estimates only (tiktoken o200k + factor), no network counting; (b) optional provider count endpoint configured by the user. Recommendation: (a) for v1 — deterministic, offline, testable; the estimate factor absorbs tokenizer mismatch, and nothing in the clipping pipeline needs network-exact counts.
 
-## C. Prompt assembly & output schemas (/review, /ask)
+## C. Prompt assembly & output schemas (/review, /ask, /describe)
 
 ### /review
 
@@ -430,6 +430,157 @@ DESIGN-QUESTION: YAML vs JSON as the model output format
 - Question: upstream asks for YAML with block scalars because multi-line code in JSON strings breaks escaping; do we keep YAML?
 - Options: (1) YAML + full repair chain (upstream-proven across many models); (2) JSON + provider `response_format=json_object` where supported (cleaner parse, but optional on OpenAI-compatible endpoints and absent on many local servers); (3) JSON with YAML fallback.
 - Recommendation: (1) keep YAML and port the repair chain; it is the battle-tested path for arbitrary OpenAI-compatible endpoints and the schema's block-scalar style is designed for it. Record attribution to PR-Agent (MIT) for schema + prompts.
+
+### /describe
+
+Added for v2 (WP-2c, X-26, design note Y-4 to Y-7). Same pinned revision
+(`8e5a929`); the study covered `pr_agent/settings/pr_description_prompts.toml`
+and `pr_agent/tools/pr_description.py` only.
+
+**Mechanism**
+
+`PRDescription.__init__` builds `self.vars`: the PR title, the source branch
+(`get_pr_branch`), the description (`get_pr_description(full=False)`), the
+commit messages (`get_commit_messages`), the main language, `extra_instructions`,
+`skills_context`, `repo_context`, related tickets, and the toggles
+`enable_custom_labels`, `enable_semantic_files_types` (forced off when the
+provider lacks `gfm_markdown`), `include_file_summary_changes` (true only for
+at most `collapsible_file_list_threshold` = 8 files), `enable_pr_diagram`,
+`enable_pr_description`, `duplicate_prompt_examples`. `keys_fix` for the YAML
+repair is `filename:`, `language:`, `changes_summary:`, `changes_title:`,
+`description:`, `title:`. The run uses `ModelType.WEAK`.
+
+*Prompt* (`[pr_description_prompt]`): system = role ("You are PR-Reviewer…"),
+the task sentence (type, description, title, files walkthrough), instruction
+lines (focus on `+` lines; previous title/description/commits are only a
+reference; prioritise significant changes; block scalars; backticks; `- `
+bullets), the optional skills / extra-instructions / repo-context blocks, the
+schema as Pydantic prose (`PRType` enum `Bug fix|Tests|Enhancement|Documentation|Other`,
+optional custom-labels class, `FileDescription{filename, changes_summary?,
+changes_title, label}`, `PRDescription{type, description?, title,
+changes_diagram?, pr_files?}` with `pr_files` `max_items=20`), a YAML
+example and the closing YAML instruction. User = related tickets, `PR Info:`
+with `Previous title`, `Previous description` (fenced `=====`), `Branch`,
+`Commit messages` (fenced), the plain diff with its one-line prefix
+explanation, the optional duplicated example, and the final line followed by
+an open ` ```yaml ` fence.
+
+*Large PRs* (`enable_large_pr_handling`, default true): when
+`get_pr_diff(..., large_pr_handling=True)` returns no single diff, the diff is
+split with `get_pr_diff_multiple_patchs`; each patch is sent with the prompt
+set `pr_description_only_files_prompts` (files walkthrough only), the
+answers' `pr_files` YAML texts are concatenated, a list of unprocessed and
+deleted files is appended, and one more call with
+`pr_description_only_description_prompts` produces the headers (type, title,
+description) from that walkthrough text. Both prompt sets live in other TOML
+files that were **not** part of this study. A failed chunk is skipped (its
+files listed in a coverage footer); all chunks failing raises.
+
+*Coverage padding:* `extend_uncovered_files` appends every changed file the
+model did not return to `pr_files` with `changes_title: ...` and the label
+`additional files` (capped at 100, then one "Additional files not shown"
+entry), so the published walkthrough lists files the model never described.
+
+*Validation:* `_validate_description_schema` checks `PRDescriptionAssembled`
+and only logs a warning; labels come from `type` (comma-split when a string)
+and are published separately.
+
+**Key code**
+
+- `pr_agent/settings/pr_description_prompts.toml:[pr_description_prompt]` @ 8e5a929
+- `pr_agent/tools/pr_description.py:PRDescription.__init__` (vars, `keys_fix`, `COLLAPSIBLE_FILE_LIST_THRESHOLD`) @ 8e5a929
+- `pr_agent/tools/pr_description.py:PRDescription.run` (`ModelType.WEAK`, publish paths, labels) @ 8e5a929
+- `pr_agent/tools/pr_description.py:PRDescription._prepare_prediction` (one call, large-PR chunks, headers call) @ 8e5a929
+- `pr_agent/tools/pr_description.py:PRDescription._get_prediction` (budget fit per prompt set) @ 8e5a929
+- `pr_agent/tools/pr_description.py:PRDescription.extend_uncovered_files` @ 8e5a929
+- `pr_agent/tools/pr_description.py:PRDescription._get_description_coverage_footer` @ 8e5a929
+- `pr_agent/tools/pr_description.py:PRDescription._prepare_data,_validate_description_schema` @ 8e5a929
+- `pr_agent/tools/pr_description.py:PRDescription._prepare_labels,_prepare_file_labels` @ 8e5a929
+- `pr_agent/tools/pr_description.py:PRDescription._prepare_pr_answer,_prepare_pr_answer_with_markers,process_pr_files_prediction` (rendering; as implemented in WP-2d, see the porting notes) @ 8e5a929
+- `pr_agent/tools/pr_description.py:sanitize_diagram,apply_diagram_direction` (mermaid diagram; not ported) @ 8e5a929
+
+**Data flow**
+
+provider → vars (title, branch, description, commits) → plain diff fitted to
+the budget → one call (`pr_description_prompt`) → `load_yaml` with `keys_fix`
+→ `extend_uncovered_files` → markdown (title, type, description, walkthrough
+table) → publish (description edit, or comment) + labels. Large PR: chunks →
+files-only calls (concurrent) → concatenated walkthrough → headers call →
+merged YAML.
+
+**Porting notes (Go)** — as implemented in `internal/describe` (v2 spec §3)
+
+- Templates `internal/describe/prompts/system.tmpl` and `user.tmpl` adapt
+  `[pr_description_prompt]` with the upstream toggles fixed (semantic file
+  types on, file summaries always on, description on, diagram and custom
+  labels off); their header comments list every deviation (no diagram,
+  ticket, skills, repo-context blocks; the extra-instructions block only
+  carries the output-language instruction; no `max_items=20`; an honesty line
+  against describing files listed by name only; a `Target branch` line; the
+  part-mode variant and its part line).
+- Large PRs reuse pr_review's X-19 packing (`diffpipe.PrepareChunks` when
+  the diff leaves files out and `review.max_chunks > 1`). Parts ask for
+  `pr_files` only (the part-mode variant of the same templates, not
+  upstream's `pr_description_only_files_prompts`); the reduce call
+  (`reduce_system.tmpl`, `reduce_user.tmpl`, written for review-mcp, not
+  adapted from `pr_description_only_description_prompts`) receives the
+  merged walkthrough (path, title, summary) and no diff. Parts run
+  sequentially, as pr_review's do.
+- `extend_uncovered_files` is deliberately **not** ported (Y-7): a file the
+  model did not return is reported as not described (coverage reason
+  `not_returned`), never padded into the walkthrough.
+- Validation is enforced, not warn-only: types outside the enum are dropped
+  with a note, walkthrough entries for a path the call was not shown are
+  dropped (per part: that part's own files), the first entry of a path wins,
+  labels are one line of at most 40 characters.
+- `keys_fix` is kept without `language:` (not in the schema); no first/last
+  key, as upstream's describe path passes none.
+- One model: review-mcp has no weak-model setting; describe uses `llm.model`.
+- Publishing (WP-2d, X-26): upstream's description markers
+  (`use_description_markers`) and its overwrite of the description are not
+  ported; review-mcp owns only a region between `[//]: # (review-mcp:describe:start)`
+  and `[//]: # (review-mcp:describe:end)`, appended after the author's text and
+  replaced on later runs, with the text outside it untouched
+  (`publish_mode=description`). The comment path
+  (`publish_description_as_comment`) is `publish_mode=comment`, one comment
+  edited in place by a marker (`[//]: # (review-mcp:describe:v1)`) and the
+  author check of X-12. `generate_ai_title` is the `update_title` argument.
+  Labels are not published (Y-4). The published text is escaped as
+  `pr_review` escapes its findings, and the Bitbucket Server update sends the
+  reviewer list back, as this study's note on upstream's PR update requires.
+  Guide: `docs/describe.md`.
+- Commit messages: numbered `N. message` (upstream's GitHub provider format),
+  clipped to `diff.max_commits_tokens` (default 500).
+
+**Config knobs**
+
+Defaults are given only where `pr_description.py` states them (a `.get`
+fallback); the others live in `configuration.toml`, which this study did not
+cover ("n/s").
+
+| upstream key | default | keep/drop/rename for Go config |
+|---|---|---|
+| `pr_description.enable_large_pr_handling` | true | replaced by `review.max_chunks` (> 1 enables parts, X-19) |
+| `pr_description.enable_semantic_files_types` | n/s | always on (no key) |
+| `pr_description.collapsible_file_list_threshold` | 8 | drop (summaries always asked for) |
+| `pr_description.enable_pr_diagram` | false | drop |
+| `pr_description.enable_pr_description` | true | always on (no key) |
+| `pr_description.publish_labels` / `config.enable_custom_labels` | n/s | drop (labels are not set in v2, Y-4) |
+| `pr_description.extra_instructions` | n/s | drop (no argument or key; spec §3.7) |
+| `pr_description.publish_description_as_comment` (+`_persistent`) | n/s | `publish_mode=comment` (WP-2d; always edited in place) |
+| `pr_description.generate_ai_title` | n/s | `update_title` argument (WP-2d) |
+| `pr_description.use_description_markers` | n/s | replaced by the managed region markers (WP-2d) |
+| `pr_description.add_original_user_description` | n/s | n/a: the author's text is never replaced (Y-5) |
+| `config.max_commits_tokens` | unset | `diff.max_commits_tokens` (500) |
+
+**Risks**
+
+- Upstream's `pr_files` description says "all the files", while upstream
+  caps the list at 20 and pads the rest; models trained on the upstream
+  prompt may still stop early. The `not_returned` coverage reason makes that
+  visible instead of hiding it.
+- The reduce prompt is ours; its quality on weak models is unmeasured until
+  the in-use acceptance (N1).
 
 ## D. Output parsing & repair path
 

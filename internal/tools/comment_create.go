@@ -92,6 +92,7 @@ func PRCommentCreate(ctx context.Context, resolver PRResolver, a PRCommentCreate
 	if err != nil {
 		return PRCommentCreateResult{}, err
 	}
+	body = provider.SanitizeBody(p.Capabilities(), body)
 	if a.File == "" {
 		c, err := p.PostComment(ctx, ref, body)
 		if err != nil {

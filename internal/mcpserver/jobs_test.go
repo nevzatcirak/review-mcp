@@ -321,12 +321,12 @@ func TestJobResultToolDefinition(t *testing.T) {
 		names = append(names, tl.Name)
 	}
 	sort.Strings(names)
-	if got := strings.Join(names, ","); got != "job_result,pr_ask,pr_comment_create,pr_comment_reply,pr_comments,pr_info,pr_review,server_info" {
+	if got := strings.Join(names, ","); got != "job_result,pr_ask,pr_comment_create,pr_comment_reply,pr_comments,pr_describe,pr_info,pr_review,server_info" {
 		t.Fatalf("stdio tools = %s", got)
 	}
 
 	tl := byName["job_result"]
-	if tl.Description != "Returns the result of a long-running pr_review or pr_ask call that answered with a job_id, waiting up to wait_seconds for it to finish. If the result says the review is partial, tell the user how many files were not reviewed and never state that those files have no issues." {
+	if tl.Description != "Returns the result of a long-running pr_review, pr_ask or pr_describe call that answered with a job_id, waiting up to wait_seconds for it to finish. If the result says the review is partial, tell the user how many files were not reviewed and never state that those files have no issues. If the result says the description is partial, tell the user how many files were not described and never present the walkthrough as covering those files." {
 		t.Errorf("description = %q", tl.Description)
 	}
 	a := tl.Annotations
@@ -350,17 +350,19 @@ func TestJobResultToolDefinition(t *testing.T) {
 		OneOf []any `json:"oneOf"`
 	}
 	rawOut, _ := json.Marshal(tl.OutputSchema)
-	if err := json.Unmarshal(rawOut, &out); err != nil || len(out.OneOf) != 3 {
-		t.Errorf("output schema is not review | answer | running: %s", rawOut)
+	if err := json.Unmarshal(rawOut, &out); err != nil || len(out.OneOf) != 4 {
+		t.Errorf("output schema is not review | answer | description | running: %s", rawOut)
 	}
 
 	// In stdio mode pr_review and pr_ask say that a slow call answers with a
-	// job id and still publishes, and their output schema allows the
+	// job id and still publishes, pr_describe that it answers with a job id
+	// (it publishes nothing yet), and their output schema allows the
 	// running status next to the unchanged result schema.
-	for name, base := range map[string]string{"pr_review": prReviewDescription, "pr_ask": prAskDescription} {
+	for name, base := range map[string]string{"pr_review": prReviewDescription, "pr_ask": prAskDescription, "pr_describe": prDescribeDescription} {
 		tl := byName[name]
-		if !strings.HasPrefix(tl.Description, base+" ") ||
-			!strings.Contains(tl.Description, "job_result") || !strings.Contains(tl.Description, "even if job_result is never called") {
+		publishes := name != "pr_describe"
+		if !strings.HasPrefix(tl.Description, base+" ") || !strings.Contains(tl.Description, "job_result") ||
+			strings.Contains(tl.Description, "even if job_result is never called") != publishes {
 			t.Errorf("%s description = %q", name, tl.Description)
 		}
 		rawOut, _ := json.Marshal(tl.OutputSchema)

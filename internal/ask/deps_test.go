@@ -17,10 +17,12 @@ const (
 
 // forbidden are the packages that must not be in the dependency closure of
 // internal/ask (spec P5 §3: no YAML or repair code in pr_ask).
-// internal/review imports internal/yamlrepair, so it is forbidden as well.
+// internal/review and internal/describe import internal/yamlrepair, so they
+// are forbidden as well.
 var forbidden = []string{
 	modulePath + "/internal/yamlrepair",
 	modulePath + "/internal/review",
+	modulePath + "/internal/describe",
 	"gopkg.in/yaml.v3",
 	"gopkg.in/yaml.v2",
 }

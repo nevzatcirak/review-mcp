@@ -30,6 +30,7 @@ const diagUsageText = `usage:
   review-mcp diag review <PR_URL> [--dry-run] [--show-prompt] [--publish] [--json]
                          [--repo-context on|off]
   review-mcp diag ask <PR_URL> --question <TEXT> [--dry-run] [--show-prompt] [--publish]
+  review-mcp diag describe <PR_URL> [--dry-run] [--show-prompt] [--json]
   review-mcp diag cache [--prune]
 
 diag pr      fetch a pull request and print a JSON connectivity report;
@@ -68,6 +69,11 @@ diag ask      answer --question (required, at most 8000 characters) about the
               markdown; --publish also posts the question and answer as a PR
               comment. --dry-run and --show-prompt behave as for diag review;
               --dry-run cannot be combined with --publish
+diag describe describe the pull request with the configured LLM (a title, the
+              types, a summary and a walkthrough of the changed files) and
+              print the client markdown; nothing is posted. --dry-run,
+              --show-prompt and --json behave as for diag review (the
+              prompts shown are those of the first call)
 diag cache    list the repository-context cache (context.repo.cache_dir) as
               JSON: each repository with its size, last use and idle days;
               --prune first deletes repositories idle longer than
@@ -177,6 +183,8 @@ func runDiag(args []string, stdout, stderr io.Writer, load configLoader) int {
 		return runDiagReview(rest, stdout, stderr, load)
 	case "ask":
 		return runDiagAsk(rest, stdout, stderr, load)
+	case "describe":
+		return runDiagDescribe(rest, stdout, stderr, load)
 	case "cache":
 		return runDiagCache(rest, stdout, stderr, load)
 	default:
@@ -400,7 +408,7 @@ func diagComment(ctx context.Context, cfg *config.Config, logger *slog.Logger, p
 	if err != nil {
 		return reportError(stderr, err)
 	}
-	c, err := p.PostComment(ctx, ref, body)
+	c, err := p.PostComment(ctx, ref, provider.SanitizeBody(p.Capabilities(), body))
 	if err != nil {
 		return reportError(stderr, err)
 	}

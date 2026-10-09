@@ -1,0 +1,92 @@
+{
+  "title": "REDUCE-TITLE Add lines across the code base",
+  "type": [
+    "Enhancement"
+  ],
+  "description": "- Add lines to six files",
+  "files": [
+    {
+      "path": "src/f00.go",
+      "title": "Add lines to f00",
+      "summary": "- Adds sixty lines to `f00`",
+      "label": "enhancement"
+    },
+    {
+      "path": "src/f01.go",
+      "title": "Add lines to f01",
+      "summary": "- Adds sixty lines to `f01`",
+      "label": "enhancement"
+    },
+    {
+      "path": "src/f02.go",
+      "title": "Add lines to f02",
+      "summary": "- Adds sixty lines to `f02`",
+      "label": "enhancement"
+    },
+    {
+      "path": "src/f03.go",
+      "title": "Add lines to f03",
+      "summary": "- Adds sixty lines to `f03`",
+      "label": "enhancement"
+    },
+    {
+      "path": "src/f04.go",
+      "title": "Add lines to f04",
+      "summary": "- Adds sixty lines to `f04`",
+      "label": "enhancement"
+    },
+    {
+      "path": "src/f05.go",
+      "title": "Add lines to f05",
+      "summary": "- Adds sixty lines to `f05`",
+      "label": "enhancement"
+    }
+  ],
+  "coverage": {
+    "included": [
+      "src/f00.go",
+      "src/f01.go",
+      "src/f02.go",
+      "src/f03.go",
+      "src/f04.go",
+      "src/f05.go"
+    ],
+    "clipped": [],
+    "deleted_listed": [],
+    "omitted": {
+      "added": [],
+      "modified": [],
+      "deleted": []
+    },
+    "skipped": [],
+    "filtered": [],
+    "partial": false,
+    "reviewed_files": 6,
+    "total_files": 6,
+    "not_reviewed_files": 0,
+    "model_calls": 3,
+    "failed_parts": 0,
+    "repo_context": {
+      "status": "off",
+      "reason": "",
+      "symbols": 0,
+      "references": 0,
+      "files": 0
+    }
+  },
+  "notes": [],
+  "metadata": {
+    "model": "test-model",
+    "context_window": 32000,
+    "prompt_tokens": 947,
+    "diff_tokens": 3986,
+    "request_tokens": 2292,
+    "fast_path": false,
+    "llm_calls": 4,
+    "commit_messages": 2,
+    "repair_tactic": "direct",
+    "reasked": false,
+    "truncated": false,
+    "diff_trimmed": false
+  }
+}

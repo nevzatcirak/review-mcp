@@ -109,6 +109,95 @@ func (p *Provider) EditComment(ctx context.Context, ref provider.PRRef, commentI
 	}
 }
 
+// UpdatePullRequest implements provider.Provider with PUT
+// .../pull-requests/{id}.
+//
+// Request shape and why (DESIGN-QUESTION in the WP-2d report). The PUT is a
+// full update, not a patch: the porting map records that upstream's PR
+// update "needs version, title and, critically, the existing reviewers list,
+// otherwise reviewers get wiped" and that it re-reads the title when it has
+// none, to avoid clobbering it. So the request names every field the
+// endpoint may change, each taken from one fresh GET of the PR, whose version
+// the caller's up.Version must equal (else a conflict, before any write):
+//
+//   - version: up.Version, the optimistic lock; a PUT with a stale one is
+//     answered 409 and changes nothing.
+//   - title and description: the caller's value, or the fresh one when the
+//     caller left the field nil, so the PUT never blanks a field it was not
+//     asked to change.
+//   - reviewers: the fresh list as [{"user": {"name": ...}}], the documented
+//     input shape. Retained reviewers keep their status; the fields of the
+//     read model (status, approved, lastReviewedCommit) are not sent back, as
+//     the endpoint takes the reviewer set and not the verdicts. A reviewer
+//     without a user name cannot be named, so the update is refused instead
+//     of sending a list that would drop them.
+//   - draft: echoed when the fresh PR reports it, so that a server that
+//     treats an absent flag as false cannot turn a draft into a ready PR.
+//
+// The target branch (toRef) is not named, so it is not changed. A 409 is
+// reported as a conflict (no retry here: the caller owns the text, so it
+// re-reads and recomputes).
+func (p *Provider) UpdatePullRequest(ctx context.Context, ref provider.PRRef, up provider.UpdatePR) error {
+	if err := provider.ValidateUpdatePR(up); err != nil {
+		return err
+	}
+	if up.Version == "" {
+		return protocolErr("missing pull request version")
+	}
+	version, _ := strconv.Atoi(up.Version) // validated above
+	path, err := prPath(ref)
+	if err != nil {
+		return err
+	}
+	if err := p.ensureSupported(ctx); err != nil {
+		return err
+	}
+	var cur apiPR
+	if err := p.client.GetJSON(ctx, path, &cur); err != nil {
+		return err
+	}
+	if cur.Version == nil {
+		return protocolErr("the pull request has no version")
+	}
+	if *cur.Version != version {
+		return &provider.Error{Class: provider.ClassConflict, Hint: "the pull request was changed by someone else"}
+	}
+	type reviewerIn struct {
+		User struct {
+			Name string `json:"name"`
+		} `json:"user"`
+	}
+	reviewers := make([]reviewerIn, 0, len(cur.Reviewers))
+	for _, r := range cur.Reviewers {
+		if r.User.Name == "" {
+			return protocolErr("a reviewer cannot be named, so the update was not sent")
+		}
+		var ri reviewerIn
+		ri.User.Name = r.User.Name
+		reviewers = append(reviewers, ri)
+	}
+	in := struct {
+		Version     int          `json:"version"`
+		Title       string       `json:"title"`
+		Description string       `json:"description"`
+		Reviewers   []reviewerIn `json:"reviewers"`
+		Draft       *bool        `json:"draft,omitempty"`
+	}{Version: version, Title: cur.Title, Description: cur.Description, Reviewers: reviewers, Draft: cur.Draft}
+	if up.Title != nil {
+		in.Title = *up.Title
+	}
+	if up.Description != nil {
+		in.Description = *up.Description
+	}
+	err = p.client.SendJSON(ctx, http.MethodPut, path, in, nil)
+	var pe *provider.Error
+	if errors.As(err, &pe) && pe.Status == http.StatusConflict {
+		return &provider.Error{Class: provider.ClassConflict, Status: http.StatusConflict,
+			Hint: "the pull request was changed by someone else at the same time"}
+	}
+	return err
+}
+
 type apiInlineAnchor struct {
 	DiffType string `json:"diffType"`
 	Path     string `json:"path"`

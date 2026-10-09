@@ -78,6 +78,11 @@ func (Factory) ParsePRPath(remainder string) (namespace, repo string, number int
 	if segs[2] != "repos" || segs[4] != "pull-requests" {
 		return "", "", 0, errShape
 	}
+	// The URL shape has exactly one namespace and one slug segment: an
+	// escaped "/" in either ("%2F") would smuggle a nested path in.
+	if strings.Contains(segs[1], "/") || strings.Contains(segs[3], "/") {
+		return "", "", 0, errShape
+	}
 	switch segs[0] {
 	case "projects":
 		namespace = segs[1]
@@ -175,7 +180,16 @@ func (*Provider) Kind() provider.Kind { return provider.KindBitbucketServer }
 
 // Capabilities implements provider.Provider.
 func (*Provider) Capabilities() provider.Capabilities {
-	return provider.Capabilities{GFM: false, MarkdownTables: true, Labels: false, InlineComments: true}
+	return provider.Capabilities{
+		GFM: false, MarkdownTables: true, Labels: false, InlineComments: true,
+		InlineThreadResolution: true, GeneralThreadResolution: true, DescriptionEdit: true,
+	}
+}
+
+// BaseStrategies returns the provider.PullRequest.BaseStrategy values this
+// provider can produce (a fresh slice).
+func BaseStrategies() []string {
+	return []string{provider.BaseBBSMergeBaseEP, provider.BaseBBSAncestorWalk}
 }
 
 func protocolErr(hint string) *provider.Error {
@@ -224,6 +238,9 @@ type apiPR struct {
 			DisplayName string `json:"displayName"`
 		} `json:"user"`
 	} `json:"author"`
+	// Version is the PR's optimistic-locking counter; UpdatePullRequest
+	// sends it back.
+	Version   *int  `json:"version"`
 	Draft     *bool `json:"draft"`
 	Reviewers []struct {
 		User               apiPerson `json:"user"`
@@ -273,6 +290,10 @@ func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*pro
 	if len(in.Links.Self) > 0 {
 		webURL = in.Links.Self[0].Href
 	}
+	version := ""
+	if in.Version != nil {
+		version = strconv.Itoa(*in.Version)
+	}
 	p.logger.Debug("bitbucket server base revision chosen", "strategy", strategy)
 	return &provider.PullRequest{
 		Title:        in.Title,
@@ -287,6 +308,7 @@ func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*pro
 		State:        in.State,
 		Draft:        in.Draft,
 		Merged:       strings.EqualFold(in.State, "MERGED"),
+		Version:      version,
 	}, nil
 }
 

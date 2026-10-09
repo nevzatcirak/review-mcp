@@ -465,3 +465,174 @@ func TestWriteDebugLogsDoNotLeak(t *testing.T) {
 		}
 	}
 }
+
+// updatePR is the part of the PUT body the tests look at.
+type updatePRBody struct {
+	Version     *int   `json:"version"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Reviewers   []struct {
+		User map[string]string `json:"user"`
+	} `json:"reviewers"`
+	Draft  *bool          `json:"draft"`
+	Others map[string]any `json:"-"`
+}
+
+func prWithVersion(version int) map[string]any {
+	pr := prJSON()
+	pr["version"] = version
+	pr["draft"] = true
+	pr["reviewers"] = []any{
+		map[string]any{"user": map[string]any{"name": "dave", "id": 5, "displayName": "Dave"}, "status": "APPROVED", "approved": true, "lastReviewedCommit": "headsha"},
+		map[string]any{"user": map[string]any{"name": "erin", "id": 6}, "status": "NEEDS_WORK"},
+	}
+	return pr
+}
+
+// The PUT is a full update built from one fresh read: the caller's version,
+// the new or the current title and description, every reviewer by name only,
+// and the draft flag. It never names the target branch.
+func TestUpdatePullRequestRequestShape(t *testing.T) {
+	newDesc := "New description\r\n\U0001F680"
+	for name, c := range map[string]struct {
+		up                     provider.UpdatePR
+		wantTitle, wantDescrip string
+	}{
+		"title only":       {provider.UpdatePR{Title: ptr("New title"), Version: "3"}, "New title", "Description " + testMarker},
+		"description only": {provider.UpdatePR{Description: &newDesc, Version: "3"}, "Add feature", newDesc},
+		"both":             {provider.UpdatePR{Title: ptr("T"), Description: ptr(""), Version: "3"}, "T", ""},
+	} {
+		f := newFake(t, "/bitbucket")
+		f.standard()
+		f.handleJSON("GET", prAPI, prWithVersion(3))
+		f.handleJSON("PUT", prAPI, prWithVersion(4))
+		if err := f.provider(t, nil).UpdatePullRequest(context.Background(), ref(), c.up); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		var puts []recorded
+		for _, r := range f.requests() {
+			if r.Method == "PUT" {
+				puts = append(puts, r)
+			}
+		}
+		if len(puts) != 1 || puts[0].Path != prAPI {
+			t.Fatalf("%s: PUT requests = %+v", name, puts)
+		}
+		var raw map[string]any
+		if err := json.Unmarshal([]byte(puts[0].Body), &raw); err != nil {
+			t.Fatal(err)
+		}
+		var keys []string
+		for k := range raw {
+			keys = append(keys, k)
+		}
+		if len(keys) != 5 {
+			t.Errorf("%s: body fields = %v, want version, title, description, reviewers, draft only", name, keys)
+		}
+		var b updatePRBody
+		_ = json.Unmarshal([]byte(puts[0].Body), &b)
+		if b.Version == nil || *b.Version != 3 || b.Title != c.wantTitle || b.Description != c.wantDescrip || b.Draft == nil || !*b.Draft {
+			t.Errorf("%s: body = %s", name, puts[0].Body)
+		}
+		// Every reviewer is named, by user name only: no verdict is sent.
+		if len(b.Reviewers) != 2 || !reflect.DeepEqual(b.Reviewers[0].User, map[string]string{"name": "dave"}) ||
+			!reflect.DeepEqual(b.Reviewers[1].User, map[string]string{"name": "erin"}) {
+			t.Errorf("%s: reviewers = %+v in %s", name, b.Reviewers, puts[0].Body)
+		}
+		if strings.Contains(puts[0].Body, "APPROVED") || strings.Contains(puts[0].Body, "toRef") {
+			t.Errorf("%s: the body carries a verdict or the target branch: %s", name, puts[0].Body)
+		}
+	}
+}
+
+func TestUpdatePullRequestWithoutReviewersSendsAnEmptyList(t *testing.T) {
+	f := newFake(t, "")
+	f.standard()
+	pr := prJSON()
+	pr["version"] = 0
+	f.handleJSON("GET", prAPI, pr)
+	f.handleJSON("PUT", prAPI, pr)
+	if err := f.provider(t, nil).UpdatePullRequest(context.Background(), ref(), provider.UpdatePR{Title: ptr("T"), Version: "0"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range f.requests() {
+		if r.Method == "PUT" && !strings.Contains(r.Body, `"reviewers":[]`) {
+			t.Errorf("a PR without reviewers must say so explicitly: %s", r.Body)
+		}
+		if r.Method == "PUT" && strings.Contains(r.Body, `"draft"`) {
+			t.Errorf("a PR that reports no draft flag must not get one: %s", r.Body)
+		}
+	}
+}
+
+func TestUpdatePullRequestNeverSendsAListThatDropsAReviewer(t *testing.T) {
+	f := newFake(t, "")
+	f.standard()
+	pr := prWithVersion(3)
+	pr["reviewers"] = []any{map[string]any{"user": map[string]any{"id": 5}, "status": "APPROVED"}}
+	f.handleJSON("GET", prAPI, pr)
+	f.handleJSON("PUT", prAPI, pr)
+	err := f.provider(t, nil).UpdatePullRequest(context.Background(), ref(), provider.UpdatePR{Title: ptr("T"), Version: "3"})
+	if !errors.Is(err, provider.ErrProtocol) || f.count("PUT", prAPI) != 0 {
+		t.Errorf("err = %v, PUTs = %d", err, f.count("PUT", prAPI))
+	}
+}
+
+func TestUpdatePullRequestVersion(t *testing.T) {
+	t.Run("required", func(t *testing.T) {
+		f := newFake(t, "")
+		f.standard()
+		if err := f.provider(t, nil).UpdatePullRequest(context.Background(), ref(), provider.UpdatePR{Title: ptr("T")}); !errors.Is(err, provider.ErrProtocol) {
+			t.Errorf("err = %v", err)
+		}
+		if n := len(f.requests()); n != 0 {
+			t.Errorf("%d requests were sent", n)
+		}
+	})
+	t.Run("stale, found before the PUT", func(t *testing.T) {
+		f := newFake(t, "")
+		f.standard()
+		f.handleJSON("GET", prAPI, prWithVersion(5))
+		f.handleJSON("PUT", prAPI, prWithVersion(6))
+		err := f.provider(t, nil).UpdatePullRequest(context.Background(), ref(), provider.UpdatePR{Title: ptr("T"), Version: "4"})
+		if !errors.Is(err, provider.ErrConflict) || f.count("PUT", prAPI) != 0 {
+			t.Errorf("err = %v, PUTs = %d", err, f.count("PUT", prAPI))
+		}
+	})
+	t.Run("409 on the PUT", func(t *testing.T) {
+		f := newFake(t, "")
+		f.standard()
+		f.handleJSON("GET", prAPI, prWithVersion(5))
+		f.handleStatus("PUT", prAPI, 409)
+		err := f.provider(t, nil).UpdatePullRequest(context.Background(), ref(), provider.UpdatePR{Title: ptr("T"), Version: "5"})
+		var pe *provider.Error
+		if !errors.Is(err, provider.ErrConflict) || !errors.As(err, &pe) || pe.Status != 409 || f.count("PUT", prAPI) != 1 ||
+			strings.Contains(err.Error(), testMarker) {
+			t.Errorf("err = %v, PUTs = %d", err, f.count("PUT", prAPI))
+		}
+	})
+	t.Run("the version is read by GetPullRequest", func(t *testing.T) {
+		f := newFake(t, "")
+		f.standard()
+		f.handleJSON("GET", prAPI, prWithVersion(7))
+		pr, err := f.provider(t, nil).GetPullRequest(context.Background(), ref())
+		if err != nil || pr.Version != "7" {
+			t.Errorf("version = %q err %v", pr.Version, err)
+		}
+	})
+}
+
+func TestUpdatePullRequestErrors(t *testing.T) {
+	for status, want := range map[int]*provider.Error{401: provider.ErrAuth, 403: provider.ErrAuth, 404: provider.ErrNotFound, 500: provider.ErrUpstream} {
+		f := newFake(t, "")
+		f.standard()
+		f.handleJSON("GET", prAPI, prWithVersion(1))
+		f.handleStatus("PUT", prAPI, status)
+		err := f.provider(t, nil).UpdatePullRequest(context.Background(), ref(), provider.UpdatePR{Title: ptr("T"), Version: "1"})
+		if !errors.Is(err, want) || strings.Contains(err.Error(), testMarker) || strings.Contains(err.Error(), testToken) {
+			t.Errorf("%d: err = %v", status, err)
+		}
+	}
+}
+
+func ptr(s string) *string { return &s }

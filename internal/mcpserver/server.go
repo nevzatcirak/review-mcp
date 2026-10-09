@@ -49,8 +49,8 @@ type Deps struct {
 	// calls pass a concurrency gate sized by Config.Serve.MaxConcurrentCalls.
 	// NewHTTPHandler sets it.
 	Serve bool
-	// Jobs is the background job store of stdio mode (X-16): pr_review and
-	// pr_ask then answer with a job id when their run takes longer than
+	// Jobs is the background job store of stdio mode (X-16): pr_review,
+	// pr_ask and pr_describe then answer with a job id when their run takes longer than
 	// wait_seconds, and job_result is registered. Nil keeps every call
 	// synchronous and registers no job_result; serve mode ignores it (X-10).
 	// The caller owns it and closes it at shutdown.
@@ -122,6 +122,7 @@ func New(deps Deps) *mcp.Server {
 	registerPRInfo(s, deps)
 	registerPRReview(s, deps)
 	registerPRAsk(s, deps)
+	registerPRDescribe(s, deps)
 	if deps.background() {
 		registerJobResult(s, deps)
 	}

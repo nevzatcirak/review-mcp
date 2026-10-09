@@ -1,0 +1,47 @@
+
+
+PR Info:
+
+Previous title: 'Raise the retry count'
+
+Previous description:
+=====
+Raises the retry count to three.
+
+See the design note.
+=====
+
+Branch: 'feature/retry'
+
+Target branch: 'main'
+
+Commit messages:
+=====
+1. Raise the retry count
+2. Document the retries
+=====
+
+
+The PR Git Diff:
+=====
+## File: 'src/app.go'
+
+@@ -10,3 +10,3 @@ func retry() {
+ line 10
+-retries := 1
++retries := 3
+ line 12
+
+## File: 'docs/retry.md'
+
+@@ -0,0 +1,2 @@
++# Retries
++Three attempts.
+
+=====
+
+Note that lines in the diff body are prefixed with a symbol that represents the type of change: '-' for deletions, '+' for additions, and ' ' (a space) for unchanged lines.
+
+
+Response (should be a valid YAML, and nothing else):
+```yaml

@@ -1,0 +1,51 @@
+
+
+PR Info:
+
+Previous title: 'Retry more TITLE-MARKER-4d2e'
+
+Previous description:
+=====
+Raises the retry count. DESC-MARKER-8b1f
+=====
+
+Branch: 'feature/retry'
+
+Target branch: 'main'
+
+Commit messages:
+=====
+1. Raise the retry count
+
+Three is safer. COMMIT-MARKER-61aa
+2. Add a retry test
+=====
+
+
+The PR Git Diff:
+=====
+
+
+## File: 'src/app.go'
+
+@@ -10,3 +10,3 @@
+ line 10
+-retries := 1
++retries := 3 // DIFF-MARKER-0c93
+ line 12
+
+
+
+## File: 'src/app_test.go'
+
+@@ -0,0 +1,2 @@
++package app
++func TestRetries(t *testing.T) {}
+
+=====
+
+Note that lines in the diff body are prefixed with a symbol that represents the type of change: '-' for deletions, '+' for additions, and ' ' (a space) for unchanged lines.
+
+
+Response (should be a valid YAML, and nothing else):
+```yaml

@@ -1,0 +1,60 @@
+
+
+PR Info:
+
+Previous title: 'Retry more TITLE-MARKER-4d2e'
+
+Previous description:
+=====
+Raises the retry count. DESC-MARKER-8b1f
+=====
+
+Branch: 'feature/retry'
+
+Target branch: 'main'
+
+Commit messages:
+=====
+1. Raise the retry count
+
+Three is safer. COMMIT-MARKER-61aa
+2. Add a retry test
+=====
+
+
+Files walkthrough:
+=====
+## File: 'src/f00.go'
+Title: Add lines to f00
+Summary:
+- Adds sixty lines to `f00`
+
+## File: 'src/f01.go'
+Title: Add lines to f01
+Summary:
+- Adds sixty lines to `f01`
+
+## File: 'src/f02.go'
+Title: Add lines to f02
+Summary:
+- Adds sixty lines to `f02`
+
+## File: 'src/f03.go'
+Title: Add lines to f03
+Summary:
+- Adds sixty lines to `f03`
+
+## File: 'src/f04.go'
+Title: Add lines to f04
+Summary:
+- Adds sixty lines to `f04`
+
+## File: 'src/f05.go'
+Title: Add lines to f05
+Summary:
+- Adds sixty lines to `f05`
+=====
+
+
+Response (should be a valid YAML, and nothing else):
+```yaml

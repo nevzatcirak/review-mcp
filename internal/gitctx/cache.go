@@ -17,7 +17,7 @@ import (
 //
 //	<cache_dir>/CACHEDIR.TAG                         review-mcp's cache tag
 //	<cache_dir>/.home/                               empty HOME of every git child (0700)
-//	<cache_dir>/<host>/<base>/<namespace>/<repo>/    one entry per repository
+//	<cache_dir>/<host>/<base>/<namespace dir>/<repo>/ one entry per repository
 //	    last-used                                    touched on every use
 //	    .lock                                        O_CREATE|O_EXCL lock file
 //	    git/                                         the bare repository
@@ -25,7 +25,9 @@ import (
 // <host> is the lower-case host name, with "_<port>" for an explicit port.
 // <base> is the base URL's path (the Bitbucket context path or a Gitea
 // sub-path) escaped by baseSegment, "_" when there is none: two instances on
-// one host never share an entry. The depth is fixed, so an entry can never
+// one host never share an entry. <namespace dir> is the namespace; a nested
+// namespace ("group/sub/team") has its segments joined with "+" ("group+sub+team"),
+// which no segment can contain. The depth is fixed, so an entry can never
 // lie inside another one's directory.
 //
 // Only directories at exactly that depth that hold a regular last-used file

@@ -26,7 +26,10 @@ func TestKindAndCapabilities(t *testing.T) {
 	if p.Kind() != provider.KindBitbucketServer || bitbucketserver.NewFactory().Kind() != provider.KindBitbucketServer {
 		t.Fatal("wrong kind")
 	}
-	want := provider.Capabilities{GFM: false, MarkdownTables: true, Labels: false, InlineComments: true}
+	want := provider.Capabilities{
+		GFM: false, MarkdownTables: true, Labels: false, InlineComments: true,
+		InlineThreadResolution: true, GeneralThreadResolution: true, DescriptionEdit: true,
+	}
 	if p.Capabilities() != want {
 		t.Fatalf("capabilities = %+v", p.Capabilities())
 	}
@@ -62,6 +65,11 @@ func TestParsePRPath(t *testing.T) {
 		{"/projects/./repos/demo/pull-requests/7", "", "", 0, false},
 		{"/projects/PROJ/repos/../pull-requests/7", "", "", 0, false},
 		{"/projects/%2e%2e/repos/demo/pull-requests/7", "", "", 0, false},
+		{"/projects/PROJ%2Fsub/repos/demo/pull-requests/7", "", "", 0, false},
+		{"/users/jdoe%2fx/repos/demo/pull-requests/7", "", "", 0, false},
+		{"/projects/PROJ/repos/de%2Fmo/pull-requests/7", "", "", 0, false},
+		{"/users/jdoe/repos/de%2fmo/pull-requests/7", "", "", 0, false},
+		{"/projects/PROJ/sub/repos/demo/pull-requests/7", "", "", 0, false},
 		{"/users//repos/demo/pull-requests/7", "", "", 0, false},
 		{"/projects/PR%zzOJ/repos/demo/pull-requests/7", "", "", 0, false},
 		{"projects/PROJ/repos/demo/pull-requests/7", "", "", 0, false},

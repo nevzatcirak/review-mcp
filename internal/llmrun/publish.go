@@ -20,8 +20,10 @@ type PublishResult struct {
 // PostResult posts the comment body render returns for the provider's
 // capabilities and records the outcome in out, which the caller has already
 // stored in its result (so a renderer sees a non-nil Publish). It never
-// fails the run; a nil render is recorded as a failure. failed is the fixed
-// sentence shown for an error that is not a classified provider error.
+// fails the run; a nil render is recorded as a failure. The body is
+// slash-sanitised when the provider has QuickActions (provider.SanitizeBody).
+// failed is the fixed sentence shown for an error that is not a classified
+// provider error.
 func PostResult(ctx context.Context, log *slog.Logger, ref provider.PRRef, p provider.Provider,
 	out *PublishResult, failed string, render func(caps provider.Capabilities) string) {
 	if render == nil {
@@ -29,7 +31,8 @@ func PostResult(ctx context.Context, log *slog.Logger, ref provider.PRRef, p pro
 		log.Debug("publish skipped, no provider renderer")
 		return
 	}
-	c, err := p.PostComment(ctx, ref, render(p.Capabilities()))
+	caps := p.Capabilities()
+	c, err := p.PostComment(ctx, ref, provider.SanitizeBody(caps, render(caps)))
 	if err != nil || c == nil {
 		msg := failed
 		var pe *provider.Error

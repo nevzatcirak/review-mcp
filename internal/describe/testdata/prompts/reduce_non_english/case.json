@@ -1,0 +1,13 @@
+{
+  "kind": "reduce",
+  "language": "de-DE",
+  "title": "Raise the retry count",
+  "branch": "feature/retry",
+  "target_branch": "main",
+  "description": "Raises the retry count to three.\n\nSee the design note.\n",
+  "commit_messages": "1. Raise the retry count\n2. Document the retries",
+  "files_only": false,
+  "part_header": "",
+  "diff": "",
+  "walkthrough": "## File: 'src/app.go'\nTitle: Raise the retry count\nSummary:\n- Raise `retries` from 1 to 3\n\n## File: 'docs/retry.md'\nTitle: Document the retries\nSummary:\n- Add a page on retries"
+}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/nevzatcirak/review-mcp/internal/describe"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 	"github.com/nevzatcirak/review-mcp/internal/tools"
 )
@@ -54,7 +55,7 @@ func progressFunc(ctx context.Context, req *mcp.CallToolRequest, log *slog.Logge
 	if token == nil || req.Session == nil {
 		return nil
 	}
-	step, extra, parts := 0, 0, 0
+	step, extra, parts, summary := 0, 0, 0, 0
 	return func(stage string) {
 		step++
 		// The repository-context fetch is one more stage, reported only
@@ -64,10 +65,15 @@ func progressFunc(ctx context.Context, req *mcp.CallToolRequest, log *slog.Logge
 		if stage == review.StageRepoContext {
 			extra = 1
 		}
+		// The reduce call of a description in parts (Y-6) is one more
+		// stage after the parts.
+		if stage == describe.StageSummarizing {
+			summary = 1
+		}
 		if n, ok := review.StageParts(stage); ok {
 			parts = max(parts, n-1)
 		}
-		total := progressTotal + extra + parts
+		total := progressTotal + extra + parts + summary
 		err := req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{
 			ProgressToken: token, Message: stage, Progress: float64(step), Total: float64(total),
 		})

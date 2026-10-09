@@ -26,10 +26,18 @@ type fakeProvider struct {
 	listErr  error
 	reply    *provider.ReplyResult
 	replyErr error
+	caps     provider.Capabilities
 
 	gotComment, gotBody string
 	replyCalls          int
 }
+
+func (f *fakeProvider) PostComment(_ context.Context, _ provider.PRRef, body string) (*provider.Comment, error) {
+	f.gotBody = body
+	return &provider.Comment{ID: "9", URL: "https://your-gitea.example/octo/demo/pulls/7#issuecomment-9"}, nil
+}
+
+func (f *fakeProvider) Capabilities() provider.Capabilities { return f.caps }
 
 func (f *fakeProvider) ListThreads(context.Context, provider.PRRef) ([]provider.Thread, error) {
 	return f.threads, f.listErr
@@ -574,6 +582,35 @@ func TestUserMessage(t *testing.T) {
 	} {
 		if got := UserMessage(tc.err); got != tc.want {
 			t.Errorf("UserMessage = %q, want %q", got, tc.want)
+		}
+	}
+}
+
+// TestCommentBodiesSanitizedByCapability: pr_comment_reply and
+// pr_comment_create (PR level) publish a slash-sanitised body when the
+// provider has QuickActions, and the body as given otherwise.
+func TestCommentBodiesSanitizedByCapability(t *testing.T) {
+	const body = "/close\nthanks\n/reopen"
+	const sanitized = " /close\nthanks\n /reopen"
+	for _, qa := range []bool{false, true} {
+		want := body
+		if qa {
+			want = sanitized
+		}
+		fp := &fakeProvider{caps: provider.Capabilities{QuickActions: qa}, reply: &provider.ReplyResult{Comment: provider.Comment{ID: "1"}}}
+		if _, err := PRCommentReply(context.Background(), &fakeResolver{p: fp}, testPRURL, "12", body); err != nil {
+			t.Fatal(err)
+		}
+		if fp.gotBody != want {
+			t.Errorf("reply, QuickActions=%v: body = %q, want %q", qa, fp.gotBody, want)
+		}
+
+		fp = &fakeProvider{caps: provider.Capabilities{QuickActions: qa}}
+		if _, err := PRCommentCreate(context.Background(), &fakeResolver{p: fp}, PRCommentCreateArgs{PRURL: testPRURL, Body: body}); err != nil {
+			t.Fatal(err)
+		}
+		if fp.gotBody != want {
+			t.Errorf("create, QuickActions=%v: body = %q, want %q", qa, fp.gotBody, want)
 		}
 	}
 }

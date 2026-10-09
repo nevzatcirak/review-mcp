@@ -1,7 +1,8 @@
-// Package render holds the YAML-free markdown sections that both LLM tools
-// (pr_review and pr_ask) show: the coverage section (X-3) and the notes
-// section. It imports neither the review nor the ask package, so the ask
-// package family stays free of YAML and repair code (spec P5 §3).
+// Package render holds the YAML-free markdown sections that the LLM tools
+// (pr_review, pr_ask and pr_describe) show: the coverage section (X-3), the
+// partial banner (X-18) and the notes section. It imports none of the tool
+// packages, so the ask package family stays free of YAML and repair code
+// (spec P5 §3).
 package render
 
 import (
@@ -57,6 +58,23 @@ func PartialBanner(c *llmrun.Coverage, answer bool) string {
 		them + ".**"
 }
 
+// PartialDescribeBanner is the X-18 banner of a partial pr_describe result
+// (v2 spec §3.5, the sentence verbatim), or "" for a complete one: "Partial
+// description: R of T changed files were described. N files were not
+// described (see Coverage)." in bold, with the singular forms of
+// PartialBanner. The counts come from c.Tally, where "reviewed" reads
+// "described".
+func PartialDescribeBanner(c *llmrun.Coverage) string {
+	t := c.Tally()
+	if !t.Partial {
+		return ""
+	}
+	return "**Partial description: " + strconv.Itoa(t.Reviewed) + " of " + strconv.Itoa(t.TotalFiles) +
+		" changed " + plural(t.TotalFiles) + " " + was(t.Reviewed, t.TotalFiles) + " described. " +
+		strconv.Itoa(t.NotReviewed) + " " + plural(t.NotReviewed) + " " + was(t.NotReviewed, t.NotReviewed) +
+		" not described (see " + TextCoverage + ").**"
+}
+
 // was is "was" for a count of 1 (or when the file total is 1, as in "0 of 1
 // changed file was reviewed") and "were" otherwise.
 func was(n, total int) string {
@@ -80,6 +98,17 @@ type coverageGroup struct {
 // listed across all groups; the rest are counted ("and N more").
 // Everything is plain markdown (no HTML).
 func Coverage(b *strings.Builder, heading string, c *llmrun.Coverage) {
+	coverage(b, heading, c, "Reviewed")
+}
+
+// DescribeCoverage is Coverage for pr_describe: the line of a description
+// in N > 1 parts reads "Described in N model calls." (the reduce call is not
+// counted, as model_calls does not count it).
+func DescribeCoverage(b *strings.Builder, heading string, c *llmrun.Coverage) {
+	coverage(b, heading, c, "Described")
+}
+
+func coverage(b *strings.Builder, heading string, c *llmrun.Coverage, verb string) {
 	included := len(c.Included) + len(c.Clipped)
 	budget := len(c.Omitted.Added) + len(c.Omitted.Modified) + len(c.Omitted.Deleted)
 	omitted := budget + len(c.Skipped) + len(c.Filtered)
@@ -95,7 +124,7 @@ func Coverage(b *strings.Builder, heading string, c *llmrun.Coverage) {
 	b.WriteString("\n- Omitted: " + strconv.Itoa(omitted) + " " + plural(omitted) + "\n")
 	if c.ModelCalls > 1 {
 		// A review in parts (X-19, RC-13) says how many calls it used.
-		b.WriteString("- Reviewed in " + strconv.Itoa(c.ModelCalls) + " model calls.\n")
+		b.WriteString("- " + verb + " in " + strconv.Itoa(c.ModelCalls) + " model calls.\n")
 	}
 	if line := RepoContextLine(c.RepoContext); line != "" {
 		b.WriteString("- " + line + "\n")

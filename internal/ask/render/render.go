@@ -58,8 +58,12 @@ func Client(res *ask.Result) string {
 // question, the question, a heading for the answer, the answer. With
 // caps.GFM (Gitea) the headings are upstream's ("Ask" with the question
 // emoji, and "Answer:"); without it (Bitbucket Server) they are plain. The
-// coverage section follows in both. Quick-action sanitization applies to
-// the question and the answer: no line of the body starts with "/".
+// coverage section follows in both. Quick-action sanitization
+// (provider.SanitizeQuickActions) applies to the question and the answer on
+// every provider, whatever caps.QuickActions says (the v1 behaviour, so the
+// published bytes do not change): no line of either starts with "/".
+// Publishing adds provider.SanitizeBody on top for the whole body when the
+// provider has QuickActions.
 //
 // DESIGN-QUESTION: is the question shown raw, as upstream does, or in a
 // fenced block? — chose a fenced block, as the client profile does, because
@@ -86,25 +90,11 @@ func Provider(res *ask.Result, caps provider.Capabilities) string {
 		b.WriteString(banner + "\n\n")
 	}
 	b.WriteString(askHead + "\n")
-	mdutil.WriteFenced(&b, sanitizeQuickActions(res.Question), "", "")
+	mdutil.WriteFenced(&b, provider.SanitizeQuickActions(res.Question), "", "")
 	if a := strings.TrimSpace(res.Answer); a != "" {
-		b.WriteString("\n" + answerHead + "\n" + sanitizeQuickActions(a) + "\n")
+		b.WriteString("\n" + answerHead + "\n" + provider.SanitizeQuickActions(a) + "\n")
 	}
 	llmrender.Coverage(&b, covHead, &res.Coverage)
 	llmrender.Notes(&b, notesHead, res.Notes)
 	return b.String()
-}
-
-// sanitizeQuickActions ports upstream's answer sanitization
-// (pr_questions.py _prepare_pr_answer @ 8e5a929): no line may start with
-// "/", which would trigger a quick action on providers that support them.
-// A space is put in front of every such line, after "\n" and after "\r"
-// too, and in front of a text that starts with "/".
-func sanitizeQuickActions(s string) string {
-	s = strings.ReplaceAll(s, "\n/", "\n /")
-	s = strings.ReplaceAll(s, "\r/", "\r /")
-	if strings.HasPrefix(s, "/") {
-		s = " " + s
-	}
-	return s
 }

@@ -13,8 +13,8 @@ review agent, licensed under the MIT License. In particular:
 - the pull-request diff compression strategy (file ranking, hunk context
   expansion, token-budget clipping, large-PR handling),
 - the token budgeting approach,
-- the per-tool prompt design and structured output schemas for review and
-  question-answering tools.
+- the per-tool prompt design and structured output schemas for review,
+  question-answering and pull-request description tools.
 
 review-mcp is an independent reimplementation in Go. No PR-Agent source code
 is included in this repository; the logic, prompt design, and schemas were
@@ -78,6 +78,12 @@ as new adapted material lands.
 - internal/review/render/provider.go (emoji map and table / details presentation of the provider profile)
 - internal/review/render/testdata/ (golden renderings; the gitea_* files follow upstream's review presentation)
 - internal/ask/render/render.go (the question and answer headings of the Gitea provider profile and the quick-action sanitization of the published text)
+- internal/describe/prompts/system.tmpl
+- internal/describe/prompts/user.tmpl
+- internal/describe/prompts/reduce_system.tmpl and internal/describe/prompts/reduce_user.tmpl (written for review-mcp; they reuse sentences, the schema field descriptions and the example of the two templates above)
+- internal/describe/convert.go (the YAML repair key list of the describe schema)
+- internal/describe/render/provider.go (emoji map of the Gitea provider profile, shared with the review and ask renderers)
+- internal/describe/testdata/ (renderings of the adapted describe prompts; no upstream renderings)
 
 Tokenizer vocabulary (third-party data)
 ---------------------------------------

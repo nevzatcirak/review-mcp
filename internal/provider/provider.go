@@ -12,6 +12,12 @@ type Provider interface {
 	GetPullRequest(ctx context.Context, ref PRRef) (*PullRequest, error)
 	// GetCommitMessages returns the PR's commit messages, oldest first.
 	GetCommitMessages(ctx context.Context, ref PRRef) ([]string, error)
+	// GetDiff returns the changed files. A file that hits a diff limit has
+	// one of two valid shapes: listed in Files with its patch and a
+	// not_fetched_file_limit / not_fetched_size_limit content status, or
+	// skipped with reason file_limit / size_limit and no patch. Coverage
+	// treats each accordingly: a listed file is reviewed from its patch (only
+	// the extended context is missing); a skipped one counts as not reviewed.
 	GetDiff(ctx context.Context, ref PRRef, pr *PullRequest, opts DiffOptions) (*Diff, error)
 	PostComment(ctx context.Context, ref PRRef, body string) (*Comment, error)
 	// ListThreads returns the PR's comment threads: general threads first,
@@ -38,6 +44,15 @@ type Provider interface {
 	// comment or review bodies. A part that cannot be read is left nil with
 	// a fixed note instead of failing the call.
 	GetReviewStatus(ctx context.Context, ref PRRef, pr *PullRequest, opts ReviewStatusOptions) *ReviewStatus
+	// UpdatePullRequest changes the PR's title and/or description; a nil
+	// field is left as it is (it never clears a field the caller did not
+	// name, nor the reviewers or approvals). It validates its input with
+	// ValidateUpdatePR before any request is sent. A change made by someone
+	// else since the read the update is based on is a conflict error where
+	// the provider can tell (a stale Version); a provider without a version
+	// cannot, and the caller compares the text it read (see
+	// internal/describe). Callers need Capabilities().DescriptionEdit.
+	UpdatePullRequest(ctx context.Context, ref PRRef, up UpdatePR) error
 	// FileLineURL is pure: no I/O.
 	FileLineURL(ref PRRef, pr *PullRequest, path string, line int) string
 }

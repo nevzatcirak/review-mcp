@@ -1,10 +1,12 @@
 // Package llmrun holds the YAML-free parts of the LLM-backed tool pipelines
 // that pr_review and pr_ask share: the coverage accounting (X-3), the
 // request-size guard, the notes both pipelines add, the classified pipeline
-// errors (X-6) and the publish-failure handling.
+// errors (X-6) and the publish-failure handling. pr_describe (internal/
+// describe) uses it too, including the coverage of a run in parts.
 //
 // It exists so that internal/ask can reuse this machinery without importing
-// internal/review, which depends on the YAML repair code (spec P5 §3).
+// internal/review, which depends on the YAML repair code (spec P5 §3), and
+// so that internal/describe does not import internal/review either.
 // Nothing here may import YAML or repair code.
 package llmrun
 

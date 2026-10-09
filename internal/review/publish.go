@@ -163,7 +163,8 @@ func editOverview(ctx context.Context, log *slog.Logger, pl *Plan, found *foundO
 	}
 	err := errNoRenderer
 	if render != nil {
-		err = pl.p.EditComment(ctx, pl.ref, found.id, render(pl.p.Capabilities()))
+		caps := pl.p.Capabilities()
+		err = pl.p.EditComment(ctx, pl.ref, found.id, provider.SanitizeBody(caps, render(caps)))
 	}
 	if err == nil {
 		pub.Published, pub.Updated, pub.CommentID, pub.URL = true, true, found.id, found.url
@@ -215,6 +216,7 @@ func planInline(res *Result, d *provider.Diff, posted map[string]bool, render In
 			continue
 		}
 		body := strings.TrimRight(render(ki, caps), " \t\r\n") + "\n\n" + FingerprintMarker(fp)
+		body = provider.SanitizeBody(caps, body)
 		out = append(out, inlineFinding{issue: n, item: a.Comment(body)})
 	}
 	return out, sum
@@ -262,7 +264,8 @@ func updateOverview(ctx context.Context, log *slog.Logger, ref provider.PRRef, p
 		log.Debug("review: overview not updated, its comment id is unknown")
 		return
 	}
-	if err := p.EditComment(ctx, ref, res.Publish.CommentID, render(p.Capabilities())); err != nil {
+	caps := p.Capabilities()
+	if err := p.EditComment(ctx, ref, res.Publish.CommentID, provider.SanitizeBody(caps, render(caps))); err != nil {
 		res.Notes = append(res.Notes, NoteOverviewNotUpdated)
 		log.Debug("review: overview update failed", "error", fixedError(err))
 	}

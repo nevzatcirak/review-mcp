@@ -3,7 +3,7 @@
 `review-mcp` is a standalone, open-source (MIT) MCP server written in Go that
 brings AI-powered pull-request tools to any MCP client, such as Claude Code and
 opencode. It reviews a pull request with `pr_review`, answers questions about
-one with `pr_ask`, and reads, answers and writes comments on pull requests. It targets Gitea
+one with `pr_ask`, describes one with `pr_describe`, and reads, answers and writes comments on pull requests. It targets Gitea
 and Bitbucket Server (Data Center) first, with GitHub planned for later, and
 works with any OpenAI-compatible LLM endpoint. Identity is per user: provider
 tokens and the LLM API key come from the MCP client configuration (as
@@ -104,7 +104,7 @@ dist-tag `latest`; release candidates of the next version under `next`. See the
      The merged review shows at most `REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS`
      findings (default 10, up to 50; when you set it, at least
      `review.max_findings`).
-   - **Long calls (stdio):** a `pr_review` or `pr_ask` call that is still
+   - **Long calls (stdio):** a `pr_review`, `pr_ask` or `pr_describe` call that is still
      running after `REVIEW_MCP_LLM_WAIT_SECONDS` (default 45) answers with a
      `job_id`; ask the client to fetch the result and it calls `job_result`.
      This keeps every call under typical client timeouts.
@@ -151,7 +151,8 @@ diag cache [--prune]` lists and sweeps the cache.
 | `pr_comment_create` | Posts a new comment on a pull request, PR-level or on a changed line (`file` and `line`). A line outside the diff is refused, never posted at PR level instead. |
 | `pr_review` | Reviews a pull request with your LLM. The title, description, existing comments and diff are sent to your LLM endpoint. Optionally publishes the review: one overview comment, edited in place on later runs, and inline comments on the changed lines. |
 | `pr_ask` | Answers a free-text question about a pull request, grounded in its title, description and diff. Optionally publishes the question and answer as a PR comment. |
-| `job_result` | Returns the result of a `pr_review` or `pr_ask` call that took longer than `wait_seconds` and answered with a `job_id` instead. stdio only; see [Slow endpoints](docs/review.md#slow-endpoints). |
+| `pr_describe` | Describes a pull request with your LLM: a title, the change types, a short summary and a walkthrough of the changed files. The title, description, branch names, commit messages and diff are sent to your LLM endpoint. By default it only reads; `publish=true` writes to the pull request, either one comment that later runs edit in place or a marked region at the end of the description (the author's text is never changed), and `update_title=true` also replaces the title. Files the model did not describe are listed, never padded in. See [Describing pull requests](docs/describe.md). |
+| `job_result` | Returns the result of a `pr_review`, `pr_ask` or `pr_describe` call that took longer than `wait_seconds` and answered with a `job_id` instead. stdio only; see [Slow endpoints](docs/review.md#slow-endpoints). |
 
 ## Documentation
 
@@ -159,6 +160,7 @@ diag cache [--prune]` lists and sweeps the cache.
 - [Serve mode](docs/serve.md): one shared HTTP server for a team, the header contract, TLS, the container.
 - [Reviewing pull requests](docs/review.md): what `pr_review` sends to the LLM, choosing `llm.context_window`, reading coverage and notes, large pull requests reviewed in parts, `publish` (the overview and inline comments), discussion awareness, slow endpoints and `job_result`, `diag review --dry-run`.
 - [Asking questions about a pull request](docs/ask.md): what `pr_ask` sends to the LLM, files the question names, grounding and honesty, coverage, `publish` and the slash sanitization, `diag ask --dry-run`.
+- [Describing pull requests](docs/describe.md): what `pr_describe` sends to the LLM, the result, large pull requests described in parts with a summary call, files that were not described, `publish` as a comment or as a marked region of the description (how to remove it, `update_title`, concurrent edits, Bitbucket Server reviewers), permissions, `diag describe --dry-run`.
 - [Pull request status](docs/pr-info.md): what `pr_info` reports (target branch, human reviewers, approvals, merge status), where each fact comes from, and why review-mcp's own reviews are not reviewers.
 - [Repository context](docs/repo-context.md): opt-in, stdio only: shows the model where the symbols a pull request changes are used elsewhere in the project (a cached `git` fetch of the head, `git grep`, a budgeted prompt block), its configuration, the cache, the security properties, the coverage line and the evaluation harness.
 - [Getting started](docs/getting-started.md): the minimal configuration and the diff budget in detail.
@@ -168,7 +170,7 @@ diag cache [--prune]` lists and sweeps the cache.
 ## Attribution
 
 The design is inspired by [PR-Agent](https://github.com/The-PR-Agent/pr-agent)
-(MIT). The review and question prompt templates, the YAML repair fixtures and
+(MIT). The review, question and description prompt templates, the YAML repair fixtures and
 parts of the review and answer output presentation are adapted from PR-Agent; [NOTICE](NOTICE)
 lists every adapted file and carries PR-Agent's license. See it for details on
 what was derived and

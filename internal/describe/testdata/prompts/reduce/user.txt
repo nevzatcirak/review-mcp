@@ -1,0 +1,40 @@
+
+
+PR Info:
+
+Previous title: 'Raise the retry count'
+
+Previous description:
+=====
+Raises the retry count to three.
+
+See the design note.
+=====
+
+Branch: 'feature/retry'
+
+Target branch: 'main'
+
+Commit messages:
+=====
+1. Raise the retry count
+2. Document the retries
+=====
+
+
+Files walkthrough:
+=====
+## File: 'src/app.go'
+Title: Raise the retry count
+Summary:
+- Raise `retries` from 1 to 3
+
+## File: 'docs/retry.md'
+Title: Document the retries
+Summary:
+- Add a page on retries
+=====
+
+
+Response (should be a valid YAML, and nothing else):
+```yaml

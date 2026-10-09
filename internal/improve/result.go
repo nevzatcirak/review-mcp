@@ -163,9 +163,12 @@ type Suggestion struct {
 	// it, and ImprovedCode its replacement.
 	ExistingCode string `json:"existing_code"`
 	ImprovedCode string `json:"improved_code"`
-	// StartLine and EndLine are the new-file lines of ExistingCode as the
-	// self-review answer gave them (relevant_lines_start/end); nil when it
-	// gave none, or none that make a range. WP-2g checks and corrects them.
+	// StartLine and EndLine are the new-file lines of ExistingCode. For a
+	// verified suggestion they are where the code is in the head file: the
+	// self-review's range (relevant_lines_start/end) when the code is
+	// there, otherwise the unique match the search found. For an
+	// unverified one they are the self-review's range as it gave it, or
+	// nil when it gave none (or none that makes a range).
 	StartLine *int `json:"start_line"`
 	EndLine   *int `json:"end_line"`
 	// Score is the self-review score, 0 to 10; nil for an unscored
@@ -175,9 +178,13 @@ type Suggestion struct {
 	// Why is the self-review's reason for the score; "" when unscored.
 	Why string `json:"why"`
 	// Verified reports that ExistingCode was found in the head file at
-	// StartLine to EndLine (Y-10). It is filled by WP-2g; until then it is
-	// always false.
+	// StartLine to EndLine (v2 spec §2, Y-10). An unverified suggestion
+	// stays in the result and the overview and is never posted inline.
 	Verified bool `json:"verified"`
+	// UnverifiedReason says why an unverified suggestion is not verified:
+	// UnverifiedNotFound, UnverifiedAmbiguous or UnverifiedHeadUnavailable;
+	// "" when verified.
+	UnverifiedReason string `json:"unverified_reason"`
 	// Anchor is where the suggestion is posted inline (Y-11). It is filled
 	// by WP-2h; until then it is always nil.
 	Anchor *Anchor `json:"anchor"`

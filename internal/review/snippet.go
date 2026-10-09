@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/patch"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 )
@@ -37,7 +38,7 @@ func snippet(fp *provider.FilePatch, start, end int) (text, note string) {
 	var lines []string
 	var ok bool
 	if fp.HeadStatus == provider.ContentFull && fp.HeadContent != nil {
-		lines, ok = headLines(*fp.HeadContent, start, end)
+		lines, ok = llmrun.HeadLines(*fp.HeadContent, start, end)
 	} else {
 		lines, ok = patchLines(fp.Patch, start, end)
 	}
@@ -48,24 +49,6 @@ func snippet(fp *provider.FilePatch, start, end int) (text, note string) {
 		lines, note = lines[:MaxSnippetLines], snippetNoteCut
 	}
 	return strings.Join(lines, "\n"), note
-}
-
-// headLines takes the range from complete file content. Lines are split at
-// "\n" only, as the numbered diff counts them (architect decision D5); a
-// final newline does not start another line.
-func headLines(content string, start, end int) ([]string, bool) {
-	all := strings.Split(content, "\n")
-	if len(all) > 0 && all[len(all)-1] == "" {
-		all = all[:len(all)-1]
-	}
-	if end > len(all) {
-		return nil, false
-	}
-	out := make([]string, 0, min(end-start+1, MaxSnippetLines+1))
-	for _, l := range all[start-1 : end] {
-		out = append(out, strings.TrimSuffix(l, "\r"))
-	}
-	return out, true
 }
 
 // patchLines resolves the range from the hunks' new side (context and

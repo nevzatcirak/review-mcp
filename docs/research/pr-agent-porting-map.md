@@ -728,8 +728,13 @@ position → threshold → per-file cap → publish (section E).
   higher-ranked occurrence is kept; then a total cap
   `improve.max_suggestions` with a note.
   The per-file cap is not ported.
-- Line ranges come from the self-review only; `verified` and `anchor` are
-  WP-2g and WP-2h (section E).
+- Line ranges come from the self-review; WP-2g verifies them against the
+  complete head file (Y-10): `existing_code` must equal the lines after
+  normalising trailing white space, CRLF and common indentation, else a
+  unique match elsewhere corrects the range (with a note), and none or
+  several leave the suggestion unverified. Upstream does not verify. A
+  head file whose content was not fetched leaves the suggestion
+  unverified (`head_unavailable`). `anchor` is WP-2h (section E).
 
 **Config knobs**
 

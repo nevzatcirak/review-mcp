@@ -109,8 +109,9 @@ func jsonKeys(typ reflect.Type) []string {
 // output schema and returns real results through the MCP SDK, which
 // resolves the schema and validates every structured result against it: a
 // one-call result, a three-part result, a result whose self-review failed
-// (null scores) and an empty result. A score outside 0 to 10 and an anchor
-// with a field are rejected.
+// (null scores), an empty result and a verified result. A score outside 0
+// to 10, an unknown unverified_reason and an anchor with a field are
+// rejected.
 func TestResultSchemaAcceptedBySDK(t *testing.T) {
 	results := map[string]any{}
 	results["one call"] = newHarness(oneCallAnswers()).run(t, Args{})
@@ -121,12 +122,22 @@ func TestResultSchemaAcceptedBySDK(t *testing.T) {
 	h = newHarness(nil)
 	h.deps.Config.Ignore.Glob = []string{"**"}
 	results["empty"] = h.run(t, Args{})
+	h = newHarness(oneCallAnswers())
+	h.prov.files = headSampleFiles()
+	results["verified"] = h.run(t, Args{})
+	if !results["verified"].(*Result).Suggestions[0].Verified {
+		t.Fatal("the verified result has no verified suggestion")
+	}
 
 	bad := *results["one call"].(*Result)
 	bad.Suggestions = append([]Suggestion(nil), bad.Suggestions...)
 	eleven := 11
 	bad.Suggestions[0].Score = &eleven
 	results["invalid score"] = &bad
+	badReason := *results["one call"].(*Result)
+	badReason.Suggestions = append([]Suggestion(nil), badReason.Suggestions...)
+	badReason.Suggestions[0].UnverifiedReason = "unknown"
+	results["invalid reason"] = &badReason
 	raw := marshal(t, results["one call"])
 	var anchored map[string]any
 	if err := json.Unmarshal([]byte(strings.Replace(raw, `"anchor": null`, `"anchor": {"line": 3}`, 1)), &anchored); err != nil {
@@ -174,20 +185,21 @@ func TestResultSchemaAcceptedBySDK(t *testing.T) {
 	}
 }
 
-// TestInterimFields: until WP-2g and WP-2h every suggestion has verified
-// false and a null anchor, and the JSON carries both.
+// TestInterimFields: until WP-2h every suggestion has a null anchor; the
+// JSON carries it and the verification fields on every suggestion.
 func TestInterimFields(t *testing.T) {
 	res := newHarness(oneCallAnswers()).run(t, Args{})
 	if len(res.Suggestions) == 0 {
 		t.Fatal("no suggestion")
 	}
 	for _, s := range res.Suggestions {
-		if s.Verified || s.Anchor != nil {
-			t.Errorf("suggestion %q: verified %v anchor %v", s.Summary, s.Verified, s.Anchor)
+		if s.Anchor != nil {
+			t.Errorf("suggestion %q: anchor %v", s.Summary, s.Anchor)
 		}
 	}
 	raw := marshal(t, res)
-	if strings.Count(raw, `"verified": false`) != len(res.Suggestions) || strings.Count(raw, `"anchor": null`) != len(res.Suggestions) {
-		t.Errorf("JSON lacks the interim values:\n%s", raw)
+	if strings.Count(raw, `"anchor": null`) != len(res.Suggestions) || strings.Count(raw, `"verified": `) != len(res.Suggestions) ||
+		strings.Count(raw, `"unverified_reason": `) != len(res.Suggestions) {
+		t.Errorf("JSON lacks the anchor or the verification fields:\n%s", raw)
 	}
 }

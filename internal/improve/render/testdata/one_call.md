@@ -2,7 +2,7 @@
 
 ### 1. Assert the retry count
 
-- File: `src/app_test.go` (line 2, as given by the self-review; not checked against the file)
+- File: `src/app_test.go` (line 2; not anchored: the head file was not available to check the quoted code)
 - Label: possible issue
 - Score: 9 of 10
 - Why: The test cannot fail.
@@ -27,7 +27,7 @@ func TestRetries(t *testing.T) {
 
 ### 2. Cap the retry delay
 
-- File: `src/app.go` (line 12, as given by the self-review; not checked against the file)
+- File: `src/app.go` (line 12; not anchored: the head file was not available to check the quoted code)
 - Label: possible issue
 - Score: 8 of 10
 - Why: An unbounded `delay` can stall callers.

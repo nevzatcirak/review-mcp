@@ -14,9 +14,10 @@
 // together (score descending, the unscored last), deduplicated by their
 // X-13 fingerprint and capped at improve.max_suggestions.
 //
-// Nothing is published yet (WP-2h), and the quoted code is not yet checked
-// against the head file (WP-2g): every suggestion has verified false and no
-// anchor.
+// The kept suggestions are verified against the head file (v2 spec §2,
+// Y-10): the quoted code must be at the self-review's lines, or uniquely
+// elsewhere in the file (the range is then corrected). Nothing is published
+// yet (WP-2h): every suggestion has no anchor.
 //
 // Dependency rule (deps_test.go): nothing in this package's dependency
 // closure may import internal/review, internal/ask, internal/describe or
@@ -174,6 +175,9 @@ type Plan struct {
 	repoCtx llmrun.RepoContext
 	ref     provider.PRRef
 	p       provider.Provider
+	// files are the diff's files by path: the head content the suggestions
+	// are verified against (v2 spec §2).
+	files map[string]*provider.FilePatch
 	// language is the effective output language, for the self-review.
 	language string
 	minScore int
@@ -286,7 +290,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	progress(deps, StagePreparingDiff)
 
 	pl := &Plan{ref: ref, p: p, flt: flt, language: language, minScore: cfg.Improve.MinScore,
-		maxTotal: cfg.Improve.MaxSuggestions, log: log}
+		maxTotal: cfg.Improve.MaxSuggestions, files: fileIndex(d.Files), log: log}
 	// The PR's discussion (X-13), budgeted by review.max_discussion_tokens;
 	// a failure never fails the run.
 	disc, discNotes := pl.readDiscussion(ctx, cfg.Review.MaxDiscussionTokens, factor)
@@ -463,6 +467,15 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	res.Notes = append(res.Notes, llmrun.PartialNotes(&res.Coverage, budget)...)
 	res.Notes = append(res.Notes, repoNotes...)
 	return pl, nil
+}
+
+// fileIndex maps the files by their (new) path.
+func fileIndex(files []provider.FilePatch) map[string]*provider.FilePatch {
+	m := make(map[string]*provider.FilePatch, len(files))
+	for i := range files {
+		m[files[i].Path] = &files[i]
+	}
+	return m
 }
 
 func changeTypes(files []provider.FilePatch) map[string]provider.ChangeType {

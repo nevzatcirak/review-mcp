@@ -167,8 +167,10 @@ func (pl *Plan) reflect(ctx context.Context, deps Deps, diff string, cands []Can
 	})
 }
 
-// merge merges the parts' suggestions into the result (v2 spec §1.5) and
-// adds the notes of the validation, the self-review and the merge.
+// merge merges the parts' suggestions into the result (v2 spec §1.5),
+// verifies the ones it keeps against the head files (§2, verifyAll) and
+// adds the notes of the validation, the self-review, the merge and the
+// verification.
 //
 //   - Order: one global ranking over every part, not per part. First the
 //     scored suggestions, by score descending; equal scores keep the part
@@ -231,6 +233,7 @@ func (pl *Plan) merge(outs []*partOutcome) {
 		capped = len(out) - pl.maxTotal
 		out = out[:pl.maxTotal]
 	}
+	corrected := pl.verifyAll(out)
 	res.Suggestions = out
 
 	if unknown > 0 {
@@ -258,6 +261,9 @@ func (pl *Plan) merge(outs []*partOutcome) {
 	if capped > 0 {
 		res.Notes = append(res.Notes, noteTotalCap(capped))
 	}
+	if corrected > 0 {
+		res.Notes = append(res.Notes, noteRangesCorrected(corrected))
+	}
 	pl.log.Debug("improve: parts merged", "parts", len(outs), "suggestions", len(out),
 		"duplicates_dropped", dups, "capped", capped, "max_suggestions", pl.maxTotal)
 }
@@ -271,8 +277,9 @@ func scoreOf(s scored) int {
 	return *s.fb.score
 }
 
-// suggestionOf builds the result entry of a merged suggestion. Verified
-// and Anchor keep their interim values until WP-2g and WP-2h.
+// suggestionOf builds the result entry of a merged suggestion, with the
+// self-review's range; verifyAll then checks it. Anchor keeps its interim
+// value until WP-2h.
 func suggestionOf(s scored) Suggestion {
 	out := Suggestion{
 		File: s.c.File, Language: s.c.Language, Label: s.c.Label, Summary: s.c.Summary, Content: s.c.Content,

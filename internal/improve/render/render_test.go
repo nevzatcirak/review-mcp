@@ -91,17 +91,33 @@ func TestClientGoldens(t *testing.T) {
 	}
 }
 
-// TestClientMarksUnscoredAndUncheckedLines: an unscored suggestion says so,
-// and a line range always says that it was not checked against the file
-// (WP-2g).
-func TestClientMarksUnscoredAndUncheckedLines(t *testing.T) {
+// TestClientMarksUnscoredAndVerification: an unscored suggestion says so;
+// a verified suggestion's range says it was checked against the head file;
+// an unverified one is marked not anchored (Y-10), with the range as given
+// or without one, and a distinct mark when the head file was not available.
+func TestClientMarksUnscoredAndVerification(t *testing.T) {
 	out := Client(unscoredResult(t))
 	if strings.Count(out, "- Score: "+TextUnscored+"\n") != 2 || strings.Contains(out, "- Why:") {
 		t.Errorf("unscored rendering:\n%s", out)
 	}
-	out = Client(loadRun(t, "one_call"))
-	if !strings.Contains(out, "(line 12, "+TextLinesUnchecked+")") || !strings.Contains(out, "- Score: 9 of 10\n") {
-		t.Errorf("scored rendering:\n%s", out)
+	res := loadRun(t, "one_call")
+	if out = Client(res); !strings.Contains(out, "(line 12; "+TextNotAnchoredNoHead+")") || !strings.Contains(out, "- Score: 9 of 10\n") {
+		t.Errorf("head unavailable rendering:\n%s", out)
+	}
+	res.Suggestions[0].Verified, res.Suggestions[0].UnverifiedReason = true, ""
+	res.Suggestions[1].UnverifiedReason = improve.UnverifiedNotFound
+	out = Client(res)
+	if !strings.Contains(out, "- File: `src/app_test.go` (line 2; "+TextLinesVerified+")\n") ||
+		!strings.Contains(out, "- File: `src/app.go` (line 12; "+TextNotAnchored+")\n") {
+		t.Errorf("verified and not-found rendering:\n%s", out)
+	}
+	res.Suggestions[1].StartLine, res.Suggestions[1].EndLine = nil, nil
+	res.Suggestions[1].UnverifiedReason = improve.UnverifiedAmbiguous
+	if out = Client(res); !strings.Contains(out, "- File: `src/app.go` ("+TextNotAnchored+")\n") {
+		t.Errorf("ambiguous rendering without a range:\n%s", out)
+	}
+	if TextNotAnchored != "not anchored: the quoted code was not found at the given lines" {
+		t.Errorf("TextNotAnchored is not the Y-10 sentence: %q", TextNotAnchored)
 	}
 	if !strings.HasPrefix(Client(partialResult(t)), "**Partial review: 4 of 6 changed files were reviewed.") {
 		t.Errorf("the partial banner does not lead")

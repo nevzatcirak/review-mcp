@@ -29,20 +29,29 @@ const (
 	// TextUnscored marks a suggestion without a self-review score (v2 spec
 	// §1.4).
 	TextUnscored = "unscored"
-	// TextLinesUnchecked follows the line range: the self-review gave it,
-	// and nothing has compared the quoted code with the file yet (WP-2g).
-	TextLinesUnchecked = "as given by the self-review; not checked against the file"
-	textNoSuggestions  = "No suggestions."
+	// TextLinesVerified follows the line range of a verified suggestion:
+	// the quoted code is at those lines of the head file (v2 spec §2).
+	TextLinesVerified = "checked against the head file"
+	// TextNotAnchored marks a suggestion whose quoted code was not found at
+	// the given lines, nor uniquely elsewhere in the head file (Y-10,
+	// verbatim).
+	TextNotAnchored = "not anchored: the quoted code was not found at the given lines"
+	// TextNotAnchoredNoHead marks a suggestion that could not be checked:
+	// the head file's content was not fetched.
+	TextNotAnchoredNoHead = "not anchored: the head file was not available to check the quoted code"
+	textNoSuggestions     = "No suggestions."
 )
 
 // Client renders res for the MCP client:
 //
 //   - the X-18 banner of a partial result, first;
 //   - "## Suggestions": per suggestion, in the result's order, a numbered
-//     heading with its summary, a list with the file (and the line range
-//     with TextLinesUnchecked), the label, the score ("N of 10", or
-//     TextUnscored) and the reason, then the suggestion text and the
-//     existing and improved code in fences;
+//     heading with its summary, a list with the file (with the line range
+//     and TextLinesVerified for a verified suggestion; with the range as
+//     given, if any, and TextNotAnchored or TextNotAnchoredNoHead for an
+//     unverified one), the label, the score ("N of 10", or TextUnscored)
+//     and the reason, then the suggestion text and the existing and
+//     improved code in fences;
 //   - the coverage section (always) and the notes section (when there are
 //     notes).
 func Client(res *improve.Result) string {
@@ -67,15 +76,23 @@ func Client(res *improve.Result) string {
 
 func writeSuggestion(b *strings.Builder, n int, s *improve.Suggestion) {
 	b.WriteString("\n### " + strconv.Itoa(n) + ". " + mdutil.Inline(s.Summary) + "\n\n")
-	file := "- File: " + mdutil.Literal(s.File)
+	var where []string
 	if s.StartLine != nil && s.EndLine != nil {
 		lines := "line " + strconv.Itoa(*s.StartLine)
 		if *s.EndLine != *s.StartLine {
 			lines = "lines " + strconv.Itoa(*s.StartLine) + "-" + strconv.Itoa(*s.EndLine)
 		}
-		file += " (" + lines + ", " + TextLinesUnchecked + ")"
+		where = append(where, lines)
 	}
-	b.WriteString(file + "\n")
+	switch {
+	case s.Verified:
+		where = append(where, TextLinesVerified)
+	case s.UnverifiedReason == improve.UnverifiedHeadUnavailable:
+		where = append(where, TextNotAnchoredNoHead)
+	default:
+		where = append(where, TextNotAnchored)
+	}
+	b.WriteString("- File: " + mdutil.Literal(s.File) + " (" + strings.Join(where, "; ") + ")\n")
 	if l := strings.TrimSpace(s.Label); l != "" {
 		b.WriteString("- Label: " + mdutil.Inline(l) + "\n")
 	}

@@ -77,7 +77,7 @@ func TestDiagPRGitea(t *testing.T) {
 		t.Errorf("unexpected output after JSON: %q", rest)
 	}
 	wantKeys := []string{"kind", "ref", "title", "source_branch", "target_branch", "head_sha", "base_sha",
-		"base_strategy", "commit_count", "commits", "files", "skipped", "totals", "elapsed_ms"}
+		"base_strategy", "commit_count", "commits", "files", "skipped", "notes", "totals", "elapsed_ms"}
 	if len(m) != len(wantKeys) {
 		t.Errorf("got %d top-level keys, want %d: %v", len(m), len(wantKeys), m)
 	}

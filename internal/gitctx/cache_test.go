@@ -613,6 +613,17 @@ func TestRepoFor(t *testing.T) {
 	if _, ok := RepoFor(cfg, provider.PRRef{Kind: provider.KindBitbucketServer, Namespace: "P", Repo: "r"}, nil); ok {
 		t.Error("a disabled provider gave a Repo")
 	}
+	// GitHub repository context is WP-2m: until then an enabled GitHub gives
+	// no Repo, which repoctx reports as unsupported.
+	cfg.GitHub.BaseURL = "https://github.example.com"
+	cfg.Secrets.GitHubToken = config.NewSecret(testToken)
+	if _, ok := RepoFor(cfg, provider.PRRef{Kind: provider.KindGitHub, Namespace: "octo", Repo: "demo", Number: 7}, nil); ok {
+		t.Error("GitHub gave a Repo before its repository context exists")
+	}
+	if _, err := newPlan(Repo{Kind: provider.KindGitHub, BaseURL: "https://github.example.com", Namespace: "octo", Name: "demo"},
+		PR{Number: 7, HeadSHA: fakeSHA}); ReasonOf(err) != ReasonUnsupported {
+		t.Errorf("GitHub plan: err = %v, want unsupported", err)
+	}
 	o := OptionsFromConfig(config.Defaults().Context.Repo)
 	if o.MaxCacheBytes != 2048<<20 || o.MaxRepoBytes != 500<<20 || o.FetchTimeout != time.Minute || o.IdleDays != 7 {
 		t.Errorf("OptionsFromConfig = %+v", o)

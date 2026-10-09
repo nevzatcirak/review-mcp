@@ -21,10 +21,11 @@ const (
 	fakeLLMKey      = "FAKE-llm-key-ZQ7X-do-not-leak"
 	fakeGitea       = "FAKE-gitea-token-ZQ7X-do-not-leak"
 	fakeBitbkt      = "FAKE-bitbucket-token-ZQ7X-do-not-leak"
+	fakeGitHub      = "FAKE-github-token-ZQ7X-do-not-leak"
 	fakeURLUserinfo = "FAKE-url-password-ZQ7X"
 )
 
-var allSecrets = []string{fakeLLMKey, fakeGitea, fakeBitbkt, fakeURLUserinfo}
+var allSecrets = []string{fakeLLMKey, fakeGitea, fakeBitbkt, fakeGitHub, fakeURLUserinfo}
 
 func validEnv() map[string]string {
 	return map[string]string{
@@ -36,6 +37,8 @@ func validEnv() map[string]string {
 		"REVIEW_MCP_GITEA_TOKEN":               fakeGitea,
 		"REVIEW_MCP_BITBUCKET_SERVER_BASE_URL": "https://bitbucket.example.com/bb",
 		"REVIEW_MCP_BITBUCKET_SERVER_TOKEN":    fakeBitbkt,
+		"REVIEW_MCP_GITHUB_BASE_URL":           "https://github.example.com",
+		"REVIEW_MCP_GITHUB_TOKEN":              fakeGitHub,
 	}
 }
 
@@ -45,6 +48,7 @@ func invalidEnv() map[string]string {
 		"REVIEW_MCP_LLM_API_KEY":               fakeLLMKey,
 		"REVIEW_MCP_GITEA_TOKEN":               fakeGitea,
 		"REVIEW_MCP_BITBUCKET_SERVER_TOKEN":    fakeBitbkt,
+		"REVIEW_MCP_GITHUB_TOKEN":              fakeGitHub,
 		"REVIEW_MCP_BITBUCKET_SERVER_BASE_URL": "ftp://user:" + fakeURLUserinfo + "@bitbucket.example.com",
 		"REVIEW_MCP_LLM_CONTEXT_WINDOW":        "12",
 	}
@@ -207,7 +211,7 @@ func TestCallServerInfoTextAndStructured(t *testing.T) {
 	if got.Name != "review-mcp" || got.Status != tools.StatusOK {
 		t.Errorf("structured = %+v", got)
 	}
-	if len(got.Providers) != 2 {
+	if len(got.Providers) != 3 || got.Providers[2] != (tools.ProviderInfo{Kind: "github", BaseURL: "https://github.example.com", APIURL: "https://github.example.com/api/v3"}) {
 		t.Errorf("providers = %+v", got.Providers)
 	}
 	if got.Config.Secrets["llm.api_key"] != "set" || len(got.Config.Values) == 0 {

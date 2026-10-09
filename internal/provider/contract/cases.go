@@ -955,6 +955,13 @@ func (s *suite) fileLineURL(t *testing.T) {
 	}
 }
 
+// failureCallNames are the subtests of each errors case, one per Provider
+// call, in order.
+var failureCallNames = []string{
+	"GetPullRequest", "GetCommitMessages", "GetDiff", "ListThreads", "CurrentUser", "PostComment",
+	"ReplyToComment", "EditComment", "UpdatePullRequest", "PostInlineComments", "GetReviewStatus",
+}
+
 // errorCases: 401, 403, 404, 500 and a network failure map to the error
 // classes, and no error text carries the token or response body text.
 func (s *suite) errorCases(t *testing.T) {
@@ -1006,45 +1013,61 @@ func (s *suite) checkFailures(t *testing.T, p provider.Provider, ref provider.PR
 			return p.UpdatePullRequest(ctx, ref, provider.UpdatePR{Title: strPtr("A title."), Version: "0"})
 		}},
 	}
+	names := []string{}
 	for _, c := range calls {
-		err := c.call()
+		names = append(names, c.name)
+	}
+	if names = append(names, "PostInlineComments", "GetReviewStatus"); !slices.Equal(names, failureCallNames) {
+		t.Fatalf("failureCallNames %q is out of step with the calls %q", failureCallNames, names)
+	}
+	for _, c := range calls {
+		t.Run(c.name, func(t *testing.T) {
+			s.skipPending(t, "errors/"+c.name)
+			err := c.call()
+			switch {
+			case err == nil:
+				t.Errorf("%s: no error, want %s", c.name, class.Class)
+			case !errors.Is(err, class):
+				t.Errorf("%s: error %q, want class %s", c.name, err, class.Class)
+			}
+			checkClean(t, c.name, err)
+		})
+	}
+
+	t.Run("PostInlineComments", func(t *testing.T) {
+		s.skipPending(t, "errors/PostInlineComments")
+		items := []provider.InlineComment{{Path: pathModified, Line: 6, LineType: provider.LineAdded, Body: "Inline."}}
+		res, err := p.PostInlineComments(ctx, ref, pr, items)
 		switch {
-		case err == nil:
-			t.Errorf("%s: no error, want %s", c.name, class.Class)
-		case !errors.Is(err, class):
-			t.Errorf("%s: error %q, want class %s", c.name, err, class.Class)
-		}
-		checkClean(t, c.name, err)
-	}
-
-	items := []provider.InlineComment{{Path: pathModified, Line: 6, LineType: provider.LineAdded, Body: "Inline."}}
-	res, err := p.PostInlineComments(ctx, ref, pr, items)
-	switch {
-	case err != nil:
-		if !errors.Is(err, class) {
-			t.Errorf("PostInlineComments: error %q, want class %s", err, class.Class)
-		}
-		checkClean(t, "PostInlineComments", err)
-	case len(res) != len(items):
-		t.Errorf("PostInlineComments: %d results, want %d", len(res), len(items))
-	default:
-		// A provider that reports per item: the item carries the class's
-		// fixed sentence.
-		for _, r := range res {
-			if r.Posted || !strings.HasPrefix(r.Error, class.Error()) {
-				t.Errorf("PostInlineComments: %+v, want not posted with %q", r, class.Error())
+		case err != nil:
+			if !errors.Is(err, class) {
+				t.Errorf("PostInlineComments: error %q, want class %s", err, class.Class)
 			}
-			if r.Reason != provider.InlineReasonFailed {
-				t.Errorf("PostInlineComments: reason %q, want %q", r.Reason, provider.InlineReasonFailed)
+			checkClean(t, "PostInlineComments", err)
+		case len(res) != len(items):
+			t.Errorf("PostInlineComments: %d results, want %d", len(res), len(items))
+		default:
+			// A provider that reports per item: the item carries the class's
+			// fixed sentence.
+			for _, r := range res {
+				if r.Posted || !strings.HasPrefix(r.Error, class.Error()) {
+					t.Errorf("PostInlineComments: %+v, want not posted with %q", r, class.Error())
+				}
+				if r.Reason != provider.InlineReasonFailed {
+					t.Errorf("PostInlineComments: reason %q, want %q", r.Reason, provider.InlineReasonFailed)
+				}
+				checkCleanText(t, "InlineResult.Error", r.Error)
 			}
-			checkCleanText(t, "InlineResult.Error", r.Error)
 		}
-	}
+	})
 
-	st := p.GetReviewStatus(ctx, ref, pr, provider.ReviewStatusOptions{})
-	if st == nil || st.Reviewers != nil || !slices.Contains(st.Notes, provider.NoteReviewsUnreadable) {
-		t.Errorf("GetReviewStatus = %+v, want no reviewers and the note %q", st, provider.NoteReviewsUnreadable)
-	}
+	t.Run("GetReviewStatus", func(t *testing.T) {
+		s.skipPending(t, "errors/GetReviewStatus")
+		st := p.GetReviewStatus(ctx, ref, pr, provider.ReviewStatusOptions{})
+		if st == nil || st.Reviewers != nil || !slices.Contains(st.Notes, provider.NoteReviewsUnreadable) {
+			t.Errorf("GetReviewStatus = %+v, want no reviewers and the note %q", st, provider.NoteReviewsUnreadable)
+		}
+	})
 }
 
 // checkClean fails t when any text of err or of an error it wraps carries

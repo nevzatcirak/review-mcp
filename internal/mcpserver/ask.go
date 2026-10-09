@@ -17,7 +17,7 @@ const prAskDescription = "Answers a question about a pull request using the conf
 const prAskJobSentence = " An answer that takes longer than wait_seconds answers with a job_id instead: call job_result for the result. The answer keeps running and, with publish=true, still posts its comment even if job_result is never called."
 
 type prAskInput struct {
-	PRURL             string `json:"pr_url" jsonschema:"URL of the pull request, on a configured Gitea or Bitbucket Server host"`
+	PRURL             string `json:"pr_url" jsonschema:"URL of the pull request, on a configured Gitea, Bitbucket Server or GitHub host"`
 	Question          string `json:"question" jsonschema:"the question to answer about the pull request, at most 8000 characters"`
 	ExtraInstructions string `json:"extra_instructions,omitempty" jsonschema:"extra instructions for the model; replaces ask.extra_instructions for this call"`
 	OutputLanguage    string `json:"output_language,omitempty" jsonschema:"locale code for the answer, for example en-US or tr-TR; replaces output.language for this call"`

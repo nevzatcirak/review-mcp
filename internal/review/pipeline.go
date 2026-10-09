@@ -439,6 +439,9 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			AlreadyDiscussed: disc.Included,
 		},
 	}
+	// Changed files the provider could not list at all (GitHub lists at
+	// most 3000) are named by its fixed note.
+	res.Notes = append(res.Notes, d.Notes...)
 	res.Notes = append(res.Notes, discNotes...)
 	if disc.Omitted > 0 {
 		res.Notes = append(res.Notes, noteDiscussionLeftOut(disc.Omitted))

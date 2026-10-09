@@ -27,7 +27,7 @@ const partialSentence = " If the result says the review is partial, tell the use
 const prReviewJobSentence = " A review that takes longer than wait_seconds answers with a job_id instead: call job_result for the result. The review keeps running and, with publish=true, still posts its comments even if job_result is never called."
 
 type prReviewInput struct {
-	PRURL             string `json:"pr_url" jsonschema:"URL of the pull request, on a configured Gitea or Bitbucket Server host"`
+	PRURL             string `json:"pr_url" jsonschema:"URL of the pull request, on a configured Gitea, Bitbucket Server or GitHub host"`
 	ExtraInstructions string `json:"extra_instructions,omitempty" jsonschema:"extra review instructions for the model; replaces review.extra_instructions for this call"`
 	OutputLanguage    string `json:"output_language,omitempty" jsonschema:"locale code for the review text, for example en-US or tr-TR; replaces output.language for this call"`
 	MaxFindings       *int   `json:"max_findings,omitempty" jsonschema:"most key issues to return, 1 to 20; replaces review.max_findings for this call"`

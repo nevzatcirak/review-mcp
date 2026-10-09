@@ -45,7 +45,7 @@ type PRResolver interface {
 
 // PRInfo identifies the pull request of a result.
 type PRInfo struct {
-	Kind string `json:"kind" jsonschema:"provider kind, for example gitea or bitbucket_server"`
+	Kind string `json:"kind" jsonschema:"provider kind: gitea, bitbucket_server or github"`
 	URL  string `json:"url" jsonschema:"pull request URL with credentials and query values removed"`
 }
 

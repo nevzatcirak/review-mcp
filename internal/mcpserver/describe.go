@@ -22,7 +22,7 @@ const describePartialSentence = " If the result says the description is partial,
 const prDescribeJobSentence = " A description that takes longer than wait_seconds answers with a job_id instead: call job_result for the result."
 
 type prDescribeInput struct {
-	PRURL          string `json:"pr_url" jsonschema:"URL of the pull request, on a configured Gitea or Bitbucket Server host"`
+	PRURL          string `json:"pr_url" jsonschema:"URL of the pull request, on a configured Gitea, Bitbucket Server or GitHub host"`
 	OutputLanguage string `json:"output_language,omitempty" jsonschema:"locale code for the description text, for example en-US or tr-TR; replaces output.language for this call"`
 	Publish        bool   `json:"publish,omitempty" jsonschema:"write the description to the pull request (default false): a comment, or a marked region of the PR description; see publish_mode"`
 	PublishMode    string `json:"publish_mode,omitempty" jsonschema:"where publish writes: comment (default) or description (a marked region of the PR description)"`

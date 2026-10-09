@@ -312,6 +312,9 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			DiffTokens: prep.Tokens, FastPath: prep.FastPath, CommitMessages: len(commits),
 		},
 	}
+	// Changed files the provider could not list at all (GitHub lists at
+	// most 3000) are named by its fixed note.
+	res.Notes = append(res.Notes, d.Notes...)
 	if commitsErr != nil {
 		res.Notes = append(res.Notes, NoteCommitsUnavailable)
 	}

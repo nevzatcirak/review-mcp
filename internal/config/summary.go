@@ -31,6 +31,9 @@ type SummaryValue struct {
 type ProviderSummary struct {
 	Kind    string `json:"kind"`
 	BaseURL string `json:"base_url"`
+	// APIURL is the API base when it is not BaseURL itself (GitHub: the
+	// configured or derived github.api_url); omitted otherwise.
+	APIURL string `json:"api_url,omitempty"`
 }
 
 // Summary builds the secret-free view. r may be nil (all sources then read
@@ -63,6 +66,10 @@ func (c *Config) Summary(r *Report) Summary {
 	}
 	if c.BitbucketServer.BaseURL != "" {
 		s.Providers = append(s.Providers, ProviderSummary{Kind: "bitbucket_server", BaseURL: logging.RedactURL(c.BitbucketServer.BaseURL)})
+	}
+	if c.GitHub.BaseURL != "" {
+		s.Providers = append(s.Providers, ProviderSummary{Kind: "github", BaseURL: logging.RedactURL(c.GitHub.BaseURL),
+			APIURL: logging.RedactURL(c.GitHub.EffectiveAPIURL())})
 	}
 	if r != nil {
 		s.Warnings = append(s.Warnings, r.Warnings...)

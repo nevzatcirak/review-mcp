@@ -7,6 +7,8 @@
 // docs/design/v1-design-decisions.md.
 package config
 
+import "strings"
+
 // Config is the effective configuration.
 //
 // Optional values without a default (diff.max_tokens, llm.max_output_tokens, llm.temperature,
@@ -16,6 +18,7 @@ type Config struct {
 	LLM             LLM             `toml:"llm" json:"llm"`
 	Gitea           Gitea           `toml:"gitea" json:"gitea"`
 	BitbucketServer BitbucketServer `toml:"bitbucket_server" json:"bitbucket_server"`
+	GitHub          GitHub          `toml:"github" json:"github"`
 	Output          Output          `toml:"output" json:"output"`
 	Diff            Diff            `toml:"diff" json:"diff"`
 	Ignore          Ignore          `toml:"ignore" json:"ignore"`
@@ -59,6 +62,44 @@ type BitbucketServer struct {
 	BaseURL            string `toml:"base_url" json:"base_url"`
 	CACert             string `toml:"ca_cert" json:"ca_cert"`
 	InsecureSkipVerify bool   `toml:"insecure_skip_verify" json:"insecure_skip_verify"`
+}
+
+// GitHub configures the GitHub provider (github.com or GitHub Enterprise
+// Server); it is enabled iff BaseURL is set. BaseURL is the web base that
+// pull request URLs start with; no host is assumed (X-2). APIURL is
+// optional: when it is unset the API base is derived from BaseURL
+// (EffectiveAPIURL).
+type GitHub struct {
+	BaseURL            string `toml:"base_url" json:"base_url"`
+	APIURL             string `toml:"api_url" json:"api_url"`
+	CACert             string `toml:"ca_cert" json:"ca_cert"`
+	InsecureSkipVerify bool   `toml:"insecure_skip_verify" json:"insecure_skip_verify"`
+}
+
+// gitHubDotCom is the one web base whose API lives on another host.
+const (
+	gitHubDotCom    = "https://github.com"
+	gitHubDotComAPI = "https://api.github.com"
+)
+
+// EffectiveAPIURL returns the API base the GitHub provider calls, without a
+// trailing slash: github.api_url when it is set; otherwise
+// https://api.github.com when the web base is exactly https://github.com
+// (any letter case, no port, no path), and {base_url}/api/v3 (GitHub
+// Enterprise Server) for any other web base. It is "" when the provider is
+// not enabled.
+func (g GitHub) EffectiveAPIURL() string {
+	if api := strings.TrimRight(strings.TrimSpace(g.APIURL), "/"); api != "" {
+		return api
+	}
+	base := strings.TrimRight(strings.TrimSpace(g.BaseURL), "/")
+	switch {
+	case base == "":
+		return ""
+	case strings.EqualFold(base, gitHubDotCom):
+		return gitHubDotComAPI
+	}
+	return base + "/api/v3"
 }
 
 // Output configures result rendering.

@@ -24,18 +24,18 @@ const (
 )
 
 type prCommentsInput struct {
-	PRURL           string `json:"pr_url" jsonschema:"URL of the pull request, on a configured Gitea or Bitbucket Server host"`
+	PRURL           string `json:"pr_url" jsonschema:"URL of the pull request, on a configured Gitea, Bitbucket Server or GitHub host"`
 	IncludeResolved bool   `json:"include_resolved,omitempty" jsonschema:"also list resolved threads (default false)"`
 }
 
 type prCommentReplyInput struct {
-	PRURL     string `json:"pr_url" jsonschema:"URL of the pull request, on a configured Gitea or Bitbucket Server host"`
+	PRURL     string `json:"pr_url" jsonschema:"URL of the pull request, on a configured Gitea, Bitbucket Server or GitHub host"`
 	CommentID string `json:"comment_id" jsonschema:"id of the comment to reply to, as shown by pr_comments (a positive integer)"`
 	Body      string `json:"body" jsonschema:"reply text, posted verbatim; must not be empty"`
 }
 
 type prCommentCreateInput struct {
-	PRURL string `json:"pr_url" jsonschema:"URL of the pull request, on a configured Gitea or Bitbucket Server host"`
+	PRURL string `json:"pr_url" jsonschema:"URL of the pull request, on a configured Gitea, Bitbucket Server or GitHub host"`
 	Body  string `json:"body" jsonschema:"comment text, posted verbatim; must not be empty, at most 20000 characters, and must not contain a review-mcp marker line"`
 	File  string `json:"file,omitempty" jsonschema:"path of a changed file, as the pull request shows it (the new path of a renamed file); with line, posts the comment on that line instead of at PR level"`
 	Line  *int   `json:"line,omitempty" jsonschema:"line number in the new version of file; required with file, and not allowed without it; must be a changed or context line of the diff"`

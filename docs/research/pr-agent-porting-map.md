@@ -297,7 +297,7 @@ Upstream layers constant soft/hard buffers (1500/1000) with a per-handler `get_o
 DESIGN-QUESTION: Accurate counting endpoint
 Some OpenAI-compatible gateways expose no token-count API, and the OpenAI API itself has none. Options: (a) estimates only (tiktoken o200k + factor), no network counting; (b) optional provider count endpoint configured by the user. Recommendation: (a) for v1 — deterministic, offline, testable; the estimate factor absorbs tokenizer mismatch, and nothing in the clipping pipeline needs network-exact counts.
 
-## C. Prompt assembly & output schemas (/review, /ask, /describe)
+## C. Prompt assembly & output schemas (/review, /ask, /describe, /improve)
 
 ### /review
 
@@ -582,6 +582,211 @@ cover ("n/s").
 - The reduce prompt is ours; its quality on weak models is unmeasured until
   the in-use acceptance (N1).
 
+### /improve
+
+Added for v2 (WP-2f, X-27, design note Y-8 and Y-9). Same pinned revision
+(`8e5a929`); the study covered
+`pr_agent/settings/code_suggestions/pr_code_suggestions_prompts.toml`,
+`pr_code_suggestions_reflect_prompts.toml` and
+`pr_agent/tools/pr_code_suggestions.py`. The anchoring and publishing side of
+the tool is section E; this part covers the two prompts, the parsing and the
+merge.
+
+**Mechanism**
+
+`PRCodeSuggestions.__init__` builds `self.vars`: the title, the branch, the
+description, the main language, empty `diff` and `diff_no_line_numbers`,
+`num_code_suggestions` (`num_code_suggestions_per_chunk`, 3 when it is not a
+number), `extra_instructions`, `skills_context`, `repo_context`,
+`suggestion_discussion_context` (prior code-suggestion threads as JSON),
+`commit_messages_str`, `diff_hunk_format` (the fragment rendered without line
+numbers), `focus_only_on_problems` (code default false; the shipped
+configuration sets true) and today's `date`. `decouple_hunks` (code default
+true; the shipped configuration sets false) picks the prompt set:
+`[pr_code_suggestions_prompt]` (decoupled view) or
+`[pr_code_suggestions_prompt_not_decoupled]` (plain diff; not studied).
+
+*Suggestion prompt* (`[pr_code_suggestions_prompt]`): system = role ("You
+are PR-Reviewer, an AI specializing in ... code analysis and suggestions"),
+the task sentence (two variants by `focus_only_on_problems`), the
+diff-format fragment, "Specific guidelines" (up to `num_code_suggestions`
+suggestions, only on `+` lines of `__new hunk__`, the do-not list, imports,
+partial-code caution, backticks), the optional skills / extra-instructions /
+repo-context blocks, the schema as Pydantic prose (`CodeSuggestion{relevant_file,
+language, existing_code, suggestion_content, improved_code,
+one_sentence_summary, label}` with two `label` variants, and
+`PRCodeSuggestions{code_suggestions: List[CodeSuggestion]}`), a YAML example
+and the closing YAML instruction. User = `--PR Info--` with the title and the
+date, `The PR Diff:` fenced with `======` (`diff_no_line_numbers`), the
+optional discussion block (with its instruction paragraph after the data),
+the optional duplicated example, and the final line followed by an open
+` ```yaml ` fence. No line numbers are asked for.
+
+*Diff*: `prepare_prediction_main` gets the numbered decoupled view in up to
+`max_number_of_calls` chunks (`get_pr_multi_diffs(add_line_numbers=True)`)
+and strips the numbers for the suggestion call (`remove_line_numbers`); with
+`decouple_hunks` false it gets the plain chunks and builds the numbered twin
+for the self-review (`convert_to_decoupled_with_line_numbers`). A chunk must
+fit whole (`FallbackEligibleError` otherwise).
+
+*Parsing* (`_prepare_pr_code_suggestions`): `load_yaml` with `keys_fix_yaml`
+`relevant_file`, `suggestion_content`, `existing_code`, `improved_code`,
+`first_key="code_suggestions"`, `last_key="label"`; a list answer is wrapped;
+an answer without a `code_suggestions` list counts as a parse failure of the
+chunk. An entry without `one_sentence_summary`, `label` or `relevant_file`,
+or without `existing_code` and `improved_code`, is skipped; so is a
+duplicate `one_sentence_summary` within the chunk and the "const instead of
+let" boilerplate. With `focus_only_on_problems`, a label containing
+"critical" becomes "possible issue".
+
+*Self-review* (`self_reflect_on_suggestions`, mandatory): one call per chunk
+with `[pr_code_suggestions_reflect_prompt]`: the numbered diff and the
+chunk's suggestions as `suggestion N: <Python dict repr>` paragraphs; the
+answer (`code_suggestions` list of `suggestion_summary`, `relevant_file`,
+`relevant_lines_start`, `relevant_lines_end`, `suggestion_score` 0-10,
+`why`) is matched to the suggestions by position, only when the counts are
+equal (`analyze_self_reflection_response`); an empty or failed self-review
+gives every suggestion score 7 and no line range. A self-review request whose
+diff does not fit whole is not sent.
+
+*Merge*: chunks in order; a suggestion below `suggestions_score_threshold`
+is dropped (logged only); `_limit_suggestions_per_file` caps per file. There
+is no total cap and no cross-chunk deduplication.
+
+**Key code**
+
+- `pr_agent/settings/code_suggestions/pr_code_suggestions_prompts.toml:[pr_code_suggestions_prompt]` @ 8e5a929
+- `pr_agent/settings/code_suggestions/pr_code_suggestions_reflect_prompts.toml:[pr_code_suggestions_reflect_prompt]` @ 8e5a929
+- `pr_agent/tools/pr_code_suggestions.py:PRCodeSuggestions.__init__` (vars) @ 8e5a929
+- `pr_agent/tools/pr_code_suggestions.py:PRCodeSuggestions.prepare_prediction_main,_get_prediction` (chunks, generation, mandatory self-review) @ 8e5a929
+- `pr_agent/tools/pr_code_suggestions.py:PRCodeSuggestions._prepare_pr_code_suggestions` (parsing and filters) @ 8e5a929
+- `pr_agent/tools/pr_code_suggestions.py:PRCodeSuggestions.self_reflect_on_suggestions,_self_reflect_with_fallback,analyze_self_reflection_response` @ 8e5a929
+
+**Data flow**
+
+provider → vars → numbered chunks (≤ `max_number_of_calls`) → per chunk:
+suggestion call on the unnumbered twin → YAML → filters → self-review call
+on the numbered chunk with the suggestions → scores and line ranges by
+position → threshold → per-file cap → publish (section E).
+
+**Porting notes (Go)** — as implemented in `internal/improve` (v2 spec §1)
+
+- Templates `internal/improve/prompts/system.tmpl`, `user.tmpl`,
+  `reflect_system.tmpl` and `reflect_user.tmpl` adapt the two prompt
+  sections, with `focus_only_on_problems` fixed to true (the shipped
+  configuration) and `num_code_suggestions` = `improve.max_suggestions_per_part`;
+  their header comments list every deviation. In short: the skills and
+  repo-context blocks are removed, the extra-instructions block carries only
+  the output-language instruction (also in the self-review prompt, which
+  upstream does not have, so the `why` texts follow the output language),
+  the "Use ellipsis (...) for brevity" sentence of `existing_code` is
+  removed (WP-2g compares the quoted code with the head file), an honesty
+  line keeps suggestions off files listed by name only, the user prompt
+  adds the branches and the description, pr_review's discussion block
+  (X-13) replaces `suggestion_discussion_context`, the X-22 repository
+  context and the X-19 part line are added as in pr_review, and the
+  self-review schema gains `suggestion_number`; the suggestions are listed
+  as `suggestion N: <JSON object>` (one line each) instead of a Python repr.
+- **Diff format.** `diffpipe.ModeNumbered` is upstream's decoupled numbered
+  view byte for byte (its goldens are upstream outputs: `## File: '<path>'`,
+  `__new hunk__` with new-file numbers and the change marker after the
+  number, `__old hunk__` unnumbered and omitted without removed lines, the
+  deleted-file line). review-mcp sends that same numbered text to both calls
+  of a part, where upstream strips the numbers for the suggestion call: one
+  preparation, no `remove_line_numbers` heuristic, no pair to drift (this
+  map's DESIGN-QUESTION "Diff representation for the Go port" recommended
+  one view for both calls). The suggestion prompt therefore describes the
+  numbered format (the fragment rendered with `include_line_numbers=True`, as
+  in pr_review), and the schema still asks for no line numbers.
+- Parts reuse pr_review's X-19 packing (`diffpipe.PrepareChunks` when the
+  diff leaves files out and `review.max_chunks > 1`); the parts run
+  sequentially, each followed by its own self-review on the part's diff and
+  suggestions. The diff budget reserves the larger of the suggestion
+  scaffolding and the self-review scaffolding plus the hard output reserve,
+  so a packed part still leaves room for its self-review; a self-review
+  request that does not fit all the same is not sent and counts as failed.
+- Parsing keeps upstream's repair keys and the "critical" relabel. An answer
+  with `code_suggestions: null` is an answer without suggestions; without
+  the key it gets the one re-ask (as every review-mcp call). Validation is
+  enforced and counted in notes: an entry without a file, a summary or the
+  code is dropped, a suggestion for a file its call was not shown is
+  dropped, existing code equal to improved code after whitespace folding is
+  dropped ("no change"), labels are one line of at most 40 characters. The
+  "const instead of let" filter and the within-chunk summary dedup are not
+  ported; the fingerprint dedup below replaces the latter.
+- The self-review is matched by `suggestion_number`, checked against the
+  file and the summary; conflicting or out-of-range numbers match nothing;
+  positions are a fallback only when the counts are equal (upstream's rule).
+  A failed self-review keeps the suggestions **unscored** (score null) with
+  a fixed note, never upstream's default 7; a suggestion the answer does not
+  score is unscored too. Scores below `improve.min_score` are dropped and
+  counted.
+- Merge: one global ranking over the parts — the scored suggestions by
+  score descending (ties: part order, then the model's order), then the
+  unscored ones in part order; X-13 fingerprint dedup over file, summary
+  and existing code (`llmrun.Fingerprint`) on that ranking, so the
+  higher-ranked occurrence is kept; then a total cap
+  `improve.max_suggestions` with a note.
+  The per-file cap is not ported.
+- Line ranges come from the self-review and are verified (WP-2g, Y-10)
+  against the complete head file: `existing_code` must equal the lines after
+  normalising trailing white space, CRLF, white-space-only lines and common
+  indentation, else a unique match elsewhere corrects the range (with a
+  note), and none (`not_found`) or several (`ambiguous`, never the first)
+  leave the suggestion unverified. Upstream compares the dedented quote with
+  the head file at the given range and demotes a mismatch to a plain
+  comment; it never searches. For a file whose head content was not fetched
+  (a size or file limit, a failed fetch), a **given** range is verified when
+  every line of it is a new-side line of the patch and equals the quote
+  (upstream's patch walk, `head_file_is_complete=false`), with no search and
+  no correction; anything else, and a binary file, is `head_unavailable`.
+- Publishing (WP-2h, Y-11; section E for upstream): one overview comment with
+  the marker `review-mcp:improve:v1`, edited in place (upstream's persistent
+  summary comment), with a table of the suggestions and the full text of the
+  ones that have no inline comment. Upstream's unanchorable suggestions are
+  silently skipped from its table; here they stay in the overview. An inline
+  comment is posted only for a verified suggestion whose whole range is on
+  new-side lines of one hunk of the provider's own diff, on the first line of
+  the range: a native suggestion block with the `SuggestionBlocks` capability
+  (no provider sets it yet; upstream's `suggestion` fence), otherwise a
+  `diff` block from the existing to the improved code (upstream's Bitbucket
+  Server downgrade, applied to Gitea as well). The inline comments go in one
+  call of the provider (one review on Gitea, upstream posts one review per
+  suggestion). Re-indenting `improved_code` to the real lines (upstream's
+  `dedent_code` and `_shift_code_indentation`) is not done and is a
+  precondition for native blocks. Cross-run dedup ports upstream's marker
+  scheme (a link-reference marker line, the fallback upstream already
+  provides) with its own key: the file, the normalised `existing_code` and the
+  normalised `improved_code`, **without the summary**, so a reworded rerun
+  still recognises its comment; the merge dedup keeps the X-13 fingerprint
+  with the summary. Every review-mcp tool marker counts as the tool's own in
+  every tool's discussion block.
+
+**Config knobs**
+
+| upstream key | default | keep/drop/rename for Go config |
+|---|---|---|
+| `pr_code_suggestions.num_code_suggestions_per_chunk` | n/s (code fallback 3) | `improve.max_suggestions_per_part` (4, 1 to 10) |
+| `pr_code_suggestions.suggestions_score_threshold` | n/s (code fallback 1, at least 1) | `improve.min_score` (7, 0 to 10; 0 keeps every scored suggestion) |
+| `pr_code_suggestions.max_number_of_calls` | n/s | replaced by `review.max_chunks` (X-19) |
+| — | — | `improve.max_suggestions` (8, 1 to 30): total cap after the merge, ours |
+| `pr_code_suggestions.focus_only_on_problems` | n/s (code fallback false) | fixed true (no key) |
+| `pr_code_suggestions.decouple_hunks` | n/s (code fallback true) | drop: one numbered view for both calls |
+| `pr_code_suggestions.extra_instructions` | n/s | drop (no argument or key) |
+| `pr_code_suggestions.max_suggestions_per_file` | n/s | drop |
+| `pr_code_suggestions.parallel_calls` | n/s | drop (parts run sequentially, as pr_review's) |
+| `config.duplicate_prompt_examples` | n/s | drop |
+
+**Risks**
+
+- The suggestion call sees line numbers that upstream hides from it; a
+  model may copy a number into `existing_code`. WP-2g's comparison with the
+  head file would then fail and mark the suggestion unverified. Unmeasured
+  until the in-use acceptance (P1).
+- The self-review prompt is upstream's apart from `suggestion_number`;
+  weak models may ignore the number, and then the positional fallback or
+  the unscored path applies.
+
 ## D. Output parsing & repair path
 
 **Mechanism**
@@ -688,7 +893,7 @@ DESIGN-QUESTION: Parse-failure retry semantics
 
 ## E. Line anchoring for /improve (v2 — document only)
 
-Scope: how PR-Agent v0.47.0 (commit 8e5a929) turns an LLM "code suggestion" into a provider inline comment on an exact file+line, and everything that can go wrong on the way. `/improve` itself is deferred to review-mcp v2; this section is the porting map for that pipeline.
+Scope: how PR-Agent v0.47.0 (commit 8e5a929) turns an LLM "code suggestion" into a provider inline comment on an exact file+line, and everything that can go wrong on the way. `/improve` itself is deferred to review-mcp v2; this section is the porting map for that pipeline. As implemented in v2 (`pr_improve`, X-27), see the /improve section of C above.
 
 **Mechanism**
 

@@ -1,0 +1,25 @@
+{
+  "kind": "reflect",
+  "language": "en-US",
+  "diff": "## File: 'src/app.go'\n\n@@ -10,3 +10,4 @@ \n__new hunk__\n10  line 10\n11 +retries := 3\n12 +delay := retries * 100\n13  line 12\n__old hunk__\n line 10\n-retries := 1\n line 12",
+  "suggestions": [
+    {
+      "File": "src/app.go",
+      "Language": "go",
+      "ExistingCode": "delay := retries * 100",
+      "Content": "Cap the delay.",
+      "ImprovedCode": "delay := min(retries*100, 1000)",
+      "Summary": "Cap the retry delay",
+      "Label": "possible issue"
+    },
+    {
+      "File": "src/app.go",
+      "Language": "go",
+      "ExistingCode": "retries := 3",
+      "Content": "Name the \"retry\" count <here>.",
+      "ImprovedCode": "const maxRetries = 3\nretries := maxRetries",
+      "Summary": "Name the retry count",
+      "Label": "general"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+--PR Info--
+
+Title: 'Retry more'
+
+Branch: 'feature/retry'
+
+The PR Diff:
+======
+## File: 'src/app.go'
+
+@@ -10,3 +10,4 @@ 
+__new hunk__
+10  line 10
+11 +retries := 3
+12 +delay := retries * 100
+13  line 12
+__old hunk__
+ line 10
+-retries := 1
+ line 12
+======
+
+
+Response (should be a valid YAML, and nothing else):
+```yaml

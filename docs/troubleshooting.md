@@ -260,7 +260,8 @@ are listed in `omitted`.
 ## The review says partial
 
 A review or answer that starts with "Partial review: N of M changed files were
-reviewed" (or "Partial answer") tells you that some changed files were not
+reviewed" (or "Partial answer"; `pr_improve` leads with the same "Partial
+review" line) tells you that some changed files were not
 fully seen by the model, and that nothing is concluded about them. The
 coverage section lists each of them with its reason. What limits coverage
 depends on that reason:
@@ -294,6 +295,10 @@ N parts takes about N times as long as one call. The coverage section says
   N)`. Nothing needs changing unless the total time is too long for you.
 - **serve:** the call runs in its request; raise the client's tool timeout
   ([Serve mode](serve.md#long-calls)).
+- A `pr_improve` run in N parts makes up to N suggestion calls and up to N
+  self-review calls, so it takes up to about twice as long as the same review;
+  its coverage section also says "Reviewed in N model calls." (the suggestion
+  calls), and `metadata.llm_calls` counts the self-review calls as well.
 - To make it shorter: lower `review.max_chunks` (with `1` a review is one call
   again, and the files that do not fit are listed as omitted), or use a faster
   model. `diff.max_tokens` makes each part smaller and faster, but there are
@@ -314,6 +319,7 @@ the error text:
 |---|---|
 | `llm_timeout` | The part's call took longer than `llm.timeout_seconds`. Raise it, or lower `diff.max_tokens` so each part is smaller. |
 | `review_unparseable` | The answer could not be parsed as a review, also after one retry. Run again; check that the model follows YAML output instructions. |
+| `improve_unparseable` | The answer of a `pr_improve` suggestion call could not be parsed as code suggestions, also after one retry. Run again; check that the model follows YAML output instructions. |
 | other `llm_*` classes | The LLM error of [LLM and review errors](#llm-and-review-errors), for example `llm_rate_limited` or `llm_upstream`. |
 | `unclassified` | Any other failure; rerun with `REVIEW_MCP_LOG_LEVEL=debug` (the log names the part and the class, never content). |
 
@@ -395,7 +401,7 @@ setting to check may follow.
 | the LLM endpoint reports a context window below the 4096-token minimum; set llm.context_window if the endpoint is wrong | `llm_protocol` | 90 % of the reported window is below 4096. Use a model with a larger window, or, if the endpoint reports it wrongly, set `llm.context_window` (at least 4096). |
 | could not complete the request to the LLM endpoint | `llm_transport` | Network, DNS, TLS or proxy problem between you and the endpoint. |
 | the LLM endpoint sent an unexpected response | `llm_protocol` | The endpoint is not OpenAI-compatible at `llm.base_url`, or it answered with an empty message. |
-| the pull request diff does not fit the configured context window | `diff_does_not_fit` | Raise `llm.context_window`, or narrow the PR. Nothing was sent to the model. Applies to `pr_review`, `pr_ask` and `pr_describe`. |
+| the pull request diff does not fit the configured context window | `diff_does_not_fit` | Raise `llm.context_window`, or narrow the PR. Nothing was sent to the model. Applies to `pr_review`, `pr_ask`, `pr_describe` and `pr_improve`. |
 | the model's answer could not be parsed as a review, also after one retry | `review_unparseable` | Try again, or use a model that follows YAML output instructions. |
 | output_language must be a locale code such as en-US or tr-TR / max_findings must be an integer from 1 to 20 / wait_seconds must be an integer from 0 to 600 | (argument) | Fix the argument; nothing was sent anywhere. |
 
@@ -527,6 +533,133 @@ publish option. `--dry-run` with `--json`, a missing PR URL and an unknown flag
 are usage errors: exit 2, nothing is sent. See
 [Describing pull requests](describe.md#checking-the-budget-with-diag-describe).
 
+## `pr_improve`
+
+`pr_improve` fails with the provider and LLM sentences above (the diff does not
+fit, an LLM error) or, for a bad argument, with one of the argument sentences in
+[Every error sentence](#every-error-sentence). When the suggestion answer cannot
+be parsed, also after the one re-ask, the call fails with "the model's answer
+could not be parsed as code suggestions, also after one retry; try again, or
+check that llm.model follows the YAML output instructions" (class
+`improve_unparseable`). Try again, or use a model that follows YAML output
+instructions. For a part of a run in parts it is the class in "Part 2 of 3
+failed (improve_unparseable)"; for a self-review call it is not an error at all,
+but unscored suggestions (below).
+
+Everything that goes wrong while **publishing** is different: the suggestions are
+still returned, and the reason is the fixed sentence in `publish.error` (with
+`published: false`) or in the `error` of a suggestion's `anchor`. Notes are in
+the `notes` list and the Notes section. See [Suggesting code
+changes](improve.md) for how scoring, verification and publishing work.
+
+### Notes about the suggestions
+
+| Note | What it means and what to do |
+|---|---|
+| No suggestions. | The section of the text view when the result has no suggestion: the model found nothing worth suggesting, or the notes say what happened to them (dropped by the score, for a file it was not shown, with no change, or a failed part). It is not an error. |
+| No reviewable changes after filtering. | Every file was filtered, skipped or empty, so the model was not called. Look at the coverage section; check `ignore.glob`, `ignore.regex` and the `skipped` reasons ([`diag diff`](#read-the-prepared-diff-with-diag-diff)). |
+| A model answer was cut off by its output limit; the suggestions may be incomplete. | The answer hit `llm.max_output_tokens` (or the endpoint's own limit). Raise `llm.max_output_tokens`, or lower `improve.max_suggestions_per_part` so that each answer is shorter. |
+| A model answer could not be parsed as YAML at first; that call's answer comes from a second attempt. | The one re-ask was used for a suggestion or a self-review call. The result is valid, but a model that needs it often does not follow the YAML output instructions well. |
+| The diff was shortened to fit the context window; the coverage section lists the files that are incomplete or left out. | The request-size guard cut the diff of a call. The coverage section lists the files that are clipped or left out; see [The review says partial](#the-review-says-partial). |
+| N files were included only in part (clipped) to fit the context window. | The model saw only the beginning of these files; suggestions for lines further down cannot exist. Raise the diff budget as in [The review says partial](#the-review-says-partial). |
+| The existing PR discussion could not be read; suggestions may repeat it. | The comment threads or the token's own user could not be read (`read:user` on Gitea), so the discussion block is empty. The run went on; a suggestion that people already raised may come again. Check the token scopes ([Token scopes](#token-scopes)). |
+| N discussion threads were left out of the prompt to stay within the discussion token budget. (singular: "1 discussion thread was left out of the prompt to stay within the discussion token budget.") | The discussion is bigger than `review.max_discussion_tokens`; the newest threads were kept. Raise the key, or accept that older threads were not shown. |
+| N suggestions without a file, a summary, or the existing or improved code were dropped. (singular: "1 suggestion without a file, a summary, or the existing or improved code was dropped.") | The model left a required field out of those entries. Nothing to fix on your side; a model that follows the output format better drops fewer. |
+| N suggestions for a file that was not in the diff shown to the model were dropped. (singular: "1 suggestion for a file that was not in the diff shown to the model was dropped.") | The model named a file its call was not shown with content: another part's file, a file left out, a deleted file, or a path it invented. They are dropped, never posted. |
+| N suggestions whose improved code is the same as the existing code were dropped (no change). (singular: "1 suggestion whose improved code is the same as the existing code was dropped (no change).") | The improvement changed nothing but white space. |
+| Part 2's suggestions were not scored (the self-review call failed). | The self-review call of part 2 returned an error, its answer could not be parsed after the re-ask, or its request did not fit the context window. That part's suggestions are kept **unscored** (`score: null`, "unscored") and are ranked after every scored suggestion. Run again; for a request that did not fit, lower `diff.max_tokens` or use a larger window. Verification still works for them, by search, because they have no line range. |
+| The suggestions were not scored (the self-review call failed). | The same, for a run in one call. |
+| N suggestions got no usable self-review score and are kept unscored. (singular: "1 suggestion got no usable self-review score and is kept unscored.") | The self-review answered, but not about these suggestions: no entry matched, or the entry had no integer score from 0 to 10. They are kept, unscored. A weak model that ignores `suggestion_number` causes this; run again or use a better model. |
+| N self-review entries did not match a suggestion and were ignored. (singular: "1 self-review entry did not match a suggestion and was ignored.") | An entry had a number outside the list, a file or summary that differs from the numbered suggestion's, or two entries claimed the same suggestion. A mismatch costs a suggestion its score, never the suggestion. |
+| N suggestions were dropped by the self-review score (below 7). (singular: "1 suggestion was dropped by the self-review score (below 7).") | The self-review scored them below `improve.min_score` (the number in parentheses is your value). To see them, lower `improve.min_score` (0 keeps every scored suggestion); to see fewer weak ones, raise it. |
+| N duplicate suggestions were dropped; the first of each is kept. (singular: "1 duplicate suggestion was dropped; the first of each is kept.") | Two suggestions had the same file, summary and existing code; the higher-ranked one was kept. |
+| N further suggestions were not shown because of improve.max_suggestions. (singular: "1 further suggestion was not shown because of improve.max_suggestions.") | More suggestions survived than `improve.max_suggestions` (default 8). The lowest-ranked were cut: the highest scores are always kept. Raise the key (up to 30) to see more. |
+| N suggestion line ranges were corrected. (singular: "1 suggestion line range was corrected.") | The self-review gave lines that did not hold the quoted code, but the code was found at exactly one other place in the head file, and the range was set there. Nothing to do. |
+| Part 2 of 3 failed (llm_timeout); its files were not reviewed. | See [Part I of N failed](#part-i-of-n-failed). |
+
+### What the discussion leaves out
+
+The discussion block of `pr_improve` (and of `pr_review`) leaves out the comments
+the token's own user wrote with a marker of **any** review-mcp tool on their
+last line (`[//]: # (review-mcp:` ... `)`): the `pr_review` overview and
+findings, the `pr_describe` comment, and the `pr_improve` overview and
+suggestions. So a `pr_review` finding on the same PR does not stop a concrete
+suggestion for it, and one tool's comments are never shown to another tool's
+model as something a person said. A marker typed by another user does not count.
+If a suggestion repeats a point a person made, the person's comment may have been
+left out of the block by the token budget ("N discussion threads were left out
+...") or unread ("The existing PR discussion could not be read; ...").
+
+### Suggestions marked "not anchored"
+
+An unverified suggestion stays in the result and the overview, with a mark, and
+is never posted inline. `unverified_reason` in the structured result says why.
+
+| Mark in the text and the overview | `unverified_reason` | What it means and what to do |
+|---|---|---|
+| not anchored: the quoted code was not found at the given lines | `not_found` | The code the model quoted (`existing_code`) is neither at the lines the self-review gave nor anywhere in the head file after normalising trailing white space, line endings and common indentation. The model paraphrased the code or left a line out. The suggestion text is still readable; apply it by hand, or run again. |
+| not anchored: the quoted code was not found at the given lines | `ambiguous` | The quoted code is not at the given lines and appears more than once in the file. review-mcp never takes the first match, because it could comment on the wrong place. The lines in the mark are the self-review's. |
+| not anchored: the head file was not available to check the quoted code | `head_unavailable` | The head version of the file was not fetched (over `diff.max_file_bytes`, beyond `diff.max_files_full_content`, a failed fetch, or a binary file), and the patch does not confirm the given range. Raise the limits if the file is not too large, or check the suggestion by hand. See [`skipped` reasons](#skipped-reasons). |
+
+### Publishing outcomes and notes
+
+| Sentence | What it means and what to do |
+|---|---|
+| The previous overview could not be updated; a new one was posted. | The overview of an earlier run could not be edited (it was deleted, or the token cannot edit it), so a new one was posted. The old one stays; delete it by hand. |
+| The existing overview could not be looked up; a new one was posted. | The PR's comments or the token's own user could not be read, so an earlier overview could not be found and a new one was posted. Delete the duplicate by hand if the earlier one is still there. Check `read:user` and the read scopes ([Token scopes](#token-scopes)). |
+| The overview could not be updated after the inline comments were posted; it links to the changed lines instead. | The inline comments were posted, but the final edit of the overview failed. The overview is complete, but its rows say "checked against the head file" and link to the file lines instead of the comments. Run again. |
+| The comments already on the PR could not be read, so no inline suggestion was posted (it could repeat one); the suggestions are listed in the overview only. | The comments or the token's user could not be read, so review-mcp cannot tell which suggestions are already on the PR and posts none inline. The overview was posted. Their `anchor.status` is `failed` with the error "the comments already on the PR could not be read". Fix the read access and run again. (`pr_review` posts anyway in this case; `pr_improve` does not.) |
+| 1 older overview comment by the same user was left unchanged. (or "N older overview comments by the same user were left unchanged.") | Several comments of yours carry the `pr_improve` overview marker. The newest was edited; the others are never deleted by review-mcp. Delete them in the web UI if you do not want them. |
+| N suggestions could not be placed on changed lines of one hunk and are listed in the overview only. (singular: "1 suggestion could not be placed on changed lines of one hunk and is listed in the overview only.") | A verified suggestion's lines are not all on new-side lines of one hunk of the provider's diff (they are in unchanged code far from the change, span two hunks, or are in a deleted or binary file), or the server refused the position. They are in the overview, with their full text. Nothing to fix. |
+| N suggestions were already posted on this PR and were not repeated. (singular: "1 suggestion was already posted on this PR and was not repeated.") | An inline comment with the same key (file, existing code and improved code) by the token's user is on the PR, from an earlier run. This is the expected outcome of a second run. To get a fresh inline comment for a suggestion, delete the old one first. |
+| N suggestions could not be posted as inline comments and are listed in the overview only. (singular: "1 suggestion could not be posted as an inline comment and is listed in the overview only.") | The inline post failed; the `error` of each suggestion's `anchor` has the reason (see below). |
+| the suggestions could not be posted as a PR comment | `publish.error`: the overview could not be posted and the error is not a classified provider error. Rerun with `REVIEW_MCP_LOG_LEVEL=debug`; the log names the failing step, never content. No inline comment is posted without the overview. |
+| authentication failed: check the token and its scopes (HTTP 403) | `publish.error`: the token may read the pull request but not write it. See [Token scopes](#token-scopes). The suggestions are still returned. |
+
+The `error` of a failed `anchor` is a fixed sentence:
+
+| Sentence | What to do |
+|---|---|
+| the comments already on the PR could not be read | See the note above. |
+| the request conflicts with the current state on the server: the token's user has a pending review on this pull request; submit or delete it first | Gitea only. The token's user has a draft review on the PR, and Gitea would submit it together with the comments, so review-mcp refuses to post. Submit or delete the draft in the web UI and run again. |
+| a pending draft review could not be removed; the comment was not posted | Gitea only. The post failed and the draft review it left behind could not be deleted. Open the PR's reviews, delete the draft, and run again. |
+| the outcome of the review request is unknown; the comment may have been posted and was not posted again | Gitea only. The request ended without an answer (a timeout, a dropped connection). Look at the PR; run again, and a comment that did land is recognised and skipped. |
+| the comment could not be posted | An error that is not one of the classified provider errors. Rerun with `REVIEW_MCP_LOG_LEVEL=debug`. |
+| Another provider sentence from [Error messages](#error-messages), such as `authentication failed ...` or `the server rate-limited the request` | Fix the cause as described there. |
+
+### `pr_improve` arguments and settings
+
+| Sentence | Class | What to check |
+|---|---|---|
+| output_language must be a locale code such as en-US or tr-TR | (argument) | Fix `output_language`. Nothing was sent anywhere. |
+| wait_seconds must be an integer from 0 to 600 | (argument) | Fix `wait_seconds`. Nothing was sent anywhere. |
+| improve.max_suggestions: N is out of range (1-30) / improve.max_suggestions_per_part: N is out of range (1-10) / improve.min_score: N is out of range (0-10) | (configuration) | Listed in `problems` of `server_info`; the server is in degraded mode until the value is fixed ([Every error sentence](#every-error-sentence), the first row). |
+
+The result says "Partial review" for the files that were not reviewed; the
+causes and fixes are those of [the review says
+partial](#the-review-says-partial). A run in parts makes one suggestion call and
+one self-review call per part, so it takes up to about twice as long as the same
+review ([The review took several minutes](#the-review-took-several-minutes)
+applies).
+
+## Suggest changes with `diag improve`
+
+```sh
+review-mcp diag improve <PR_URL> --dry-run
+review-mcp diag improve <PR_URL>
+```
+
+`--dry-run` runs everything up to the model calls and prints a JSON report with
+the budget, the prompt and diff token estimates, the coverage, the notes known
+so far and the number of discussion threads in the prompt; the model is not
+called. Without `--dry-run` it prints the markdown the `pr_improve` tool
+returns, self-review calls included, or with `--json` the structured result, and
+`--show-prompt` prints the rendered prompts of the first suggestion call after
+the output (never to the log). It never writes to the pull request; there is no
+publish option. `--dry-run` with `--json`, a missing PR URL and an unknown flag
+are usage errors: exit 2, nothing is sent. See
+[Suggesting code changes](improve.md#checking-the-budget-with-diag-improve).
+
 ## Error messages
 
 Every failure from a provider is reported as one of these fixed sentences.
@@ -585,16 +718,17 @@ table also covers the configuration, argument and serve-mode errors.
 | the LLM endpoint does not list the configured model; check llm.model | `llm_not_found` | The endpoint's model list (`GET {llm.base_url}/models`) has no entry whose `id` equals `llm.model` exactly. Fix `llm.model`, or set `llm.context_window` to skip the lookup. |
 | the LLM endpoint does not report the model's context window; set llm.context_window | `llm_protocol` | `llm.context_window` is unset and the endpoint's entry for the model has none of `max_model_len`, `context_length`, `context_window`, `max_context_length` (training-size fields are never used). Set `llm.context_window` to the window your server runs; for Ollama, its `num_ctx`. |
 | the LLM endpoint reports a context window below the 4096-token minimum; set llm.context_window if the endpoint is wrong | `llm_protocol` | 90 % of the reported window is below 4096. Use a model with a larger window, or, if the endpoint reports it wrongly, set `llm.context_window` (at least 4096). |
-| too many background jobs are running; wait for one to finish | (job limit) | stdio only. Four `pr_review`, `pr_ask` or `pr_describe` runs are already going in the background. Collect one with `job_result`, or wait for it to finish; nothing ran for this call. |
+| too many background jobs are running; wait for one to finish | (job limit) | stdio only. Four `pr_review`, `pr_ask`, `pr_describe` or `pr_improve` runs are already going in the background. Collect one with `job_result`, or wait for it to finish; nothing ran for this call. |
 | unknown or expired job_id | (job) | `job_result` got an id the server never issued, one older than 30 minutes after it finished, one evicted (only 64 results are kept), or one from before a restart. Jobs live in memory; run the review again. |
-| wait_seconds must be an integer from 0 to 600 | (argument) | Fix `wait_seconds` (`pr_review`, `pr_ask`, `pr_describe`, `job_result`); the same range applies to `llm.wait_seconds`. |
+| wait_seconds must be an integer from 0 to 600 | (argument) | Fix `wait_seconds` (`pr_review`, `pr_ask`, `pr_describe`, `pr_improve`, `job_result`); the same range applies to `llm.wait_seconds`. |
 | review-mcp is shutting down; no new background job can start | (shutdown) | The server received SIGINT or SIGTERM, or its client closed it. Restart it; running jobs were cancelled. |
 | could not complete the request to the LLM endpoint | `llm_transport` | Network, DNS, TLS or proxy between you and `llm.base_url`. |
 | the LLM endpoint sent an unexpected response | `llm_protocol` | `llm.base_url` is not an OpenAI-compatible endpoint, or the answer was empty. |
 | the pull request diff does not fit the configured context window; raise llm.context_window (REVIEW_MCP_LLM_CONTEXT_WINDOW) or narrow the pull request | `diff_does_not_fit` | `llm.context_window`, `llm.max_output_tokens`, `diff.large_patch_policy`; or narrow the PR. Nothing was sent to the model. |
 | the model's answer could not be parsed as a review, also after one retry | `review_unparseable` | Retry, or use a model that follows YAML output instructions. |
 | the model's answer could not be parsed as a pull request description, also after one retry; try again, or check that llm.model follows the YAML output instructions | `describe_unparseable` | Retry, or use a model that follows YAML output instructions (`pr_describe`). |
-| output_language must be a locale code such as en-US or tr-TR | argument | Fix `output_language` (`pr_review`, `pr_ask`, `pr_describe`). |
+| the model's answer could not be parsed as code suggestions, also after one retry; try again, or check that llm.model follows the YAML output instructions | `improve_unparseable` | Retry, or use a model that follows YAML output instructions (`pr_improve`). A failed self-review call is not this error; it leaves the suggestions unscored ([`pr_improve`](#pr_improve)). |
+| output_language must be a locale code such as en-US or tr-TR | argument | Fix `output_language` (`pr_review`, `pr_ask`, `pr_describe`, `pr_improve`). |
 | max_findings must be an integer from 1 to 20 | argument | Fix `max_findings` (`pr_review`). |
 | question must not be empty | argument | Pass a non-blank `question` (`pr_ask`). |
 | question is too long: at most 8000 characters are allowed | argument | Shorten the question. |
@@ -614,7 +748,7 @@ table also covers the configuration, argument and serve-mode errors.
 
 The MCP client gave up waiting for the tool call; the server did not fail.
 
-- **stdio:** `pr_review`, `pr_ask` and `pr_describe` answer within `wait_seconds` (default 45)
+- **stdio:** `pr_review`, `pr_ask`, `pr_describe` and `pr_improve` answer within `wait_seconds` (default 45)
   with a result or a `job_id`, so a call stays under a typical 60-second client
   timeout whatever the model speed. If you still see `-32001`, your client
   timeout is shorter than that: lower `llm.wait_seconds` (or pass a smaller
@@ -643,13 +777,16 @@ A3) has verified them.
   (`write:issue`, for posting and editing PR comments) and to the repository
   (`write:repository`, for inline comments, which are posted as a review, and
   for `pr_describe` with `publish_mode=description`, which edits the pull
-  request). The write part is needed only for publishing (`publish`),
+  request). `pr_improve` with `publish=true` needs the same as `pr_review` with
+  `publish=true`: `write:issue` for the overview and `write:repository` for the
+  inline comments. The write part is needed only for publishing (`publish`),
   `pr_comment_reply`, `pr_comment_create` and `diag comment`; reading a PR needs
   only read access.
 - **Bitbucket Server / Data Center:** an HTTP access token with repository
   read permission, plus write permission only for comments and for
   `pr_describe` with `publish_mode=description`, which updates the pull
-  request. The token is sent
+  request (`pr_improve` with `publish=true` needs comment write, like
+  `pr_review`). The token is sent
   as `Authorization: Bearer ...`; basic authentication is not supported.
 
 Which call fails tells you which scope is missing: if `diag pr` works but

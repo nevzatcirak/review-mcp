@@ -1,6 +1,6 @@
 # Serve mode
 
-`review-mcp serve` runs the same tools over HTTP (eight: everything stdio has except `job_result`, see [Long calls](#long-calls)), for a team that shares one
+`review-mcp serve` runs the same tools over HTTP (nine: everything stdio has except `job_result`, see [Long calls](#long-calls)), for a team that shares one
 server instead of everyone running a local process. The default transport,
 stdio, is described in the [Setup guide](setup.md).
 
@@ -291,7 +291,7 @@ the orchestrator for health checks.
 
 ## Long calls
 
-In stdio mode a slow `pr_review`, `pr_ask` or `pr_describe` answers with a `job_id` after
+In stdio mode a slow `pr_review`, `pr_ask`, `pr_describe` or `pr_improve` answers with a `job_id` after
 `wait_seconds` and finishes in the background
 ([Slow endpoints](review.md#slow-endpoints)). Serve mode does not do this:
 

@@ -241,7 +241,7 @@ func (p *Provider) PostInlineComments(ctx context.Context, ref provider.PRRef, p
 	posted, stopMsg := 0, ""
 	for i, it := range items {
 		if stopMsg != "" {
-			results[i] = provider.InlineResult{Error: stopMsg}
+			results[i] = provider.InlineResult{Error: stopMsg, Reason: provider.InlineReasonFailed}
 			continue
 		}
 		in := struct {
@@ -255,14 +255,14 @@ func (p *Provider) PostInlineComments(ctx context.Context, ref provider.PRRef, p
 			ID int64 `json:"id"`
 		}
 		if err := p.client.SendJSON(ctx, http.MethodPost, pp+"/comments", in, &out); err != nil {
-			results[i] = provider.InlineResult{Error: provider.ItemError(err)}
+			results[i] = provider.InlineResult{Error: provider.ItemError(err), Reason: provider.RejectedReason(err, false)}
 			if provider.StopsBatch(err) {
 				stopMsg = results[i].Error
 			}
 			continue
 		}
 		c := p.newComment(ref, out.ID)
-		results[i] = provider.InlineResult{Posted: true, ID: c.ID, URL: c.URL}
+		results[i] = provider.InlineResult{Posted: true, ID: c.ID, URL: c.URL, Reason: provider.InlineReasonPosted}
 		posted++
 	}
 	p.logger.Debug("bitbucket server inline comments posted", "items", len(items), "posted", posted)

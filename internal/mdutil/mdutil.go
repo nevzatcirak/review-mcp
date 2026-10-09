@@ -4,6 +4,8 @@
 package mdutil
 
 import (
+	"html"
+	"regexp"
 	"strings"
 )
 
@@ -129,4 +131,33 @@ func Literal(s string) string {
 		return Inline(s)
 	}
 	return CodeSpan(s)
+}
+
+// EscapeGFM escapes one line of model markdown for a GFM provider:
+// markdown control characters first, then HTML metacharacters as entities,
+// which render as the literal characters in both contexts (pr_review's
+// gfmText, without its trimming, which would drop the indentation of a
+// continuation line). It moved here from internal/describe/render.
+func EscapeGFM(s string) string { return html.EscapeString(EscapeControl(s)) }
+
+// bulletLine matches a list item line: indentation, the marker and the
+// space after it, then the item's text.
+var bulletLine = regexp.MustCompile(`^([ \t]*)([-*+]|[0-9]{1,9}[.)])([ \t]+)(.*)$`)
+
+// EscapeBullets escapes the model markdown s line by line with esc, keeping
+// the marker of a list item line (and its indentation) as it is so that the
+// list stays a list. The text after a marker is escaped as the start of a
+// line, so an item cannot open a heading or a nested structure. It moved
+// here from internal/describe/render, for pr_improve's published text.
+func EscapeBullets(s string, esc func(string) string) string {
+	s = strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(strings.TrimSpace(s))
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		if m := bulletLine.FindStringSubmatch(l); m != nil {
+			lines[i] = m[1] + m[2] + m[3] + esc(m[4])
+			continue
+		}
+		lines[i] = esc(l)
+	}
+	return strings.Join(lines, "\n")
 }

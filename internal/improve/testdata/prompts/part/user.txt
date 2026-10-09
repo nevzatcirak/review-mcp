@@ -1,0 +1,37 @@
+--PR Info--
+
+Title: 'Retry more'
+
+Today's Date: 2026-10-09
+
+Branch: 'feature/retry'
+
+Target branch: 'main'
+
+Related code that uses symbols changed in this pull request (read-only context; it may be incomplete).
+```
+[pkg/use.go:7] uses Alpha
+Alpha()
+```
+
+This pull request is large and is reviewed in 3 parts. This is part 2 of 3. Suggest changes only for the files in the diff below; the other files are reviewed separately.
+
+The PR Diff:
+======
+## File: 'src/app.go'
+
+@@ -10,3 +10,4 @@ 
+__new hunk__
+10  line 10
+11 +retries := 3
+12 +delay := retries * 100
+13  line 12
+__old hunk__
+ line 10
+-retries := 1
+ line 12
+======
+
+
+Response (should be a valid YAML, and nothing else):
+```yaml

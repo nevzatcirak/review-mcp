@@ -1,8 +1,6 @@
 package render
 
 import (
-	"html"
-	"regexp"
 	"strings"
 
 	"github.com/nevzatcirak/review-mcp/internal/describe"
@@ -54,10 +52,10 @@ func Provider(res *describe.Result, caps provider.Capabilities) string {
 	if res == nil {
 		return ""
 	}
-	esc := escapePlain
+	esc := mdutil.Escape
 	head, covHead, notesHead := "## PR Description", "### "+llmrender.TextCoverage, "### "+llmrender.TextNotes
 	if caps.GFM {
-		esc = escapeGFM
+		esc = mdutil.EscapeGFM
 		head += " " + emojiTitle
 		covHead = "### " + emojiCoverage + " " + llmrender.TextCoverage
 		notesHead = "### " + emojiNotes + " " + llmrender.TextNotes
@@ -89,7 +87,7 @@ func Provider(res *describe.Result, caps provider.Capabilities) string {
 	}
 	b.WriteString("\n### " + TextSummary + "\n\n")
 	if res.Description != nil && strings.TrimSpace(*res.Description) != "" {
-		b.WriteString(escapeBullets(*res.Description, esc) + "\n")
+		b.WriteString(mdutil.EscapeBullets(*res.Description, esc) + "\n")
 	} else {
 		b.WriteString(textNotGenerated + "\n")
 	}
@@ -108,7 +106,7 @@ func Provider(res *describe.Result, caps provider.Capabilities) string {
 		}
 		b.WriteString(MarkPartial(line, f.Path, &res.Coverage) + "\n")
 		if s := strings.TrimSpace(f.Summary); s != "" {
-			b.WriteString(indent(escapeBullets(s, esc), "  ") + "\n")
+			b.WriteString(indent(mdutil.EscapeBullets(s, esc), "  ") + "\n")
 		}
 	}
 
@@ -116,36 +114,4 @@ func Provider(res *describe.Result, caps provider.Capabilities) string {
 	llmrender.DescribeCoverage(&b, covHead, &res.Coverage)
 	llmrender.Notes(&b, notesHead, res.Notes)
 	return b.String()
-}
-
-// escapePlain escapes one line of model markdown for a provider without GFM:
-// no raw HTML can come out of it.
-func escapePlain(s string) string { return mdutil.Escape(s) }
-
-// escapeGFM escapes one line of model markdown for a GFM provider: markdown
-// control characters first, then HTML metacharacters as entities, which
-// render as the literal characters in both contexts (pr_review's gfmText,
-// without its trimming, which would drop the indentation of a continuation
-// line).
-func escapeGFM(s string) string { return html.EscapeString(mdutil.EscapeControl(s)) }
-
-// bulletLine matches a list item line: indentation, the marker and the
-// space after it, then the item's text.
-var bulletLine = regexp.MustCompile(`^([ \t]*)([-*+]|[0-9]{1,9}[.)])([ \t]+)(.*)$`)
-
-// escapeBullets escapes the model markdown s line by line with esc, keeping
-// the marker of a list item line (and its indentation) as it is so that the
-// list stays a list. The text after a marker is escaped as the start of a
-// line, so an item cannot open a heading or a nested structure.
-func escapeBullets(s string, esc func(string) string) string {
-	s = strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(strings.TrimSpace(s))
-	lines := strings.Split(s, "\n")
-	for i, l := range lines {
-		if m := bulletLine.FindStringSubmatch(l); m != nil {
-			lines[i] = m[1] + m[2] + m[3] + esc(m[4])
-			continue
-		}
-		lines[i] = esc(l)
-	}
-	return strings.Join(lines, "\n")
 }

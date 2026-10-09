@@ -393,9 +393,9 @@ func TestPostInlineCommentsOneReview(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []provider.InlineResult{
-		{Posted: true, ID: "1010", URL: commentURL(1010)},
-		{Posted: true, ID: "1011", URL: commentURL(1011)},
-		{Posted: true, ID: "1012", URL: commentURL(1012)},
+		{Posted: true, ID: "1010", URL: commentURL(1010), Reason: provider.InlineReasonPosted},
+		{Posted: true, ID: "1011", URL: commentURL(1011), Reason: provider.InlineReasonPosted},
+		{Posted: true, ID: "1012", URL: commentURL(1012), Reason: provider.InlineReasonPosted},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("results = %+v", got)
@@ -449,9 +449,9 @@ func TestPostInlineCommentsBatchFailureFallsBackWithoutPendingReview(t *testing.
 		t.Errorf("posts = %d deletes = %d", len(fr.posts), len(methods(f, "DELETE")))
 	}
 	want := []provider.InlineResult{
-		{Posted: true, ID: "1020", URL: commentURL(1020)},
-		{Error: "the server sent an unexpected response (HTTP 422)"},
-		{Posted: true, ID: "1040", URL: commentURL(1040)},
+		{Posted: true, ID: "1020", URL: commentURL(1020), Reason: provider.InlineReasonPosted},
+		{Error: "the server sent an unexpected response (HTTP 422)", Reason: provider.InlineReasonUnanchorable},
+		{Posted: true, ID: "1040", URL: commentURL(1040), Reason: provider.InlineReasonPosted},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("results = %+v", got)
@@ -570,7 +570,7 @@ func TestPostInlineCommentsLookupFailureKeepsReviewURL(t *testing.T) {
 	newFakeReviews(f)
 	f.handle("GET", reviewCommentsAPI(101), func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "x", 500) })
 	got, err := f.provider(t, nil).PostInlineComments(context.Background(), ref(), headPR(), sampleItems()[:1])
-	if err != nil || !reflect.DeepEqual(got, []provider.InlineResult{{Posted: true, URL: reviewsBase + "#pullrequestreview-101"}}) {
+	if err != nil || !reflect.DeepEqual(got, []provider.InlineResult{{Posted: true, URL: reviewsBase + "#pullrequestreview-101", Reason: provider.InlineReasonPosted}}) {
 		t.Fatalf("got %+v err %v", got, err)
 	}
 }

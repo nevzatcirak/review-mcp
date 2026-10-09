@@ -326,9 +326,9 @@ func TestPostInlineComments(t *testing.T) {
 	}
 	base := f.baseURL() + "/projects/PROJ/repos/demo/pull-requests/7/overview?commentId="
 	want := []provider.InlineResult{
-		{Posted: true, ID: "500", URL: base + "500"},
-		{Posted: true, ID: "501", URL: base + "501"},
-		{Posted: true, ID: "502", URL: base + "502"},
+		{Posted: true, ID: "500", URL: base + "500", Reason: provider.InlineReasonPosted},
+		{Posted: true, ID: "501", URL: base + "501", Reason: provider.InlineReasonPosted},
+		{Posted: true, ID: "502", URL: base + "502", Reason: provider.InlineReasonPosted},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("results = %+v", got)

@@ -315,7 +315,7 @@ func TestTopLevelUsageListsDiag(t *testing.T) {
 	if code := run([]string{"bogus"}, &out, &errb); code != 2 {
 		t.Fatalf("exit %d", code)
 	}
-	for _, s := range []string{"diag pr <PR_URL>", "diag comment <PR_URL> --body", "diag ask <PR_URL> --question", "diag describe <PR_URL>"} {
+	for _, s := range []string{"diag pr <PR_URL>", "diag comment <PR_URL> --body", "diag ask <PR_URL> --question", "diag describe <PR_URL>", "diag improve <PR_URL>"} {
 		if !strings.Contains(errb.String(), s) {
 			t.Errorf("usage lacks %q:\n%s", s, errb.String())
 		}

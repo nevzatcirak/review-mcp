@@ -1,0 +1,134 @@
+{
+  "suggestions": [
+    {
+      "file": "src/f00.go",
+      "language": "go",
+      "label": "general",
+      "summary": "Annotate the line in f00",
+      "content": "Explain the line in `f00`.",
+      "existing_code": "some added line of code here",
+      "improved_code": "some added line of code here // f00",
+      "start_line": 2,
+      "end_line": 2,
+      "score": 9,
+      "why": "Checked.",
+      "verified": true,
+      "unverified_reason": "",
+      "anchor": null
+    },
+    {
+      "file": "src/f02.go",
+      "language": "go",
+      "label": "general",
+      "summary": "Annotate the line in f02",
+      "content": "Explain the line in `f02`.",
+      "existing_code": "some added line of code here",
+      "improved_code": "some added line of code here // f02",
+      "start_line": 2,
+      "end_line": 2,
+      "score": 9,
+      "why": "Checked.",
+      "verified": true,
+      "unverified_reason": "",
+      "anchor": null
+    },
+    {
+      "file": "src/f04.go",
+      "language": "go",
+      "label": "general",
+      "summary": "Annotate the line in f04",
+      "content": "Explain the line in `f04`.",
+      "existing_code": "some added line of code here",
+      "improved_code": "some added line of code here // f04",
+      "start_line": 2,
+      "end_line": 2,
+      "score": 9,
+      "why": "Checked.",
+      "verified": true,
+      "unverified_reason": "",
+      "anchor": null
+    },
+    {
+      "file": "src/f01.go",
+      "language": "go",
+      "label": "general",
+      "summary": "Annotate the line in f01",
+      "content": "Explain the line in `f01`.",
+      "existing_code": "some added line of code here",
+      "improved_code": "some added line of code here // f01",
+      "start_line": 2,
+      "end_line": 2,
+      "score": 8,
+      "why": "Checked.",
+      "verified": true,
+      "unverified_reason": "",
+      "anchor": null
+    },
+    {
+      "file": "src/f05.go",
+      "language": "go",
+      "label": "general",
+      "summary": "Annotate the line in f05",
+      "content": "Explain the line in `f05`.",
+      "existing_code": "some added line of code here",
+      "improved_code": "some added line of code here // f05",
+      "start_line": 2,
+      "end_line": 2,
+      "score": 8,
+      "why": "Checked.",
+      "verified": true,
+      "unverified_reason": "",
+      "anchor": null
+    }
+  ],
+  "coverage": {
+    "included": [
+      "src/f00.go",
+      "src/f01.go",
+      "src/f02.go",
+      "src/f03.go",
+      "src/f04.go",
+      "src/f05.go"
+    ],
+    "clipped": [],
+    "deleted_listed": [],
+    "omitted": {
+      "added": [],
+      "modified": [],
+      "deleted": []
+    },
+    "skipped": [],
+    "filtered": [],
+    "partial": false,
+    "reviewed_files": 6,
+    "total_files": 6,
+    "not_reviewed_files": 0,
+    "model_calls": 3,
+    "failed_parts": 0,
+    "repo_context": {
+      "status": "off",
+      "reason": "",
+      "symbols": 0,
+      "references": 0,
+      "files": 0
+    }
+  },
+  "notes": [
+    "1 suggestion was dropped by the self-review score (below 7)."
+  ],
+  "metadata": {
+    "model": "test-model",
+    "context_window": 32000,
+    "prompt_tokens": 3053,
+    "diff_tokens": 4507,
+    "request_tokens": 3184,
+    "fast_path": false,
+    "llm_calls": 6,
+    "self_review_calls": 3,
+    "repair_tactic": "direct",
+    "reasked": false,
+    "truncated": false,
+    "diff_trimmed": false,
+    "already_discussed": 0
+  }
+}

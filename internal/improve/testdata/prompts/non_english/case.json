@@ -1,0 +1,11 @@
+{
+  "kind": "suggest",
+  "language": "tr-TR",
+  "title": "Retry more",
+  "date": "2026-10-09",
+  "branch": "feature/retry",
+  "target_branch": "main",
+  "description": "Raises the retry count.",
+  "max_suggestions": 4,
+  "diff": "## File: 'src/app.go'\n\n@@ -10,3 +10,4 @@ \n__new hunk__\n10  line 10\n11 +retries := 3\n12 +delay := retries * 100\n13  line 12\n__old hunk__\n line 10\n-retries := 1\n line 12"
+}

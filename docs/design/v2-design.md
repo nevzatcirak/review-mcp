@@ -91,3 +91,22 @@ Origin: the owner's proposal that a review should know whether the change builds
 2. One `v2.0.0` release, with a release candidate per phase.
 3. `pr_describe` may edit PR descriptions, only inside its marked region; the default stays `comment`.
 4. (2026-10-10) Phase 2F, review quality, is added between 2B and 2C (`v2.0.0-rc.4`; GitLab moves to `rc.5`). Building or running pull request code is rejected (R-1 in the decisions document).
+
+## 9. After 2.0 — v2.1 and later (owner decision 2026-10-10; scope only, each item gets a design note)
+
+Taken in full by the owner. Order inside v2.1 is decided when 2.0 ships.
+
+| Item | Content | Target |
+|---|---|---|
+| V-1 | **Incremental review:** review only the commits since the last review, recorded in the overview marker; rebases and force-pushes fall back to a full review with a note | v2.1 |
+| V-2 | **Issue compliance:** find the issue a pull request refers to (title, branch name, description) and judge whether the change does what it asks (fully, partly, not), with the gaps listed; issues from the git provider's own tracker and from **Jira** (V-3) | v2.1 |
+| V-3 | **Jira integration (read-only):** Jira Cloud and Jira Data Center/Server; per-user credentials in the environment or request headers like every other secret (Cloud: account e-mail plus API token; Data Center: personal access token); configured base URL, no embedded default; issue keys found by a configurable pattern; summary, description, acceptance criteria, type, status, linked issues and sub-tasks read within a token budget and given to the model as fenced untrusted data; never writes to Jira | v2.1 |
+| V-4 | **CI mode:** a headless command (and an example GitHub Action / generic CI snippet) that runs a review, describe or improve for the pull request of the current pipeline; credentials from the CI's secrets; still never executes the code (R-1) | v2.1 |
+| V-5 | **Repository config:** `.review-mcp.toml` read at the base revision (ignore lists, language, focus defaults, guidelines path); it can never hold secrets or change server URLs, endpoints or limits that protect the user | v2.1 |
+| V-6 | **Fallback model chain:** a second model when the first fails or times out (seam exists: `FallbackEligible`) | v2.1 |
+| V-7 | **Published container image** for serve mode, signed and with provenance | v2.1 |
+| V-8 | **Deeper local analysis:** extend X-22 from symbol search to a read-only local view of the pull request: whole files and the tree from the checkout, and a bounded, read-only tool loop in which the model may ask for files or searches inside the checkout (path-confined, budgeted, logged in the result); deterministic analysis that does not run repository code (for example parsing for symbols, secret patterns); nothing that builds, tests or loads repository configuration as code (R-1) | v2.1 |
+| V-9 | **Quality benchmark:** the 20-PR blind evaluation becomes a kept benchmark on personal and public repositories only, used to accept prompt changes (first: the documentation/spec rule from the 1.1 acceptance) | with 2F |
+| V-10 | **`pr_tests`:** missing tests for the changed code, verified like `pr_improve` suggestions | v2.2 |
+| V-11 | **`pr_labels` and changelog suggestion** | v2.2 |
+| V-12 | **More providers** (Bitbucket Cloud, Azure DevOps) | v3 candidate, on demand |

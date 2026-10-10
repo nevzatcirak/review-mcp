@@ -84,7 +84,8 @@ type userState struct {
 //
 // Required approvals: see readRequiredApprovals. Merge status: Mergeable is
 // the pull request's own verdict, and the blockers come from its
-// mergeable_state (blockersOf). A pull request with more commits than GitHub
+// mergeable_state (blockersOf); "unstable" gives the note
+// NoteChecksNotRequired instead of a blocker. A pull request with more commits than GitHub
 // lists gets the NoteCommitsTruncated note.
 func (p *Provider) GetReviewStatus(ctx context.Context, ref provider.PRRef, pr *provider.PullRequest, opts provider.ReviewStatusOptions) *provider.ReviewStatus {
 	st := &provider.ReviewStatus{MergeBlockers: []string{}}
@@ -95,6 +96,9 @@ func (p *Provider) GetReviewStatus(ctx context.Context, ref provider.PRRef, pr *
 	if open {
 		st.Mergeable = pr.Mergeable
 		st.MergeBlockers = blockersOf(pr.MergeableState)
+		if strings.EqualFold(strings.TrimSpace(pr.MergeableState), "unstable") {
+			st.Notes = append(st.Notes, provider.NoteChecksNotRequired)
+		}
 	}
 	pp, err := prPath(ref)
 	if err != nil {
@@ -138,12 +142,14 @@ func isOpen(pr *provider.PullRequest) bool {
 //	dirty               merge conflict
 //	blocked             required reviews or checks not satisfied
 //	behind              the branch is behind the base
-//	unstable            required builds failing
+//	unstable            no blocker: mergeable, only checks that are not
+//	                    required fail or are pending (a note, see
+//	                    GetReviewStatus)
 //	draft               draft
 //	anything else       other merge check
 func blockersOf(state string) []string {
 	switch strings.ToLower(strings.TrimSpace(state)) {
-	case "clean", "has_hooks", "unknown", "":
+	case "clean", "has_hooks", "unknown", "", "unstable":
 		return []string{}
 	case "dirty":
 		return []string{provider.BlockerConflict}
@@ -151,8 +157,6 @@ func blockersOf(state string) []string {
 		return []string{provider.BlockerRequirements}
 	case "behind":
 		return []string{provider.BlockerBehind}
-	case "unstable":
-		return []string{provider.BlockerBuilds}
 	case "draft":
 		return []string{provider.BlockerDraft}
 	}
@@ -288,22 +292,27 @@ func (p *Provider) ownReview(ctx context.Context, pp string, r *apiStatusReview,
 }
 
 // readRequiredApprovals sets st.RequiredApprovals from the rules that apply
-// to the target branch.
+// to the target branch, combining two sources.
 //
-// First the rules endpoint (GET .../rules/branches/{branch}, readable with
-// read access, repository rulesets): the pull_request rules give
-// required_approving_review_count, and the largest one over all matching
-// rules counts (a branch can be covered by several rulesets, and the
-// strictest applies). When no ruleset says anything about pull requests,
-// the classic branch protection (GET .../branches/{branch}/protection,
-// needs admin rights) is read: with required_pull_request_reviews its count,
-// without it 0 (protected, no review required).
+// Rulesets (GET .../rules/branches/{branch}, readable with read access): the
+// pull_request rules give required_approving_review_count, and the largest
+// one over all matching rules counts (several rulesets can cover a branch,
+// and the strictest applies). Classic branch protection (GET
+// .../branches/{branch}/protection, needs admin rights) is always tried as
+// well, because a branch can have both; with required_pull_request_reviews
+// its count, without it 0. GitHub answers an unprotected branch and a token
+// without admin rights alike with 404 or 403 there, so "no protection" cannot
+// be told from "not readable".
 //
-// nil, with NoteApprovalsUnreadable, is the answer whenever neither source
-// gave a count, because GitHub answers an unprotected branch and a token
-// without admin rights alike with 404 or 403 on the classic endpoint, so
-// "no rule" cannot be told from "not readable". It is never reported as 0
-// on a guess (unlike Gitea, whose rule list can be read in full).
+//	rulesets   classic     RequiredApprovals   RequiredApprovalsNote
+//	count R    count C     max(R, C)           none
+//	count R    unreadable  R                   NoteClassicProtectionUnreadable
+//	none       count C     C                   none
+//	none       unreadable  nil                 NoteApprovalsUnreadable
+//
+// "none" means no pull_request rule with a count, or the rules unreadable.
+// nil is never turned into 0 on a guess (unlike Gitea, whose rule list can be
+// read in full).
 func (p *Provider) readRequiredApprovals(ctx context.Context, rp, target string, st *provider.ReviewStatus) {
 	type rule struct {
 		Type       string `json:"type"`
@@ -312,19 +321,15 @@ func (p *Provider) readRequiredApprovals(ctx context.Context, rp, target string,
 		} `json:"parameters"`
 	}
 	branch := url.PathEscape(target)
+	best := -1
 	rules, err := httpx.PagesByLink[rule](ctx, p.client, p.fetchPage, listPath(rp+"/rules/branches/"+branch), rulesPageCap)
 	if err != nil {
 		p.logger.Debug("github branch rules not read", "class", errClass(err))
 	} else {
-		best := -1
 		for _, r := range rules {
 			if r.Type == "pull_request" && r.Parameters.Required != nil && *r.Parameters.Required > best {
 				best = *r.Parameters.Required
 			}
-		}
-		if best >= 0 {
-			st.RequiredApprovals = &best
-			return
 		}
 	}
 
@@ -335,12 +340,20 @@ func (p *Provider) readRequiredApprovals(ctx context.Context, rp, target string,
 	}
 	if err := p.getJSON(ctx, rp+"/branches/"+branch+"/protection", &prot); err != nil {
 		p.logger.Debug("github branch protection not read", "class", errClass(err))
+		if best >= 0 {
+			st.RequiredApprovals = &best
+			st.RequiredApprovalsNote = provider.NoteClassicProtectionUnreadable
+			return
+		}
 		st.RequiredApprovalsNote = provider.NoteApprovalsUnreadable
 		return
 	}
 	n := 0
 	if rv := prot.RequiredPullRequestReviews; rv != nil && rv.Required != nil && *rv.Required > 0 {
 		n = *rv.Required
+	}
+	if best > n {
+		n = best
 	}
 	st.RequiredApprovals = &n
 }

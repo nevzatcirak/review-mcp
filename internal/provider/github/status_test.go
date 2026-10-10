@@ -222,7 +222,7 @@ func TestBlockersFromMergeableState(t *testing.T) {
 		"dirty":     {provider.BlockerConflict},
 		"blocked":   {provider.BlockerRequirements},
 		"behind":    {provider.BlockerBehind},
-		"unstable":  {provider.BlockerBuilds},
+		"unstable":  {},
 		"draft":     {provider.BlockerDraft},
 		"DIRTY":     {provider.BlockerConflict},
 		"something": {provider.BlockerOtherCheck},
@@ -232,6 +232,27 @@ func TestBlockersFromMergeableState(t *testing.T) {
 		st := p.GetReviewStatus(t.Context(), testRef(), stOpen(state), stOpts())
 		if !slices.Equal(st.MergeBlockers, want) || st.MergeBlockers == nil {
 			t.Errorf("mergeable_state %q: blockers %q, want %q", state, st.MergeBlockers, want)
+		}
+	}
+}
+
+// TestUnstableIsANoteNotABlocker: "unstable" is mergeable with only
+// non-required checks failing or pending, so it adds a note and no blocker,
+// and Mergeable stays as the pull request reports it. Other states add no
+// note.
+func TestUnstableIsANoteNotABlocker(t *testing.T) {
+	f := stStatusFake(t, stPR(nil, nil, 1), []any{})
+	p, _ := f.provider(f.config(""), time.Now())
+	st := p.GetReviewStatus(t.Context(), testRef(), stOpen("unstable"), stOpts())
+	if len(st.MergeBlockers) != 0 || st.Mergeable == nil || !*st.Mergeable {
+		t.Errorf("unstable: blockers %q mergeable %v, want none and true", st.MergeBlockers, st.Mergeable)
+	}
+	if !slices.Contains(st.Notes, provider.NoteChecksNotRequired) {
+		t.Errorf("unstable: notes %q lack %q", st.Notes, provider.NoteChecksNotRequired)
+	}
+	for _, state := range []string{"clean", "blocked", "dirty"} {
+		if st := p.GetReviewStatus(t.Context(), testRef(), stOpen(state), stOpts()); slices.Contains(st.Notes, provider.NoteChecksNotRequired) {
+			t.Errorf("%s: unexpected note %q", state, provider.NoteChecksNotRequired)
 		}
 	}
 }
@@ -281,11 +302,13 @@ func stRule(count int) map[string]any {
 	return map[string]any{"type": "pull_request", "parameters": map[string]any{"required_approving_review_count": count}}
 }
 
-// TestRequiredApprovals: the rulesets first (the largest pull_request rule),
-// then the classic protection, and nil with the fixed note whenever neither
-// gave a count.
+// TestRequiredApprovals is the matrix of readRequiredApprovals: the largest
+// pull_request rule of the rulesets and the classic protection are both read,
+// the larger readable count wins, and nil with the fixed note is the answer
+// only when neither gave a count.
 func TestRequiredApprovals(t *testing.T) {
 	const rules, prot = "/repos/octo/demo/rules/branches/main", "/repos/octo/demo/branches/main/protection"
+	unreadable := func(f *fake) { stHandleApprovals(f, prot, 403, nil) }
 	for _, tc := range []struct {
 		name  string
 		rules func(f *fake)
@@ -295,8 +318,17 @@ func TestRequiredApprovals(t *testing.T) {
 	}{
 		{"max over rulesets", func(f *fake) {
 			stHandleApprovals(f, rules, 200, []any{map[string]any{"type": "deletion"}, stRule(1), stRule(3), stRule(2)})
-		}, nil, ptr(3), ""},
-		{"a rule that asks for none", func(f *fake) { stHandleApprovals(f, rules, 200, []any{stRule(0)}) }, nil, ptr(0), ""},
+		}, unreadable, ptr(3), provider.NoteClassicProtectionUnreadable},
+		{"a rule that asks for none, classic unreadable", func(f *fake) { stHandleApprovals(f, rules, 200, []any{stRule(0)}) }, unreadable, ptr(0), provider.NoteClassicProtectionUnreadable},
+		{"rulesets and classic: rulesets larger", func(f *fake) { stHandleApprovals(f, rules, 200, []any{stRule(3)}) }, func(f *fake) {
+			stHandleApprovals(f, prot, 200, map[string]any{"required_pull_request_reviews": map[string]any{"required_approving_review_count": 1}})
+		}, ptr(3), ""},
+		{"rulesets and classic: classic larger", func(f *fake) { stHandleApprovals(f, rules, 200, []any{stRule(1)}) }, func(f *fake) {
+			stHandleApprovals(f, prot, 200, map[string]any{"required_pull_request_reviews": map[string]any{"required_approving_review_count": 2}})
+		}, ptr(2), ""},
+		{"rulesets and classic without a review requirement", func(f *fake) { stHandleApprovals(f, rules, 200, []any{stRule(2)}) }, func(f *fake) {
+			stHandleApprovals(f, prot, 200, map[string]any{"required_status_checks": map[string]any{}})
+		}, ptr(2), ""},
 		{"rules without pull_request, classic protection", func(f *fake) {
 			stHandleApprovals(f, rules, 200, []any{map[string]any{"type": "deletion"}})
 		}, func(f *fake) {
@@ -326,10 +358,6 @@ func TestRequiredApprovals(t *testing.T) {
 			tc.rules(f)
 			if tc.prot != nil {
 				tc.prot(f)
-			} else {
-				f.handle(http.MethodGet, prot, func(http.ResponseWriter, *http.Request) {
-					t.Error("the classic protection is read although the rulesets gave a count")
-				})
 			}
 			p, _ := f.provider(f.config(""), time.Now())
 			st := p.GetReviewStatus(t.Context(), testRef(), stOpen("clean"), stOpts())
@@ -353,6 +381,7 @@ func ptr(n int) *int { return &n }
 func TestRequiredApprovalsBranchIsEscaped(t *testing.T) {
 	f := stStatusFake(t, stPR(nil, nil, 1), []any{})
 	stHandleApprovals(f, "/repos/octo/demo/rules/branches/release%2F1.0", 200, []any{stRule(2)})
+	stHandleApprovals(f, "/repos/octo/demo/branches/release%2F1.0/protection", 403, nil)
 	p, _ := f.provider(f.config(""), time.Now())
 	pr := stOpen("clean")
 	pr.TargetBranch = "release/1.0"

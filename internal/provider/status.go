@@ -44,6 +44,10 @@ const (
 	// request, so the commit messages read for it (GetCommitMessages) stop
 	// there.
 	NoteCommitsTruncated = "GitHub lists at most 250 commits of a pull request; the commits past them are not available."
+	// NoteChecksNotRequired: GitHub's "unstable" merge state, a pull
+	// request that can be merged while some non-required checks fail or are
+	// pending. It is not a blocker.
+	NoteChecksNotRequired = "some checks that are not required are failing or pending"
 )
 
 // Fixed merge blockers. A provider maps structured server reasons to these
@@ -75,6 +79,10 @@ const (
 	// NoteProtectionPatternUnevaluable accompanies a nil RequiredApprovals
 	// when no rule matched but a rule pattern could not be evaluated.
 	NoteProtectionPatternUnevaluable = "a protection pattern could not be evaluated"
+	// NoteClassicProtectionUnreadable accompanies a RequiredApprovals taken
+	// from the rulesets alone, when the classic branch protection (which
+	// may ask for more) could not be read.
+	NoteClassicProtectionUnreadable = "classic branch protection is not readable with this token; the required count may be higher"
 )
 
 // ReviewStatusOptions tunes GetReviewStatus.

@@ -385,6 +385,8 @@ func (g *ctGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			map[string]any{"type": "deletion"},
 			map[string]any{"type": "pull_request", "parameters": map[string]any{"required_approving_review_count": 2}},
 		})
+	case path == ctRepo+"/branches/"+g.pr.TargetBranch+"/protection":
+		contract.WriteError(w, http.StatusForbidden) // classic protection needs admin
 	case path == ctRepo+"/compare/"+ctTargetTip+"..."+g.pr.HeadSHA:
 		ctJSON(w, http.StatusOK, map[string]any{"status": "ahead", "merge_base_commit": map[string]any{"sha": g.pr.BaseSHA}})
 	case path == ctPull+"/files" || path == ctRepoByID+"/pulls/7/files":

@@ -5,7 +5,7 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.0-rc.3] - Unreleased
+## [2.0.0-rc.3]
 
 Third v2 release candidate, built on 2.0.0-rc.2 (the npm dist-tag `next`;
 `latest` moves only at 2.0.0). One new provider, GitHub (github.com and GitHub
@@ -743,6 +743,7 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[2.0.0-rc.3]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.0.0-rc.3
 [2.0.0-rc.2]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.0.0-rc.2
 [2.0.0-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.0.0-rc.1
 [1.1.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v1.1.0

@@ -12,7 +12,7 @@ end of the pull request description (see [Publishing](#publishing)).
 
 | Argument | Required | Meaning |
 |---|---|---|
-| `pr_url` | yes | The pull request URL, on a configured Gitea or Bitbucket Server host. |
+| `pr_url` | yes | The pull request URL, on a configured Gitea, Bitbucket Server or GitHub host. |
 | `output_language` | no | Locale code for the description text, such as `en-US` or `tr-TR`; replaces `output.language`. Same format as the config key. It applies to every model call of the run, the summary call of a [large pull request](#large-pull-requests) included. |
 | `publish` | no | `true` writes the description to the pull request. Default `false`. |
 | `publish_mode` | no | Where `publish` writes: `comment` (the default) or `description`. |
@@ -72,6 +72,12 @@ conversation about it, so the discussion is not part of the prompt, and
 If the provider cannot return the commit messages, the description is made
 without them and the notes say "The commit messages could not be read from the
 provider; the description was generated without them."
+
+If the provider counts more commits than it returned messages for (GitHub
+lists at most 250 commits of a pull request), the notes say "The pull request
+has N commits, but only M commit messages could be read; the description used
+those." (N is the commit count and M the number of messages read). Gitea and
+Bitbucket Server do not report a count, so they never show this note.
 
 The model is told that the previous title, description and commit messages may
 be partial or out of date and are only a reference, that it must describe only
@@ -262,7 +268,7 @@ everything else (in the MCP text it is the first line, before `## Title`):
 ```
 
 In a published comment or region the line is directly under the
-`PR Description` heading (on Gitea as a warning blockquote, on Bitbucket Server
+`PR Description` heading (on Gitea and GitHub as a warning blockquote, on Bitbucket Server
 as a bold line), and because later runs replace the whole text, every edit
 carries it. A count of 1 takes the singular ("1 file was not described").
 The structured `coverage` has the counts: `partial`, `reviewed_files`,
@@ -331,7 +337,7 @@ call it fails the tool call.
 failure to write never discards the description: the result carries it and a
 `publish` object with `published: false` and the reason, and the Publishing
 section of the text says "not written" with the same sentence. Publishing is
-rendered for the provider: Gitea gets headings with emojis and a warning
+rendered for the provider: Gitea and GitHub get headings with emojis and a warning
 blockquote for the banner; Bitbucket Server gets plain headings and no HTML
 anywhere. Both have the sections Title, Type, Summary, Walkthrough, Not
 described (when needed), Coverage and Notes under one `PR Description` heading.
@@ -344,7 +350,7 @@ the marker lines below. The backticks the prompt asks for therefore show as
 literal backticks in a published description, as they do in a published review.
 On a provider where a line that starts with `/` runs a quick action, every
 published line that starts with `/` gets a leading space (the same rule as
-`pr_ask`); neither Gitea nor Bitbucket Server runs such actions, so today this
+`pr_ask`); none of Gitea, Bitbucket Server and GitHub runs such actions, so today this
 changes nothing.
 
 ### Comment mode
@@ -438,6 +444,10 @@ therefore:
   generated title when the server reports the pull request as a draft and its
   title starts with one of these prefixes.
 
+On GitHub a draft is a flag, and replacing the title never changes it; the
+prefix rule above only acts there on a draft whose own title already starts
+with `WIP:` or `[WIP]`, and then it keeps the author's prefix.
+
 Only the default Gitea prefixes `WIP:` and `[WIP]` are known: the server does
 not report its `WORK_IN_PROGRESS_PREFIXES` setting, so a pull request that is a
 draft through another prefix loses it when the title is replaced. Bitbucket
@@ -456,8 +466,9 @@ being generated. review-mcp never overwrites such an edit:
    outcome is "The pull request description changed while it was being
    updated; nothing was written." Run again.
 
-Gitea has no version on a pull request, so an edit that lands between the
-re-read and the write, a window of one request, cannot be detected there.
+Gitea and GitHub have no version on a pull request, so an edit that lands
+between the re-read and the write, a window of one request, cannot be detected
+there.
 
 ### Bitbucket Server rewrites the whole pull request
 
@@ -500,6 +511,7 @@ that runs review-mcp must be able to:
 |---|---|---|
 | Gitea | write access to issues (`write:issue`): post and edit PR comments | write access to the repository (`write:repository`): edit the pull request |
 | Bitbucket Server | repository write permission: post and edit comments | repository write permission: update the pull request |
+| GitHub | Pull requests write (fine-grained) or `repo` / `public_repo` (classic): post and edit comments | the same: edit the pull request (a partial `PATCH` of the title and the body) |
 
 All scopes are unconfirmed until the in-use acceptance has checked them; see
 [Token scopes](troubleshooting.md#token-scopes) and the endpoints in the

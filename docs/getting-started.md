@@ -40,6 +40,8 @@ named by `REVIEW_MCP_CONFIG`). Secrets are read from the environment only.
 | `REVIEW_MCP_GITEA_TOKEN` | (secret) | required when Gitea is enabled |
 | `REVIEW_MCP_BITBUCKET_SERVER_BASE_URL` | `https://bitbucket.example.com` | enables Bitbucket Server; include any context path |
 | `REVIEW_MCP_BITBUCKET_SERVER_TOKEN` | (secret) | required when Bitbucket Server is enabled |
+| `REVIEW_MCP_GITHUB_BASE_URL` | `https://ghe.example.com` | enables GitHub; no default (`https://github.com` for the public product); the API address is derived, or set `REVIEW_MCP_GITHUB_API_URL` |
+| `REVIEW_MCP_GITHUB_TOKEN` | (secret) | required when GitHub is enabled |
 
 At least one provider must be enabled. Set only the provider you use. Never
 commit tokens or put them in a file that is checked in; keep them in your shell

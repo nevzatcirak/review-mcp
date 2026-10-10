@@ -11,7 +11,7 @@ edit in place, and an inline comment on each changed line a finding is about
 
 | Argument | Required | Meaning |
 |---|---|---|
-| `pr_url` | yes | The pull request URL, on a configured Gitea or Bitbucket Server host. |
+| `pr_url` | yes | The pull request URL, on a configured Gitea, Bitbucket Server or GitHub host. |
 | `extra_instructions` | no | Extra guidance for the model for this call; replaces `review.extra_instructions`. An empty value means "not given". |
 | `output_language` | no | Locale code for the review text, such as `en-US` or `tr-TR`; replaces `output.language`. Same format as the config key. |
 | `max_findings` | no | The most key issues to return, 1 to 20; replaces `review.max_findings` (default 3). |
@@ -217,7 +217,7 @@ text it is the first line, before `## PR Review`):
 ```
 
 The same sentence is directly under the heading of the published overview
-(on Gitea as a warning blockquote, on Bitbucket Server as a bold line), and it
+(on Gitea and GitHub as a warning blockquote, on Bitbucket Server as a bold line), and it
 stays there when a later run edits the overview in place. A count of 1 takes
 the singular ("1 file was not reviewed ... nothing is concluded about it").
 
@@ -362,7 +362,7 @@ answers sooner, but the review as a whole is not shorter.
 
 `publish=true` (or `diag review --publish`) posts the review after it was
 produced. Nothing is ever posted without it. The comments are rendered for the
-provider: Gitea gets the richer GitHub-style markdown (emojis, a table and one
+provider: Gitea and GitHub get the richer GitHub-style markdown (emojis, a table and one
 collapsible block per finding); Bitbucket Server gets headings and tables
 without raw HTML. The token needs write access to pull requests or comments
 (see the [token scopes](setup.md#2-create-tokens) in the setup guide, which
@@ -396,7 +396,7 @@ write each time.
 
 The overview is **one comment per pull request and per token user**. Its last
 line is a marker, `[//]: # (review-mcp:overview:v1)`, a Markdown link reference
-that both Gitea and Bitbucket render as nothing. On the next publish,
+that Gitea, GitHub and Bitbucket Server render as nothing. On the next publish,
 review-mcp lists the PR's general comments and takes the ones whose last line is
 exactly that marker **and** whose author is the token's own user; it edits the
 newest in place, so the PR keeps one overview with an updated time and head
@@ -421,8 +421,16 @@ resolved on the provider's own hunks, not on the extra context the model saw,
 because a server only accepts comments on lines of its own diff. A finding in
 a deleted or binary file, or on lines outside every hunk, is not anchorable.
 
-- Anchors are single-line on both providers (the first line of the range; the
-  comment says "Lines 40–52" when the range is longer).
+- Anchors are single-line on Gitea and Bitbucket Server (the first line of the
+  range; the comment says "Lines 40–52" when the range is longer). **GitHub**
+  anchors a finding on its whole range when every line of it is a new-side line
+  of one hunk (the comment is shown against those lines), and otherwise on the
+  first line.
+- **GitHub:** like Gitea, one review per run, event `COMMENT`, pinned to the
+  head commit and carrying no body of its own. If GitHub refuses the review as
+  a whole (a 422 because a comment is outside the diff), each comment is posted
+  alone to find the ones it refuses; any other failure posts nothing again. See
+  [GitHub](github.md#publishing-one-review-per-run).
 - **Gitea:** one review per run, event `COMMENT`, pinned to the head commit.
   review-mcp never leaves a pending review behind, and it refuses to post when
   the token's user already has a pending (draft) review on the PR, because

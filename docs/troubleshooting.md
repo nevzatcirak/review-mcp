@@ -12,6 +12,7 @@ see [Getting started](getting-started.md)), then run:
 ```sh
 review-mcp diag pr https://your-gitea.example/octo/demo/pulls/7
 review-mcp diag pr https://bitbucket.example.com/projects/PROJ/repos/demo/pull-requests/7
+review-mcp diag pr https://github.example.com/octo/demo/pull/7
 ```
 
 The command resolves the provider from the URL, fetches the pull request, its
@@ -61,6 +62,8 @@ It tells you which revision the diff was computed against (`base_sha`).
 | `gitea:base_sha` | Gitea reported no merge base, so the target branch's tip was used. |
 | `bbs:merge_base_endpoint` | Bitbucket Server reported the merge base; this is the normal case. |
 | `bbs:ancestor_walk` | The merge-base endpoint answered 404, so the common ancestor was found by walking the target branch history. |
+| `github:merge_base` | GitHub's compare endpoint reported the merge base; this is the normal case. |
+| `github:base_sha` | The compare endpoint could not be read, so the target branch revision recorded on the pull request (`base.sha`) was used. |
 
 ### `skipped` reasons
 
@@ -68,9 +71,9 @@ A skipped file is not part of `files` and is not reviewed.
 
 | Reason | Meaning |
 |---|---|
-| `binary` | The file is binary. |
-| `file_limit` | More files than `diff.max_files_full_content` (Bitbucket Server cannot build a patch without file contents). |
-| `size_limit` | A side of the file is larger than `diff.max_file_bytes` (Bitbucket Server). |
+| `binary` | The file is binary (on GitHub: no patch, and its extension is on the binary list). |
+| `file_limit` | More files than `diff.max_files_full_content` (Bitbucket Server cannot build a patch without file contents). GitHub's own 3000-file listing limit is a note, not a skipped file (see [GitHub](#github)). |
+| `size_limit` | A side of the file is larger than `diff.max_file_bytes` (Bitbucket Server); on GitHub, a file with line changes whose patch GitHub did not send because the diff is too large. |
 | `fetch_failed` | The file's contents could not be fetched or it is listed by only one of Gitea's two sources. |
 | `filtered` | An ignore rule excluded the file (`diag pr` applies none; `diag diff` applies the file filter and says which rule matched). |
 
@@ -78,7 +81,9 @@ In `files`, `base_status` and `head_status` say whether the full content of
 each side was fetched: `full`, `not_fetched_file_limit`,
 `not_fetched_size_limit`, `fetch_failed`, or `not_applicable` (the base side
 of an added file, the head side of a deleted one). On Gitea a file without
-full content keeps its patch.
+full content keeps its patch. A file that GitHub sends without a patch and
+without line changes (an empty file, a pure rename, a mode change) is listed
+with an empty patch and shows up as `empty_diff` in the reviews.
 
 ### Posting a test comment
 
@@ -100,7 +105,9 @@ Prints the result of the `pr_comments` tool as JSON: `pr`, `threads` and
 `truncated`. General threads come first, then inline threads by path and line.
 Resolved threads are hidden unless `--include-resolved` is given;
 `truncated.resolved_hidden` says how many were hidden. A thread whose resolved
-state the provider does not report (`"resolved": null`) is always shown. At most
+state the provider does not report (`"resolved": null`) is always shown (on
+GitHub that is every thread, and the result carries a note; see
+[GitHub](#resolved-state)). At most
 100 threads are listed (the oldest root comments are dropped first) and each
 body is cut at 4000 characters; `truncated` counts both. Unlike the other `diag`
 output, this prints comment text and author names, which are untrusted content
@@ -118,7 +125,10 @@ body is posted verbatim. On Bitbucket Server the reply lands inside the thread
 (`"in_thread": true`). Gitea has no usable reply endpoint, so the command posts
 a new PR-level comment that starts with a quote line such as
 `> Replying to @alice on src/app.go:10`, and `"in_thread": false` is expected
-there. This needs write access (see the token scopes below).
+there. On GitHub a reply to an inline comment lands inside the thread, and a
+reply to a general comment or a review body is a new PR-level comment with the
+quote line `> Replying to @alice`. This needs write access (see the token
+scopes below).
 
 ## Read the prepared diff with `diag diff`
 
@@ -328,6 +338,9 @@ fails with the first part's error sentence, as a review in one call does.
 
 ## `pr_info` required_approvals notes
 
+For GitHub see [GitHub](#github) below: the notes differ and the two sources
+(rulesets and classic protection) are combined.
+
 On Gitea, `pr_info` reads the repository's branch protection rules and picks
 the one for the target branch: a rule named like the branch, else the first
 rule whose glob pattern (`release/*`) matches it (patterns are tried by the
@@ -339,6 +352,120 @@ repository admin. The note in `required_approvals_note` says what happened:
 | `null`, "not readable with this token" | The list of rules could not be read (the token lacks admin rights, the server does not offer it, or the call failed). Give the token repository admin, or read the number in the Gitea settings. |
 | `0`, "no branch protection rule applies to the target branch" | The rules were read and none matches the target branch, so no approvals are required by a rule. Check the rules in the repository settings if you expected one. |
 | `null`, "a protection pattern could not be evaluated" | No rule matched, but a rule's pattern is one review-mcp cannot evaluate (a pattern with `**`, or one Go's `path.Match` rejects; Gitea's glob may accept more), so that rule might apply. Read the number in the Gitea settings. |
+
+## GitHub
+
+What to check when a GitHub pull request does not work as expected. The full
+behaviour is in [GitHub](github.md); the sentences below are exact.
+
+### Rate limited
+
+```text
+the server rate-limited the request (HTTP 403): retry after 2026-10-09 12:30:00 UTC
+```
+
+GitHub limits the requests of a token (a primary limit per hour and a secondary
+one for bursts). The time is the reset, in UTC. review-mcp itself waits at
+most once, only when the reset is 60 seconds or less away, and then repeats the
+request one time. **What to do:** wait until the time shown and run the tool
+again. On a large pull request fewer parallel calls help (do not start several
+reviews at once with one token). When the sentence ends at `(HTTP 403)` with no
+time, GitHub sent no usable reset. A `403` without a rate-limit signal is an
+authentication problem instead, see below.
+
+### Authentication failed on GitHub
+
+`authentication failed: check the token and its scopes (HTTP 401)` or
+`(HTTP 403)`. **What to do:** check that the token is still valid and has not
+expired; for a fine-grained token check its resource owner and that the
+repository is selected, and the permissions in [GitHub](github.md#token)
+(Pull requests, Contents, Metadata); for an organisation with SAML single
+sign-on authorise the token for it. A repository the token cannot see answers
+`the requested resource was not found` (HTTP 404).
+
+### Ambiguous comment id
+
+```text
+the server sent an unexpected response: the comment id is ambiguous on GitHub
+```
+
+GitHub numbers issue comments, review comments and review bodies separately,
+so one `comment_id` can name more than one comment on the pull request.
+Nothing was written. **What to do:** reply to or edit a comment whose id is not
+shared (list the threads again and pick another comment of the same
+conversation, for example a reply in the thread), or reply with
+`pr_comment_create`.
+
+### `pr_info` required approvals (GitHub)
+
+Both the rulesets and the classic branch protection are read, and the larger
+readable count wins. `required_approvals_note` is one of:
+
+| `required_approvals` and note | Meaning and what to do |
+|---|---|
+| a number, no note | At least one source gave a count (the rulesets, the classic protection, or both). |
+| a number, "classic branch protection is not readable with this token; the required count may be higher" | The rulesets gave the count, but the classic protection could not be read (it needs repository admin: Administration read on a fine-grained token). A classic rule may ask for more. Give the token that right, or read the number in the branch settings. |
+| `null`, "not readable with this token" | Neither source gave a count: no ruleset has a pull request rule that the token can see, and the classic protection is unreadable or the branch is not protected (GitHub answers both alike). `0` is never guessed. |
+
+### `pr_info` merge status (GitHub)
+
+`merge_blockers` are fixed texts from GitHub's `mergeable_state`:
+
+| Blocker | Cause and what to do |
+|---|---|
+| merge conflict | The branch conflicts with the target. Rebase or merge the target. |
+| required reviews or checks are not satisfied | GitHub's `blocked`: a required review or a required check is missing or failing. GitHub does not say which; look at the pull request page. |
+| the branch is behind the target branch | The repository requires the branch to be up to date. Update the branch. |
+| the pull request is a draft | Mark it ready for review. |
+| other merge check | A state review-mcp does not know. |
+
+When `mergeable` is `null` and there are no blockers, GitHub has not computed
+the merge state yet; run `pr_info` again in a moment.
+
+The **note** `some checks that are not required are failing or pending` (in
+`notes`) is GitHub's `unstable` state. It is not a blocker: the pull request is
+mergeable, and only checks that are not required fail or are pending. Failing
+required checks show as `required reviews or checks are not satisfied`.
+
+### Limits of what GitHub lists
+
+| Note | Meaning and what to do |
+|---|---|
+| `GitHub lists at most 3000 files of a pull request: N more changed files were not listed, so they are not reviewed (file_limit).` | The pull request has more than 3000 changed files, which is GitHub's limit for the file list. N files are not reviewed and have no name in the result. Split the pull request or review them by hand. |
+| `GitHub lists at most 250 commits of a pull request; the commits past them are not available.` | Only the first 250 commits are listed. `pr_info` shows this note; `pr_describe` has its own, below. |
+| `The pull request has N commits, but only M commit messages could be read; the description used those.` | `pr_describe` on a pull request whose commit count is larger than the number of messages the provider returned (on GitHub, past 250). The description is still made, from the messages that were read. Read the rest of the history by hand if it matters. Gitea and Bitbucket Server never show it. |
+
+### Resolved state
+
+```text
+Resolved state is not available on GitHub without GraphQL; all threads are shown.
+```
+
+This note of `pr_comments` is expected on GitHub. REST cannot show whether a
+review thread is resolved, so `include_resolved` changes nothing and every
+thread is listed. Check the pull request page for what is resolved.
+
+### Other notes you may see on GitHub
+
+| Note | Meaning |
+|---|---|
+| `The reviews could not be read, so the reviewers are not listed.` | The pull request's reviews could not be read (token, rate limit, server error). `merge` and approval facts are still returned. |
+| `A review by the token's user could not be checked for review-mcp's markers and is not listed.` | A review of the token's user whose comments could not be read; it is left out of the reviewers because it could be review-mcp's own. |
+
+### Configuration sentences
+
+| Sentence | What to do |
+|---|---|
+| `REVIEW_MCP_GITHUB_TOKEN is required because github.base_url is set` | Stdio: set the token. |
+| `REVIEW_MCP_GITHUB_TOKEN is set but github is not enabled (github.base_url is unset); the token is ignored` | Warning: set `REVIEW_MCP_GITHUB_BASE_URL`, or unset the token. |
+| `github.api_url is set but github.base_url is not (REVIEW_MCP_GITHUB_BASE_URL)` | `github.api_url` only adjusts an enabled provider; set the base URL as well. |
+| `TLS verification disabled for github` | Warning: `REVIEW_MCP_GITHUB_INSECURE_SKIP_VERIFY` is set. Prefer `REVIEW_MCP_GITHUB_CA_CERT`. |
+
+A GitHub URL that reports `url_not_configured` although it looks right: check
+that `github.base_url` is the **web** address (`https://github.com` for the
+public product, your GHES address otherwise), not the API address, and that
+the scheme and port match. A GHES whose API is not at `{base}/api/v3` needs
+`github.api_url`.
 
 ## Repository context was skipped
 
@@ -457,7 +584,7 @@ is still returned, and the reason is the fixed sentence in `publish.error`
 | The pull request description contains a damaged review-mcp region; fix or remove it and run again. | `publish_mode=description` found marker lines that are not exactly one `[//]: # (review-mcp:describe:start)` line followed by one `[//]: # (review-mcp:describe:end)` line: two or more starts or ends, an end before a start, a start without an end, or an end without a start. Nothing was written. Open the description in the web UI and fix it: either delete both marker lines and everything between them (the next run appends a fresh region), or restore the missing marker. A marker is a line that equals the marker text once spaces and tabs at its ends are removed. **Fences are not special:** a marker line inside a fenced code block, for example a pasted copy of an earlier description in a code block, counts too, and also makes the region damaged. Remove or change that line (adding a character to it is enough). |
 | The pull request description changed while it was being updated; nothing was written. | Someone edited the description (or, on Bitbucket Server, changed the pull request) between the read and the write, twice in a row. review-mcp never overwrites such an edit. Nothing was written; wait until the editing is done and run again. |
 | Nothing was described, so the pull request description was not changed. | `publish_mode=description` with no described file and no summary: an empty region would replace an earlier good one, so nothing was sent. Look at the Not described section and the notes for why (`not_returned`, a failed part, a diff that did not fit), fix that, and run again. `publish_mode=comment` still publishes the coverage and the notes. |
-| This provider does not support editing the pull request description; use publish_mode=comment. | The provider has no description edit (the capability `DescriptionEdit`). Gitea and Bitbucket Server both have it, so you see this only with a provider that does not. Use `publish_mode=comment`. No request was made. |
+| This provider does not support editing the pull request description; use publish_mode=comment. | The provider has no description edit (the capability `DescriptionEdit`). Gitea, Bitbucket Server and GitHub all have it, so you see this only with a provider that does not. Use `publish_mode=comment`. No request was made. |
 | authentication failed: check the token and its scopes (HTTP 403) | The token may read the pull request but not write it. Description mode needs write access to the pull request, comment mode write access to comments; see [Token scopes](#token-scopes). |
 | the server sent an unexpected response: a reviewer cannot be named, so the update was not sent | Bitbucket Server only. The update is a full `PUT` that sends the reviewers back by user name, and one reviewer in the server's answer has none. review-mcp refuses rather than send a list that would drop that reviewer. Nothing was written; use `publish_mode=comment`, or edit the description by hand. |
 | the description could not be published to the pull request | An error that is not one of the classified provider errors. Rerun with `REVIEW_MCP_LOG_LEVEL=debug`; the log names the failing step, never content. |
@@ -669,11 +796,11 @@ sentence, for example `authentication failed: check the token and its scopes (HT
 
 | Sentence | Class | Meaning and what to check |
 |---|---|---|
-| the pull request URL does not match any configured provider | `url_not_configured` | The URL's scheme, host, port or path prefix matches no configured base URL (or Gitea `web_url`). Compare it with `REVIEW_MCP_GITEA_BASE_URL` / `REVIEW_MCP_BITBUCKET_SERVER_BASE_URL`, including `http` vs `https`, the port, and a Bitbucket context path. No request was sent. |
-| the URL matches a configured provider but is not a pull request URL | `url_malformed` | Use the PR page URL: `.../{owner}/{repo}/pulls/{n}` (Gitea) or `.../projects/{KEY}/repos/{slug}/pull-requests/{id}` (Bitbucket Server; `/users/{user}/repos/...` for personal repositories). Do not put credentials in the URL. |
+| the pull request URL does not match any configured provider | `url_not_configured` | The URL's scheme, host, port or path prefix matches no configured base URL (or Gitea `web_url`). Compare it with `REVIEW_MCP_GITEA_BASE_URL` / `REVIEW_MCP_BITBUCKET_SERVER_BASE_URL` / `REVIEW_MCP_GITHUB_BASE_URL`, including `http` vs `https`, the port, and a Bitbucket context path. No request was sent. |
+| the URL matches a configured provider but is not a pull request URL | `url_malformed` | Use the PR page URL: `.../{owner}/{repo}/pulls/{n}` (Gitea), `.../{owner}/{repo}/pull/{n}` (GitHub) or `.../projects/{KEY}/repos/{slug}/pull-requests/{id}` (Bitbucket Server; `/users/{user}/repos/...` for personal repositories). Do not put credentials in the URL. |
 | authentication failed: check the token and its scopes | `auth` (HTTP 401/403) | The token is wrong, expired, or lacks a scope; see the token scopes below. Also check that the token belongs to the provider whose URL you used. |
 | the requested resource was not found | `not_found` (HTTP 404) | The repository or PR does not exist, or the token's user cannot see it (many servers answer 404 for a hidden repository). On Bitbucket Server, a wrong context path also gives 404. |
-| the server rate-limited the request | `rate_limited` (HTTP 429) | Wait and retry; check any rate limits or a reverse proxy in front of the server. |
+| the server rate-limited the request | `rate_limited` (HTTP 429, or 403 on GitHub) | Wait and retry; check any rate limits or a reverse proxy in front of the server. On GitHub the sentence ends with the reset time when it is known; see [GitHub](#github). |
 | the server reported an internal error | `upstream` (HTTP 5xx) | The provider (or a proxy in front of it) failed. Look at the server's own logs. |
 | a response exceeded its size limit | `too_large` | The hint names the limit: `diff.max_diff_bytes` or `diff.max_file_bytes`; raise it, or review a smaller PR. The hint `(json response limit)` is a fixed 10 MiB safety cap on JSON responses and is not configurable; if you hit it, please report it. |
 | the server version is not supported | `unsupported_version` | Bitbucket Server / Data Center 7.0 or later is required. |
@@ -698,16 +825,16 @@ table also covers the configuration, argument and serve-mode errors.
 | Sentence | Class | Cause and what to check |
 |---|---|---|
 | review-mcp configuration is invalid; call server_info for the list of problems | `config_invalid` | The server started in degraded mode. Call `server_info`: `problems` lists every invalid key. Fix the environment or file and restart the server. Nothing was sent. |
-| the pull request URL does not match any configured provider | `url_not_configured` | The URL matches no provider's base URL (or Gitea `web_url`). Check `REVIEW_MCP_GITEA_BASE_URL` / `REVIEW_MCP_BITBUCKET_SERVER_BASE_URL`: scheme, host, port, context path. |
+| the pull request URL does not match any configured provider | `url_not_configured` | The URL matches no provider's base URL (or Gitea `web_url`). Check `REVIEW_MCP_GITEA_BASE_URL` / `REVIEW_MCP_BITBUCKET_SERVER_BASE_URL` / `REVIEW_MCP_GITHUB_BASE_URL`: scheme, host, port, context path. |
 | the URL matches a configured provider but is not a pull request URL | `url_malformed` | Use the PR page URL; no credentials in the URL. |
-| authentication failed: check the token and its scopes | `auth` | Wrong, expired or under-privileged provider token. Check `REVIEW_MCP_GITEA_TOKEN` / `REVIEW_MCP_BITBUCKET_SERVER_TOKEN` (stdio) or the `X-Review-MCP-...-Token` header (serve), and [Token scopes](#token-scopes). |
+| authentication failed: check the token and its scopes | `auth` | Wrong, expired or under-privileged provider token. Check `REVIEW_MCP_GITEA_TOKEN` / `REVIEW_MCP_BITBUCKET_SERVER_TOKEN` / `REVIEW_MCP_GITHUB_TOKEN` (stdio) or the `X-Review-MCP-...-Token` header (serve), and [Token scopes](#token-scopes). |
 | the requested resource was not found | `not_found` | Wrong repository or PR, a token that cannot see it, or a wrong Bitbucket context path. |
-| the server rate-limited the request | `rate_limited` | Provider or proxy rate limit; wait and retry. |
+| the server rate-limited the request | `rate_limited` | Provider or proxy rate limit; wait and retry. GitHub adds `(HTTP 403)` or `(HTTP 429)` and, when known, `: retry after <time> UTC`. |
 | the server reported an internal error | `upstream` | Provider (or its proxy) failed; see its logs. |
 | a response exceeded its size limit | `too_large` | Check `diff.max_diff_bytes` / `diff.max_file_bytes` (named in the hint). |
 | the server version is not supported | `unsupported_version` | Bitbucket Server / Data Center 7.0 or later is required. |
 | could not complete the request to the server | `transport` | DNS, timeout, TLS or connection problem; see the hint and [Base URL notes](#base-url-notes). |
-| the server sent an unexpected response | `protocol` | Base URL points at something that is not the provider API; a hint such as `empty body` or `invalid comment id` means `pr_comment_reply` got a blank `body` or a `comment_id` that is not a positive integer. |
+| the server sent an unexpected response | `protocol` | Base URL points at something that is not the provider API (for GitHub also `github.api_url`); the hint `the comment id is ambiguous on GitHub` is explained under [GitHub](#github); a hint such as `empty body` or `invalid comment id` means `pr_comment_reply` got a blank `body` or a `comment_id` that is not a positive integer. |
 | the LLM endpoint rejected the credentials | `llm_auth` | `REVIEW_MCP_LLM_API_KEY` (stdio, or serve with `llm_key_source = server`) or the `X-Review-MCP-LLM-API-Key` header. |
 | the LLM endpoint or model was not found | `llm_not_found` | `llm.base_url` and `llm.model`. |
 | the LLM endpoint rate-limited the request | `llm_rate_limited` | Wait; `llm.max_retries`. |
@@ -736,6 +863,7 @@ table also covers the configuration, argument and serve-mode errors.
 | update_title needs publish=true and publish_mode=description | argument | Set both, or drop `update_title` (`pr_describe`). |
 | no Gitea token in this request: set the X-Review-MCP-Gitea-Token header in your MCP client configuration | `credentials_missing` | Serve mode: the request carried no Gitea token. Add the header to the client configuration ([Serve mode](serve.md#client-configuration-for-a-remote-server)); `server_info` shows which headers arrived. No outbound request was made. |
 | no Bitbucket Server token in this request: set the X-Review-MCP-Bitbucket-Server-Token header in your MCP client configuration | `credentials_missing` | Same, for a Bitbucket Server URL. |
+| no GitHub token in this request: set the X-Review-MCP-GitHub-Token header in your MCP client configuration | `credentials_missing` | Same, for a GitHub URL. |
 | no LLM API key in this request: set the X-Review-MCP-LLM-API-Key header in your MCP client configuration | `credentials_missing` | Same, for the LLM key. Only when `serve.llm_key_source = header`; with `server` the server's own key is used. |
 | malformed credential header: <header name> | (HTTP 400) | A credential header is longer than 4096 bytes, contains anything but visible ASCII (a stray newline or a space inside the value) or was sent twice. Fix the value in the client configuration. The value is never echoed. |
 | the server is busy: retry shortly | `server_busy` | All `serve.max_concurrent_calls` slots are in use. Retry, or raise the key (1 to 64). |
@@ -782,6 +910,12 @@ A3) has verified them.
   inline comments. The write part is needed only for publishing (`publish`),
   `pr_comment_reply`, `pr_comment_create` and `diag comment`; reading a PR needs
   only read access.
+- **GitHub:** a fine-grained personal access token with Pull requests
+  (read; read and write for publishing, `pr_comment_reply`, `pr_comment_create`
+  and the description edit), Contents (read) and Metadata (read), or a classic
+  token with `repo` (`public_repo` for public repositories). Administration
+  (read) is optional and only lets `pr_info` read classic branch protection.
+  See [GitHub](github.md#token).
 - **Bitbucket Server / Data Center:** an HTTP access token with repository
   read permission, plus write permission only for comments and for
   `pr_describe` with `publish_mode=description`, which updates the pull
@@ -794,7 +928,7 @@ Which call fails tells you which scope is missing: if `diag pr` works but
 lacks the write scope; if `diag pr` itself fails, the token is wrong or
 cannot read the repository (a hidden repository may also answer 404). Pass
 tokens only through the environment (`REVIEW_MCP_GITEA_TOKEN`,
-`REVIEW_MCP_BITBUCKET_SERVER_TOKEN`) or, in serve mode, the request headers
+`REVIEW_MCP_BITBUCKET_SERVER_TOKEN`, `REVIEW_MCP_GITHUB_TOKEN`) or, in serve mode, the request headers
 ([Serve mode](serve.md)); never put them in a URL or a config file that is
 checked in.
 
@@ -810,16 +944,23 @@ checked in.
   reached. If users open PRs under a different public address (for example a
   reverse proxy), set `REVIEW_MCP_GITEA_WEB_URL` to that address: PR URLs
   under it are accepted too. API requests still go to the base URL.
+- **GitHub base and API URL.** `REVIEW_MCP_GITHUB_BASE_URL` is the web
+  address pull request URLs start with and has no default. The API address
+  is derived from it (`https://api.github.com` for exactly `https://github.com`,
+  `{base}/api/v3` otherwise) unless `REVIEW_MCP_GITHUB_API_URL` is set;
+  `server_info` shows the one in use. If calls fail with `not_found` or
+  `protocol` on a GHES, check that `{base}/api/v3` is really the API.
 - **Scheme, host and port must match exactly** (case-insensitive host; default
   ports 80/443 are implied). `https://your-gitea.example.evil.example` or a
   sibling path such as `/bitbucket-old` does not match `/bitbucket`.
 - **CA certificates.** For a server with a private CA, set
-  `REVIEW_MCP_GITEA_CA_CERT` or `REVIEW_MCP_BITBUCKET_SERVER_CA_CERT` to the
+  `REVIEW_MCP_GITEA_CA_CERT`, `REVIEW_MCP_BITBUCKET_SERVER_CA_CERT` or
+  `REVIEW_MCP_GITHUB_CA_CERT` to the
   path of a PEM bundle; it is used in addition to the system roots. A
   `transport` error with the hint `TLS verification failed` usually means the
   CA is missing or the certificate does not cover the host name.
 - **`insecure_skip_verify`.** `REVIEW_MCP_GITEA_INSECURE_SKIP_VERIFY=true` (and
-  the Bitbucket Server equivalent) turns off certificate verification. Use it
+  the Bitbucket Server and GitHub equivalents) turns off certificate verification. Use it
   only to confirm that TLS is the problem on a throwaway setup; prefer a CA
   certificate. review-mcp warns at startup when it is set.
 

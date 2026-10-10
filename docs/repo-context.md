@@ -179,7 +179,9 @@ context.repo.enabled: repository context is not available in serve mode (cached 
 - Searches also set `GIT_NO_LAZY_FETCH` where git supports it; on older git,
   `protocol.allow=never` alone blocks lazy fetches, which is tested.
 - The provider must serve the pull request ref over HTTP(S): Gitea
-  `refs/pull/<n>/head`, Bitbucket Server `refs/pull-requests/<n>/from`.
+  `refs/pull/<n>/head`, Bitbucket Server `refs/pull-requests/<n>/from`,
+  GitHub `refs/pull/<n>/head`. The GitHub clone address is
+  `{github.base_url}/{owner}/{repo}.git` (the web base, never the API base).
 
 ## Security
 
@@ -189,7 +191,10 @@ context.repo.enabled: repository context is not available in serve mode (cached 
   `.git/config`, not in the cache), never a log or an error. The first scheme
   is `Bearer` on Bitbucket Server and `token` on Gitea; on an HTTP 401 the
   other, HTTP Basic with the token user's name, is tried once, and the scheme
-  that worked is remembered for the process.
+  that worked is remembered for the process. On GitHub the first scheme is HTTP
+  Basic with the fixed user `x-access-token` and the token as the password
+  (GitHub does not accept a bare Bearer token for git over HTTPS); `Bearer` is
+  tried once after a 401. See [GitHub](github.md#repository-context).
 - **A fresh environment.** Every `git` process gets an allowlisted
   environment (`PATH`, `SYSTEMROOT` on Windows, the proxy variables, `LANG=C`,
   git's prompts disabled), never a copy of yours, which may hold other tokens.

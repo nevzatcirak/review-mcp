@@ -247,6 +247,7 @@ type apiPR struct {
 	Mergeable      *bool   `json:"mergeable"`
 	MergeableState string  `json:"mergeable_state"`
 	ChangedFiles   int     `json:"changed_files"`
+	Commits        int     `json:"commits"`
 	User           apiUser `json:"user"`
 	Head           apiRef  `json:"head"`
 	Base           apiRef  `json:"base"`
@@ -277,6 +278,7 @@ func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*pro
 		Mergeable:      in.Mergeable,
 		MergeableState: in.MergeableState,
 		ChangedFiles:   in.ChangedFiles,
+		CommitCount:    in.Commits,
 	}
 	if in.Body != nil {
 		pr.Description = *in.Body

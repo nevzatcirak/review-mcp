@@ -480,6 +480,7 @@ func TestGetPullRequest(t *testing.T) {
 		pj["mergeable"] = nil
 		pj["mergeable_state"] = "unknown"
 		pj["changed_files"] = 3
+		pj["commits"] = 4
 		f.json("/repos/octo/demo/pulls/7", pj)
 		f.json("/repos/octo/demo/compare/"+base+"..."+head, map[string]any{"merge_base_commit": map[string]any{"sha": mergeBase}})
 		p, _ := f.provider(f.config(""), time.Now())
@@ -491,7 +492,7 @@ func TestGetPullRequest(t *testing.T) {
 			pr.TargetBranch != "main" || pr.HeadSHA != head || pr.BaseSHA != mergeBase ||
 			pr.BaseStrategy != provider.BaseGitHubMergeBase || pr.State != "closed" || !pr.Merged ||
 			pr.Draft == nil || !*pr.Draft || pr.Mergeable != nil || pr.MergeableState != "unknown" ||
-			pr.ChangedFiles != 3 || pr.WebURL != "https://github.example.com/octo/demo/pull/7" {
+			pr.ChangedFiles != 3 || pr.CommitCount != 4 || pr.WebURL != "https://github.example.com/octo/demo/pull/7" {
 			t.Errorf("pull request = %+v", pr)
 		}
 		if got := f.requests(); got[1] != "/api/v3/repos/octo/demo/compare/"+base+"..."+head+"?per_page=1" {

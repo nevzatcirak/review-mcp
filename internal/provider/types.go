@@ -86,6 +86,10 @@ type PullRequest struct {
 	// compares it with the files the host lists to tell when the listing
 	// was cut short.
 	ChangedFiles int
+	// CommitCount is the total number of commits the provider reports for
+	// the PR itself (GitHub's commits). 0 means unknown: providers that know
+	// the total set it, the others leave it 0.
+	CommitCount int
 
 	// Version is the provider's optimistic-locking token for the PR, in
 	// decimal; "" when the provider has none (Gitea). Bitbucket Server

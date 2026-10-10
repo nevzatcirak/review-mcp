@@ -44,6 +44,10 @@ const (
 	// NoteCommitsUnavailable: the commit messages could not be read; the
 	// prompts have no commit-message block.
 	NoteCommitsUnavailable = "The commit messages could not be read from the provider; the description was generated without them."
+	// NoteCommitsPartialFormat: the provider reports more commits than it
+	// returned messages for; the arguments are the commit count and the
+	// number of messages read. The token cap is not part of this note.
+	NoteCommitsPartialFormat = "The pull request has %d commits, but only %d commit messages could be read; the description used those."
 )
 
 // AllowedTypes are the PR types of the schema (upstream's PRType values),

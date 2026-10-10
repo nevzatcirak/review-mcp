@@ -683,6 +683,40 @@ func TestCommitMessages(t *testing.T) {
 	}
 }
 
+// TestCommitCountNote: the note appears once, and only when the provider
+// reports more commits than it returned messages for.
+func TestCommitCountNote(t *testing.T) {
+	want := fmt.Sprintf(NoteCommitsPartialFormat, 5, 2)
+	for _, tc := range []struct {
+		count int
+		note  bool
+	}{{5, true}, {2, false}, {0, false}, {1, false}} {
+		h := newHarness(map[int][]string{0: {oneCallAnswer}})
+		h.prov.pr.CommitCount = tc.count
+		res := h.run(t, Args{})
+		n := 0
+		for _, x := range res.Notes {
+			if strings.HasPrefix(x, "The pull request has ") && strings.Contains(x, "commit messages could be read") {
+				n++
+				if x != want {
+					t.Errorf("note = %q, want %q", x, want)
+				}
+			}
+		}
+		if (n == 1) != tc.note || n > 1 {
+			t.Errorf("count %d: note count %d, notes %v", tc.count, n, res.Notes)
+		}
+	}
+	// A failed read gets only its own note.
+	h := newHarness(map[int][]string{0: {oneCallAnswer}})
+	h.prov.pr.CommitCount = 5
+	h.prov.commitErr = &provider.Error{Class: provider.ClassAuth, Status: 403}
+	res := h.run(t, Args{})
+	if slices.Contains(res.Notes, fmt.Sprintf(NoteCommitsPartialFormat, 5, 0)) || !slices.Contains(res.Notes, NoteCommitsUnavailable) {
+		t.Errorf("notes %v", res.Notes)
+	}
+}
+
 // TestEmptyDiff: nothing left after filtering makes no model call.
 func TestEmptyDiff(t *testing.T) {
 	h := newHarness(map[int][]string{0: {oneCallAnswer}})

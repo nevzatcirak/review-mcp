@@ -705,34 +705,6 @@ func TestDiffContents(t *testing.T) {
 	}
 }
 
-// TestPendingMethodsSendNothing: the methods of the later work packages fail
-// with the fixed error before any request.
-func TestPendingMethodsSendNothing(t *testing.T) {
-	f := newFake(t, "/api/v3")
-	p, _ := f.provider(f.config(""), time.Now())
-	ctx, ref := t.Context(), testRef()
-	pr := &provider.PullRequest{HeadSHA: "h", BaseSHA: "b"}
-	title := "T"
-	for name, call := range map[string]func() error{
-		"UpdatePullRequest": func() error { return p.UpdatePullRequest(ctx, ref, provider.UpdatePR{Title: &title}) },
-	} {
-		err := call()
-		if !errors.Is(err, provider.ErrProtocol) || !strings.HasSuffix(err.Error(), ": "+NotImplementedHint) {
-			t.Errorf("%s: err = %v", name, err)
-		}
-	}
-	st := p.GetReviewStatus(ctx, ref, pr, provider.ReviewStatusOptions{})
-	if st == nil || st.Reviewers != nil || !slices.Contains(st.Notes, provider.NoteReviewsUnreadable) {
-		t.Errorf("GetReviewStatus = %+v", st)
-	}
-	if got := f.requests(); len(got) != 0 {
-		t.Errorf("requests = %q, want none", got)
-	}
-	if c := p.Capabilities(); c.DescriptionEdit || c.InlineThreadResolution || c.GeneralThreadResolution {
-		t.Errorf("capabilities = %+v: a feature of a later work package is switched on", c)
-	}
-}
-
 func TestFileLineURL(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.GitHub.BaseURL = "https://github.example.com/ghe/"

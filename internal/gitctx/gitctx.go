@@ -178,6 +178,11 @@ func RepoFor(cfg *config.Config, ref provider.PRRef, p provider.Provider) (repo 
 	case provider.KindBitbucketServer:
 		repo.BaseURL, repo.Token = cfg.BitbucketServer.BaseURL, cfg.Secrets.BitbucketServerToken
 		repo.CACert, repo.InsecureSkipVerify = cfg.BitbucketServer.CACert, cfg.BitbucketServer.InsecureSkipVerify
+	case provider.KindGitHub:
+		// The web base: the clone URL is {web}/{owner}/{repo}.git. The
+		// Basic user is fixed, so the identity below is never asked for.
+		repo.BaseURL, repo.Token = cfg.GitHub.BaseURL, cfg.Secrets.GitHubToken
+		repo.CACert, repo.InsecureSkipVerify = cfg.GitHub.CACert, cfg.GitHub.InsecureSkipVerify
 	default:
 		return Repo{}, false
 	}

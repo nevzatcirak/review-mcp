@@ -45,39 +45,63 @@ func envValue(env []string, name string) (string, bool) {
 
 // TestTokenNeverInArgv [canary]: the token reaches git only through the
 // environment of the fetch (GIT_CONFIG_*), never through an argument, and
-// no other git command sees it at all.
+// no other git command sees it at all. Every provider's header form is
+// covered, including GitHub's Basic form, whose base64 value must not
+// appear in an argument either.
 func TestTokenNeverInArgv(t *testing.T) {
-	resetSchemes()
-	r, f := fakeRunner(t, fakeBehavior{SHA: fakeSHA}, Options{})
-	if _, err := r.Ensure(context.Background(), giteaRepo("https://your-gitea.example"), PR{Number: 7, HeadSHA: fakeSHA}); err != nil {
-		t.Fatalf("Ensure: %v", err)
+	cases := []struct {
+		name   string
+		repo   Repo
+		header string
+	}{
+		{"gitea", giteaRepo("https://your-gitea.example"), "Authorization: token " + testToken},
+		{"bitbucket", bbsRepo("https://bitbucket.example.com"), "Authorization: Bearer " + testToken},
+		{"github", githubRepo("https://github.example.com"), "Authorization: " + basicOf("x-access-token", testToken)},
 	}
-	calls := f.calls(t)
-	fetches := callsOf(calls, "fetch")
-	if len(fetches) != 1 {
-		t.Fatalf("%d fetches, want 1 (calls: %v)", len(fetches), calls)
-	}
-	for _, c := range calls {
-		for i, a := range c.Args {
-			if strings.Contains(a, testToken) || strings.Contains(strings.ToLower(a), "extraheader") {
-				t.Errorf("git %s: argument %d carries the credential", c.subcommand(), i)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resetSchemes()
+			r, f := fakeRunner(t, fakeBehavior{SHA: fakeSHA}, Options{})
+			if _, err := r.Ensure(context.Background(), tc.repo, PR{Number: 7, HeadSHA: fakeSHA}); err != nil {
+				t.Fatalf("Ensure: %v", err)
 			}
-		}
-		if c.subcommand() != "fetch" && strings.Contains(strings.Join(c.Env, "\n"), testToken) {
-			t.Errorf("git %s: the token is in its environment", c.subcommand())
-		}
-	}
-	env := fetches[0].Env
-	for name, want := range map[string]string{
-		"GIT_CONFIG_COUNT":   "2",
-		"GIT_CONFIG_KEY_0":   "http.extraHeader",
-		"GIT_CONFIG_VALUE_0": "",
-		"GIT_CONFIG_KEY_1":   "http.extraHeader",
-		"GIT_CONFIG_VALUE_1": "Authorization: token " + testToken,
-	} {
-		if got, ok := envValue(env, name); !ok || got != want {
-			t.Errorf("fetch env %s = %q (set %v), want %q", name, got, ok, want)
-		}
+			calls := f.calls(t)
+			fetches := callsOf(calls, "fetch")
+			if len(fetches) != 1 {
+				t.Fatalf("%d fetches, want 1 (calls: %v)", len(fetches), calls)
+			}
+			secrets := []string{testToken, strings.TrimPrefix(basicOf("x-access-token", testToken), "Basic ")}
+			for _, c := range calls {
+				for i, a := range c.Args {
+					for _, sec := range secrets {
+						if strings.Contains(a, sec) {
+							t.Errorf("git %s: argument %d carries the credential", c.subcommand(), i)
+						}
+					}
+					if strings.Contains(strings.ToLower(a), "extraheader") {
+						t.Errorf("git %s: argument %d carries the credential", c.subcommand(), i)
+					}
+				}
+				env := strings.Join(c.Env, "\n")
+				for _, sec := range secrets {
+					if c.subcommand() != "fetch" && strings.Contains(env, sec) {
+						t.Errorf("git %s: the credential is in its environment", c.subcommand())
+					}
+				}
+			}
+			env := fetches[0].Env
+			for name, want := range map[string]string{
+				"GIT_CONFIG_COUNT":   "2",
+				"GIT_CONFIG_KEY_0":   "http.extraHeader",
+				"GIT_CONFIG_VALUE_0": "",
+				"GIT_CONFIG_KEY_1":   "http.extraHeader",
+				"GIT_CONFIG_VALUE_1": tc.header,
+			} {
+				if got, ok := envValue(env, name); !ok || got != want {
+					t.Errorf("fetch env %s = %q (set %v), want %q", name, got, ok, want)
+				}
+			}
+		})
 	}
 }
 
@@ -436,7 +460,7 @@ func TestUnsupportedInput(t *testing.T) {
 		{"no number", giteaRepo("https://your-gitea.example"), PR{HeadSHA: fakeSHA}},
 		{"short sha", giteaRepo("https://your-gitea.example"), PR{Number: 7, HeadSHA: "abc123"}},
 		{"option-like sha", giteaRepo("https://your-gitea.example"), PR{Number: 7, HeadSHA: "--upload-pack=x"}},
-		{"unknown kind", Repo{Kind: "github", BaseURL: "https://your-gitea.example", Namespace: "o", Name: "r"}, PR{Number: 7, HeadSHA: fakeSHA}},
+		{"unknown kind", Repo{Kind: "gitlab", BaseURL: "https://your-gitea.example", Namespace: "o", Name: "r"}, PR{Number: 7, HeadSHA: fakeSHA}},
 	}
 	for _, tc := range bad {
 		_, err := r.Ensure(context.Background(), tc.repo, tc.pr)

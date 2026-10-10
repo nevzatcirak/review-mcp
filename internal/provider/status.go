@@ -40,6 +40,10 @@ const (
 	// NoteActivityUnclassified: a review of the token's user could not be
 	// told from review-mcp's own, so it is left out of the reviewers.
 	NoteActivityUnclassified = "A review by the token's user could not be checked for review-mcp's markers and is not listed."
+	// NoteCommitsTruncated: GitHub lists at most 250 commits of a pull
+	// request, so the commit messages read for it (GetCommitMessages) stop
+	// there.
+	NoteCommitsTruncated = "GitHub lists at most 250 commits of a pull request; the commits past them are not available."
 )
 
 // Fixed merge blockers. A provider maps structured server reasons to these
@@ -50,6 +54,13 @@ const (
 	BlockerBuilds     = "required builds are missing or failing"
 	BlockerConflict   = "merge conflict"
 	BlockerOtherCheck = "other merge check"
+	// BlockerRequirements: the host blocks the merge for required reviews or
+	// required checks and does not say which (GitHub's "blocked").
+	BlockerRequirements = "required reviews or checks are not satisfied"
+	// BlockerBehind: the head branch is behind the target branch and the
+	// host requires it to be up to date.
+	BlockerBehind = "the branch is behind the target branch"
+	BlockerDraft  = "the pull request is a draft"
 )
 
 // Fixed notes for RequiredApprovals (RequiredApprovalsNote).

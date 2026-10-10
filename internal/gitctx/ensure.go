@@ -156,6 +156,13 @@ func newPlan(repo Repo, pr PR) (*plan, error) {
 		p.cloneURL = base + "/scm/" + ns + "/" + name + ".git"
 		p.remoteRef = "refs/pull-requests/" + n + "/from"
 		p.schemes = []scheme{schemeBearer, schemeBasic}
+	case provider.KindGitHub:
+		// Y-16. The base is the web base, never the API base. GitHub does
+		// not accept a bare Bearer token for git over HTTPS, so Basic with
+		// the fixed user comes first; Bearer is only the second attempt.
+		p.cloneURL = base + "/" + ns + "/" + name + ".git"
+		p.remoteRef = "refs/pull/" + n + "/head"
+		p.schemes = []scheme{schemeAccessToken, schemeBearer}
 	default:
 		return nil, unsupported
 	}
@@ -177,10 +184,14 @@ func newPlan(repo Repo, pr PR) (*plan, error) {
 type scheme int
 
 const (
-	schemeToken  scheme = iota // Gitea: "Authorization: token <token>"
-	schemeBearer               // Bitbucket Server: "Authorization: Bearer <token>"
-	schemeBasic                // both: HTTP Basic, user = token identity, password = token
+	schemeToken       scheme = iota // Gitea: "Authorization: token <token>"
+	schemeBearer                    // Bitbucket Server: "Authorization: Bearer <token>"
+	schemeBasic                     // Gitea, Bitbucket Server: HTTP Basic, user = token identity, password = token
+	schemeAccessToken               // GitHub: HTTP Basic, user = accessTokenUser, password = token
 )
+
+// accessTokenUser is the fixed Basic user of GitHub's git over HTTPS.
+const accessTokenUser = "x-access-token"
 
 // workingScheme remembers, per provider kind and base URL, the scheme that
 // fetched successfully. It lives for the process.
@@ -214,6 +225,8 @@ func authHeader(ctx context.Context, repo Repo, s scheme) (string, error) {
 		return "Authorization: token " + tok, nil
 	case schemeBearer:
 		return "Authorization: Bearer " + tok, nil
+	case schemeAccessToken:
+		return "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(accessTokenUser+":"+tok)), nil
 	}
 	if repo.Identity == nil {
 		return "", fail(ReasonAuth)

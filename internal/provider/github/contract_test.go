@@ -21,8 +21,8 @@ import (
 
 // TestContract runs the provider contract suite against a fake GitHub
 // Enterprise Server API that serves each contract.Spec. The read path is
-// WP-2j, the comments WP-2k and the inline comments WP-2l; the cases of the
-// later work packages are declared pending.
+// WP-2j, the comments WP-2k, the inline comments WP-2l and the review
+// status and description edits WP-2m: every case runs.
 func TestContract(t *testing.T) {
 	contract.Run(t, ctFixture{})
 }
@@ -52,12 +52,6 @@ func (ctFixture) Traits() contract.Traits {
 	return contract.Traits{
 		BaseStrategies: github.BaseStrategies(),
 		InlineRanges:   true,
-		Pending: map[string]string{
-			"review_status":            "WP-2m",
-			"update_pull_request":      "WP-2m",
-			"errors/UpdatePullRequest": "WP-2m",
-			"errors/GetReviewStatus":   "WP-2m",
-		},
 	}
 }
 
@@ -152,6 +146,10 @@ type ctGitHub struct {
 	issue  []contract.Comment
 	inline []ctInline
 	nextID int64
+	// ownBodies are the bodies of the review comments of a review that the
+	// Spec's own review owns, by review id: the marker of review-mcp's own
+	// review lives in a comment, as the inline batch has no body of its own.
+	ownBodies map[int64][]string
 	// writes records every request other than a GET, as "METHOD path".
 	writes []string
 }
@@ -198,9 +196,59 @@ func ctJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// requestedJSON is requested_reviewers: the reviewers of the Spec that have
+// no verdict yet.
+func (g *ctGitHub) requestedJSON() []any {
+	out := []any{}
+	for _, r := range g.pr.Reviewers {
+		if r.State == provider.ReviewPending {
+			out = append(out, ctUser(r.User))
+		}
+	}
+	return out
+}
+
+// ctOldCommit is the commit a stale review was given on.
+const ctOldCommit = "d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+
+// reviewsJSON renders the Spec's reviewers as GitHub lists reviews: a
+// dismissed verdict is DISMISSED, a stale one carries an older commit_id,
+// and the own review is a COMMENTED review without a body whose marker is in
+// one of its comments. A reviewer that is only requested has no review.
+func (g *ctGitHub) reviewsJSON() []any {
+	out := []any{}
+	base := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
+	for i, r := range g.pr.Reviewers {
+		m := map[string]any{"id": 5000 + i, "user": ctUser(r.User), "body": "", "commit_id": g.pr.HeadSHA,
+			"submitted_at": base.Add(time.Duration(i) * time.Minute).Format(time.RFC3339)}
+		switch {
+		case r.Own:
+			m["state"] = "COMMENTED"
+			if g.ownBodies == nil {
+				g.ownBodies = map[int64][]string{}
+			}
+			g.ownBodies[int64(5000+i)] = []string{contract.OwnMarker}
+		case r.Dismissed:
+			m["state"] = "DISMISSED"
+		case r.State == provider.ReviewApproved:
+			m["state"] = "APPROVED"
+		case r.State == provider.ReviewChangesRequested:
+			m["state"] = "CHANGES_REQUESTED"
+		default:
+			continue
+		}
+		if r.Stale {
+			m["commit_id"] = ctOldCommit
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
 func (g *ctGitHub) prJSON() map[string]any {
 	return map[string]any{
 		"number": 7, "title": g.pr.Title, "body": g.pr.Description, "state": "open", "draft": g.pr.Draft,
+		"requested_reviewers": g.requestedJSON(), "requested_teams": []any{}, "commits": 1,
 		"merged": false, "merged_at": nil, "mergeable": true, "mergeable_state": "clean",
 		"html_url":      "https://github.example.com/octo/demo/pull/7",
 		"changed_files": len(g.pr.Files),
@@ -318,6 +366,10 @@ func (g *ctGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if g.serveInline(w, r, path) || g.serveComments(w, r, path) {
 		return
 	}
+	if r.Method == http.MethodPatch && path == ctPull {
+		g.patchPull(w, r)
+		return
+	}
 	if r.Method != http.MethodGet {
 		g.t.Errorf("unexpected request %s %s", r.Method, path)
 		contract.WriteError(w, http.StatusMethodNotAllowed)
@@ -328,6 +380,11 @@ func (g *ctGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ctJSON(w, http.StatusOK, ctUser(g.pr.TokenUser))
 	case path == ctPull:
 		ctJSON(w, http.StatusOK, g.prJSON())
+	case path == ctRepo+"/rules/branches/"+g.pr.TargetBranch:
+		ctJSON(w, http.StatusOK, []any{
+			map[string]any{"type": "deletion"},
+			map[string]any{"type": "pull_request", "parameters": map[string]any{"required_approving_review_count": 2}},
+		})
 	case path == ctRepo+"/compare/"+ctTargetTip+"..."+g.pr.HeadSHA:
 		ctJSON(w, http.StatusOK, map[string]any{"status": "ahead", "merge_base_commit": map[string]any{"sha": g.pr.BaseSHA}})
 	case path == ctPull+"/files" || path == ctRepoByID+"/pulls/7/files":
@@ -340,6 +397,30 @@ func (g *ctGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.t.Errorf("unexpected request %s %s", r.Method, path)
 		contract.WriteError(w, http.StatusNotFound)
 	}
+}
+
+// patchPull applies PATCH /pulls/7. Like GitHub it changes only the fields
+// that are sent; a body with any other field than title and body fails the
+// test, since review-mcp must send nothing else.
+func (g *ctGitHub) patchPull(w http.ResponseWriter, r *http.Request) {
+	var in map[string]*string
+	if json.NewDecoder(r.Body).Decode(&in) != nil || len(in) == 0 {
+		contract.WriteError(w, http.StatusUnprocessableEntity)
+		return
+	}
+	for k, v := range in {
+		switch {
+		case k == "title" && v != nil:
+			g.pr.Title = *v
+		case k == "body" && v != nil:
+			g.pr.Description = *v
+		default:
+			g.t.Errorf("PATCH /pulls/7 carries the field %q", k)
+			contract.WriteError(w, http.StatusUnprocessableEntity)
+			return
+		}
+	}
+	ctJSON(w, http.StatusOK, g.prJSON())
 }
 
 // serveContents answers a raw contents request at the merge base or the
@@ -486,7 +567,7 @@ func (g *ctGitHub) serveComments(w http.ResponseWriter, r *http.Request, path st
 		}
 		contract.WriteError(w, http.StatusNotFound)
 	case get && (path == ctPull+"/reviews" || path == ctRepoByID+"/pulls/7/reviews"):
-		g.ctPage(w, r, nil, ctRepoByID+"/pulls/7/reviews")
+		g.ctPage(w, r, g.reviewsJSON(), ctRepoByID+"/pulls/7/reviews")
 	case get && strings.HasPrefix(path, ctPull+"/reviews/"):
 		contract.WriteError(w, http.StatusNotFound)
 	default:
@@ -622,6 +703,11 @@ func (g *ctGitHub) serveInline(w http.ResponseWriter, r *http.Request, path stri
 		for _, c := range g.inline {
 			if c.review != 0 && strconv.FormatInt(c.review, 10) == id {
 				out = append(out, g.inlineJSON(c))
+			}
+		}
+		if rid, err := strconv.ParseInt(id, 10, 64); err == nil {
+			for _, b := range g.ownBodies[rid] {
+				out = append(out, g.inlineJSON(ctInline{Comment: contract.Comment{ID: 9000 + rid, Author: g.pr.TokenUser, Body: b}, path: "x", line: 1}))
 			}
 		}
 		g.ctPage(w, r, out, ctRepoByID+"/pulls/7/reviews/"+id+"/comments")

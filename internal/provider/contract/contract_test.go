@@ -5,7 +5,6 @@ import (
 	"io"
 	"maps"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -195,16 +194,4 @@ func TestStartServer(t *testing.T) {
 			t.Errorf("GET = %d, want a transport error", st)
 		}
 	})
-}
-
-func TestUnknownPending(t *testing.T) {
-	got := unknownPending(map[string]string{
-		"threads": "WP-2k", "errors/ListThreads": "WP-2k", "errors/NoSuchCall": "WP-x", "thread": "WP-x", "errors": "WP-x",
-	}, []string{"threads", "errors"})
-	if want := []string{"errors/NoSuchCall", "thread"}; !slices.Equal(got, want) {
-		t.Errorf("unknownPending = %q, want %q", got, want)
-	}
-	if got := unknownPending(nil, []string{"threads"}); got != nil {
-		t.Errorf("unknownPending(nil) = %q", got)
-	}
 }

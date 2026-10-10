@@ -60,6 +60,7 @@ func TestConfigForServeOverlaysRequestHeaders(t *testing.T) {
 	h2 := http.Header{}
 	h2.Set(credentials.HeaderGiteaToken, "gitea-two")
 	h2.Set(credentials.HeaderBitbucketServerToken, "bbs-two")
+	h2.Set(credentials.HeaderGitHubToken, "gh-two")
 
 	c1, err := d.ConfigFor(context.Background(), reqWith(h1))
 	if err != nil {
@@ -75,7 +76,8 @@ func TestConfigForServeOverlaysRequestHeaders(t *testing.T) {
 	if c1.Secrets.GiteaToken.Reveal() != "gitea-one" || c1.Secrets.LLMAPIKey.Reveal() != "llm-one" || c1.Secrets.BitbucketServerToken.IsSet() {
 		t.Errorf("c1 secrets wrong: gitea=%q", c1.Secrets.GiteaToken.Reveal())
 	}
-	if c2.Secrets.GiteaToken.Reveal() != "gitea-two" || c2.Secrets.BitbucketServerToken.Reveal() != "bbs-two" || c2.Secrets.LLMAPIKey.IsSet() {
+	if c2.Secrets.GiteaToken.Reveal() != "gitea-two" || c2.Secrets.BitbucketServerToken.Reveal() != "bbs-two" ||
+		c2.Secrets.GitHubToken.Reveal() != "gh-two" || c2.Secrets.LLMAPIKey.IsSet() || c1.Secrets.GitHubToken.IsSet() {
 		t.Errorf("c2 secrets wrong")
 	}
 	if c1.Secrets.ServeAccessToken.Reveal() != "access-1" {

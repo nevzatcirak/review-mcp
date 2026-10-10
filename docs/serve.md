@@ -20,7 +20,7 @@ still act under their own provider identity.
 ## Trust model
 
 - **Headers carry identity.** Every request brings the caller's own Gitea token,
-  Bitbucket Server token and (by default) LLM API key in headers. The server
+  Bitbucket Server token, GitHub token and (by default) LLM API key in headers. The server
   has no identity of its own toward your providers. Provider tokens in the
   server's environment are a startup error in serve mode
   (`serve mode takes provider tokens from request headers; unset REVIEW_MCP_GITEA_TOKEN`),
@@ -82,7 +82,7 @@ or an environment variable. The `--listen` flag overrides `serve.listen`.
 
 Validation rules in serve mode:
 
-- `REVIEW_MCP_GITEA_TOKEN` and `REVIEW_MCP_BITBUCKET_SERVER_TOKEN` must be unset.
+- `REVIEW_MCP_GITEA_TOKEN`, `REVIEW_MCP_BITBUCKET_SERVER_TOKEN` and `REVIEW_MCP_GITHUB_TOKEN` must be unset.
 - With `llm_key_source = header`, `REVIEW_MCP_LLM_API_KEY` must be unset.
 - With `llm_key_source = server`, both `REVIEW_MCP_LLM_API_KEY` and
   `REVIEW_MCP_SERVE_ACCESS_TOKEN` are required (the access token keeps the
@@ -97,10 +97,11 @@ Validation rules in serve mode:
 |---|---|
 | `X-Review-MCP-Gitea-Token` | the caller's Gitea token |
 | `X-Review-MCP-Bitbucket-Server-Token` | the caller's Bitbucket Server token |
+| `X-Review-MCP-GitHub-Token` | the caller's GitHub token |
 | `X-Review-MCP-LLM-API-Key` | the LLM key; used only when `llm_key_source = header` (ignored when `server`) |
 | `Authorization: Bearer <access token>` | the server access token, when one is configured |
 
-Rules for the three `X-Review-MCP-` headers:
+Rules for the `X-Review-MCP-` headers:
 
 - Values are trimmed (spaces and tabs); an empty value counts as absent.
 - A value longer than 4096 bytes, or containing anything other than visible
@@ -110,7 +111,7 @@ Rules for the three `X-Review-MCP-` headers:
   could act under the wrong identity.
 - A call that needs a credential the request lacks fails with
   `no Gitea token in this request: set the X-Review-MCP-Gitea-Token header in your MCP client configuration`
-  (or the Bitbucket Server or LLM equivalent), before any request to the
+  (or the Bitbucket Server, GitHub or LLM equivalent), before any request to the
   provider or the LLM is made.
 
 `server_info` in serve mode adds `transport: serve`, the listen address, the
@@ -167,8 +168,8 @@ Claude Code expands `${VAR}` when it starts:
 
 Leave out the headers you do not need: the LLM key header when the server
 supplies the key (`llm_key_source = server`), the `Authorization` header when no
-access token is configured, and the Gitea or Bitbucket header for a provider
-you do not use (`X-Review-MCP-Bitbucket-Server-Token`).
+access token is configured, and the Gitea, Bitbucket or GitHub header for a provider
+you do not use (`X-Review-MCP-Bitbucket-Server-Token`, `X-Review-MCP-GitHub-Token`).
 
 ### opencode
 
@@ -285,7 +286,7 @@ docker run --rm -p 127.0.0.1:8787:8787 \
 ```
 
 The key files must be readable by the image's non-root user. A private CA for
-your provider needs `REVIEW_MCP_GITEA_CA_CERT` (or the Bitbucket one) pointing
+your provider needs `REVIEW_MCP_GITEA_CA_CERT` (or the Bitbucket or GitHub one) pointing
 at a mounted PEM file. Because the image has no shell, use `GET /healthz` from
 the orchestrator for health checks.
 

@@ -20,15 +20,18 @@ const (
 	KindGitea Kind = "gitea"
 	// KindBitbucketServer is the Bitbucket Server / Data Center provider.
 	KindBitbucketServer Kind = "bitbucket_server"
+	// KindGitHub is the GitHub provider (github.com and GitHub Enterprise
+	// Server).
+	KindGitHub Kind = "github"
 )
 
 // PRRef identifies one pull request.
 //
-// Namespace is the Gitea owner or the Bitbucket project key ("~user" for
-// personal repositories). It may contain "/" (nested groups, such as
+// Namespace is the Gitea or GitHub owner or the Bitbucket project key
+// ("~user" for personal repositories). It may contain "/" (nested groups, such as
 // "group/sub/team" on GitLab); each Factory.ParsePRPath decides how many
-// URL segments are namespace, and Gitea and Bitbucket Server accept exactly
-// one. Whatever builds a URL, a cache path or a log field from it escapes it
+// URL segments are namespace, and Gitea, Bitbucket Server and GitHub accept
+// exactly one. Whatever builds a URL, a cache path or a log field from it escapes it
 // per segment (EscapeNamespace), never as one string. URL is the
 // user-supplied PR URL; it may only be logged through logging.RedactURL.
 type PRRef struct {
@@ -57,8 +60,9 @@ type PullRequest struct {
 	Title, Description, Author, SourceBranch, TargetBranch, HeadSHA, BaseSHA, WebURL string
 	State                                                                            string
 	// BaseStrategy says how BaseSHA was chosen. It is one of BaseGiteaMergeBase,
-	// BaseGiteaBaseSHA, BaseBBSMergeBaseEP and BaseBBSAncestorWalk. GetDiff
-	// uses BaseSHA and BaseStrategy as given.
+	// BaseGiteaBaseSHA, BaseBBSMergeBaseEP, BaseBBSAncestorWalk,
+	// BaseGitHubMergeBase and BaseGitHubBaseSHA. GetDiff uses BaseSHA and
+	// BaseStrategy as given.
 	BaseStrategy string
 
 	// The fields below feed pr_info (X-23). They carry states and identities
@@ -70,8 +74,22 @@ type PullRequest struct {
 	// it next to State; Bitbucket Server uses State "MERGED").
 	Merged bool
 	// Mergeable is the provider's own verdict carried by the PR itself
-	// (Gitea); nil when the PR payload has none.
+	// (Gitea, GitHub); nil when the PR payload has none.
 	Mergeable *bool
+	// MergeableState is the provider's structured merge state where it has
+	// one (GitHub's mergeable_state, such as "clean", "dirty" or
+	// "blocked"); "" otherwise. It is an enum value for mapping to fixed
+	// texts and is never shown as it is.
+	MergeableState string
+	// ChangedFiles is the number of changed files the provider reports for
+	// the PR itself (GitHub's changed_files); 0 when it reports none. GetDiff
+	// compares it with the files the host lists to tell when the listing
+	// was cut short.
+	ChangedFiles int
+	// CommitCount is the total number of commits the provider reports for
+	// the PR itself (GitHub's commits). 0 means unknown: providers that know
+	// the total set it, the others leave it 0.
+	CommitCount int
 
 	// Version is the provider's optimistic-locking token for the PR, in
 	// decimal; "" when the provider has none (Gitea). Bitbucket Server
@@ -158,6 +176,11 @@ const (
 	BaseGiteaBaseSHA    = "gitea:base_sha"
 	BaseBBSMergeBaseEP  = "bbs:merge_base_endpoint"
 	BaseBBSAncestorWalk = "bbs:ancestor_walk"
+	// BaseGitHubMergeBase: the merge base GitHub's compare endpoint reports.
+	BaseGitHubMergeBase = "github:merge_base"
+	// BaseGitHubBaseSHA: the target branch's revision recorded on the pull
+	// request, used when the compare endpoint could not be read.
+	BaseGitHubBaseSHA = "github:base_sha"
 )
 
 // Diff is the result of Provider.GetDiff.
@@ -166,6 +189,11 @@ type Diff struct {
 	Skipped []SkippedFile
 	// BaseStrategy is copied from PullRequest.BaseStrategy.
 	BaseStrategy string
+	// Notes are fixed sentences about changed files the host did not list
+	// at all, so that they appear neither in Files nor in Skipped (GitHub
+	// lists at most 3000 files of a pull request). Nil for a complete
+	// listing.
+	Notes []string
 }
 
 // DiffOptions tunes GetDiff. When Include is non-nil, a file for which it
@@ -186,7 +214,14 @@ type Comment struct {
 type Capabilities struct {
 	GFM, MarkdownTables, Labels, InlineComments bool
 	// SuggestionBlocks: an inline comment can carry a native suggestion block.
+	// It is true exactly when SuggestionStyle is not SuggestionStyleNone (the
+	// contract suite checks this); code that renders a block reads the
+	// syntax through NativeSuggestionStyle.
 	SuggestionBlocks bool
+	// SuggestionStyle is the syntax of the native suggestion block, and
+	// with it which lines the block replaces; SuggestionStyleNone without
+	// SuggestionBlocks.
+	SuggestionStyle SuggestionStyle
 	// QuickActions: a published line that starts with "/" runs a quick
 	// action, so every published body is slash-sanitised (SanitizeBody).
 	QuickActions bool
@@ -199,6 +234,35 @@ type Capabilities struct {
 	// DescriptionEdit: the PR description can be updated through the API.
 	DescriptionEdit bool
 }
+
+// NativeSuggestionStyle returns the suggestion style an inline comment may
+// use: SuggestionStyle when SuggestionBlocks is set, and SuggestionStyleNone
+// otherwise (no native block, whatever SuggestionStyle says).
+func (c Capabilities) NativeSuggestionStyle() SuggestionStyle {
+	if !c.SuggestionBlocks {
+		return SuggestionStyleNone
+	}
+	return c.SuggestionStyle
+}
+
+// SuggestionStyle is the syntax of a provider's native suggestion block
+// (design §5, the suggestion-block precondition). The values name the
+// syntax, never a provider, so that code branches on the capability.
+type SuggestionStyle string
+
+// Suggestion styles.
+const (
+	// SuggestionStyleNone: the provider has no native suggestion block.
+	SuggestionStyleNone SuggestionStyle = ""
+	// SuggestionStyleRange: a fence with the info string "suggestion" that
+	// replaces every line the comment is attached to, InlineComment.Line to
+	// InlineComment.EndLine (GitHub's start_line to line).
+	SuggestionStyleRange SuggestionStyle = "range"
+	// SuggestionStyleOffset: the comment sits on one line, and the info
+	// string "suggestion:-0+N" says the block replaces that line and the N
+	// lines below it (GitLab).
+	SuggestionStyleOffset SuggestionStyle = "offset"
+)
 
 // SanitizeBody returns body ready to be published for a provider with caps.
 // When caps.QuickActions is set it puts a space in front of every line that
@@ -293,7 +357,7 @@ type ReplyResult struct {
 
 // User is the identity of a provider account. ID is the provider's numeric
 // user id in decimal, or "" when the provider did not report one; Name is
-// the login (Gitea) or user name (Bitbucket Server).
+// the login (Gitea, GitHub) or user name (Bitbucket Server).
 type User struct {
 	ID, Name string
 }
@@ -316,8 +380,16 @@ type InlineComment struct {
 	// OldPath is the file's old path for a rename, and "" otherwise.
 	// Bitbucket Server sends it as the anchor's srcPath; Gitea ignores it.
 	OldPath string
-	// Line is the absolute new-side line number.
-	Line     int
+	// Line is the absolute new-side line number: the comment's line, or the
+	// first line of its range.
+	Line int
+	// EndLine is the last new-side line of a multi-line range, which runs
+	// from Line to EndLine inside one hunk; 0 (or Line) for a comment on one
+	// line. A provider that can anchor a comment on a range (GitHub's
+	// start_line and line) uses it; the others ignore it and post on Line
+	// (Gitea, Bitbucket Server).
+	EndLine int
+	// LineType is the type of Line.
 	LineType LineType
 	Body     string
 }

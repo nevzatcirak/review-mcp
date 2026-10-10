@@ -32,8 +32,11 @@ const genericProblem = "the configuration could not be loaded; see the server lo
 
 // ProviderInfo describes an enabled provider.
 type ProviderInfo struct {
-	Kind    string `json:"kind" jsonschema:"provider kind, for example gitea or bitbucket_server"`
+	Kind    string `json:"kind" jsonschema:"provider kind: gitea, bitbucket_server or github"`
 	BaseURL string `json:"base_url" jsonschema:"provider base URL with credentials and query values removed"`
+	// APIURL is set only when the provider calls an API base other than
+	// BaseURL (GitHub).
+	APIURL string `json:"api_url,omitempty" jsonschema:"API base URL when it differs from base_url (GitHub), with credentials and query values removed"`
 }
 
 // ServerInfoResult is the structured result of the server_info tool.
@@ -91,7 +94,7 @@ func ServerInfo(cfg *config.Config, rep *config.Report, loadErr error) ServerInf
 		Config:    sum,
 	}
 	for _, p := range sum.Providers {
-		res.Providers = append(res.Providers, ProviderInfo{Kind: p.Kind, BaseURL: p.BaseURL})
+		res.Providers = append(res.Providers, ProviderInfo{Kind: p.Kind, BaseURL: p.BaseURL, APIURL: p.APIURL})
 	}
 	if loadErr != nil {
 		res.Status = StatusConfigInvalid
@@ -181,7 +184,11 @@ func RenderServerInfoMarkdown(r ServerInfoResult) string {
 		b.WriteString("None enabled.\n")
 	}
 	for _, p := range r.Providers {
-		b.WriteString("- " + codeSpan(p.Kind) + ": " + codeSpan(p.BaseURL) + "\n")
+		b.WriteString("- " + codeSpan(p.Kind) + ": " + codeSpan(p.BaseURL))
+		if p.APIURL != "" {
+			b.WriteString(" (API " + codeSpan(p.APIURL) + ")")
+		}
+		b.WriteString("\n")
 	}
 
 	if r.Serve != nil {

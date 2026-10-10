@@ -45,6 +45,9 @@ func TestRequireCredentials(t *testing.T) {
 		{"provider before llm", provider.KindGitea, secretsCfg("", "", ""), true, MissingGiteaTokenMessage},
 		{"llm not needed", provider.KindGitea, secretsCfg("g", "", ""), false, ""},
 		{"nil config", provider.KindBitbucketServer, nil, true, MissingBitbucketServerTokenMessage},
+		{"github missing", provider.KindGitHub, secretsCfg("g", "b", "k"), true, MissingGitHubTokenMessage},
+		{"github ok", provider.KindGitHub, config.Defaults().WithSecrets(config.Secrets{GitHubToken: config.NewSecret("h")}), false, ""},
+		{"github before llm", provider.KindGitHub, config.Defaults().WithSecrets(config.Secrets{GitHubToken: config.NewSecret("h")}), true, MissingLLMAPIKeyMessage},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -84,6 +87,9 @@ func TestRequestErrorMessages(t *testing.T) {
 	}
 	if got := UserMessage(&credentials.MalformedError{Header: credentials.HeaderLLMAPIKey}); got != "malformed credential header: X-Review-MCP-LLM-API-Key" {
 		t.Errorf("malformed = %q", got)
+	}
+	if got := UserMessage(errMissingGH); got != "no GitHub token in this request: set the X-Review-MCP-GitHub-Token header in your MCP client configuration" {
+		t.Errorf("github = %q", got)
 	}
 	if ErrCredentialsMissing.Error() != "credentials_missing" {
 		t.Errorf("sentinel text = %q", ErrCredentialsMissing.Error())

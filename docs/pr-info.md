@@ -47,7 +47,7 @@ The structured result has the same facts:
 | `reviewers[].at` | when the state was given; omitted when the provider does not say |
 | `approvals` | `{approved, changes_requested, pending}` counted over `reviewers` (reviewers who only commented are in none of them); `null` with `reviewers` |
 | `required_approvals` | the number of approvals the target branch requires; `0` with a note when no protection rule applies; `null` when it is not known |
-| `required_approvals_note` | a fixed text whenever `required_approvals` is `null` or `0` because no rule applies: "not readable with this token", "a protection pattern could not be evaluated" or "no branch protection rule applies to the target branch" (see [Troubleshooting](troubleshooting.md#pr_info-required_approvals-notes)) |
+| `required_approvals_note` | a fixed text whenever `required_approvals` is `null`, `0` because no rule applies, or a lower bound: "not readable with this token", "a protection pattern could not be evaluated", "no branch protection rule applies to the target branch", or (GitHub) "classic branch protection is not readable with this token; the required count may be higher" (see [Troubleshooting](troubleshooting.md#pr_info-required_approvals-notes)) |
 | `mergeable` | `true`, `false`, or `null` when unknown (also `null` for a pull request that is not open) |
 | `merge_blockers` | short fixed reasons, only where the provider gives structured ones |
 | `review_mcp_activity` | `{overview, inline_findings}`: what review-mcp wrote as the token's user; `null` when it could not be read |
@@ -122,10 +122,46 @@ Rules:
   gives `null` and the note. The veto wording differs between Bitbucket
   versions and plugins and is confirmed at live acceptance.
 
+### GitHub
+
+| Fact | Source |
+|---|---|
+| title, author, state, `draft`, branches, head, `mergeable`, `mergeable_state`, requested reviewers and teams, the commit count | `GET /repos/{o}/{r}/pulls/{n}` (read again for the status) |
+| merge base | `GET .../compare/{base}...{head}` |
+| reviewer states | `GET .../pulls/{n}/reviews` (all pages) |
+| required approvals | `GET .../rules/branches/{branch}` (rulesets) and `GET .../branches/{branch}/protection` (classic protection) |
+| review-mcp's own marked reviews and comments | `GET .../pulls/{n}/reviews/{id}/comments`, the comments of the pull request, `GET /user` |
+
+Rules:
+
+- Per user, the latest review that is `APPROVED` or `CHANGES_REQUESTED`
+  decides. `DISMISSED` reviews never count (GitHub turns a dismissed review
+  itself into a `DISMISSED` one), `PENDING` drafts are not reported, and a
+  `COMMENTED` review counts only when the user has no decisive one. `stale` is
+  true when the review's commit is not the head.
+- A requested team is listed as `@{owner}/{slug}` with the team's name as
+  display name, `requested: true` and state `pending`.
+- Required approvals use **both** sources and report the larger readable count.
+  A ruleset count with an unreadable classic protection gives that count with
+  the note "classic branch protection is not readable with this token; the
+  required count may be higher". With neither readable it is `null` and "not
+  readable with this token"; GitHub answers an unprotected branch and a token
+  without admin rights alike, so a count of `0` is reported only when it was
+  read. The exact table is in [GitHub](github.md#pr_info).
+- `mergeable` is the pull request's own flag (`null` while GitHub has not
+  computed it). The blockers come from `mergeable_state`: "merge conflict",
+  "required reviews or checks are not satisfied", "the branch is behind the
+  target branch", "the pull request is a draft", and "other merge check" for
+  an unknown state. **`unstable` is not a blocker**: it means that only checks
+  that are not required fail or are pending, and it adds the note "some checks
+  that are not required are failing or pending".
+- A pull request with more than 250 commits gets the note "GitHub lists at most
+  250 commits of a pull request; the commits past them are not available."
+
 ## Why review-mcp's own reviews are not reviewers
 
-On Gitea, `pr_review` with `publish=true` posts its inline findings as a
-review, written by the token's user. Counted as a review, an AI review would
+On Gitea and GitHub, `pr_review` with `publish=true` posts its inline findings
+as a review, written by the token's user. Counted as a review, an AI review would
 look like a person looking at the change. So:
 
 - A review of the token's user that carries a review-mcp marker (the overview
@@ -163,4 +199,7 @@ include review-mcp's own.
 Gitea: `read:repository`, `read:issue` and `read:user`. Reading branch
 protection may need repository admin; without it `required_approvals` is
 `null` with the note, which is expected. Bitbucket Server: repository read.
+GitHub: Pull requests read (and Contents and Metadata read); reading classic
+branch protection needs Administration read, without which the count comes from
+the rulesets alone, with a note.
 The full endpoint list is in the [Setup guide](setup.md#what-each-token-needs).

@@ -44,6 +44,7 @@ type fakeProvider struct {
 	files      []provider.FilePatch
 	threads    []provider.Thread
 	threadsErr error
+	diffNotes  []string
 	calls      []string
 }
 
@@ -55,7 +56,7 @@ func (f *fakeProvider) GetPullRequest(context.Context, provider.PRRef) (*provide
 
 func (f *fakeProvider) GetDiff(_ context.Context, _ provider.PRRef, _ *provider.PullRequest, opts provider.DiffOptions) (*provider.Diff, error) {
 	f.calls = append(f.calls, "diff")
-	d := &provider.Diff{}
+	d := &provider.Diff{Notes: f.diffNotes}
 	for _, fp := range f.files {
 		if opts.Include != nil && !opts.Include(fp.Path) {
 			d.Skipped = append(d.Skipped, provider.SkippedFile{Path: fp.Path, Reason: provider.SkipFiltered})
@@ -1098,5 +1099,16 @@ func TestConfigInvalid(t *testing.T) {
 	}
 	if len(h.prov.calls) != 0 || len(h.llm.calls) != 0 {
 		t.Errorf("provider %v llm %d", h.prov.calls, len(h.llm.calls))
+	}
+}
+
+// TestProviderDiffNotes: the provider's note about files it did not list
+// reaches the result.
+func TestProviderDiffNotes(t *testing.T) {
+	h := newHarness(oneCallAnswers())
+	h.prov.diffNotes = []string{"GitHub lists at most 3000 files of a pull request: 2 more changed files were not listed, so they are not reviewed (file_limit)."}
+	res := h.run(t, Args{})
+	if !slices.Contains(res.Notes, "GitHub lists at most 3000 files of a pull request: 2 more changed files were not listed, so they are not reviewed (file_limit).") {
+		t.Errorf("notes = %q", res.Notes)
 	}
 }

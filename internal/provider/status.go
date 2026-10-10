@@ -28,6 +28,11 @@ type Reviewer struct {
 	At time.Time
 }
 
+// NoteResolutionUnavailable is the fixed note of pr_comments for a provider
+// that reports no resolved state for any thread (neither
+// InlineThreadResolution nor GeneralThreadResolution): all threads are shown.
+const NoteResolutionUnavailable = "Resolved state is not available on GitHub without GraphQL; all threads are shown."
+
 // Fixed notes of a ReviewStatus. They are the only text a provider adds.
 const (
 	NoteReviewsUnreadable = "The reviews could not be read, so the reviewers are not listed."
@@ -35,6 +40,14 @@ const (
 	// NoteActivityUnclassified: a review of the token's user could not be
 	// told from review-mcp's own, so it is left out of the reviewers.
 	NoteActivityUnclassified = "A review by the token's user could not be checked for review-mcp's markers and is not listed."
+	// NoteCommitsTruncated: GitHub lists at most 250 commits of a pull
+	// request, so the commit messages read for it (GetCommitMessages) stop
+	// there.
+	NoteCommitsTruncated = "GitHub lists at most 250 commits of a pull request; the commits past them are not available."
+	// NoteChecksNotRequired: GitHub's "unstable" merge state, a pull
+	// request that can be merged while some non-required checks fail or are
+	// pending. It is not a blocker.
+	NoteChecksNotRequired = "some checks that are not required are failing or pending"
 )
 
 // Fixed merge blockers. A provider maps structured server reasons to these
@@ -45,6 +58,13 @@ const (
 	BlockerBuilds     = "required builds are missing or failing"
 	BlockerConflict   = "merge conflict"
 	BlockerOtherCheck = "other merge check"
+	// BlockerRequirements: the host blocks the merge for required reviews or
+	// required checks and does not say which (GitHub's "blocked").
+	BlockerRequirements = "required reviews or checks are not satisfied"
+	// BlockerBehind: the head branch is behind the target branch and the
+	// host requires it to be up to date.
+	BlockerBehind = "the branch is behind the target branch"
+	BlockerDraft  = "the pull request is a draft"
 )
 
 // Fixed notes for RequiredApprovals (RequiredApprovalsNote).
@@ -59,6 +79,10 @@ const (
 	// NoteProtectionPatternUnevaluable accompanies a nil RequiredApprovals
 	// when no rule matched but a rule pattern could not be evaluated.
 	NoteProtectionPatternUnevaluable = "a protection pattern could not be evaluated"
+	// NoteClassicProtectionUnreadable accompanies a RequiredApprovals taken
+	// from the rulesets alone, when the classic branch protection (which
+	// may ask for more) could not be read.
+	NoteClassicProtectionUnreadable = "classic branch protection is not readable with this token; the required count may be higher"
 )
 
 // ReviewStatusOptions tunes GetReviewStatus.

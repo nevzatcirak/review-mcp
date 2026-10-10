@@ -74,7 +74,9 @@ func TestPublishInlineComments(t *testing.T) {
 	want := []provider.InlineComment{
 		{Path: "src/app.go", Line: 11, LineType: provider.LineAdded,
 			Body: "inline Off by one gfm=true\n\n" + FingerprintMarker(Fingerprint("src/app.go", "Off by one", kis[0].IssueContent))},
-		{Path: "src/app.go", Line: 10, LineType: provider.LineContext,
+		// The context finding's range, 10 to 12, is inside the hunk: the
+		// item carries it (a provider without ranges ignores EndLine).
+		{Path: "src/app.go", Line: 10, EndLine: 12, LineType: provider.LineContext,
 			Body: "inline Context finding gfm=true\n\n" + FingerprintMarker(Fingerprint("src/app.go", "Context finding", kis[1].IssueContent))},
 	}
 	if !slices.Equal(h.prov.inline[0], want) {

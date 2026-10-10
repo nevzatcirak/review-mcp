@@ -62,6 +62,7 @@ type Secrets struct {
 	LLMAPIKey            Secret `json:"llm_api_key"`
 	GiteaToken           Secret `json:"gitea_token"`
 	BitbucketServerToken Secret `json:"bitbucket_server_token"`
+	GitHubToken          Secret `json:"github_token"`
 	// ServeAccessToken is the serve-mode access token
 	// (REVIEW_MCP_SERVE_ACCESS_TOKEN). Only the HTTP middleware reads it.
 	ServeAccessToken Secret `json:"serve_access_token"`

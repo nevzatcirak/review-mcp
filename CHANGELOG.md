@@ -5,6 +5,118 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.3] - Unreleased
+
+Third v2 release candidate, built on 2.0.0-rc.2 (the npm dist-tag `next`;
+`latest` moves only at 2.0.0). One new provider, GitHub (github.com and GitHub
+Enterprise Server). Nothing in the existing tools or in the configuration is
+removed or renamed; Gitea and Bitbucket Server behave as before. The GitHub
+provider has been tested against fake servers only; the live acceptance on
+github.com (spec 2B §5, items Q1 to Q5) is still to be done, and the token
+permissions below are unconfirmed until then.
+
+### Added
+
+- The GitHub provider (X-28), for every tool that reads or writes a pull
+  request, in stdio and serve mode. The guide is [GitHub](docs/github.md).
+  - Configuration: `github.base_url` (`REVIEW_MCP_GITHUB_BASE_URL`, **no
+    default**; GitHub is enabled only when it is set), `github.api_url`
+    (`REVIEW_MCP_GITHUB_API_URL`, optional), `github.ca_cert`
+    (`REVIEW_MCP_GITHUB_CA_CERT`), `github.insecure_skip_verify`
+    (`REVIEW_MCP_GITHUB_INSECURE_SKIP_VERIFY`) and the secret
+    `REVIEW_MCP_GITHUB_TOKEN`. In serve mode the token comes from the header
+    `X-Review-MCP-GitHub-Token` and the environment token is refused, as for
+    the other providers. When `github.api_url` is unset it is derived:
+    `https://api.github.com` for exactly `https://github.com`, otherwise
+    `{base_url}/api/v3` (GitHub Enterprise Server). `server_info` lists the
+    provider with its API URL and the token as set or unset.
+  - Token: a classic or fine-grained personal access token (fine-grained: Pull
+    requests read and write, Contents read, Metadata read; classic: `repo` or
+    `public_repo`). The pull request URL is
+    `{base_url}/{owner}/{repo}/pull/{n}`.
+  - Reading: the pull request, the base revision from GitHub's compare endpoint
+    (`github:merge_base`, else `github:base_sha`), the diff and the file
+    contents, the commit messages and the token's user. All lists follow the
+    `Link` header, and only a next link on the API base.
+  - Rate limits: a `403` or `429` with `X-RateLimit-Remaining: 0` or
+    `Retry-After` is the new error class `rate_limited`, "the server
+    rate-limited the request (HTTP 403): retry after <time> UTC" with the reset
+    time when it is known. One wait, only when the reset is at most 60 seconds
+    away and before the call's deadline, then one retry.
+  - Limits: GitHub lists at most 3000 files and 250 commits. Files past 3000
+    are reported in a note on every tool that reads the diff, through the new
+    `provider.Diff.Notes`; `pr_info` notes the commits past 250, and
+    `pr_describe` adds "The pull request has N commits, but only M commit
+    messages could be read; the description used those." when the provider
+    counts more commits than it returned (GitHub fills the new
+    `PullRequest.CommitCount`; Gitea and Bitbucket Server leave it 0, so they
+    never show it).
+  - Comments: `pr_comments` lists issue comments, reviews with a body and
+    review comments grouped into threads. Resolved state is not readable through
+    REST, so every thread is shown and `pr_comments` gains a `notes` field with
+    "Resolved state is not available on GitHub without GraphQL; all threads are
+    shown." Replies go into an inline thread, or are a quoting PR-level comment
+    for a general comment; an edit checks the author first. A comment id that
+    names more than one comment (GitHub numbers issue comments, review comments
+    and review bodies separately) is refused before any write.
+  - Publishing: inline comments are posted as one review per run, event
+    `COMMENT`, pinned to the head commit, with no body of its own and a range
+    (`start_line` to `line`) where the finding or suggestion covers one. If
+    GitHub refuses the review as a whole (422), each comment is posted alone and
+    a refused one is `unanchorable`; any other failure posts nothing again. A
+    review without a body has not been verified against GitHub.
+  - `pr_improve` posts a native suggestion block on GitHub (see the changes
+    below), and `pr_review` anchors a finding on its whole range there.
+  - `pr_info`: reviews folded per user, requested teams as `@owner/slug`,
+    review-mcp's own reviews excluded. Required approvals combine the rulesets
+    and the classic branch protection and report the larger readable count; if
+    only the rulesets can be read, the note "classic branch protection is not
+    readable with this token; the required count may be higher" is added. The
+    merge blockers come from `mergeable_state`; `unstable` (only checks that are
+    not required fail or are pending) is **not** a blocker and adds the note
+    "some checks that are not required are failing or pending".
+  - The description edit (`PATCH /pulls/{n}` with `title` and `body` only, the
+    re-read rule of Gitea) and the repository context (clone
+    `{base_url}/{owner}/{repo}.git`, ref `refs/pull/{n}/head`, HTTP Basic
+    `x-access-token` first).
+  - Not supported: GraphQL, thread resolution, GitHub Apps and OAuth flows.
+- Provider interface and contract: `InlineComment.EndLine` (the last line of a
+  range; Gitea and Bitbucket Server ignore it and post on `Line`),
+  `Capabilities.SuggestionStyle` (`range` or `offset`, naming the syntax of a
+  native block; `SuggestionBlocks` is true exactly when a style is set),
+  `provider.Diff.Notes`, the error class `rate_limited` with a reset hint, new
+  fixed merge blockers ("required reviews or checks are not satisfied", "the
+  branch is behind the target branch", "the pull request is a draft") and new
+  fixed notes. The contract suite has GitHub's fixture on a fake GHES API and a
+  `range_posted` case.
+- Docs: [GitHub](docs/github.md), a GitHub section in the
+  [Setup guide](docs/setup.md#github) and in
+  [Troubleshooting](docs/troubleshooting.md#github), X-28 in the decisions
+  document, and GitHub named wherever a page listed Gitea and Bitbucket Server
+  as the only hosts.
+
+### Changed
+
+- **Native suggestion blocks exist now.** The 2.0.0-rc.2 entry for `pr_improve`
+  says that no provider sets `SuggestionBlocks` and that native blocks are
+  exercised only with a fake capability. That is no longer true: GitHub sets
+  it. On GitHub an inline suggestion is a native suggestion block that replaces
+  exactly the lines the comment covers, when the suggestion is verified, its
+  whole range is on new-side lines of one hunk and its improved code can be
+  re-indented onto the real lines. The model's quote may drop indentation; the
+  improved code gets the real lines' extra leading white space, and in every case
+  that cannot be proven safe (added indentation, tabs against spaces) the
+  comment keeps the fenced `diff` block. A wrongly indented block is never
+  posted. Gitea and Bitbucket Server keep the diff block and their output is
+  unchanged. [Suggesting code changes](docs/improve.md#inline-comments)
+  describes the rule.
+- `provider.InlineResult.Reason` (2.0.0-rc.2) is now set by three providers, not
+  two; the contract suite checks all of them.
+- The startup problem "no provider enabled" now names `github.base_url`
+  (`REVIEW_MCP_GITHUB_BASE_URL`) next to the Gitea and Bitbucket Server keys.
+- The `rate_limited` sentence can now be followed by `(HTTP 403)` and a reset
+  time; on Gitea and Bitbucket Server it is still `(HTTP 429)` only.
+
 ## [2.0.0-rc.2]
 
 Second v2 release candidate, built on 2.0.0-rc.1 (the npm dist-tag `next`;

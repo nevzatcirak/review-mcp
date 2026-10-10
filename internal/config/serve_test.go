@@ -134,6 +134,14 @@ func TestServeRefusesEnvProviderTokens(t *testing.T) {
 	if !hasProblem(ps, "serve mode takes provider tokens from request headers; unset REVIEW_MCP_BITBUCKET_SERVER_TOKEN") {
 		t.Errorf("bitbucket token in env not refused: %v", ps)
 	}
+	ps = serveProblems(t, serveEnv(map[string]string{"REVIEW_MCP_GITHUB_TOKEN": fakeGitHub, "REVIEW_MCP_GITHUB_BASE_URL": "https://github.example.com"}), nil)
+	if !hasProblem(ps, "serve mode takes provider tokens from request headers; unset REVIEW_MCP_GITHUB_TOKEN") {
+		t.Errorf("github token in env not refused: %v", ps)
+	}
+	// An enabled GitHub needs no token in serve mode either.
+	if ps := serveProblems(t, serveEnv(map[string]string{"REVIEW_MCP_GITHUB_BASE_URL": "https://github.example.com"}), nil); ps != nil {
+		t.Errorf("serve with github and no env token: %v", ps)
+	}
 	// An enabled provider needs no token in serve mode, only its base URL.
 	env := serveEnv(map[string]string{"REVIEW_MCP_BITBUCKET_SERVER_BASE_URL": "https://bitbucket.example.com/stash"})
 	if ps := serveProblems(t, env, nil); ps != nil {
@@ -299,6 +307,7 @@ func TestServeAllViolationsTogetherAndTokenFree(t *testing.T) {
 	env := serveEnv(map[string]string{
 		"REVIEW_MCP_GITEA_TOKEN":                fakeGitea,
 		"REVIEW_MCP_BITBUCKET_SERVER_TOKEN":     fakeBitbkt,
+		"REVIEW_MCP_GITHUB_TOKEN":               fakeGitHub,
 		"REVIEW_MCP_LLM_API_KEY":                fakeLLMKey,
 		"REVIEW_MCP_SERVE_ACCESS_TOKEN":         fakeAccess,
 		"REVIEW_MCP_SERVE_LISTEN":               "0.0.0.0:8787",
@@ -308,7 +317,7 @@ func TestServeAllViolationsTogetherAndTokenFree(t *testing.T) {
 	})
 	ps := serveProblems(t, env, nil) // also asserts no secret in any problem
 	for _, want := range []string{
-		"unset REVIEW_MCP_GITEA_TOKEN", "unset REVIEW_MCP_BITBUCKET_SERVER_TOKEN", "unset REVIEW_MCP_LLM_API_KEY",
+		"unset REVIEW_MCP_GITEA_TOKEN", "unset REVIEW_MCP_BITBUCKET_SERVER_TOKEN", "unset REVIEW_MCP_GITHUB_TOKEN", "unset REVIEW_MCP_LLM_API_KEY",
 		"is not a loopback address", "serve.allowed_origins[0]", "serve.max_concurrent_calls", "llm.context_window",
 	} {
 		if !hasProblem(ps, want) {

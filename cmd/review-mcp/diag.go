@@ -317,8 +317,10 @@ type prReport struct {
 	Commits      []string      `json:"commits"`
 	Files        []fileJSON    `json:"files"`
 	Skipped      []skippedJSON `json:"skipped"`
-	Totals       totalsJSON    `json:"totals"`
-	ElapsedMS    int64         `json:"elapsed_ms"`
+	// Notes are the provider's fixed notes about files it did not list.
+	Notes     []string   `json:"notes"`
+	Totals    totalsJSON `json:"totals"`
+	ElapsedMS int64      `json:"elapsed_ms"`
 }
 
 func buildPRReport(ref provider.PRRef, pr *provider.PullRequest, commits []string, d *provider.Diff, elapsed time.Duration) prReport {
@@ -338,6 +340,7 @@ func buildPRReport(ref provider.PRRef, pr *provider.PullRequest, commits []strin
 		Commits:      []string{},
 		Files:        []fileJSON{},
 		Skipped:      []skippedJSON{},
+		Notes:        append([]string{}, d.Notes...),
 		ElapsedMS:    elapsed.Milliseconds(),
 	}
 	for _, c := range commits {

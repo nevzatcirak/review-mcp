@@ -14,6 +14,7 @@ const (
 	envLLMAPIKey            = "REVIEW_MCP_LLM_API_KEY"            //nolint:gosec // G101 false positive: an environment variable name, not a credential
 	envGiteaToken           = "REVIEW_MCP_GITEA_TOKEN"            //nolint:gosec // G101 false positive: an environment variable name, not a credential
 	envBitbucketServerToken = "REVIEW_MCP_BITBUCKET_SERVER_TOKEN" //nolint:gosec // G101 false positive: an environment variable name, not a credential
+	envGitHubToken          = "REVIEW_MCP_GITHUB_TOKEN"           //nolint:gosec // G101 false positive: an environment variable name, not a credential
 	envServeAccessToken     = "REVIEW_MCP_SERVE_ACCESS_TOKEN"     //nolint:gosec // G101 false positive: an environment variable name, not a credential
 )
 
@@ -51,6 +52,12 @@ var table = []entry{
 	{"bitbucket_server.base_url", "REVIEW_MCP_BITBUCKET_SERVER_BASE_URL", func(c *Config) any { return &c.BitbucketServer.BaseURL }},
 	{"bitbucket_server.ca_cert", "REVIEW_MCP_BITBUCKET_SERVER_CA_CERT", func(c *Config) any { return &c.BitbucketServer.CACert }},
 	{"bitbucket_server.insecure_skip_verify", "REVIEW_MCP_BITBUCKET_SERVER_INSECURE_SKIP_VERIFY", func(c *Config) any { return &c.BitbucketServer.InsecureSkipVerify }},
+
+	// github.* rows: v2 spec 2B §1 item 1 (X-28).
+	{"github.base_url", "REVIEW_MCP_GITHUB_BASE_URL", func(c *Config) any { return &c.GitHub.BaseURL }},
+	{"github.api_url", "REVIEW_MCP_GITHUB_API_URL", func(c *Config) any { return &c.GitHub.APIURL }},
+	{"github.ca_cert", "REVIEW_MCP_GITHUB_CA_CERT", func(c *Config) any { return &c.GitHub.CACert }},
+	{"github.insecure_skip_verify", "REVIEW_MCP_GITHUB_INSECURE_SKIP_VERIFY", func(c *Config) any { return &c.GitHub.InsecureSkipVerify }},
 
 	{"output.language", "REVIEW_MCP_OUTPUT_LANGUAGE", func(c *Config) any { return &c.Output.Language }},
 
@@ -124,6 +131,7 @@ var secretTable = []secretEntry{
 	{"llm.api_key", envLLMAPIKey, func(c *Config) *Secret { return &c.Secrets.LLMAPIKey }},
 	{"gitea.token", envGiteaToken, func(c *Config) *Secret { return &c.Secrets.GiteaToken }},
 	{"bitbucket_server.token", envBitbucketServerToken, func(c *Config) *Secret { return &c.Secrets.BitbucketServerToken }},
+	{"github.token", envGitHubToken, func(c *Config) *Secret { return &c.Secrets.GitHubToken }},
 	{"serve.access_token", envServeAccessToken, func(c *Config) *Secret { return &c.Secrets.ServeAccessToken }},
 }
 
@@ -133,6 +141,8 @@ var urlKeys = map[string]bool{
 	"gitea.base_url":            true,
 	"gitea.web_url":             true,
 	"bitbucket_server.base_url": true,
+	"github.base_url":           true,
+	"github.api_url":            true,
 }
 
 var (

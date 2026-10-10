@@ -83,7 +83,10 @@ type OverviewRenderer func(res *Result, caps provider.Capabilities, link func(pa
 
 // InlineRenderer renders the body of one suggestion's inline comment (without
 // the fingerprint marker, which the pipeline adds). It is implemented by
-// render.Inline.
+// render.Inline. caps.NativeSuggestionStyle() is set only when a native
+// suggestion block is safe (see planInline); s.ImprovedCode is then already
+// re-indented to the real lines. Otherwise caps carries no suggestion style
+// and the renderer uses its diff block.
 type InlineRenderer func(s *Suggestion, caps provider.Capabilities) string
 
 // SuggestionFingerprint is the already-posted key of a suggestion (spec
@@ -295,9 +298,21 @@ func (pl *Plan) readComments(ctx context.Context) ([]provider.Thread, provider.U
 // unchecked is set the PR's comments could not be read, so nothing is posted and every
 // anchorable suggestion is counted failed. A suggestion that is not verified
 // is not considered and keeps no anchor.
+//
+// On a provider with a native suggestion style the comment carries a
+// suggestion block only when all three hold (design §5, Y-11): the
+// suggestion is verified, its range is on new-side lines of one hunk
+// (anchorFor), and its improved code could be re-indented to the real lines
+// (blockCode). The renderer then gets a copy of the suggestion with the
+// re-indented code; otherwise it gets caps without a suggestion style and
+// renders the diff block.
 func (pl *Plan) planInline(render InlineRenderer, posted map[string]bool, unchecked bool) ([]inlineItem, *InlineSummary) {
 	sum := &InlineSummary{}
 	caps := pl.p.Capabilities()
+	native := caps.NativeSuggestionStyle() != provider.SuggestionStyleNone
+	plain := caps
+	plain.SuggestionBlocks, plain.SuggestionStyle = false, provider.SuggestionStyleNone
+	blocks, kept := 0, 0
 	var out []inlineItem
 	for i := range pl.Result.Suggestions {
 		s := &pl.Result.Suggestions[i]
@@ -321,9 +336,23 @@ func (pl *Plan) planInline(render InlineRenderer, posted map[string]bool, unchec
 			s.Anchor = &Anchor{Status: AnchorSkippedDuplicate, Line: a.Line}
 			continue
 		}
-		body := strings.TrimRight(render(s, caps), " \t\r\n") + "\n\n" + SuggestionMarker(fp)
+		rs, rcaps := s, plain
+		if native {
+			if code, ok := blockCode(pl.files[s.File], s); ok {
+				c := *s
+				c.ImprovedCode = code
+				rs, rcaps = &c, caps
+				blocks++
+			} else {
+				kept++
+			}
+		}
+		body := strings.TrimRight(render(rs, rcaps), " \t\r\n") + "\n\n" + SuggestionMarker(fp)
 		a.Body = provider.SanitizeBody(caps, body)
 		out = append(out, inlineItem{idx: i, item: a})
+	}
+	if native {
+		pl.log.Debug("improve: suggestion blocks", "native", blocks, "diff_block", kept)
 	}
 	return out, sum
 }
@@ -334,7 +363,8 @@ func (pl *Plan) planInline(render InlineRenderer, posted map[string]bool, unchec
 // its own diff). It succeeds only when every line of the range is a new-side
 // line (added or context) of one single hunk, so that a suggestion block
 // replaces exactly those lines. The comment sits on the first line of the
-// range. It fails for a nil, deleted or binary file, a range that is not
+// range and, for a range of several lines, covers it to its last
+// (InlineComment.EndLine; a provider without ranges ignores it). It fails for a nil, deleted or binary file, a range that is not
 // positive or whose end is before its start, an unparsable patch, and a
 // range that leaves a hunk or reaches into the gap between two hunks.
 // Malformed pseudo-hunks are never anchors. The returned comment has no
@@ -372,6 +402,9 @@ func anchorFor(fp *provider.FilePatch, start, end int) (provider.InlineComment, 
 			continue
 		}
 		c := provider.InlineComment{Path: fp.Path, Line: start, LineType: typ}
+		if end > start {
+			c.EndLine = end
+		}
 		if fp.Type == provider.ChangeRenamed {
 			c.OldPath = fp.OldPath
 		}

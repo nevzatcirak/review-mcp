@@ -50,3 +50,21 @@ func TestSanitizeBodyFollowsTheCapability(t *testing.T) {
 		t.Errorf("with QuickActions: %q, want %q", got, want)
 	}
 }
+
+// TestNativeSuggestionStyle: the style counts only with SuggestionBlocks.
+func TestNativeSuggestionStyle(t *testing.T) {
+	for _, c := range []struct {
+		caps Capabilities
+		want SuggestionStyle
+	}{
+		{Capabilities{}, SuggestionStyleNone},
+		{Capabilities{SuggestionStyle: SuggestionStyleRange}, SuggestionStyleNone},
+		{Capabilities{SuggestionBlocks: true, SuggestionStyle: SuggestionStyleRange}, SuggestionStyleRange},
+		{Capabilities{SuggestionBlocks: true, SuggestionStyle: SuggestionStyleOffset}, SuggestionStyleOffset},
+		{Capabilities{SuggestionBlocks: true}, SuggestionStyleNone},
+	} {
+		if got := c.caps.NativeSuggestionStyle(); got != c.want {
+			t.Errorf("%+v: NativeSuggestionStyle = %q, want %q", c.caps, got, c.want)
+		}
+	}
+}

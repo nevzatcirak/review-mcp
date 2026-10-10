@@ -39,6 +39,11 @@ type Traits struct {
 	// (FilePatch.Patch); the expected hunks here lack those marker lines and
 	// everything else stays byte for byte.
 	OmitsNoNewlineMarker bool
+	// InlineRanges is true for a provider that anchors an inline comment on
+	// its whole range, InlineComment.Line to EndLine, and lists the thread
+	// at the range's last line (GitHub's line). Without it the provider
+	// ignores EndLine: the comment is posted on Line and listed there.
+	InlineRanges bool
 }
 
 // Declarer is implemented by a Fixture that declares Traits.

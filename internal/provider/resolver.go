@@ -76,7 +76,8 @@ func (r *Resolver) CloseIdleConnections() {
 }
 
 // NewResolver builds a Resolver from the enabled providers' base URLs (plus
-// Gitea's web_url when set). Factories whose Kind is not enabled in cfg are
+// Gitea's web_url when set). For GitHub the base URL is the web base;
+// github.api_url only receives API calls and is never matched. Factories whose Kind is not enabled in cfg are
 // ignored.
 //
 // Factories are injected (instead of the spec's NewResolver(cfg)) because the
@@ -121,6 +122,7 @@ func NewResolver(cfg *config.Config, logger *slog.Logger, factories ...Factory) 
 			add(KindGitea, cfg.Gitea.WebURL)
 		}
 		add(KindBitbucketServer, cfg.BitbucketServer.BaseURL)
+		add(KindGitHub, cfg.GitHub.BaseURL)
 	}
 	return r
 }

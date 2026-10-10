@@ -70,7 +70,7 @@ func TestServerInfoInServeMode(t *testing.T) {
 	}
 	want := map[string]string{
 		credentials.HeaderGiteaToken: "set", credentials.HeaderBitbucketServerToken: "unset",
-		credentials.HeaderLLMAPIKey: "unset", credentials.HeaderAuthorization: "unset",
+		credentials.HeaderGitHubToken: "unset", credentials.HeaderLLMAPIKey: "unset", credentials.HeaderAuthorization: "unset",
 	}
 	for k, v := range want {
 		if res.Serve.RequestHeaders[k] != v {

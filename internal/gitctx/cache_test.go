@@ -280,15 +280,21 @@ func TestPlan(t *testing.T) {
 	cases := []struct {
 		repo          Repo
 		url, ref, rel string
-		first         scheme
+		first, second scheme
 		allowHTTP     bool
 	}{
 		{giteaRepo("https://your-gitea.example/"), "https://your-gitea.example/owner/repo.git", "refs/pull/7/head",
-			"your-gitea.example/_/owner/repo", schemeToken, false},
+			"your-gitea.example/_/owner/repo", schemeToken, schemeBasic, false},
 		{bbsRepo("https://Bitbucket.Example.com/bb"), "https://Bitbucket.Example.com/bb/scm/PROJ/repo.git", "refs/pull-requests/7/from",
-			"bitbucket.example.com/bb/PROJ/repo", schemeBearer, false},
+			"bitbucket.example.com/bb/PROJ/repo", schemeBearer, schemeBasic, false},
+		{githubRepo("https://github.example.com/"), "https://github.example.com/owner/repo.git", "refs/pull/7/head",
+			"github.example.com/_/owner/repo", schemeAccessToken, schemeBearer, false},
+		// A GitHub Enterprise Server under a sub-path: the clone URL keeps
+		// it, and the API prefix ({base}/api/v3) is not part of it.
+		{githubRepo("https://github.example.com/ghe"), "https://github.example.com/ghe/owner/repo.git", "refs/pull/7/head",
+			"github.example.com/ghe/owner/repo", schemeAccessToken, schemeBearer, false},
 		{func() Repo { r := bbsRepo("http://127.0.0.1:7990"); r.Namespace = "~jdoe"; return r }(),
-			"http://127.0.0.1:7990/scm/~jdoe/repo.git", "refs/pull-requests/7/from", "127.0.0.1_7990/_/~jdoe/repo", schemeBearer, true},
+			"http://127.0.0.1:7990/scm/~jdoe/repo.git", "refs/pull-requests/7/from", "127.0.0.1_7990/_/~jdoe/repo", schemeBearer, schemeBasic, true},
 	}
 	for _, tc := range cases {
 		p, err := newPlan(tc.repo, PR{Number: 7, HeadSHA: strings.ToUpper(fakeSHA)})
@@ -296,7 +302,7 @@ func TestPlan(t *testing.T) {
 			t.Fatalf("%s: %v", tc.url, err)
 		}
 		if p.cloneURL != tc.url || p.remoteRef != tc.ref || filepath.ToSlash(p.rel) != tc.rel ||
-			p.schemes[0] != tc.first || p.schemes[1] != schemeBasic || p.net.allowHTTP != tc.allowHTTP || p.headSHA != fakeSHA {
+			p.schemes[0] != tc.first || p.schemes[1] != tc.second || p.net.allowHTTP != tc.allowHTTP || p.headSHA != fakeSHA {
 			t.Errorf("plan = %+v, want url %s ref %s rel %s", p, tc.url, tc.ref, tc.rel)
 		}
 	}
@@ -612,6 +618,20 @@ func TestRepoFor(t *testing.T) {
 	}
 	if _, ok := RepoFor(cfg, provider.PRRef{Kind: provider.KindBitbucketServer, Namespace: "P", Repo: "r"}, nil); ok {
 		t.Error("a disabled provider gave a Repo")
+	}
+	// GitHub: the web base (not the API base) and the GitHub settings.
+	cfg.GitHub.BaseURL = "https://github.example.com"
+	cfg.GitHub.APIURL = "https://api.github.example.com/v3"
+	cfg.GitHub.CACert = "/etc/gh-ca.pem"
+	cfg.Secrets.GitHubToken = config.NewSecret(testToken)
+	repo, ok = RepoFor(cfg, provider.PRRef{Kind: provider.KindGitHub, Namespace: "octo", Repo: "demo", Number: 7}, nil)
+	if !ok || repo.BaseURL != "https://github.example.com" || repo.Token.Reveal() != testToken || repo.CACert != "/etc/gh-ca.pem" ||
+		repo.Namespace != "octo" || repo.Name != "demo" || repo.Kind != provider.KindGitHub {
+		t.Errorf("RepoFor(GitHub) = %+v, %v", repo, ok)
+	}
+	cfg.GitHub.BaseURL = ""
+	if _, ok := RepoFor(cfg, provider.PRRef{Kind: provider.KindGitHub, Namespace: "octo", Repo: "demo", Number: 7}, nil); ok {
+		t.Error("GitHub without a web base gave a Repo")
 	}
 	o := OptionsFromConfig(config.Defaults().Context.Repo)
 	if o.MaxCacheBytes != 2048<<20 || o.MaxRepoBytes != 500<<20 || o.FetchTimeout != time.Minute || o.IdleDays != 7 {

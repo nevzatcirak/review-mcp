@@ -9,7 +9,7 @@ posts the question and the answer as one PR-level comment.
 
 | Argument | Required | Meaning |
 |---|---|---|
-| `pr_url` | yes | The pull request URL, on a configured Gitea or Bitbucket Server host. |
+| `pr_url` | yes | The pull request URL, on a configured Gitea, Bitbucket Server or GitHub host. |
 | `question` | yes | The question, at most 8000 characters (counted in characters, not bytes). Surrounding whitespace is ignored. |
 | `extra_instructions` | no | Extra guidance for the model for this call; replaces `ask.extra_instructions` (`REVIEW_MCP_ASK_EXTRA_INSTRUCTIONS`). An empty value means "not given". |
 | `output_language` | no | Locale code for the answer, such as `en-US` or `tr-TR`; replaces `output.language`. Same format as the config key. |
@@ -144,7 +144,7 @@ else (in the MCP text it is the first line, before `## Question`):
 ```
 
 The published comment has no title of its own, so the line is its first line
-(a warning blockquote on Gitea, a bold line on Bitbucket Server). The
+(a warning blockquote on Gitea and GitHub, a bold line on Bitbucket Server). The
 structured `coverage` object carries `partial`, `reviewed_files`,
 `total_files` and `not_reviewed_files`, as for a review (`model_calls` is 1, or
 0 when the model was not called, and `failed_parts` is 0), and the notes say
@@ -174,7 +174,7 @@ section and `coverage.repo_context` report it as for a review. See
 `publish=true` (or `diag ask --publish`) posts one PR-level comment after the
 answer was produced. Nothing is ever posted without it. The comment shows the
 question in a fenced block, then the answer, then a short coverage section
-(and the notes, when there are any). Gitea gets PR-Agent's headings, `Ask`
+(and the notes, when there are any). Gitea and GitHub get PR-Agent's headings, `Ask`
 with a question-mark emoji and `Answer:`; Bitbucket Server gets plain
 `Question` and `Answer` headings. The token needs write access to pull
 requests or comments (see the [token scopes](troubleshooting.md#token-scopes)).

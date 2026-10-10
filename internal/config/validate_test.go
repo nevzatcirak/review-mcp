@@ -177,6 +177,8 @@ func TestURLUserinfoRejectedAndNeverEchoed(t *testing.T) {
 		"gitea.base_url":            "REVIEW_MCP_GITEA_BASE_URL",
 		"gitea.web_url":             "REVIEW_MCP_GITEA_WEB_URL",
 		"bitbucket_server.base_url": "REVIEW_MCP_BITBUCKET_SERVER_BASE_URL",
+		"github.base_url":           "REVIEW_MCP_GITHUB_BASE_URL",
+		"github.api_url":            "REVIEW_MCP_GITHUB_API_URL",
 	}
 	for key, envName := range keys {
 		for _, raw := range []string{
@@ -188,6 +190,12 @@ func TestURLUserinfoRejectedAndNeverEchoed(t *testing.T) {
 			env := envWith(map[string]string{envName: raw})
 			if key == "bitbucket_server.base_url" {
 				env["REVIEW_MCP_BITBUCKET_SERVER_TOKEN"] = fakeBitbkt
+			}
+			if strings.HasPrefix(key, "github.") {
+				env["REVIEW_MCP_GITHUB_TOKEN"] = fakeGitHub
+				if key == "github.api_url" {
+					env["REVIEW_MCP_GITHUB_BASE_URL"] = "https://github.example.com"
+				}
 			}
 			_, rep, err := Load(MemSource{Env: env})
 			probs := problemsOf(t, err)
@@ -381,5 +389,114 @@ func TestDiffMaxTokens(t *testing.T) {
 	cfg, _ = mustLoad(t, MemSource{Env: envWith(map[string]string{"REVIEW_MCP_DIFF_MAX_TOKENS": "1000"})})
 	if cfg.Diff.MaxTokens == nil || *cfg.Diff.MaxTokens != 1000 {
 		t.Error("1000 is the minimum and must load")
+	}
+}
+
+func TestGitHubConfig(t *testing.T) {
+	gh := func(extra map[string]string) map[string]string {
+		env := map[string]string{"REVIEW_MCP_GITHUB_BASE_URL": "https://github.example.com/ghe/", "REVIEW_MCP_GITHUB_TOKEN": fakeGitHub}
+		for k, v := range extra {
+			env[k] = v
+		}
+		return envWith(env)
+	}
+	t.Run("enabled_and_normalized", func(t *testing.T) {
+		cfg, rep := mustLoad(t, MemSource{Env: gh(map[string]string{"REVIEW_MCP_GITHUB_API_URL": " https://api.github.example.com/v3/ "})})
+		if cfg.GitHub.BaseURL != "https://github.example.com/ghe" || cfg.GitHub.APIURL != "https://api.github.example.com/v3" {
+			t.Errorf("normalization: %q %q", cfg.GitHub.BaseURL, cfg.GitHub.APIURL)
+		}
+		sum := cfg.Summary(rep)
+		want := ProviderSummary{Kind: "github", BaseURL: "https://github.example.com/ghe", APIURL: "https://api.github.example.com/v3"}
+		if len(sum.Providers) != 2 || sum.Providers[1] != want {
+			t.Errorf("providers: %+v", sum.Providers)
+		}
+		if sum.Secrets["github.token"] != "set" || sum.Values["github.base_url"].Value != "https://github.example.com/ghe" ||
+			sum.Values["github.api_url"].Source != OriginEnv {
+			t.Errorf("summary: %v %+v %+v", sum.Secrets, sum.Values["github.base_url"], sum.Values["github.api_url"])
+		}
+	})
+	t.Run("derived_api_url_in_summary", func(t *testing.T) {
+		cfg, rep := mustLoad(t, MemSource{Env: gh(nil)})
+		sum := cfg.Summary(rep)
+		if v := sum.Values["github.api_url"]; v.Value != "" || v.Source != OriginDefault {
+			t.Errorf("github.api_url = %+v, want unset", v)
+		}
+		if sum.Providers[1].APIURL != "https://github.example.com/ghe/api/v3" {
+			t.Errorf("providers: %+v", sum.Providers)
+		}
+	})
+	t.Run("github_only", func(t *testing.T) {
+		env := gh(nil)
+		delete(env, "REVIEW_MCP_GITEA_BASE_URL")
+		delete(env, "REVIEW_MCP_GITEA_TOKEN")
+		cfg, _ := mustLoad(t, MemSource{Env: env})
+		if cfg.GitHub.BaseURL == "" || cfg.Gitea.BaseURL != "" {
+			t.Errorf("github only: %+v", cfg.GitHub)
+		}
+	})
+	t.Run("no_default_host", func(t *testing.T) {
+		if d := Defaults().GitHub; d != (GitHub{}) {
+			t.Errorf("defaults = %+v, want no GitHub host assumed", d)
+		}
+	})
+	for _, tc := range []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{"token_required", map[string]string{"REVIEW_MCP_GITHUB_TOKEN": ""}, "REVIEW_MCP_GITHUB_TOKEN is required because github.base_url is set"},
+		{"api_url_without_base_url", map[string]string{"REVIEW_MCP_GITHUB_BASE_URL": "", "REVIEW_MCP_GITHUB_TOKEN": "", "REVIEW_MCP_GITHUB_API_URL": "https://api.github.example.com"},
+			"github.api_url is set but github.base_url is not (REVIEW_MCP_GITHUB_BASE_URL)"},
+		{"api_url_scheme", map[string]string{"REVIEW_MCP_GITHUB_API_URL": "ftp://api.github.example.com"}, "github.api_url: scheme must be http or https"},
+		{"base_url_fragment", map[string]string{"REVIEW_MCP_GITHUB_BASE_URL": "https://github.example.com/#x"}, "github.base_url: URL must not contain a fragment"},
+		{"ca_cert_missing", map[string]string{"REVIEW_MCP_GITHUB_CA_CERT": "/certs/none.pem"}, "github.ca_cert: cannot read CA certificate file"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := Load(MemSource{Env: gh(tc.env)})
+			if !hasProblem(problemsOf(t, err), tc.want) {
+				t.Errorf("want %q, got %v", tc.want, err)
+			}
+			assertNoSecrets(t, tc.name, err.Error())
+		})
+	}
+	t.Run("token_without_provider_warns", func(t *testing.T) {
+		_, rep := mustLoad(t, MemSource{Env: envWith(map[string]string{"REVIEW_MCP_GITHUB_TOKEN": fakeGitHub})})
+		if len(rep.Warnings) != 1 || rep.Warnings[0] != "REVIEW_MCP_GITHUB_TOKEN is set but github is not enabled (github.base_url is unset); the token is ignored" {
+			t.Errorf("warnings: %v", rep.Warnings)
+		}
+	})
+	t.Run("insecure_warns", func(t *testing.T) {
+		_, rep := mustLoad(t, MemSource{Env: gh(map[string]string{"REVIEW_MCP_GITHUB_INSECURE_SKIP_VERIFY": "true"})})
+		if !strings.Contains(strings.Join(rep.Warnings, "|"), "TLS verification disabled for github") {
+			t.Errorf("warnings: %v", rep.Warnings)
+		}
+	})
+	t.Run("no_provider_names_github", func(t *testing.T) {
+		env := minimalEnv()
+		delete(env, "REVIEW_MCP_GITEA_BASE_URL")
+		delete(env, "REVIEW_MCP_GITEA_TOKEN")
+		_, _, err := Load(MemSource{Env: env})
+		want := "no provider enabled: set gitea.base_url (REVIEW_MCP_GITEA_BASE_URL), bitbucket_server.base_url (REVIEW_MCP_BITBUCKET_SERVER_BASE_URL) and/or github.base_url (REVIEW_MCP_GITHUB_BASE_URL)"
+		if !hasProblem(problemsOf(t, err), want) {
+			t.Errorf("want %q, got %v", want, err)
+		}
+	})
+}
+
+func TestGitHubEffectiveAPIURL(t *testing.T) {
+	for _, c := range []struct{ base, api, want string }{
+		{"https://github.com", "", "https://api.github.com"},
+		{"https://GitHub.com/", "", "https://api.github.com"},
+		{"https://github.example.com", "", "https://github.example.com/api/v3"},
+		{"https://github.example.com/ghe", "", "https://github.example.com/ghe/api/v3"},
+		{"http://github.com", "", "http://github.com/api/v3"},
+		{"https://github.com:8443", "", "https://github.com:8443/api/v3"},
+		{"https://github.com/sub", "", "https://github.com/sub/api/v3"},
+		{"https://github.com", "https://api.github.example.com/", "https://api.github.example.com"},
+		{"", "", ""},
+	} {
+		if got := (GitHub{BaseURL: c.base, APIURL: c.api}).EffectiveAPIURL(); got != c.want {
+			t.Errorf("EffectiveAPIURL(%q, %q) = %q, want %q", c.base, c.api, got, c.want)
+		}
 	}
 }

@@ -14,7 +14,7 @@ inline comment on each verified suggestion (see [Publishing](#publishing)).
 
 | Argument | Required | Meaning |
 |---|---|---|
-| `pr_url` | yes | The pull request URL, on a configured Gitea or Bitbucket Server host. |
+| `pr_url` | yes | The pull request URL, on a configured Gitea, Bitbucket Server or GitHub host. |
 | `output_language` | no | Locale code for the suggestion text, such as `en-US` or `tr-TR`; replaces `output.language`. Same format as the config key. It applies to every model call of the run, the self-review calls included. |
 | `publish` | no | `true` writes the overview and the inline comments to the pull request. Default `false`. |
 | `wait_seconds` | no | How long the call waits for the result before it answers with a `job_id`, 0 to 600; replaces `llm.wait_seconds` (default 45). stdio only; see [Slow endpoints](#slow-endpoints). |
@@ -477,8 +477,8 @@ with no suggestion; an answer without the key gets the re-ask.
 ## Publishing
 
 `publish=true` writes the suggestions after they were produced. Nothing is ever
-written without it. The comments are rendered for the provider: Gitea gets
-headings with emojis, tables and a warning blockquote for the partial banner;
+written without it. The comments are rendered for the provider: Gitea and GitHub
+get headings with emojis, tables and a warning blockquote for the partial banner;
 Bitbucket Server gets plain headings, tables and no HTML anywhere. What is
 written, in this order:
 
@@ -500,8 +500,8 @@ review text: the model's text is escaped (markdown control characters, no raw
 HTML on Bitbucket Server, the bullet markers kept), the code stays inside
 fences longer than any run of backticks in it, links are used only when they are
 absolute `http` or `https` URLs, and on a provider where a line that starts
-with `/` runs a quick action, such a line gets a leading space (neither Gitea nor
-Bitbucket Server runs such actions, so today this changes nothing). Model text
+with `/` runs a quick action, such a line gets a leading space (none of Gitea,
+Bitbucket Server and GitHub runs such actions, so today this changes nothing). Model text
 cannot form a marker line. The backticks the prompt asks for therefore show as
 literal backticks in a published comment, as they do in a published review.
 
@@ -533,8 +533,8 @@ A marker in a comment written by anyone else is ignored: that person could have
 planted it, and review-mcp never edits or adopts a comment it did not write.
 
 **The layout.** The overview starts with the heading "Code Suggestions" (with an
-emoji on Gitea), then the partial banner when the run is partial (a warning
-blockquote on Gitea, a bold line on Bitbucket Server), then the table.
+emoji on Gitea and GitHub), then the partial banner when the run is partial (a warning
+blockquote on Gitea and GitHub, a bold line on Bitbucket Server), then the table.
 
 **The table.** One row per suggestion, in the ranked order, with the columns
 `#`, `Label`, `File` (the path and its lines, as a link to the inline comment
@@ -566,7 +566,7 @@ whose whole range is on new-side lines (added or context lines) of **one hunk**
 of the diff as the provider itself returns it. Anchors are resolved on the
 provider's own hunks, not on the extra context the model saw, because a server
 accepts comments only on lines of its own diff. The comment sits on the first
-line of the range. A suggestion in a deleted or binary file, or whose range
+line of the range (on GitHub it covers the whole range: see below). A suggestion in a deleted or binary file, or whose range
 leaves a hunk or reaches into the gap between two hunks, is **unanchorable**:
 it stays in the overview, and the notes say "N suggestions could not be placed
 on changed lines of one hunk and are listed in the overview only." (singular:
@@ -579,13 +579,32 @@ the same result.
 the score ("Label: possible issue · Score: 9 of 10"); the model's explanation;
 then the change:
 
-- On a provider with the `SuggestionBlocks` capability, a **native suggestion
-  block** that holds the improved code and replaces the verified range
-  when someone applies it. **No provider has this capability today.** The
-  GitHub and GitLab providers are planned to set it (they also need to re-indent
-  the improved code to the real lines first), so this page describes it only as
-  far as the renderer exists and is tested with a fake capability.
-- Otherwise, which is **Gitea and Bitbucket Server**, a fenced `diff` block: every
+- On a provider with the `SuggestionBlocks` capability, which today is
+  **GitHub**, a **native suggestion block** that holds the improved code and
+  replaces the verified range when someone applies it (GitHub's **Commit
+  suggestion** button). The capability names the syntax of the block: on GitHub
+  the comment covers the lines `start_line` to `line` and the block replaces
+  exactly those lines (the "range" style); a provider whose block is written
+  with a line offset in its info string (GitLab, later) uses the "offset" style.
+  A block is used only when the improved code can be put onto the **real
+  indentation** of the lines it replaces. The model quotes `existing_code` and may
+  drop its indentation; review-mcp compares the real lines (the head file's, or
+  the patch's new-side lines when the file was not fetched in full) with the
+  quote and:
+  - uses the improved code as it is when both have the same leading white
+    space (the longest run of spaces and tabs that all non-blank lines share,
+    compared byte for byte);
+  - puts the missing white space in front of every non-blank line of the
+    improved code when the real lines are indented more and start with the
+    quote's indentation (blank lines stay as they are);
+  - otherwise (the model added indentation, tabs against spaces, white space
+    removed from the middle of it) posts the fenced `diff` block instead. A
+    wrongly indented block is never posted.
+
+  The suggestion's own `improved_code` in the result is never changed. See also
+  [GitHub](github.md#native-suggestion-blocks).
+- Otherwise, which is **Gitea and Bitbucket Server** (and GitHub when the block
+  is not safe), a fenced `diff` block: every
   line of `existing_code` with a leading `-`, then every line of `improved_code`
   with a leading `+`. It is a reading aid, not an applicable suggestion: copy
   the change by hand. The fence is longer than any run of backticks in the code.
@@ -597,6 +616,11 @@ when the token's user already has a pending (draft) review on the PR (see
 Bitbucket Server: one comment per suggestion, with the line type (`ADDED` or
 `CONTEXT`) computed from the hunk. Anchors are single-line on both: the comment
 is on the first line of the range, and the diff block covers all of it.
+GitHub: one review per run, event `COMMENT` on the head commit, with no body
+of its own; the comment of a range covers the whole range (`start_line` to
+`line`), which is what the suggestion block replaces. If GitHub refuses the
+review as a whole (422), each comment is posted alone; a refused one is
+unanchorable. See [GitHub](github.md#publishing-one-review-per-run).
 
 ### No repeated suggestions
 
@@ -718,9 +742,10 @@ runs review-mcp must be able to:
 |---|---|---|
 | Gitea | write access to issues (`write:issue`): post and edit PR comments | write access to the repository (`write:repository`): post a review |
 | Bitbucket Server | repository write permission: post and edit comments | repository write permission: post comments with an anchor |
+| GitHub | Pull requests write (fine-grained) or `repo` / `public_repo` (classic): post and edit comments | the same: post a review with comments |
 
 Reading needs only a read token (`read:repository`, `read:issue` and
-`read:user` on Gitea, repository read on Bitbucket Server). `read:user` is also
+`read:user` on Gitea, repository read on Bitbucket Server, Pull requests read on GitHub). `read:user` is also
 what lets review-mcp tell its own comments from other people's, for the
 discussion block and the duplicate check, so a token without it gets "The
 existing PR discussion could not be read; suggestions may repeat it." and, with

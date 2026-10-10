@@ -314,6 +314,9 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			DiffTokens: prep.Tokens, FastPath: prep.FastPath,
 		},
 	}
+	// Changed files the provider could not list at all (GitHub lists at
+	// most 3000) are named by its fixed note.
+	res.Notes = append(res.Notes, d.Notes...)
 	log.Debug("ask: diff prepared", "url", logging.RedactURL(ref.URL), "files", len(d.Files),
 		"provider_skipped", len(d.Skipped), "included", len(prep.Included), "clipped", len(prep.Clipped),
 		"fast_path", prep.FastPath, "prompt_tokens", promptTokens, "diff_tokens", prep.Tokens, "pinned", len(pinned))

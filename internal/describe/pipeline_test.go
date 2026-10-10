@@ -39,6 +39,7 @@ type fakeProvider struct {
 	pr        provider.PullRequest
 	files     []provider.FilePatch
 	skipped   []provider.SkippedFile
+	diffNotes []string
 	commits   []string
 	commitErr error
 	calls     []string
@@ -52,7 +53,7 @@ func (f *fakeProvider) GetPullRequest(context.Context, provider.PRRef) (*provide
 
 func (f *fakeProvider) GetDiff(_ context.Context, _ provider.PRRef, _ *provider.PullRequest, opts provider.DiffOptions) (*provider.Diff, error) {
 	f.calls = append(f.calls, "diff")
-	d := &provider.Diff{Skipped: slices.Clone(f.skipped)}
+	d := &provider.Diff{Skipped: slices.Clone(f.skipped), Notes: f.diffNotes}
 	for _, fp := range f.files {
 		if opts.Include != nil && !opts.Include(fp.Path) {
 			d.Skipped = append(d.Skipped, provider.SkippedFile{Path: fp.Path, Reason: provider.SkipFiltered})
@@ -682,6 +683,40 @@ func TestCommitMessages(t *testing.T) {
 	}
 }
 
+// TestCommitCountNote: the note appears once, and only when the provider
+// reports more commits than it returned messages for.
+func TestCommitCountNote(t *testing.T) {
+	want := fmt.Sprintf(NoteCommitsPartialFormat, 5, 2)
+	for _, tc := range []struct {
+		count int
+		note  bool
+	}{{5, true}, {2, false}, {0, false}, {1, false}} {
+		h := newHarness(map[int][]string{0: {oneCallAnswer}})
+		h.prov.pr.CommitCount = tc.count
+		res := h.run(t, Args{})
+		n := 0
+		for _, x := range res.Notes {
+			if strings.HasPrefix(x, "The pull request has ") && strings.Contains(x, "commit messages could be read") {
+				n++
+				if x != want {
+					t.Errorf("note = %q, want %q", x, want)
+				}
+			}
+		}
+		if (n == 1) != tc.note || n > 1 {
+			t.Errorf("count %d: note count %d, notes %v", tc.count, n, res.Notes)
+		}
+	}
+	// A failed read gets only its own note.
+	h := newHarness(map[int][]string{0: {oneCallAnswer}})
+	h.prov.pr.CommitCount = 5
+	h.prov.commitErr = &provider.Error{Class: provider.ClassAuth, Status: 403}
+	res := h.run(t, Args{})
+	if slices.Contains(res.Notes, fmt.Sprintf(NoteCommitsPartialFormat, 5, 0)) || !slices.Contains(res.Notes, NoteCommitsUnavailable) {
+		t.Errorf("notes %v", res.Notes)
+	}
+}
+
 // TestEmptyDiff: nothing left after filtering makes no model call.
 func TestEmptyDiff(t *testing.T) {
 	h := newHarness(map[int][]string{0: {oneCallAnswer}})
@@ -714,5 +749,16 @@ func TestConfigInvalid(t *testing.T) {
 	}
 	if len(h.prov.calls) != 0 || len(h.llm.calls) != 0 {
 		t.Errorf("provider %v llm %d", h.prov.calls, len(h.llm.calls))
+	}
+}
+
+// TestProviderDiffNotes: the provider's note about files it did not list
+// reaches the result.
+func TestProviderDiffNotes(t *testing.T) {
+	h := newHarness(map[int][]string{0: {oneCallAnswer}})
+	h.prov.diffNotes = []string{"GitHub lists at most 3000 files of a pull request: 2 more changed files were not listed, so they are not reviewed (file_limit)."}
+	res := h.run(t, Args{})
+	if !slices.Contains(res.Notes, "GitHub lists at most 3000 files of a pull request: 2 more changed files were not listed, so they are not reviewed (file_limit).") {
+		t.Errorf("notes = %q", res.Notes)
 	}
 }

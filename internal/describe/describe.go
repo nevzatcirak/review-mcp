@@ -312,8 +312,13 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			DiffTokens: prep.Tokens, FastPath: prep.FastPath, CommitMessages: len(commits),
 		},
 	}
+	// Changed files the provider could not list at all (GitHub lists at
+	// most 3000) are named by its fixed note.
+	res.Notes = append(res.Notes, d.Notes...)
 	if commitsErr != nil {
 		res.Notes = append(res.Notes, NoteCommitsUnavailable)
+	} else if pr.CommitCount > len(commits) {
+		res.Notes = append(res.Notes, fmt.Sprintf(NoteCommitsPartialFormat, pr.CommitCount, len(commits)))
 	}
 	log.Debug("describe: diff prepared", "url", logging.RedactURL(ref.URL), "files", len(d.Files),
 		"provider_skipped", len(d.Skipped), "included", len(prep.Included), "clipped", len(prep.Clipped),

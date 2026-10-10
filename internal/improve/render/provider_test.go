@@ -10,14 +10,17 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 )
 
-// The capabilities of the two providers that exist today, of one without
-// tables, and a fake one with native suggestion blocks (no provider sets
-// SuggestionBlocks yet).
+// The capabilities of Gitea, Bitbucket Server and GitHub, of one without
+// tables, and of one with the offset suggestion style (GitLab's, which no
+// provider has yet).
 var (
 	giteaCaps  = provider.Capabilities{GFM: true, MarkdownTables: true, InlineComments: true}
 	bbsCaps    = provider.Capabilities{MarkdownTables: true, InlineComments: true}
 	plainCaps  = provider.Capabilities{InlineComments: true}
-	nativeCaps = provider.Capabilities{GFM: true, MarkdownTables: true, InlineComments: true, SuggestionBlocks: true}
+	nativeCaps = provider.Capabilities{GFM: true, MarkdownTables: true, Labels: true, InlineComments: true,
+		SuggestionBlocks: true, SuggestionStyle: provider.SuggestionStyleRange}
+	offsetCaps = provider.Capabilities{GFM: true, MarkdownTables: true, InlineComments: true,
+		SuggestionBlocks: true, SuggestionStyle: provider.SuggestionStyleOffset}
 )
 
 func testLink(path string, line int) string {
@@ -78,6 +81,7 @@ func TestInlineGoldens(t *testing.T) {
 	gitea.WriteString(Inline(&multi, giteaCaps) + "\n=====\n")
 	bbs.WriteString(Inline(&multi, bbsCaps) + "\n=====\n")
 	native.WriteString(Inline(&res.Suggestions[0], nativeCaps) + "\n=====\n" + Inline(&multi, nativeCaps) + "\n=====\n")
+	native.WriteString(Inline(&res.Suggestions[0], offsetCaps) + "\n=====\n" + Inline(&multi, offsetCaps) + "\n=====\n")
 	checkGolden(t, "testdata/inline_gitea.md", gitea.String())
 	checkGolden(t, "testdata/inline_bbs.md", bbs.String())
 	checkGolden(t, "testdata/inline_native.md", native.String())
@@ -89,19 +93,22 @@ func intp(n int) *int { return &n }
 // than any run of backticks in the code, and a block of one line the same in
 // both.
 func TestSuggestionBlock(t *testing.T) {
+	const rangeStyle, offset = provider.SuggestionStyleRange, provider.SuggestionStyleOffset
 	for name, tc := range map[string]struct {
-		style BlockStyle
+		style provider.SuggestionStyle
 		code  string
 		lines int
 		want  string
 	}{
-		"github one line":   {BlockGitHub, "x := 1", 1, "```suggestion\nx := 1\n```\n"},
-		"gitlab one line":   {BlockGitLab, "x := 1", 1, "```suggestion\nx := 1\n```\n"},
-		"github many lines": {BlockGitHub, "a\nb", 2, "```suggestion\na\nb\n```\n"},
-		"gitlab two lines":  {BlockGitLab, "a\nb", 2, "```suggestion:-0+1\na\nb\n```\n"},
-		"gitlab four lines": {BlockGitLab, "a", 4, "```suggestion:-0+3\na\n```\n"},
-		"fence adapts":      {BlockGitHub, "s := \"```\"\n````", 1, "`````suggestion\ns := \"```\"\n````\n`````\n"},
-		"empty code":        {BlockGitHub, "", 1, "```suggestion\n\n```\n"},
+		"range one line":    {rangeStyle, "x := 1", 1, "```suggestion\nx := 1\n```\n"},
+		"offset one line":   {offset, "x := 1", 1, "```suggestion\nx := 1\n```\n"},
+		"range many lines":  {rangeStyle, "a\nb", 2, "```suggestion\na\nb\n```\n"},
+		"range four lines":  {rangeStyle, "a", 4, "```suggestion\na\n```\n"},
+		"offset two lines":  {offset, "a\nb", 2, "```suggestion:-0+1\na\nb\n```\n"},
+		"offset four lines": {offset, "a", 4, "```suggestion:-0+3\na\n```\n"},
+		"fence adapts":      {rangeStyle, "s := \"```\"\n````", 1, "`````suggestion\ns := \"```\"\n````\n`````\n"},
+		"empty code":        {rangeStyle, "", 1, "```suggestion\n\n```\n"},
+		"indentation kept":  {rangeStyle, "\t\tif x {\n\t\t\ty()\n\t\t}", 3, "```suggestion\n\t\tif x {\n\t\t\ty()\n\t\t}\n```\n"},
 	} {
 		if got := SuggestionBlock(tc.style, tc.code, tc.lines); got != tc.want {
 			t.Errorf("%s: %q, want %q", name, got, tc.want)
@@ -109,29 +116,41 @@ func TestSuggestionBlock(t *testing.T) {
 	}
 }
 
-// TestInlineNative: with SuggestionBlocks the comment carries a native block
-// of the improved code and no diff block; without it, the diff block and no
-// native block. A suggestion of several lines uses the multi-line syntax.
+// TestInlineNative: with a suggestion style the comment carries a native
+// block of the improved code and no diff block; without one (no style, or a
+// style without SuggestionBlocks), the diff block and no native block. A
+// suggestion of several lines uses the plain syntax in the range style (the
+// comment covers the range) and "suggestion:-0+N" in the offset style.
 func TestInlineNative(t *testing.T) {
 	res := publishedResult(t)
 	s := res.Suggestions[1]
 	s.ExistingCode, s.ImprovedCode = "a := 1\nb := 2", "a, b := 1, 2\n// ```"
 	s.StartLine, s.EndLine = intp(12), intp(13)
 	native := Inline(&s, nativeCaps)
-	if !strings.Contains(native, "\n````suggestion:-0+1\na, b := 1, 2\n// ```\n````\n") || strings.Contains(native, "```diff") {
-		t.Errorf("native body:\n%s", native)
+	if !strings.Contains(native, "\n````suggestion\na, b := 1, 2\n// ```\n````\n") || strings.Contains(native, "```diff") {
+		t.Errorf("range body:\n%s", native)
 	}
-	diff := Inline(&s, giteaCaps)
-	if !strings.Contains(diff, "\n```diff\n-a := 1\n-b := 2\n+a, b := 1, 2\n+// ```\n```\n") && !strings.Contains(diff, "````diff") {
-		t.Errorf("diff body:\n%s", diff)
+	offset := Inline(&s, offsetCaps)
+	if !strings.Contains(offset, "\n````suggestion:-0+1\na, b := 1, 2\n// ```\n````\n") || strings.Contains(offset, "```diff") {
+		t.Errorf("offset body:\n%s", offset)
 	}
-	if strings.Contains(diff, "suggestion") {
-		t.Errorf("a suggestion block without SuggestionBlocks:\n%s", diff)
+	styleOnly := nativeCaps
+	styleOnly.SuggestionBlocks = false
+	for name, caps := range map[string]provider.Capabilities{"gitea": giteaCaps, "style without SuggestionBlocks": styleOnly} {
+		diff := Inline(&s, caps)
+		if !strings.Contains(diff, "\n````diff\n-a := 1\n-b := 2\n+a, b := 1, 2\n+// ```\n````\n") {
+			t.Errorf("%s: diff body:\n%s", name, diff)
+		}
+		if strings.Contains(diff, "suggestion") {
+			t.Errorf("%s: a suggestion block without a native style:\n%s", name, diff)
+		}
 	}
-	// One line: the plain syntax.
+	// One line: the plain syntax in both styles.
 	s.StartLine, s.EndLine = intp(12), intp(12)
-	if got := Inline(&s, nativeCaps); !strings.Contains(got, "\n````suggestion\n") {
-		t.Errorf("one-line block:\n%s", got)
+	for _, caps := range []provider.Capabilities{nativeCaps, offsetCaps} {
+		if got := Inline(&s, caps); !strings.Contains(got, "\n````suggestion\n") {
+			t.Errorf("one-line block:\n%s", got)
+		}
 	}
 }
 

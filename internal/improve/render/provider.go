@@ -102,7 +102,7 @@ func Overview(res *improve.Result, caps provider.Capabilities, link func(path st
 			first = false
 		}
 		b.WriteString("\n#### " + strconv.Itoa(i+1) + ". " + oneLine(s.Summary, esc) + "\n\n")
-		b.WriteString(suggestionBody(s, caps, false, false))
+		b.WriteString(suggestionBody(s, caps, provider.SuggestionStyleNone, false))
 	}
 
 	llmrender.Coverage(&b, covHead, &res.Coverage)
@@ -197,26 +197,22 @@ func joinNonEmpty(sep string, parts ...string) string {
 	return strings.Join(out, sep)
 }
 
-// BlockStyle is the syntax of a native suggestion block.
-type BlockStyle int
-
-const (
-	// BlockGitHub: a fence with the info string "suggestion"; the range it
-	// replaces is the one the comment is attached to (a review comment on
-	// lines start to end).
-	BlockGitHub BlockStyle = iota
-	// BlockGitLab: "suggestion:-0+N"; the comment sits on the first line and
-	// the block replaces it and the N lines below it.
-	BlockGitLab
-)
-
-// SuggestionBlock renders improved as a native suggestion block that
-// replaces `lines` lines (at least 1) starting at the comment's line. The
-// fence is adaptive: longer than any run of backticks in improved. For a
-// block of one line both styles are the same.
-func SuggestionBlock(style BlockStyle, improved string, lines int) string {
+// SuggestionBlock renders improved as a native suggestion block in style
+// (provider.Capabilities.SuggestionStyle) that replaces `lines` lines (at
+// least 1):
+//
+//   - provider.SuggestionStyleRange: a fence with the info string
+//     "suggestion"; the lines it replaces are the comment's range, so lines
+//     does not appear in it;
+//   - provider.SuggestionStyleOffset: "suggestion:-0+N" for a block of
+//     several lines (the comment's line and the N = lines-1 lines below
+//     it), plain "suggestion" for one line.
+//
+// The fence is adaptive: longer than any run of backticks in improved. For
+// a block of one line both styles are the same.
+func SuggestionBlock(style provider.SuggestionStyle, improved string, lines int) string {
 	info := "suggestion"
-	if style == BlockGitLab && lines > 1 {
+	if style == provider.SuggestionStyleOffset && lines > 1 {
 		info += ":-0+" + strconv.Itoa(lines-1)
 	}
 	var b strings.Builder
@@ -231,10 +227,11 @@ func SuggestionBlock(style BlockStyle, improved string, lines int) string {
 // The body is the bold summary, a line with the label and the score, the
 // suggestion text and then the change:
 //
-//   - caps.SuggestionBlocks: a native suggestion block holding the improved
-//     code, which replaces the verified range (the comment sits on its first
-//     line); a range of several lines uses the GitLab syntax
-//     "suggestion:-0+N" (see BlockGitLab);
+//   - caps.NativeSuggestionStyle() set: a native suggestion block holding
+//     the improved code in that style (SuggestionBlock), which replaces the
+//     verified range. The pipeline sets the style only when the block is
+//     safe, and then passes the improved code re-indented to the real lines
+//     (improve.InlineRenderer);
 //   - otherwise: a fenced "diff" block that removes the existing code and
 //     adds the improved code.
 //
@@ -248,12 +245,13 @@ func Inline(s *improve.Suggestion, caps provider.Capabilities) string {
 	if caps.GFM {
 		esc = mdutil.EscapeGFM
 	}
-	return "**" + oneLine(s.Summary, esc) + "**\n\n" + suggestionBody(s, caps, caps.SuggestionBlocks, true)
+	return "**" + oneLine(s.Summary, esc) + "**\n\n" + suggestionBody(s, caps, caps.NativeSuggestionStyle(), true)
 }
 
 // suggestionBody is the label and score line, the text and the change of s.
-// inline selects the inline comment's form (the summary is the caller's).
-func suggestionBody(s *improve.Suggestion, caps provider.Capabilities, native, inline bool) string {
+// inline selects the inline comment's form (the summary is the caller's);
+// native is the suggestion style of its block, none for the diff block.
+func suggestionBody(s *improve.Suggestion, caps provider.Capabilities, native provider.SuggestionStyle, inline bool) string {
 	esc := mdutil.Escape
 	if caps.GFM {
 		esc = mdutil.EscapeGFM
@@ -281,16 +279,12 @@ func suggestionBody(s *improve.Suggestion, caps provider.Capabilities, native, i
 	b.WriteString("\n")
 	lang := fenceInfo(s.Language)
 	switch {
-	case native:
+	case native != provider.SuggestionStyleNone:
 		lines := 1
 		if s.StartLine != nil && s.EndLine != nil && *s.EndLine > *s.StartLine {
 			lines = *s.EndLine - *s.StartLine + 1
 		}
-		style := BlockGitHub
-		if lines > 1 {
-			style = BlockGitLab
-		}
-		b.WriteString(SuggestionBlock(style, trimCode(s.ImprovedCode), lines))
+		b.WriteString(SuggestionBlock(native, trimCode(s.ImprovedCode), lines))
 	case inline:
 		mdutil.WriteFenced(&b, diffBlock(s.ExistingCode, s.ImprovedCode), "diff", "")
 	default:

@@ -201,6 +201,10 @@ func giteaRepo(base string) Repo {
 	return Repo{Kind: provider.KindGitea, BaseURL: base, Namespace: "owner", Name: "repo", Token: config.NewSecret(testToken)}
 }
 
+func githubRepo(base string) Repo {
+	return Repo{Kind: provider.KindGitHub, BaseURL: base, Namespace: "owner", Name: "repo", Token: config.NewSecret(testToken)}
+}
+
 func bbsRepo(base string) Repo {
 	return Repo{Kind: provider.KindBitbucketServer, BaseURL: base, Namespace: "PROJ", Name: "repo", Token: config.NewSecret(testToken)}
 }

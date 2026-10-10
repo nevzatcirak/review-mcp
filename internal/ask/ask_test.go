@@ -44,6 +44,8 @@ type fakeProvider struct {
 	pr      provider.PullRequest
 	files   []provider.FilePatch
 	postErr error
+	// diffNotes are the provider's Diff.Notes.
+	diffNotes []string
 
 	calls  int
 	posted []string
@@ -59,7 +61,7 @@ func (f *fakeProvider) GetPullRequest(context.Context, provider.PRRef) (*provide
 
 func (f *fakeProvider) GetDiff(_ context.Context, _ provider.PRRef, _ *provider.PullRequest, opts provider.DiffOptions) (*provider.Diff, error) {
 	f.calls++
-	d := &provider.Diff{}
+	d := &provider.Diff{Notes: f.diffNotes}
 	for _, fp := range f.files {
 		if opts.Include != nil && !opts.Include(fp.Path) {
 			d.Skipped = append(d.Skipped, provider.SkippedFile{Path: fp.Path, Reason: provider.SkipFiltered})
@@ -752,5 +754,19 @@ func TestRunDiffMaxTokensAppliesToAsk(t *testing.T) {
 	c := res.Coverage
 	if len(c.Omitted.Added)+len(c.Omitted.Modified)+len(c.Omitted.Deleted) == 0 || res.Metadata.FastPath {
 		t.Errorf("a cap of %d omitted nothing: %+v", capTokens, c)
+	}
+}
+
+// TestRunCarriesProviderDiffNotes: the provider's note about files it did
+// not list reaches the result.
+func TestRunCarriesProviderDiffNotes(t *testing.T) {
+	h := newHarness("It is bounded.")
+	h.prov.diffNotes = []string{"GitHub lists at most 3000 files of a pull request: 2 more changed files were not listed, so they are not reviewed (file_limit)."}
+	res, err := Run(context.Background(), h.deps, h.args())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(res.Notes, "GitHub lists at most 3000 files of a pull request: 2 more changed files were not listed, so they are not reviewed (file_limit).") {
+		t.Errorf("notes = %q", res.Notes)
 	}
 }

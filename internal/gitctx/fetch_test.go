@@ -77,6 +77,48 @@ func TestEnsureGitea(t *testing.T) {
 	}
 }
 
+// TestEnsureGitHub fetches refs/pull/7/head from the GitHub layout
+// ({web}/{owner}/{repo}.git) with Basic x-access-token:<token> as the first
+// and only attempt; the identity is not needed.
+func TestEnsureGitHub(t *testing.T) {
+	resetSchemes()
+	s := newGitServer(t, provider.KindGitHub)
+	s.set(acceptExactly(basicOf("x-access-token", testToken)), "")
+	r, _ := realRunner(t, Options{})
+	calls := 0
+	repo := githubRepo(s.base)
+	repo.Identity = identityOf(testUser, &calls)
+
+	co, err := r.Ensure(context.Background(), repo, PR{Number: 7, HeadSHA: s.head})
+	if err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	if co.HeadSHA != s.head {
+		t.Errorf("head = %s, want %s", co.HeadSHA, s.head)
+	}
+	if calls != 0 {
+		t.Errorf("identity called %d times, want 0", calls)
+	}
+	if got := schemesOf(s.requests()); len(got) != 1 || got[0] != "Basic" {
+		t.Errorf("auth schemes = %v, want [Basic]", got)
+	}
+}
+
+// TestGitHubSchemeOrder: Basic is always the first attempt, and Bearer is
+// tried only after a 401; the working scheme is remembered for the process.
+func TestGitHubSchemeOrder(t *testing.T) {
+	resetSchemes()
+	s := newGitServer(t, provider.KindGitHub)
+	s.set(acceptExactly("Bearer "+testToken), "")
+	r, _ := realRunner(t, Options{})
+	if _, err := r.Ensure(context.Background(), githubRepo(s.base), PR{Number: 7, HeadSHA: s.head}); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	if got := schemesOf(s.requests()); len(got) != 2 || got[0] != "Basic" || got[1] != "Bearer" {
+		t.Errorf("auth schemes = %v, want [Basic Bearer]", got)
+	}
+}
+
 // TestEnsureBitbucketBearer fetches refs/pull-requests/7/from from the
 // Bitbucket layout ({base}/scm/{project}/{repo}.git, base with a context
 // path) with "Authorization: Bearer"; the identity is not needed.
@@ -176,9 +218,14 @@ func TestTokenNeverOnDisk(t *testing.T) {
 	g.set(acceptExactly("token "+testToken), "")
 	b := newGitServer(t, provider.KindBitbucketServer)
 	b.set(acceptExactly(basicOf(testUser, testToken)), "")
+	h := newGitServer(t, provider.KindGitHub)
+	h.set(acceptExactly(basicOf("x-access-token", testToken)), "")
 	cacheDir := filepath.Join(t.TempDir(), "cache")
 	r, _ := realRunner(t, Options{CacheDir: cacheDir})
 
+	if _, err := r.Ensure(context.Background(), githubRepo(h.base), PR{Number: 7, HeadSHA: h.head}); err != nil {
+		t.Fatalf("github Ensure: %v", err)
+	}
 	if _, err := r.Ensure(context.Background(), giteaRepo(g.base), PR{Number: 7, HeadSHA: g.head}); err != nil {
 		t.Fatalf("gitea Ensure: %v", err)
 	}
@@ -193,6 +240,7 @@ func TestTokenNeverOnDisk(t *testing.T) {
 		[]byte(testToken),
 		[]byte(base64.StdEncoding.EncodeToString([]byte(testToken))),
 		[]byte(strings.TrimPrefix(basicOf(testUser, testToken), "Basic ")),
+		[]byte(strings.TrimPrefix(basicOf("x-access-token", testToken), "Basic ")),
 	}
 	files, configs := 0, 0
 	err := filepath.WalkDir(cacheDir, func(p string, d fs.DirEntry, err error) error {
@@ -220,7 +268,7 @@ func TestTokenNeverOnDisk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if configs != 2 || files < 10 {
+	if configs != 3 || files < 10 {
 		t.Fatalf("walked %d files and %d repository configs; the cache was not populated", files, configs)
 	}
 }

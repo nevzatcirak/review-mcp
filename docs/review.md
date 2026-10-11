@@ -444,13 +444,56 @@ a deleted or binary file, or on lines outside every hunk, is not anchorable.
 
 ### No repeated findings
 
-Each inline comment ends with a hidden marker holding a **fingerprint** of the
-finding: a hash of the file path, the header and the first 200 characters of
-the explanation, lower-cased with whitespace collapsed. The line number is left
-out on purpose, so a push that moves the code does not make the finding new.
-Before posting, review-mcp collects the fingerprints of its own inline comments
-on the PR and skips findings that are already there (`skipped_duplicate`, and a
-note). Only comments by the token's own user count.
+A model words a finding differently from one run to the next, so a repeat is
+recognised by its **place** first and by its text second. Before posting,
+review-mcp collects its own inline finding comments on the PR (comments by the
+token's own user whose last line is a finding marker; a marker in anyone else's
+comment never counts) and skips a finding as `skipped_duplicate` when:
+
+1. **Place.** Its lines overlap an earlier finding comment of the same file. The
+   comparison is inclusive on both ends: a finding on lines 14 to 19 overlaps a
+   comment on line 14 and one on line 19. Gitea and Bitbucket Server report only
+   the first line of an earlier range comment, so a later finding inside such a
+   range, but not on its first line, is not seen as a repeat there; GitHub
+   reports the whole range.
+   - A **resolved** thread counts: someone closed it, and posting the point again
+     is noise.
+   - An **outdated** thread does not: the code under it changed, so a finding at
+     that place may be new.
+   - A thread on the old path of a renamed file does not count, because its line
+     numbers belong to another version of the file.
+2. **Fingerprint.** Or its text has the same **fingerprint** as an earlier
+   comment, wherever that comment is. The fingerprint is a hash of the file path,
+   the header and the first 200 characters of the explanation, lower-cased with
+   whitespace collapsed. The line number is left out on purpose, so a push that
+   moves the code does not make the finding new. Each inline comment ends with a
+   hidden marker holding it.
+
+A skipped finding is not dropped from the result: it stays in the overview, with
+`inline_status` `skipped_duplicate`, and `inline_url` is the **earlier
+comment's URL**, so the overview links to the comment that already says it. (With
+several earlier comments, the one whose first line is closest to the finding's
+first line is linked.) A note counts them: "1 finding was already posted on this
+PR and was not repeated." (plural: "N findings were already posted ...").
+
+The model does not see its own earlier findings in the discussion block (they
+are left out on purpose, see below), so it can still spend a finding on a point
+it already raised; the check above keeps it from being posted twice.
+
+### Code in the model's text
+
+The model's text is escaped before it is published, so that it cannot open a
+link, a heading, a table or HTML on the host. A well-formed inline **code span**
+in it, such as `` `retries` ``, is kept as a code span: the host shows it as
+code. Its content is never escaped (a code span shows `<` and `|` as they are),
+and the span is written again with a delimiter long enough for its content, so
+it cannot break out. A backtick that does not close on the same line is escaped
+and shown as a backtick. The same holds in the overview, the inline comments and
+the descriptions and suggestions of [`pr_describe`](describe.md) and
+[`pr_improve`](improve.md). The one exception is the header of a key issue in
+the GitHub and Gitea overview: it sits inside an HTML `<summary>`, where
+Markdown is not reliably rendered, so a backtick there is shown as a plain
+backtick.
 
 ## Discussion awareness
 

@@ -71,6 +71,8 @@ code must not anticipate them beyond the seams named here.
 | X-26 | `pr_describe` (v2, Y-4 to Y-7) | A tool that returns a title, change types, a summary and a files walkthrough; large pull requests are described in parts plus one diff-free summary call; a file the model did not describe is listed, never padded; `publish` writes a comment edited in place or a marked region of the description that never changes the author's text | Decided |
 | X-27 | `pr_improve` (v2, Y-8 to Y-11) | A tool that returns code suggestions, each scored 0 to 10 by a second self-review call (below `improve.min_score` dropped and counted, a failed or silent self-review leaves a suggestion unscored, never dropped); the parts are ranked together and capped; every suggestion is verified against the head file (or, without it, through the patch) before it may be anchored, and an unverified one is marked and never posted inline; `publish` writes an overview edited in place and an inline comment per verified suggestion on new-side lines of one hunk, keyed by file and code, not by the summary | Decided |
 | X-28 | GitHub provider (v2, Y-12 to Y-16) | github.com and GitHub Enterprise Server over REST v3 with a personal access token and no assumed host (`github.base_url` has no default, the API base is derived); a rate limit is the class `rate_limited` with one bounded wait; one `COMMENT` review per run for inline findings, with native suggestion blocks (re-indented, or the diff block) and ranges; thread resolution is not readable (all threads shown, with a note); `pr_info` combines rulesets and classic protection for the required approvals and treats `unstable` as a note, not a blocker; clone with Basic `x-access-token` | Decided |
+| X-29 | Duplicates by place (v2 rc.4, WP-4a) | An inline finding of `pr_review` is a duplicate of review-mcp's own open finding comment at the same place: the token user's inline comment with a finding marker, on the same new path, with overlapping lines (inclusive on both ends), in a thread that is not outdated (resolved threads count); the exact X-13 fingerprint stays as a second rule; a skipped finding links the earlier comment (`inline_url`) | Decided |
+| X-30 | Code spans in model text (v2 rc.4, WP-4b) | Every renderer that escapes model prose keeps the model's well-formed inline code spans (an opening run of N backticks closed by the next run of exactly N on the same line) as code spans, re-emitted with an adapting delimiter and never escaped inside; text outside spans is escaped exactly as before | Decided |
 
 ---
 
@@ -561,6 +563,43 @@ implementation must do or must not do).
   - Recorded for the GitLab provider (2C), not for GitHub: `SanitizeBody` runs over the whole inline body, including a native suggestion block, and with `QuickActions` set it could change the code a block applies; the 2C spec requires either that the sanitiser leaves suggestion fences untouched or that such a block falls back to the diff block, with a canary.
 - **Consequences:** every `docs/*.md` page names GitHub next to Gitea and Bitbucket Server; the `pr_improve` suggestion-block precondition of X-27 is met for GitHub; `NOTICE` is unchanged (nothing was adapted from another project). Live acceptance (spec 2B §5, items Q1 to Q5) is not part of this change: nothing here has run against a real github.com or GitHub Enterprise Server.
 
+#### X-29 — Duplicates by place (added v2 rc.4; WP-4a)
+- **Origin:** the rc.3 acceptance (issue #19, Q3): a second `pr_review` run posted two findings again because the model had reworded them. The already-posted check compared the X-13 fingerprint (file, header, text), and the model does not see its own earlier findings (own marked threads are left out of the discussion block on purpose). Spec `docs/plan/v2-rc4-fixes-spec.md` §1. Guide: `docs/review.md`.
+- **Decision:**
+  - **Own finding threads.** From the threads `pr_review` already reads (no new request), the inline comments by the token's user (`provider.IsUser`) whose last line is a finding marker (`ParseFingerprintMarker`), each with its path, start line, line, URL and whether the thread is outdated.
+  - **Overlap rule.** A finding whose resolved anchor (`Line` to `max(Line, EndLine)`) shares a line with an own finding comment on the same new path, inclusive on both ends, is `skipped_duplicate`, unless that thread is outdated (the code under it changed, so a finding there may be new). A resolved thread counts: a person closed it, and posting again is noise. The exact fingerprint stays as a second check.
+  - **Link.** A skipped finding keeps `inline_status: skipped_duplicate` and gets `inline_url` = the earlier comment's URL; the overview links it like a posted one. The note "N findings were already posted on this PR and were not repeated." counts both rules.
+  - **`provider.Thread.StartLine`** (0 = single line): GitHub fills it from `start_line` (`original_start_line` when outdated); Gitea and Bitbucket Server leave it 0 and know only the first line of a range comment. Gitea inline comments and Bitbucket Server replies now carry their URLs. The contract suite has a review-duplicates scenario that runs on all three providers.
+- **Settled on the rc.4 PR (architect, WP-4a review):**
+  - Any comment of an inline thread by the token's user counts, not only the root: Gitea groups the comments of one line into one thread, so a finding can be a reply (DQ-1).
+  - Between several overlapping own comments the one whose first line is closest to the finding's wins, then the oldest; for the rewording of a range this links the comment it rewords (DQ-2).
+  - A thread on a renamed file's old path never suppresses: its line numbers belong to another version of the file (DQ-3).
+  - The contract scenario lives in `internal/provider/contract/review.go`, so `contract` imports `review`; accepted for rc.4, to be moved to `contract/reviewcase` only if a second tool scenario is added (DQ-4).
+  - A fingerprint-only skip is linked too, to the oldest comment with that fingerprint, so every skipped finding is linked the same way (DQ-5).
+  - `Thread.StartLine` is not exposed in `pr_comments` (DQ-6).
+  - `pr_improve` skipped duplicates get the same link (DQ-7), done in WP-4c: the oldest own comment's URL per key goes to `anchor.url`, and the overview links the suggestion's file cell to it.
+  - Accepted as honest: Gitea and Bitbucket Server do not see a finding that lies inside an earlier range but not on its first line.
+  - Not verified: GitHub's outdated range fields, Gitea's `html_url` on review comments and Bitbucket reply URLs on real hosts; the in-use acceptance of rc.4 covers GitHub.
+- **Backlog (not done here):** a prompt block listing review-mcp's own earlier findings, so the model does not spend findings on them (phase 2F, with the V-9 benchmark).
+- **Consequences:** the "duplicate-skipped finding links to its earlier inline comment" item of §7 is closed. A first-line match is exact on Gitea and Bitbucket Server and range-wide on GitHub.
+
+#### X-30 — Code spans in model text (added v2 rc.4; WP-4b)
+- **Origin:** the rc.3 acceptance (issue #19, Q3): the model's `` `code` `` was published as `` \`code\` `` (and `<` inside it as `&lt;`), so GitHub showed literal backticks in the overview, the inline comments and the description. This is the backlog item "code-span-aware escaper". Spec `docs/plan/v2-rc4-fixes-spec.md` §2.
+- **Decision:**
+  - **`mdutil.EscapeKeepingCodeSpans(s, esc)`.** Each line is scanned for CommonMark code spans: an opening run of N backticks closed by the next run of exactly N on the same line; a run without a closer is text. A span is re-emitted through `mdutil.CodeSpan` of its content (CommonMark's one-space stripping applied), so its delimiter adapts; the text between spans goes through `esc`. Nothing inside a span is backslash- or HTML-escaped.
+  - **Use.** Every place that escapes model prose for publishing or for the client text: `pr_review` (overview fields, key issues, inline comments, the client rendering), `pr_describe` (title in the body, summary, walkthrough), `pr_improve` (summary, content). Paths, URLs, labels, provider data and fixed notes keep their helpers; `pr_ask` answers were already raw.
+  - **Safety.** Text outside spans is escaped byte for byte as before (pinned for all three escapers); a span cannot open HTML, a link, a heading or a table.
+- **Settled on the rc.4 PR (architect, WP-4b review):**
+  - The key-issue header inside the GFM `<summary><strong>` keeps `html.EscapeString`, since Markdown is not reliably rendered inside `<summary>` and a backtick there shows as a plain backtick (DQ-1); rendering the spans as `<code>...</code>` there is a backlog item.
+  - In a pipe-table cell a `|` inside a span becomes `\|`, the GFM rule; the cell cannot split (DQ-2).
+  - `InlineKeepingCodeSpans` folds line breaks before scanning, so a span written over a line break becomes a span in a one-line context; safe through `CodeSpan` and in line with CommonMark soft breaks (DQ-3).
+  - `CodeSpan` pads content that starts and ends with a space, which CommonMark would otherwise strip; no golden changed (DQ-4).
+  - A backslash-escaped backtick cannot open a span (DQ-5).
+  - Fifteen goldens changed, and only the lines where `` \` `` became `` ` ``; no golden without backticks in model text changed.
+  - Not verified: the rendering on real GitHub, Gitea and Bitbucket Server hosts; the in-use acceptance of rc.4 covers it.
+- **Backlog (not done here):** the spans as `<code>` in the `<summary>` header (above).
+- **Consequences:** the "code-span-aware escaper" backlog item is closed.
+
 **Confirmed from 9a (v1.1 spec §0):** binary and empty-diff files stay outside `total_files` (9a DESIGN-QUESTION 2), as the X-18 mapping says.
 
 ---
@@ -672,10 +711,12 @@ violations are reported together in one token-free startup error.
 | Repo-local config | Layered loader with explicit layer list |
 | Basic auth (Bitbucket Server) | Auth as a provider-level strategy, not a hardcoded header |
 | Labels | Typed `Capabilities` struct (inline and persistent comments shipped in P7, X-11, X-12) |
-| Duplicate-skipped finding links to its earlier inline comment (v1.0.x) | `CommentItem.URL` filled for inline comments |
 | Shared package for the P2e sanitizers duplicated in `internal/review` (v1.0.x) | None; a refactor |
 | `/improve` (DQ-11; DQ-13, 14, 15, 18 were decided in P7) | Hunk model with multiple renderers (DQ-10) |
 | Additional review fields | Field-descriptor table (X-4, DQ-6) |
+| Key-issue header of the GFM overview with code spans as `<code>` inside `<summary>` (X-30, WP-4b DQ-1) | `mdutil.EscapeKeepingCodeSpans` |
+| Tab- and space-tolerant verification of `pr_improve` quotes: a quote indented with spaces where the file uses tabs (rc.3 acceptance, item 4); anchoring and re-indentation would still need the exact real lines | `normalizeSnippet` in the verifier |
+| A prompt block listing review-mcp's own earlier findings, so the model does not spend findings on them (X-29; phase 2F, with the V-9 benchmark) | `ownFindingsOf` (`internal/review/duplicate.go`) |
 
 ## 8. Rejected options
 

@@ -545,7 +545,7 @@ one of:
 | Status | Meaning |
 |---|---|
 | inline comment posted | The suggestion has an inline comment from this run. |
-| already posted on this PR | An inline comment for it from an earlier run exists (`skipped_duplicate`). |
+| already posted on this PR | An inline comment for it from an earlier run exists (`skipped_duplicate`). The `File` cell links to that earlier comment, when the server reported its URL. |
 | listed here only | Verified, but without an inline comment: unanchorable, failed, or not posted. |
 | checked against the head file | Verified, but no inline outcome is known. The overview as first posted shows this for every verified suggestion, before the inline comments exist; it stays only if the final edit fails (see the note above). |
 | not anchored: the quoted code was not found at the given lines | Unverified: `not_found` or `ambiguous`. |
@@ -638,9 +638,11 @@ PR, from every comment of every inline thread (Gitea groups the comments of one
 line into one thread), and skips the suggestions that are already there:
 `skipped_duplicate`, and the notes say "N suggestions were already posted on
 this PR and were not repeated." (singular: "1 suggestion was already posted on
-this PR and was not repeated."). Only comments by the token's own user count. A
-comment whose marker holds the older key of a development build (a hash that
-included the summary) is recognised too.
+this PR and was not repeated."). The skipped suggestion's `anchor.url` is the
+earlier comment's URL, and the overview links its file cell to it, as
+`pr_review` does for a skipped finding. Only comments by the token's own user
+count. A comment whose marker holds the older key of a development build (a
+hash that included the summary) is recognised too.
 
 This is the check for suggestions review-mcp posted itself. A point a **person**
 raised is not detected by a hash: it reaches the model through
@@ -690,7 +692,7 @@ Each verified suggestion that was considered also has an `anchor`, with
 | `anchor.status` | Meaning |
 |---|---|
 | `posted` | The inline comment was posted. |
-| `skipped_duplicate` | A comment with the same key by the token's user is already on the PR. |
+| `skipped_duplicate` | A comment with the same key by the token's user is already on the PR. `url` is that earlier comment's, when the server reported it; `comment_id` is not set. |
 | `unanchorable` | The verified range is not on new-side lines of one hunk, or the server refused the position. In the overview only. |
 | `failed` | The inline comment could not be posted. `error` has the fixed sentence of the provider's error. In the overview only, with the note "N suggestions could not be posted as inline comments and are listed in the overview only." (singular: "1 suggestion could not be posted as an inline comment and is listed in the overview only."). |
 

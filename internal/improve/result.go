@@ -226,7 +226,8 @@ const (
 	// AnchorPosted: the inline comment was posted.
 	AnchorPosted = "posted"
 	// AnchorSkippedDuplicate: a comment with the suggestion's fingerprint by
-	// the token's user is already on the PR; nothing was posted.
+	// the token's user is already on the PR; nothing was posted. Anchor.URL
+	// is that earlier comment's, as far as the server reported it.
 	AnchorSkippedDuplicate = "skipped_duplicate"
 	// AnchorUnanchorable: the verified range is not on head-side lines of
 	// one hunk of the PR's diff (or the server refused the position), so
@@ -246,7 +247,8 @@ type Anchor struct {
 	// suggestion's range. 0 (omitted) for an unanchorable suggestion.
 	Line int `json:"line,omitempty"`
 	// CommentID and URL are the posted comment's, as far as the server
-	// reported them.
+	// reported them. For a skipped duplicate URL is the earlier comment's
+	// (CommentID is not set).
 	CommentID string `json:"comment_id,omitempty"`
 	URL       string `json:"url,omitempty"`
 	// Error is the fixed sentence of a failed post.

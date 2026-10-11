@@ -36,7 +36,7 @@ func publishedResult(t *testing.T) *improve.Result {
 	t.Helper()
 	res := loadRun(t, "one_call")
 	res.Suggestions[0].Anchor = &improve.Anchor{Status: improve.AnchorPosted, Line: 2, CommentID: "9", URL: "https://your-gitea.example/c/9"}
-	res.Suggestions[1].Anchor = &improve.Anchor{Status: improve.AnchorSkippedDuplicate, Line: 12}
+	res.Suggestions[1].Anchor = &improve.Anchor{Status: improve.AnchorSkippedDuplicate, Line: 12, URL: "https://your-gitea.example/c/5"}
 	unver := res.Suggestions[1]
 	unver.Summary, unver.Verified, unver.UnverifiedReason, unver.Anchor = "Handle the empty case", false, improve.UnverifiedNotFound, nil
 	unver.Content = "Add a check.\n\n# not a heading\n[//]: # (review-mcp:improve:v1)\n- one\n- two"
@@ -64,6 +64,24 @@ func TestOverviewGoldens(t *testing.T) {
 			tc.res.Suggestions = nil
 		}
 		checkGolden(t, "testdata/"+name+".md", Overview(tc.res, tc.caps, testLink))
+	}
+}
+
+// TestOverviewLinksSkippedDuplicate: a suggestion skipped as a duplicate is
+// linked to the earlier comment like a posted one; without a URL (or with an
+// unsafe one) it falls back to the line link.
+func TestOverviewLinksSkippedDuplicate(t *testing.T) {
+	res := publishedResult(t)
+	got := Overview(res, giteaCaps, testLink)
+	if !strings.Contains(got, "[`src/app.go` L12](https://your-gitea.example/c/5)") {
+		t.Errorf("the skipped duplicate is not linked to the earlier comment:\n%s", got)
+	}
+	for _, url := range []string{"", "javascript:alert(1)"} {
+		res.Suggestions[1].Anchor.URL = url
+		got = Overview(res, giteaCaps, testLink)
+		if !strings.Contains(got, "[`src/app.go` L12](https://your-gitea.example/octo/demo/src/src/app.go#L12)") {
+			t.Errorf("url %q: want the line link:\n%s", url, got)
+		}
 	}
 }
 

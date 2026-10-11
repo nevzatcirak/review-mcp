@@ -136,7 +136,7 @@ func fileCell(s *improve.Suggestion, link func(string, int) string) string {
 		return text
 	}
 	dest := ""
-	if s.Anchor != nil && s.Anchor.Status == improve.AnchorPosted {
+	if s.Anchor != nil && (s.Anchor.Status == improve.AnchorPosted || s.Anchor.Status == improve.AnchorSkippedDuplicate) {
 		dest = safeLink(s.Anchor.URL)
 	}
 	if dest == "" && link != nil && s.StartLine != nil {

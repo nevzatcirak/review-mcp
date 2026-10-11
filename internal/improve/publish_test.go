@@ -297,6 +297,17 @@ func TestPublishSecondRun(t *testing.T) {
 	if !slices.Contains(second.Notes, noteAlreadyPosted(2)) {
 		t.Errorf("notes = %q", second.Notes)
 	}
+	// A skipped duplicate links the earlier comment.
+	for i := range second.Suggestions {
+		s := &second.Suggestions[i]
+		if s.Anchor == nil {
+			continue
+		}
+		prev := first.Suggestions[i].Anchor
+		if s.Anchor.URL == "" || s.Anchor.URL != prev.URL {
+			t.Errorf("%s: skipped duplicate url = %q, want the first run's %q", s.Summary, s.Anchor.URL, prev.URL)
+		}
+	}
 	// A marker typed by someone else does not make a suggestion a duplicate.
 	var fps []string
 	for _, b := range p.inlineBodies() {
@@ -692,5 +703,26 @@ func TestSuggestionFingerprintKey(t *testing.T) {
 		if SuggestionFingerprint(&s) == key {
 			t.Errorf("%s does not change the key", name)
 		}
+	}
+}
+
+// TestPostedSuggestions: the URL of the oldest own comment per key; a comment
+// without a URL still counts; another user's marker and a general thread do
+// not.
+func TestPostedSuggestions(t *testing.T) {
+	me, other := botUser, provider.User{ID: "11", Name: "alice"}
+	mk := func(u provider.User, fp, url string, min int) provider.CommentItem {
+		return provider.CommentItem{AuthorID: u.ID, AuthorLogin: u.Name, Body: "text\n\n" + SuggestionMarker(fp), URL: url,
+			CreatedAt: time.Date(2026, 10, 9, 9, min, 0, 0, time.UTC)}
+	}
+	threads := []provider.Thread{
+		{Kind: provider.ThreadInline, Comments: []provider.CommentItem{mk(me, "aaaaaaaaaaaa", "https://your-gitea.example/c/2", 2)}},
+		{Kind: provider.ThreadInline, Comments: []provider.CommentItem{mk(me, "aaaaaaaaaaaa", "https://your-gitea.example/c/1", 1)}},
+		{Kind: provider.ThreadInline, Comments: []provider.CommentItem{mk(me, "bbbbbbbbbbbb", "", 3), mk(other, "cccccccccccc", "https://your-gitea.example/c/9", 4)}},
+		{Kind: provider.ThreadGeneral, Comments: []provider.CommentItem{mk(me, "dddddddddddd", "https://your-gitea.example/c/8", 5)}},
+	}
+	want := map[string]string{"aaaaaaaaaaaa": "https://your-gitea.example/c/1", "bbbbbbbbbbbb": ""}
+	if got := postedSuggestions(threads, me); !mapEqual(got, want) {
+		t.Errorf("postedSuggestions = %v, want %v", got, want)
 	}
 }

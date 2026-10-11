@@ -54,7 +54,7 @@ func ResultSchema() map[string]any {
 							"description": "posted, skipped_duplicate (a comment with the same fingerprint by the token's user is already on the PR), unanchorable (the range is not on head-side lines of one hunk, or the server refused the position), or failed (the comment could not be posted)"},
 						"line":       integer("the head-side line the comment sits on: the first line of the range; omitted when unanchorable"),
 						"comment_id": str("id of the posted comment, when the server reported one"),
-						"url":        str("URL of the posted comment, when the server reported one"),
+						"url":        str("URL of the posted comment, or of the earlier comment of a skipped duplicate, when the server reported one"),
 						"error":      str("why the post failed, a fixed sentence"),
 					}, "required": []any{"status"}, "additionalProperties": false},
 			}, "file", "language", "label", "summary", "content", "existing_code", "improved_code", "start_line", "end_line",

@@ -11,7 +11,7 @@ import (
 // Retry calls fn up to attempts times and returns the last error.
 func Retry(attempts int, delay time.Duration, fn func() error) error {
 	var err error
-	for i := 0; i <= attempts; i++ {
+	for i := 0; i < attempts; i++ {
 		err = fn()
 		if err == nil {
 			return nil

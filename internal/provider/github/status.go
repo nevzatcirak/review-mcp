@@ -140,7 +140,7 @@ func isOpen(pr *provider.PullRequest) bool {
 //	clean, has_hooks    no blocker
 //	unknown, ""         no blocker: not computed yet (Mergeable is nil too)
 //	dirty               merge conflict
-//	blocked             required reviews or checks not satisfied
+//	blocked             branch rules not satisfied (reviews, checks, other restrictions)
 //	behind              the branch is behind the base
 //	unstable            no blocker: mergeable, only checks that are not
 //	                    required fail or are pending (a note, see

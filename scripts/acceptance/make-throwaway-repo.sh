@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# make-test-repo.sh — builds a throwaway git repository with the branches
+# make-throwaway-repo.sh — builds a throwaway git repository with the branches
 # that the live acceptance (docs/plan/v1-acceptance.md §1) needs.
 #
-# Usage: scripts/acceptance/make-test-repo.sh <empty-or-new-directory>
+# Usage: scripts/acceptance/make-throwaway-repo.sh <empty-or-new-directory>
 #
 # It only works locally: it never pushes and never contacts a server. After
 # it finishes, create an empty repository on your personal instance, add it

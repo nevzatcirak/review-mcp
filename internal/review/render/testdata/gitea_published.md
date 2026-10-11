@@ -42,6 +42,17 @@ resp, _ := get()
 
 </details>
 
+<details><summary>4. <a href='https://your-gitea.example/org/repo/pulls/12/files#issuecomment-880'><strong>Unchecked error</strong></a> <code>cmd/app/main.go L14-15</code></summary>
+
+The error is dropped.
+
+```go
+v, _ := parse()
+use(v)
+```
+
+</details>
+
 </td></tr>
 </table>
 
@@ -73,3 +84,4 @@ Filtered: `lockfile_or_minified` (1):
 ### 📝 Notes
 
 - 1 finding could not be placed on a changed line and is listed in the overview only.
+- 1 finding was already posted on this PR and was not repeated.

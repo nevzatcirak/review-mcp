@@ -112,8 +112,11 @@ type InlineSummary struct {
 	// Posted findings have an inline comment; KeyIssue.InlineURL links it
 	// when the server reported a URL.
 	Posted int `json:"posted"`
-	// SkippedDuplicate findings were already on the PR (their fingerprint
-	// was found) and were not posted again.
+	// SkippedDuplicate findings were already on the PR and were not posted
+	// again: one of review-mcp's own finding comments is at their place (an
+	// open or resolved thread that is not outdated; X-29) or carries their
+	// fingerprint. KeyIssue.InlineURL links that comment when its URL is
+	// known.
 	SkippedDuplicate int `json:"skipped_duplicate"`
 	// Unanchorable findings have no line in the PR's diff; they are in the
 	// overview only.

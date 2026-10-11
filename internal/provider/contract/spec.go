@@ -122,6 +122,10 @@ type Thread struct {
 	Path     string
 	Line     int
 	Resolved bool
+	// Outdated marks an inline thread whose anchor no longer matches the
+	// current diff: the fixture serves it the way its host reports an
+	// outdated comment, made on Line.
+	Outdated bool
 	// Comments holds the root first, then the replies, oldest first. A
 	// general thread has a root only: not every host threads PR-level
 	// comments.

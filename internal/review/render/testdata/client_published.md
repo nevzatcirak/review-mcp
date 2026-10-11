@@ -34,10 +34,19 @@ Pull request: Gitea #12 — Add retry to the fetcher (`https://your-gitea.exampl
    resp, _ := get()
    ```
 
+4. **Unchecked error** — [`cmd/app/main.go` L14-15](https://your-gitea.example/org/repo/pulls/12/files#issuecomment-880)
+
+   The error is dropped.
+
+   ```go
+   v, _ := parse()
+   use(v)
+   ```
+
 ### Publishing
 
 - Overview: updated in place (`https://your-gitea.example/org/repo/pulls/12#issuecomment-55`)
-- Inline comments: 1 posted, 1 failed, 1 not on a changed line
+- Inline comments: 1 posted, 1 failed, 1 not on a changed line, 1 already on the pull request
 
 ### Coverage
 
@@ -67,3 +76,4 @@ Filtered: `lockfile_or_minified` (1):
 ### Notes
 
 - 1 finding could not be placed on a changed line and is listed in the overview only.
+- 1 finding was already posted on this PR and was not repeated.

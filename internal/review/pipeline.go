@@ -205,11 +205,11 @@ type Plan struct {
 	toggles     Toggles
 	maxFindings int
 	log         *slog.Logger
-	// postedFingerprints are the fingerprints of the review's inline
-	// comments already on the PR (spec P7 §5.3); a finding with one of them
-	// is not posted again. Prepare fills it from the PR's threads when the
-	// run will publish inline comments.
-	postedFingerprints map[string]bool
+	// own are review-mcp's own inline finding comments already on the PR
+	// (X-29, spec P7 §5.3); a finding on the place of one of them, or with
+	// the fingerprint of one, is not posted again. Prepare fills it from
+	// the PR's threads when the run will publish inline comments.
+	own []ownFinding
 
 	// The PR's threads and the token's user, each read at most once per
 	// run (listThreads, currentUser).

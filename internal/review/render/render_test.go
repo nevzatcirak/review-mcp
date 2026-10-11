@@ -122,11 +122,13 @@ func fixtures() map[string]*review.Result {
 	}
 	// published is a result after an inline publish that updated the
 	// overview of an earlier run (spec P7 §4.3): one finding posted inline,
-	// one not on a changed line, one whose inline comment failed; the
-	// "already discussed" count is set.
+	// one not on a changed line, one whose inline comment failed, and one
+	// skipped because review-mcp's earlier comment is at its place, linked
+	// to that comment (X-29); the "already discussed" count is set.
 	published := &review.Result{
 		PR: basePR(), EnabledFields: allKeys, Coverage: baseCoverage(),
-		Notes:    []string{"1 finding could not be placed on a changed line and is listed in the overview only."},
+		Notes: []string{"1 finding could not be placed on a changed line and is listed in the overview only.",
+			"1 finding was already posted on this PR and was not repeated."},
 		Metadata: review.Metadata{AlreadyDiscussed: 2},
 		Review: &review.Review{
 			EstimatedEffortToReview: ip(2), RelevantTests: bp(true), SecurityConcerns: sp(review.SecurityNo),
@@ -152,11 +154,18 @@ func fixtures() map[string]*review.Result {
 					Link:         "https://your-gitea.example/org/repo/src/commit/abc123/cmd/app/main.go#L12",
 					InlineStatus: review.InlineFailed,
 				},
+				{
+					RelevantFile: "cmd/app/main.go", IssueHeader: "Unchecked error", IssueContent: "The error is dropped.",
+					StartLine: 14, EndLine: 15, Snippet: "v, _ := parse()\nuse(v)",
+					Link:         "https://your-gitea.example/org/repo/src/commit/abc123/cmd/app/main.go#L14",
+					InlineURL:    "https://your-gitea.example/org/repo/pulls/12/files#issuecomment-880",
+					InlineStatus: review.InlineSkippedDuplicate,
+				},
 			},
 		},
 		Publish: &review.PublishResult{Published: true, Updated: true, CommentID: "55",
 			URL:    "https://your-gitea.example/org/repo/pulls/12#issuecomment-55",
-			Inline: &review.InlineSummary{Posted: 1, Unanchorable: 1, Failed: 1}},
+			Inline: &review.InlineSummary{Posted: 1, SkippedDuplicate: 1, Unanchorable: 1, Failed: 1}},
 	}
 	// complete is the run without findings whose coverage has nothing
 	// partial (filtered, binary and empty-diff files do not count, X-18):

@@ -251,7 +251,9 @@ func TestPublishInlineOff(t *testing.T) {
 }
 
 // TestPublishSkipsPostedFingerprints is the WP-PR-7e seam: a finding whose
-// fingerprint is already on the PR is not posted again and is counted.
+// fingerprint is already on the PR is not posted again and is counted, even
+// when that comment is elsewhere and outdated (the exact rule stays as the
+// second check of X-29), and it links to that comment.
 func TestPublishSkipsPostedFingerprints(t *testing.T) {
 	h := newHarness(answerWith(onAdded, onContext))
 	h.overviewRenderer()
@@ -260,9 +262,11 @@ func TestPublishSkipsPostedFingerprints(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pl.postedFingerprints = map[string]bool{
-		Fingerprint("src/app.go", "  OFF BY ONE ", "the loop is off by one "+answerMarker+"."): true,
-	}
+	const earlier = "https://your-gitea.example/org/repo/pulls/1/files#issuecomment-7"
+	pl.own = []ownFinding{{
+		fp:   Fingerprint("src/app.go", "  OFF BY ONE ", "the loop is off by one "+answerMarker+"."),
+		path: "src/app.go", start: 40, line: 40, outdated: true, url: earlier, c: &provider.CommentItem{ID: "7"},
+	}}
 	res, err := pl.finish(context.Background(), h.deps, args)
 	if err != nil {
 		t.Fatal(err)
@@ -273,8 +277,53 @@ func TestPublishSkipsPostedFingerprints(t *testing.T) {
 	if len(h.prov.inline) != 1 || len(h.prov.inline[0]) != 1 || h.prov.inline[0][0].Line != 10 {
 		t.Errorf("inline items = %+v", h.prov.inline)
 	}
+	if ki := res.Review.KeyIssuesToReview[0]; ki.InlineStatus != InlineSkippedDuplicate || ki.InlineURL != earlier {
+		t.Errorf("skipped finding = %+v", ki)
+	}
 	note := "1 finding was already posted on this PR and was not repeated."
-	if !slices.Equal(res.Notes, []string{note}) || !strings.Contains(h.prov.posted[0], "note: "+note) {
+	if !slices.Equal(res.Notes, []string{note}) || !strings.Contains(h.prov.posted[0], "note: "+note) ||
+		!strings.Contains(h.prov.posted[0], "Off by one -> "+earlier) {
+		t.Errorf("notes = %q, overview %q", res.Notes, h.prov.posted)
+	}
+}
+
+// TestPublishSkipsOwnFindingAtItsPlace (X-29): reworded findings on the
+// place of review-mcp's own finding comments are skipped and linked to
+// them, the duplicates note counts them, and the overview (here the only
+// write: nothing new is posted inline) links each to its earlier comment.
+func TestPublishSkipsOwnFindingAtItsPlace(t *testing.T) {
+	h := newHarness(answerWith(onAdded, onContext))
+	h.overviewRenderer()
+	args := Args{PRURL: testPRURL, Publish: true}
+	pl, err := Prepare(context.Background(), h.deps, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const on11, on12 = "https://your-gitea.example/c/11", "https://your-gitea.example/c/12"
+	pl.own = []ownFinding{
+		{fp: "aaaaaaaaaaaa", path: "src/app.go", start: 11, line: 11, url: on11, c: &provider.CommentItem{ID: "1"}},
+		{fp: "bbbbbbbbbbbb", path: "src/app.go", start: 12, line: 12, url: on12, c: &provider.CommentItem{ID: "2"}},
+	}
+	res, err := pl.finish(context.Background(), h.deps, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in := res.Publish.Inline; in == nil || *in != (InlineSummary{SkippedDuplicate: 2}) {
+		t.Errorf("inline = %+v", res.Publish.Inline)
+	}
+	if !slices.Equal(h.prov.seq, []string{"post"}) {
+		t.Errorf("write calls = %v, want only the overview", h.prov.seq)
+	}
+	// onAdded is line 11; onContext is lines 10 to 12, which overlap both
+	// comments: line 11 is closer to its first line, 10.
+	kis := res.Review.KeyIssuesToReview
+	if kis[0].InlineURL != on11 || kis[1].InlineURL != on11 ||
+		kis[0].InlineStatus != InlineSkippedDuplicate || kis[1].InlineStatus != InlineSkippedDuplicate {
+		t.Errorf("findings = %+v", kis)
+	}
+	note := "2 findings were already posted on this PR and were not repeated."
+	if !slices.Equal(res.Notes, []string{note}) || !strings.Contains(h.prov.posted[0], "Off by one -> "+on11) ||
+		!strings.Contains(h.prov.posted[0], "Context finding -> "+on11) {
 		t.Errorf("notes = %q, overview %q", res.Notes, h.prov.posted)
 	}
 }

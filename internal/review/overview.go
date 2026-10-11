@@ -117,8 +117,7 @@ func (pl *Plan) findOverview(ctx context.Context) (*foundOverview, error) {
 }
 
 // readDiscussion reads the PR's threads for the prompt and the duplicate
-// check (spec P7 §5): it fills pl.postedFingerprints when wantFingerprints
-// is set and renders the discussion block within maxTokens (0 or less: no
+// check (spec P7 §5, X-29): it fills pl.own when wantFingerprints is set and renders the discussion block within maxTokens (0 or less: no
 // block). It reads nothing when neither is wanted. Any read error returns
 // an empty discussion and NoteDiscussionUnreadable: the discussion is
 // context, never a reason to fail the review. Without the token's own user
@@ -138,10 +137,10 @@ func (pl *Plan) readDiscussion(ctx context.Context, maxTokens int, wantFingerpri
 		return discussion{}, []string{NoteDiscussionUnreadable}
 	}
 	if wantFingerprints {
-		pl.postedFingerprints = fingerprintsOf(threads, me)
+		pl.own = ownFindingsOf(threads, me)
 	}
 	d := renderDiscussion(humanThreads(threads, me), maxTokens, factor)
 	pl.log.Debug("review: discussion read", "threads", len(threads), "shown", d.Included, "omitted", d.Omitted,
-		"posted_fingerprints", len(pl.postedFingerprints))
+		"own_findings", len(pl.own))
 	return d, nil
 }

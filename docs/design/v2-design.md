@@ -20,8 +20,9 @@
 | 2D | `pr_describe` | v2.0.0-rc.1 | Useful at once on the providers already in use; no line anchoring. |
 | 2E | `pr_improve` | v2.0.0-rc.2 | Reuses P7 anchors and X-19 parts; the highest review value after `pr_review`. |
 | 2B | GitHub provider | v2.0.0-rc.3 | Dogfooding: this repository's own PRs are a personal test instance. |
-| 2F | Review quality: CI status, project guidelines and file tree, focused reviews | v2.0.0-rc.4 | Added 2026-10-10 (owner decision). After GitHub so that every provider-specific read is designed for three providers at once; before GitLab so that GitLab ships with it. |
-| 2C | GitLab provider | v2.0.0-rc.5 | Largest API surface (nested groups, positions, quick actions). |
+| fixes | Fixes from the rc.3 acceptance (#19): `pr_review` duplicates by place (X-29), code spans kept (X-30), blocker wording | v2.0.0-rc.4 | Added 2026-10-11 (owner decision): its own package, before 2F. Spec `docs/plan/v2-rc4-fixes-spec.md`. |
+| 2F | Review quality: CI status, project guidelines and file tree, focused reviews | v2.0.0-rc.5 | Added 2026-10-10 (owner decision). After GitHub so that every provider-specific read is designed for three providers at once; before GitLab so that GitLab ships with it. |
+| 2C | GitLab provider | v2.0.0-rc.6 | Largest API surface (nested groups, positions, quick actions). |
 
 
 ## 2. Phase 2A — Provider contract
@@ -90,7 +91,7 @@ Origin: the owner's proposal that a review should know whether the change builds
 1. Order: tools first (2A → 2D → 2E → 2B → 2C).
 2. One `v2.0.0` release, with a release candidate per phase.
 3. `pr_describe` may edit PR descriptions, only inside its marked region; the default stays `comment`.
-4. (2026-10-10) Phase 2F, review quality, is added between 2B and 2C (`v2.0.0-rc.4`; GitLab moves to `rc.5`). Building or running pull request code is rejected (R-1 in the decisions document).
+4. (2026-10-10) Phase 2F, review quality, is added between 2B and 2C (now `v2.0.0-rc.5`, after the rc.4 fixes package of 2026-10-11; GitLab `rc.6`). Building or running pull request code is rejected (R-1 in the decisions document).
 
 ## 9. After 2.0 — v2.1 and later (owner decision 2026-10-10; scope only, each item gets a design note)
 

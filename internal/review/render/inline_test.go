@@ -23,9 +23,9 @@ func TestInline(t *testing.T) {
 		want string
 	}{
 		{"gitea range", ki, capsGitea,
-			"**Possible Issue**\n\nThe loop never stops when \\`max\\` is 0 &lt;b&gt;bold&lt;/b&gt; &amp; more.\n\\# not a heading\n\nLines 40–52\n"},
+			"**Possible Issue**\n\nThe loop never stops when `max` is 0 &lt;b&gt;bold&lt;/b&gt; &amp; more.\n\\# not a heading\n\nLines 40–52\n"},
 		{"bitbucket range", ki, capsBB,
-			"**Possible Issue**\n\nThe loop never stops when \\`max\\` is 0 \\<b\\>bold\\</b\\> \\& more.\n\\# not a heading\n\nLines 40–52\n"},
+			"**Possible Issue**\n\nThe loop never stops when `max` is 0 \\<b\\>bold\\</b\\> \\& more.\n\\# not a heading\n\nLines 40–52\n"},
 		{"single line", &review.KeyIssue{IssueHeader: "Style\n**x**", IssueContent: "Rename it.", StartLine: 7, EndLine: 7}, capsBB,
 			"**Style \\*\\*x\\*\\***\n\nRename it.\n"},
 		{"no end line", &review.KeyIssue{IssueHeader: "Style", IssueContent: "Rename it.", StartLine: 7}, capsGitea,

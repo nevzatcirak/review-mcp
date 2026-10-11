@@ -22,8 +22,8 @@ Batch the &lt;ids&gt; instead.
 
 <details><summary>1. <a href='https://your-gitea.example/org/repo/src/commit/abc123/cmd/app/main.go#L10-L12'><strong>Possible Issue</strong></a> <code>cmd/app/main.go L10-12</code></summary>
 
-The retry loop never stops when \`max\` is 0, so it spins forever.
-See the \`for\` loop.
+The retry loop never stops when `max` is 0, so it spins forever.
+See the `for` loop.
 
 ```go
 for {

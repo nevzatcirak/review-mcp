@@ -52,7 +52,8 @@ const (
 // and the file are model-authored one-liners escaped with mdutil.Inline (and,
 // with caps.GFM, HTML metacharacters as entities, which render as the
 // literal characters in a table cell too); the suggestion text is escaped
-// per caps.GFM like a summary of pr_describe (EscapeBullets); code stays
+// per caps.GFM like a summary of pr_describe (EscapeBullets); the model's
+// code spans in the summary and the text are kept (X-30); code stays
 // inside fences that it cannot close. Nothing here is raw HTML.
 func Overview(res *improve.Result, caps provider.Capabilities, link func(path string, line int) string) string {
 	if res == nil {
@@ -81,7 +82,7 @@ func Overview(res *improve.Result, caps provider.Capabilities, link func(path st
 		for i := range res.Suggestions {
 			s := &res.Suggestions[i]
 			b.WriteString("| " + strconv.Itoa(i+1) + " | " + labelCell(s) + " | " + fileCell(s, link) + " | " +
-				oneLine(s.Summary, esc) + " | " + scoreText(s) + " | " + statusText(s) + " |\n")
+				summaryCell(s.Summary, esc) + " | " + scoreText(s) + " | " + statusText(s) + " |\n")
 		}
 	} else {
 		for i := range res.Suggestions {
@@ -182,9 +183,16 @@ func statusText(s *improve.Suggestion) string {
 	return TextLinesVerified
 }
 
-// oneLine folds s to one line and escapes it with esc.
+// oneLine folds the model text s to one line and escapes it with esc,
+// keeping its code spans (X-30).
 func oneLine(s string, esc func(string) string) string {
-	return esc(strings.Join(strings.Fields(s), " "))
+	return mdutil.EscapeKeepingCodeSpans(strings.Join(strings.Fields(s), " "), esc)
+}
+
+// summaryCell is oneLine for a pipe-table cell, where a '|' inside a code
+// span would split the cell (mdutil.EscapeCellKeepingCodeSpans).
+func summaryCell(s string, esc func(string) string) string {
+	return mdutil.EscapeCellKeepingCodeSpans(strings.Join(strings.Fields(s), " "), esc)
 }
 
 func joinNonEmpty(sep string, parts ...string) string {
@@ -274,7 +282,7 @@ func suggestionBody(s *improve.Suggestion, caps provider.Capabilities, native pr
 		b.WriteString("\nThe inline comment could not be posted.\n")
 	}
 	if c := strings.TrimSpace(s.Content); c != "" {
-		b.WriteString("\n" + mdutil.EscapeBullets(c, esc) + "\n")
+		b.WriteString("\n" + mdutil.EscapeBullets(c, func(l string) string { return mdutil.EscapeKeepingCodeSpans(l, esc) }) + "\n")
 	}
 	b.WriteString("\n")
 	lang := fenceInfo(s.Language)

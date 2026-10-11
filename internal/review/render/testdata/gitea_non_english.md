@@ -20,7 +20,7 @@ src/main.py: her istekte dosya yeniden okunuyor.
 
 <details><summary>1. <strong>Olası hata 🐞</strong> <code>src/main.py L3-4</code></summary>
 
-Döngü, \`sınır\` sıfır olduğunda sonsuza kadar sürer. 日本語のテスト。
+Döngü, `sınır` sıfır olduğunda sonsuza kadar sürer. 日本語のテスト。
 
 ```python
 while True:

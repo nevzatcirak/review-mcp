@@ -260,3 +260,46 @@ func TestOverviewMarks(t *testing.T) {
 		t.Errorf("nil result")
 	}
 }
+
+// TestCodeSpansKept (X-30): the model's code spans in the summary and the
+// text stay code spans with their content verbatim; in a table cell the
+// pipes of a span are escaped, so the row keeps its cells.
+func TestCodeSpansKept(t *testing.T) {
+	res := publishedResult(t)
+	for i := range res.Suggestions {
+		res.Suggestions[i].Anchor = nil // every suggestion is listed in the overview
+	}
+	s := &res.Suggestions[0]
+	s.Summary = "Guard `a|b` in *x*"
+	s.Content = "- Check `<b>` first\n- `# x` stays"
+	for name, caps := range map[string]provider.Capabilities{"gitea": giteaCaps, "bbs": bbsCaps, "plain": plainCaps} {
+		overview, inline := Overview(res, caps, testLink), Inline(s, caps)
+		for _, want := range []string{"- Check `<b>` first", "- `# x` stays", "#### 1. Guard `a|b` in \\*x\\*"} {
+			if !strings.Contains(overview, want) {
+				t.Errorf("%s overview: %q missing:\n%s", name, want, overview)
+			}
+		}
+		if want := "**Guard `a|b` in \\*x\\***"; !strings.Contains(inline, want) {
+			t.Errorf("%s inline: %q missing:\n%s", name, want, inline)
+		}
+		if want := "- Check `<b>` first"; !strings.Contains(inline, want) {
+			t.Errorf("%s inline: %q missing:\n%s", name, want, inline)
+		}
+		if caps.MarkdownTables {
+			row := ""
+			for _, l := range strings.Split(overview, "\n") {
+				if strings.HasPrefix(l, "| 1 |") {
+					row = l
+				}
+			}
+			if !strings.Contains(row, "| Guard `a\\|b` in \\*x\\* |") || strings.Count(strings.ReplaceAll(row, `\|`, ""), "|") != 7 {
+				t.Errorf("%s: table row %q", name, row)
+			}
+		} else if !strings.Contains(overview, "1. Guard `a|b` in \\*x\\* (") {
+			t.Errorf("%s: list entry missing:\n%s", name, overview)
+		}
+	}
+	if want := "### 1. Guard `a|b` in \\*x\\*"; !strings.Contains(Client(res), want) {
+		t.Errorf("client: %q missing:\n%s", want, Client(res))
+	}
+}

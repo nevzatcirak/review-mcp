@@ -461,6 +461,42 @@ func TestBitbucketHasNoHTMLAndEscapesPipes(t *testing.T) {
 	}
 }
 
+// TestCodeSpansKept (X-30): the model's code spans stay code spans in the
+// overview, the client view and the inline comment, with their content
+// verbatim, while the text around them is escaped.
+func TestCodeSpansKept(t *testing.T) {
+	ki := review.KeyIssue{
+		RelevantFile: "a.go", IssueHeader: "Check `n|m`", IssueContent: "Use `<script>` here, not <script>.",
+		StartLine: 1, EndLine: 1, SnippetNote: "see `x*y`",
+	}
+	res := &review.Result{
+		PR: basePR(), EnabledFields: allKeys, Coverage: review.Coverage{},
+		Review: &review.Review{
+			EstimatedEffortToReview: ip(2), RelevantTests: bp(true), SecurityConcerns: sp("`[x](y)` is safe"),
+			PerformanceConcerns: sp("`- a` loops"), KeyIssuesToReview: []review.KeyIssue{ki},
+		},
+	}
+	for name, c := range map[string]struct {
+		out  string
+		want []string
+	}{
+		"gitea":            {Provider(res, capsGitea), []string{"`<script>` here, not &lt;script&gt;.", "`[x](y)` is safe", "`- a` loops", "see `x*y`"}},
+		"bitbucket":        {Provider(res, capsBB), []string{"**Check `n|m`**", "`<script>` here, not \\<script\\>.", "`[x](y)` is safe", "`- a` loops", "see `x*y`"}},
+		"client":           {Client(res), []string{"**Check `n|m`**", "`<script>` here, not \\<script\\>.", "`[x](y)` is safe", "`- a` loops", "see `x*y`"}},
+		"inline gitea":     {Inline(&ki, capsGitea), []string{"**Check `n|m`**", "`<script>` here, not &lt;script&gt;."}},
+		"inline bitbucket": {Inline(&ki, capsBB), []string{"**Check `n|m`**", "`<script>` here, not \\<script\\>."}},
+	} {
+		for _, w := range c.want {
+			if !strings.Contains(c.out, w) {
+				t.Errorf("%s: no %q in\n%s", name, w, c.out)
+			}
+		}
+		if strings.Contains(c.out, "\\`") || strings.Contains(c.out, "`&lt;script&gt;`") {
+			t.Errorf("%s: a code span was escaped\n%s", name, c.out)
+		}
+	}
+}
+
 func TestEffortClampAndBars(t *testing.T) {
 	for in, want := range map[int]string{0: "1/5 🔵⚪⚪⚪⚪", 3: "3/5 🔵🔵🔵⚪⚪", 9: "5/5 🔵🔵🔵🔵🔵"} {
 		if got := effortValue(in); got != want {

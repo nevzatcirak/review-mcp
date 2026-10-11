@@ -360,3 +360,33 @@ func TestClientPublishSection(t *testing.T) {
 		}
 	}
 }
+
+// TestCodeSpansKept (X-30): the model's code spans in the title, the
+// summary, the walkthrough titles and the per-file summaries stay code
+// spans with their content verbatim, published and in the client view.
+func TestCodeSpansKept(t *testing.T) {
+	res := loadRun(t, "one_call")
+	title := "Raise `max<n>` in *app*"
+	desc := "- Keep `a|b` and <b>\n- `# x` stays"
+	res.Title = &title
+	res.Description = &desc
+	res.Files[0].Title = "Tune `retries*2`"
+	res.Files[0].Summary = "- Use ``a`b`` now"
+	for profile, caps := range providerCaps {
+		out := Provider(res, caps)
+		for _, want := range []string{"Raise `max<n>` in \\*app\\*", "- Keep `a|b` and ", "- `# x` stays", ": Tune `retries*2`", "  - Use ``a`b`` now"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("%s: %q missing:\n%s", profile, want, out)
+			}
+		}
+		if strings.Contains(out, "\\`") {
+			t.Errorf("%s: a code span was escaped:\n%s", profile, out)
+		}
+	}
+	out := Client(res)
+	for _, want := range []string{"Raise `max<n>` in \\*app\\*", ": Tune `retries*2`"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("client: %q missing:\n%s", want, out)
+		}
+	}
+}

@@ -18,10 +18,17 @@ func CodeSpan(s string) string {
 	if s == "" {
 		return fence + " " + fence
 	}
-	if strings.HasPrefix(s, "`") || strings.HasSuffix(s, "`") {
+	if strings.HasPrefix(s, "`") || strings.HasSuffix(s, "`") || stripsSpace(s) {
 		return fence + " " + s + " " + fence
 	}
 	return fence + s + fence
+}
+
+// stripsSpace reports a code span content that CommonMark would strip one
+// space from on each side: it starts and ends with a space and is not only
+// spaces.
+func stripsSpace(s string) bool {
+	return len(s) >= 2 && s[0] == ' ' && s[len(s)-1] == ' ' && strings.Trim(s, " ") != ""
 }
 
 // FenceLen is one more than the longest backtick run in s, at least 3.
@@ -160,4 +167,146 @@ func EscapeBullets(s string, esc func(string) string) string {
 		lines[i] = esc(l)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// EscapeKeepingCodeSpans escapes the model markdown s with esc (EscapeControl,
+// Escape or EscapeGFM, or one of them per line through EscapeBullets) and
+// keeps its well-formed inline code spans as code spans (X-30). Each line is
+// scanned on its own, so a span never crosses a line break: a span is an
+// opening run of N backticks closed by the next run of exactly N backticks
+// on the same line, and a run without such a closer (or one whose first
+// backtick is backslash-escaped) is text. A span is emitted again with
+// CodeSpan of its content, after CommonMark's one-space stripping, so its
+// delimiter is safe whatever the content holds; the content itself is
+// neither backslash- nor HTML-escaped (a code span shows it verbatim).
+//
+// The text between spans is escaped exactly as esc escapes the whole line:
+// the text before the first span gets esc as it is (so its line-start rules
+// apply), and the text after a span is escaped as the middle of a line
+// (escapeMid). A line without a span is esc of the line.
+func EscapeKeepingCodeSpans(s string, esc func(string) string) string {
+	return escapeKeepingCodeSpans(s, esc, false)
+}
+
+// EscapeCellKeepingCodeSpans is EscapeKeepingCodeSpans for one line of text
+// in a GFM pipe-table cell: a '|' splits a cell even inside a code span, so
+// the pipes of a span's content are backslash-escaped too, which GFM removes
+// again before it parses the span.
+func EscapeCellKeepingCodeSpans(s string, esc func(string) string) string {
+	return escapeKeepingCodeSpans(s, esc, true)
+}
+
+// InlineKeepingCodeSpans is Inline for model prose: line breaks folded to
+// spaces, then Escape with the model's code spans kept
+// (EscapeKeepingCodeSpans). It is not for a table cell.
+func InlineKeepingCodeSpans(s string) string {
+	s = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(s)
+	return EscapeKeepingCodeSpans(strings.TrimSpace(s), Escape)
+}
+
+func escapeKeepingCodeSpans(s string, esc func(string) string, cell bool) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = escapeLineKeepingCodeSpans(line, esc, cell)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func escapeLineKeepingCodeSpans(line string, esc func(string) string, cell bool) string {
+	var b strings.Builder
+	text := 0 // start of the text not yet written
+	for i := 0; i < len(line); {
+		if line[i] != '`' {
+			i++
+			continue
+		}
+		if backslashesBefore(line, text, i)%2 == 1 {
+			// An escaped backtick is text; the rest of its run may open.
+			i++
+			continue
+		}
+		open := runEnd(line, i)
+		closeAt, closeEnd := spanCloser(line, open, open-i)
+		if closeAt < 0 {
+			i = open
+			continue
+		}
+		writeText(&b, line[text:i], esc, text == 0)
+		content := line[open:closeAt]
+		if stripsSpace(content) {
+			content = content[1 : len(content)-1]
+		}
+		span := CodeSpan(content)
+		if cell {
+			span = strings.ReplaceAll(span, "|", `\|`)
+		}
+		b.WriteString(span)
+		text, i = closeEnd, closeEnd
+	}
+	if text == 0 {
+		return esc(line)
+	}
+	writeText(&b, line[text:], esc, false)
+	return b.String()
+}
+
+// writeText writes the escaped text of a line; atStart is set for the text
+// at the start of the line.
+func writeText(b *strings.Builder, text string, esc func(string) string, atStart bool) {
+	switch {
+	case atStart:
+		b.WriteString(esc(text))
+	case text != "":
+		b.WriteString(escapeMid(text, esc))
+	}
+}
+
+// escapeMid escapes text that follows a code span on its line, as esc
+// escapes it in the middle of a line: esc's rules for the start of a line
+// ('#', '-', "1." …) must not apply to it. It escapes a neutral letter in
+// front of the text, which no escaper here changes and which starts no
+// line-start rule, and drops it again; for an esc that changes the letter
+// it falls back to esc of the text alone.
+func escapeMid(text string, esc func(string) string) string {
+	if out := esc("x" + text); strings.HasPrefix(out, "x") {
+		return out[1:]
+	}
+	return esc(text)
+}
+
+// backslashesBefore counts the backslashes right before line[i], not
+// looking before from.
+func backslashesBefore(line string, from, i int) int {
+	n := 0
+	for j := i - 1; j >= from && line[j] == '\\'; j-- {
+		n++
+	}
+	return n
+}
+
+// runEnd is the end of the backtick run that starts at line[i].
+func runEnd(line string, i int) int {
+	for i < len(line) && line[i] == '`' {
+		i++
+	}
+	return i
+}
+
+// spanCloser finds the next run of exactly n backticks at or after from and
+// returns its start and end, or -1, -1.
+func spanCloser(line string, from, n int) (int, int) {
+	for i := from; i < len(line); {
+		if line[i] != '`' {
+			i++
+			continue
+		}
+		end := runEnd(line, i)
+		if end-i == n {
+			return i, end
+		}
+		i = end
+	}
+	return -1, -1
 }

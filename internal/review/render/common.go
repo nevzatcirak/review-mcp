@@ -259,6 +259,13 @@ func langTag(file string) string {
 	return b.String()
 }
 
+// proseText escapes model prose for markdown without HTML (the client view
+// and Bitbucket Server): markdown control characters and '<', '>', '&' are
+// backslash-escaped, and the model's code spans are kept (X-30).
+func proseText(s string) string {
+	return mdutil.EscapeKeepingCodeSpans(strings.TrimSpace(s), mdutil.Escape)
+}
+
 // indentLines prefixes every non-empty line of s with indent.
 func indentLines(s, indent string) string {
 	lines := strings.Split(s, "\n")

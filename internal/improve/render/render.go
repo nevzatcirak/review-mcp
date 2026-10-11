@@ -115,7 +115,7 @@ func writePublish(b *strings.Builder, p *improve.PublishResult) {
 }
 
 func writeSuggestion(b *strings.Builder, n int, s *improve.Suggestion) {
-	b.WriteString("\n### " + strconv.Itoa(n) + ". " + mdutil.Inline(s.Summary) + "\n\n")
+	b.WriteString("\n### " + strconv.Itoa(n) + ". " + mdutil.InlineKeepingCodeSpans(s.Summary) + "\n\n")
 	var where []string
 	if s.StartLine != nil && s.EndLine != nil {
 		lines := "line " + strconv.Itoa(*s.StartLine)

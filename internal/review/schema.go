@@ -82,6 +82,7 @@ func ResultSchema() map[string]any {
 			"already_discussed": integer("comment threads of the existing pull request discussion that were shown to the model (X-13); absent when 0"),
 		}, "model", "context_window", "prompt_tokens", "diff_tokens", "request_tokens", "fast_path", "llm_calls",
 			"repair_tactic", "reasked", "truncated", "diff_trimmed", "reviewed_at"),
+		"ci": CISchema(),
 		"publish": object("publishing outcome; present when publish was requested", map[string]any{
 			"published":  boolean("whether the overview was posted or updated"),
 			"comment_id": str("id of the overview comment"),
@@ -96,4 +97,37 @@ func ResultSchema() map[string]any {
 			}, "posted", "skipped_duplicate", "unanchorable", "failed"),
 		}, "published"),
 	}, "pr", "enabled_fields", "review", "coverage", "notes", "metadata")
+}
+
+// CISchema is the JSON schema of CI (X-31), for the pr_review output schema.
+func CISchema() map[string]any {
+	str := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
+	integer := func(desc string) map[string]any { return map[string]any{"type": "integer", "description": desc} }
+	object := func(desc string, props map[string]any, required ...string) map[string]any {
+		req := []any{}
+		for _, r := range required {
+			req = append(req, r)
+		}
+		return map[string]any{"type": "object", "description": desc, "properties": props,
+			"required": req, "additionalProperties": false}
+	}
+	return object("CI results the repository reported for the head commit (X-31); present when review.ci_status is on", map[string]any{
+		"state": map[string]any{"type": "string", "enum": []any{CIPassing, CIFailing, CIPending, CINone, CIUnreadable},
+			"description": "passing: all success, neutral or skipped; failing: any failure or error; pending: any pending and none failing; none: no checks; unreadable: the checks could not be read"},
+		"counts": object("checks counted by state", map[string]any{
+			"success": integer("checks that passed"),
+			"failure": integer("checks that failed"),
+			"pending": integer("checks that are queued or running"),
+			"neutral": integer("checks with a neutral result"),
+			"skipped": integer("checks that were skipped"),
+			"error":   integer("checks that errored or were cancelled"),
+		}, "success", "failure", "pending", "neutral", "skipped", "error"),
+		"checks": map[string]any{"type": "array", "description": "failing and pending checks first, then the rest, at most 20",
+			"items": object("one check", map[string]any{
+				"name":  str("check name; untrusted third-party text"),
+				"state": str("success, failure, pending, neutral, skipped or error"),
+				"url":   str("http(s) link to the check's details; empty when none"),
+			}, "name", "state", "url")},
+		"note": str("fixed text; set when state is unreadable or the host reported more checks than were read"),
+	}, "state", "counts", "checks")
 }

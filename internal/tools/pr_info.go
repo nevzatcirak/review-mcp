@@ -12,6 +12,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/mdutil"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/review"
+	"github.com/nevzatcirak/review-mcp/internal/review/render"
 )
 
 // Fixed texts of pr_info (X-23).
@@ -80,6 +81,7 @@ type PRInfoResult struct {
 	Mergeable             *bool              `json:"mergeable" jsonschema:"whether the pull request can be merged; null when unknown"`
 	MergeBlockers         []string           `json:"merge_blockers" jsonschema:"short fixed reasons the pull request cannot be merged, only where the provider gives structured ones"`
 	ReviewMCPActivity     *ReviewMCPActivity `json:"review_mcp_activity" jsonschema:"comments written by review-mcp as the token's user; null when they could not be read"`
+	CI                    review.CI          `json:"ci" jsonschema:"the CI results the repository reported for the head commit; state unreadable with a note when they could not be read"`
 	Notes                 []string           `json:"notes" jsonschema:"fixed notes about parts that could not be read"`
 }
 
@@ -142,6 +144,10 @@ func PRInfoTool(ctx context.Context, resolver PRResolver, prURL string, log *slo
 			activity = &ReviewMCPActivity{Overview: ov, InlineFindings: n}
 		}
 	}
+	// The CI results of the head commit; a failed read is state unreadable
+	// with a fixed note, in the result itself.
+	ci := review.ReadCI(ctx, p, ref, pr.HeadSHA, log)
+
 	// A canceled or expired call must not pass for a complete answer.
 	if err := ctx.Err(); err != nil {
 		return PRInfoResult{}, err
@@ -163,6 +169,7 @@ func PRInfoTool(ctx context.Context, resolver PRResolver, prURL string, log *slo
 		Mergeable:         st.Mergeable,
 		MergeBlockers:     append([]string{}, st.MergeBlockers...),
 		ReviewMCPActivity: activity,
+		CI:                ci,
 	}
 	switch {
 	case st.RequiredApprovalsNote != "":
@@ -253,6 +260,9 @@ func RenderPRInfoMarkdown(r PRInfoResult) string {
 			line += " (" + strings.Join(r.MergeBlockers, "; ") + ")"
 		}
 		b.WriteString(line + "\n")
+	}
+	if l := render.CILine(&r.CI); l != "" {
+		b.WriteString(l + "\n")
 	}
 	b.WriteString("\n")
 	switch {

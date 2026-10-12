@@ -49,7 +49,7 @@ func dupPR(threads bool) Spec {
 	pr := samplePR()
 	pr.Title, pr.Description = "Add values", "Synthetic pull request of the duplicate scenario."
 	pr.Files = []File{{Path: pathDup, Type: provider.ChangeAdded, Head: head.String(), Hunks: hunks.String()}}
-	pr.Threads, pr.Reviewers = nil, nil
+	pr.Threads, pr.Reviewers, pr.Checks = nil, nil, nil
 	if threads {
 		marker := func(fp string) string { return "Earlier finding.\n\n" + review.FingerprintMarker(fp) }
 		pr.Threads = []Thread{

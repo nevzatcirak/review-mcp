@@ -147,6 +147,13 @@ type Review struct {
 	// MaxDiscussionTokens is the token budget of the existing-discussion
 	// block of the prompt (X-13); 0 turns the block off.
 	MaxDiscussionTokens int `toml:"max_discussion_tokens" json:"max_discussion_tokens"`
+	// CIStatus reads the head commit's CI statuses and checks for the
+	// review: the prompt block, the overview line and the result's ci
+	// (X-31). pr_info always reads them.
+	CIStatus bool `toml:"ci_status" json:"ci_status"`
+	// MaxCITokens is the token budget of the CI block of the prompt (X-31);
+	// 0 turns the block off.
+	MaxCITokens int `toml:"max_ci_tokens" json:"max_ci_tokens"`
 	// MaxChunks is the most model calls ("parts") one review makes when the
 	// prepared diff does not hold every reviewable file (X-19); 1 turns
 	// chunking off.
@@ -248,6 +255,8 @@ func Defaults() *Config {
 			InlineFindings:        true,
 			PersistentOverview:    true,
 			MaxDiscussionTokens:   1500,
+			CIStatus:              true,
+			MaxCITokens:           200,
 			MaxChunks:             8,
 			MaxTotalFindings:      10,
 		},

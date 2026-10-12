@@ -25,6 +25,10 @@ type infoFake struct {
 	threads []provider.Thread
 }
 
+func (f *infoFake) GetChecks(context.Context, provider.PRRef, string) (*provider.Checks, error) {
+	return &provider.Checks{}, nil
+}
+
 func (f *infoFake) GetPullRequest(context.Context, provider.PRRef) (*provider.PullRequest, error) {
 	f.calls.Add(1)
 	return &provider.PullRequest{Title: "Add feature", Author: "alice", State: "open", SourceBranch: "feature/x",
@@ -100,7 +104,7 @@ func TestPRInfoToolDefinition(t *testing.T) {
 			if err := json.Unmarshal(out, &outS); err != nil {
 				t.Fatal(err)
 			}
-			want := []string{"approvals", "author", "base_strategy", "head_sha", "merge_base_sha", "merge_blockers", "mergeable", "notes", "pr",
+			want := []string{"approvals", "author", "base_strategy", "ci", "head_sha", "merge_base_sha", "merge_blockers", "mergeable", "notes", "pr",
 				"required_approvals", "review_mcp_activity", "reviewers", "source_branch", "state", "target_branch", "title", "web_url"}
 			sort.Strings(outS.Required)
 			if strings.Join(outS.Required, ",") != strings.Join(want, ",") {

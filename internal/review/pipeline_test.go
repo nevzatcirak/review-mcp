@@ -74,6 +74,25 @@ type fakeProvider struct {
 	inlineThreads []provider.Thread
 	// skipped are files the provider reports as skipped (binary, too large).
 	skipped []provider.SkippedFile
+	// checks are the head commit's CI checks and checksErr fails GetChecks;
+	// checkCalls counts the calls and checkSHA is the commit asked for.
+	checks     *provider.Checks
+	checksErr  error
+	checkCalls int
+	checkSHA   string
+}
+
+func (f *fakeProvider) GetChecks(_ context.Context, _ provider.PRRef, sha string) (*provider.Checks, error) {
+	f.checkCalls++
+	f.checkSHA = sha
+	if f.checksErr != nil {
+		return nil, f.checksErr
+	}
+	if f.checks == nil {
+		return &provider.Checks{}, nil
+	}
+	c := *f.checks
+	return &c, nil
 }
 
 type edit struct{ id, body string }

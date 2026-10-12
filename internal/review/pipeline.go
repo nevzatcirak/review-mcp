@@ -356,6 +356,16 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 	disc, discNotes := pl.readDiscussion(ctx, maxDisc, args.Publish && inlineEnabled(deps, args), factor)
 
+	// The head commit's CI results (X-31): a failed read is an unreadable
+	// summary, never a failed review.
+	var ci *CI
+	ciBlock, ciLeft := "", false
+	if cfg.Review.CIStatus {
+		c := ReadCI(ctx, p, ref, pr.HeadSHA, log)
+		ci = &c
+		ciBlock, ciLeft = CIBlock(ci, cfg.Review.MaxCITokens, factor)
+	}
+
 	// Step 3: description.
 	in := PromptInput{
 		Toggles:           toggles,
@@ -366,6 +376,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		Branch:            pr.SourceBranch,
 		Description:       tokens.ClipDescription(pr.Description, cfg.Diff.MaxDescriptionTokens, factor),
 		Discussion:        disc.Block,
+		CI:                ciBlock,
 		Date:              prompt.Date(deps.Clock),
 	}
 
@@ -386,6 +397,15 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		// still reviews the diff, without it.
 		disc = discussion{Omitted: disc.Included + disc.Omitted}
 		in.Discussion = ""
+		if promptTokens, err = ScaffoldingTokens(in, factor); err != nil {
+			return nil, err
+		}
+		budget.PromptTokens = promptTokens
+	}
+	if budget.RequireCapacity() != nil && in.CI != "" {
+		// The CI block is optional too, and goes second: the discussion is
+		// the larger of the two.
+		in.CI, ciLeft = "", true
 		if promptTokens, err = ScaffoldingTokens(in, factor); err != nil {
 			return nil, err
 		}
@@ -445,6 +465,10 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	res.Notes = append(res.Notes, discNotes...)
 	if disc.Omitted > 0 {
 		res.Notes = append(res.Notes, noteDiscussionLeftOut(disc.Omitted))
+	}
+	res.CI = ci
+	if ciLeft {
+		res.Notes = append(res.Notes, NoteCILeftOut)
 	}
 	for _, f := range enabledFields(toggles) {
 		res.EnabledFields = append(res.EnabledFields, f.key)

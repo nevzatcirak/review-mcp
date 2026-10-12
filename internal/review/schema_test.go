@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/nevzatcirak/review-mcp/internal/provider"
 )
 
 // TestResultSchemaMatchesStructs: every struct in Result has exactly the
@@ -70,6 +72,16 @@ func TestResultSchemaAcceptedBySDK(t *testing.T) {
 		t.Fatal(err)
 	}
 	results["full"] = res
+	h = newHarness(goodAnswer)
+	h.prov.checks = checksOf(chk("unit tests", provider.CheckFailure), chk("build", provider.CheckSuccess))
+	if results["ci"], err = Run(context.Background(), h.deps, Args{PRURL: testPRURL}); err != nil {
+		t.Fatal(err)
+	}
+	h = newHarness(goodAnswer)
+	h.deps.Config.Review.CIStatus = false
+	if results["no_ci"], err = Run(context.Background(), h.deps, Args{PRURL: testPRURL}); err != nil {
+		t.Fatal(err)
+	}
 	h = newHarness(goodAnswer)
 	h.deps.Config.Ignore.Glob = []string{"**"}
 	h.deps.Config.Review.RequireEffortEstimate = false

@@ -50,6 +50,9 @@ func (l *loader) validate() {
 	if !l.bad["review.max_discussion_tokens"] && c.Review.MaxDiscussionTokens < 0 {
 		l.problem("review.max_discussion_tokens: %d must not be negative (0 turns the discussion off)", c.Review.MaxDiscussionTokens)
 	}
+	if !l.bad["review.max_ci_tokens"] && c.Review.MaxCITokens < 0 {
+		l.problem("review.max_ci_tokens: %d must not be negative (0 turns the CI block off)", c.Review.MaxCITokens)
+	}
 	if !l.bad["review.max_chunks"] && (c.Review.MaxChunks < MinMaxChunks || c.Review.MaxChunks > MaxMaxChunks) {
 		l.problem("review.max_chunks: %d is out of range (%d-%d)", c.Review.MaxChunks, MinMaxChunks, MaxMaxChunks)
 	}

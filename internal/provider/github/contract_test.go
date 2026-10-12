@@ -33,6 +33,12 @@ func TestReviewDuplicates(t *testing.T) {
 	contract.RunReviewDuplicates(t, ctFixture{})
 }
 
+// TestReviewCI runs pr_review's CI scenario (X-31) through this provider and
+// the contract fake.
+func TestReviewCI(t *testing.T) {
+	contract.RunReviewCI(t, ctFixture{})
+}
+
 const (
 	// ctAPI is the API prefix the provider derives for a GHES web base.
 	ctAPI  = "/api/v3"

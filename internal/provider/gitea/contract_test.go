@@ -30,6 +30,12 @@ func TestReviewDuplicates(t *testing.T) {
 	contract.RunReviewDuplicates(t, ctFixture{})
 }
 
+// TestReviewCI runs pr_review's CI scenario (X-31) through this provider and
+// the contract fake.
+func TestReviewCI(t *testing.T) {
+	contract.RunReviewCI(t, ctFixture{})
+}
+
 const (
 	ctWeb     = "https://your-gitea.example"
 	ctRepo    = "/api/v1/repos/octo/demo"

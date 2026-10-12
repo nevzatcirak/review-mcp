@@ -29,6 +29,12 @@ func TestReviewDuplicates(t *testing.T) {
 	contract.RunReviewDuplicates(t, ctFixture{})
 }
 
+// TestReviewCI runs pr_review's CI scenario (X-31) through this provider and
+// the contract fake.
+func TestReviewCI(t *testing.T) {
+	contract.RunReviewCI(t, ctFixture{})
+}
+
 const (
 	ctPrefix    = "/bitbucket" // context path
 	ctRepo      = "/rest/api/1.0/projects/PROJ/repos/demo"

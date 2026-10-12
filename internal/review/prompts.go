@@ -50,6 +50,10 @@ type PromptInput struct {
 	// and the fenced threads, see renderDiscussion); empty omits it. It is
 	// third-party text, and part of the scaffolding the diff budget reserves.
 	Discussion string
+	// CI is the rendered CI block (CIHeader and the fenced failing and
+	// pending checks, see CIBlock); empty omits it. It is third-party text,
+	// and part of the scaffolding.
+	CI string
 	// RepoContext is the rendered repository-context block (repoctx.Header
 	// and the fenced uses of the changed symbols, see repoctx.Render); empty
 	// omits it. It is repository text, and part of the scaffolding.
@@ -81,6 +85,7 @@ func (in *PromptInput) vars() map[string]any {
 		"branch":             in.Branch,
 		"description":        in.Description,
 		"discussion":         in.Discussion,
+		"ci":                 in.CI,
 		"repo_context":       in.RepoContext,
 		"part_header":        in.PartHeader,
 		"diff":               in.Diff,

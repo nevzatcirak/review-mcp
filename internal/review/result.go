@@ -35,6 +35,9 @@ type Result struct {
 	// clipped or trimmed files, the re-ask.
 	Notes    []string `json:"notes"`
 	Metadata Metadata `json:"metadata"`
+	// CI is the head commit's CI summary (X-31); nil, and omitted, when
+	// review.ci_status is off.
+	CI *CI `json:"ci,omitempty"`
 	// Publish is set when publishing was requested.
 	Publish *PublishResult `json:"publish,omitempty"`
 }

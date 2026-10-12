@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -80,6 +81,52 @@ func TestListThreadsShapes(t *testing.T) {
 	slices.SortStableFunc(want[2:], func(a, b row) int { return a.line - b.line })
 	if !slices.Equal(rows, want) {
 		t.Errorf("threads =\n%+v\nwant\n%+v", rows, want)
+	}
+}
+
+// TestListThreadsStartLine: a comment on a range is listed at its last line
+// with StartLine its first (start_line, or original_start_line when the
+// comment is outdated); a single line, a range that starts on the base
+// side, a base-side comment and a start that is not below the line have
+// StartLine 0.
+func TestListThreadsStartLine(t *testing.T) {
+	ranged := func(id int, line, orig, start, origStart any, side, startSide string) map[string]any {
+		m := rcJSON(id, line, orig, side, nil, "2026-01-01T01:00:00Z")
+		m["path"] = "f" + strconv.Itoa(id) + ".go"
+		m["start_line"], m["original_start_line"], m["start_side"] = start, origStart, startSide
+		return m
+	}
+	f := newFake(t, "/api/v3")
+	f.json("/repos/octo/demo/issues/7/comments", []any{})
+	f.json("/repos/octo/demo/pulls/7/comments", []any{
+		ranged(1, 19, 19, 14, 14, "RIGHT", "RIGHT"),
+		ranged(2, nil, 12, nil, 8, "RIGHT", "RIGHT"),
+		ranged(3, 6, 6, nil, nil, "RIGHT", ""),
+		ranged(4, 9, 9, 7, 7, "RIGHT", "LEFT"),
+		ranged(5, 9, 9, 7, 7, "LEFT", "LEFT"),
+		ranged(6, 9, 9, 9, 9, "RIGHT", "RIGHT"),
+	})
+	f.json("/repos/octo/demo/pulls/7/reviews", []any{})
+	p, _ := f.provider(f.config(""), time.Now())
+	got, err := p.ListThreads(t.Context(), testRef())
+	if err != nil {
+		t.Fatal(err)
+	}
+	type place struct {
+		start, line int
+		outdated    bool
+	}
+	want := map[string]place{
+		"f1.go": {14, 19, false}, "f2.go": {8, 12, true}, "f3.go": {0, 6, false},
+		"f4.go": {0, 9, false}, "f5.go": {0, 0, false}, "f6.go": {0, 9, false},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("%d threads, want %d", len(got), len(want))
+	}
+	for _, th := range got {
+		if g := (place{th.StartLine, th.Line, th.Outdated}); g != want[th.Path] {
+			t.Errorf("%s: %+v, want %+v", th.Path, g, want[th.Path])
+		}
 	}
 }
 

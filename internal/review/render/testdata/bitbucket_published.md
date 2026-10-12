@@ -34,6 +34,14 @@ Reviewed on 2026-10-06 09:30 UTC at commit `abc123d`.
      resp, _ := get()
      ```
 
+4. **Unchecked error** — [`cmd/app/main.go` L14-15](https://your-gitea.example/org/repo/pulls/12/files#issuecomment-880)
+   - The error is dropped.
+
+     ```go
+     v, _ := parse()
+     use(v)
+     ```
+
 ### 📂 Coverage
 
 - Included: 3 files (1 in part only, clipped to fit the context window)
@@ -62,3 +70,4 @@ Filtered: `lockfile_or_minified` (1):
 ### 📝 Notes
 
 - 1 finding could not be placed on a changed line and is listed in the overview only.
+- 1 finding was already posted on this PR and was not repeated.

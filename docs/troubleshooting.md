@@ -336,6 +336,16 @@ the error text:
 Run the review again to cover those files. When every part fails, the review
 fails with the first part's error sentence, as a review in one call does.
 
+## Findings and suggestions skipped as duplicates
+
+| You see | Meaning and what to do |
+|---|---|
+| `pr_review`: `inline_status` `skipped_duplicate`, the note "1 finding was already posted on this PR and was not repeated." (plural: "N findings were already posted on this PR and were not repeated.") | An inline finding comment by the token's own user is already on the PR at the same place (the lines overlap, on the same file), or has the same fingerprint. This is the expected outcome of a second run. `inline_url` and the overview link to the earlier comment. |
+| `pr_improve`: `anchor.status` `skipped_duplicate`, "already posted on this PR" in the overview, the note "1 suggestion was already posted on this PR and was not repeated." | An inline suggestion comment with the same key (file, existing code and improved code) by the token's own user is on the PR. `anchor.url` and the overview link to the earlier comment. |
+| The finding or suggestion is not linked | The server did not report the earlier comment's URL; the overview then links to the file line. |
+| A finding was posted again at a place that has a comment | That comment's thread is **outdated** (the code under it changed), or it is not by the token's user, or it has no finding marker, or it sits on the old path of a renamed file. These never suppress a finding. On Gitea and Bitbucket Server only the first line of an earlier range comment is known. |
+| A finding was not posted, and you want it | Delete the earlier comment and run again. Resolving it is not enough, a resolved thread still counts; only an outdated thread lets a finding at the same place through. |
+
 ## `pr_info` required_approvals notes
 
 For GitHub see [GitHub](#github) below: the notes differ and the two sources
@@ -414,7 +424,7 @@ readable count wins. `required_approvals_note` is one of:
 | Blocker | Cause and what to do |
 |---|---|
 | merge conflict | The branch conflicts with the target. Rebase or merge the target. |
-| required reviews or checks are not satisfied | GitHub's `blocked`: a required review or a required check is missing or failing. GitHub does not say which; look at the pull request page. |
+| branch rules are not satisfied (for example required reviews, required checks or other restrictions) | GitHub's `blocked`: a branch rule is not satisfied, for example a required review or check is missing or failing, or another restriction applies (a ruleset's update restriction, say). GitHub does not say which; look at the pull request page. |
 | the branch is behind the target branch | The repository requires the branch to be up to date. Update the branch. |
 | the pull request is a draft | Mark it ready for review. |
 | other merge check | A state review-mcp does not know. |
@@ -425,7 +435,7 @@ the merge state yet; run `pr_info` again in a moment.
 The **note** `some checks that are not required are failing or pending` (in
 `notes`) is GitHub's `unstable` state. It is not a blocker: the pull request is
 mergeable, and only checks that are not required fail or are pending. Failing
-required checks show as `required reviews or checks are not satisfied`.
+required checks show as `branch rules are not satisfied (for example required reviews, required checks or other restrictions)`.
 
 ### Limits of what GitHub lists
 
@@ -738,7 +748,7 @@ is never posted inline. `unverified_reason` in the structured result says why.
 | The comments already on the PR could not be read, so no inline suggestion was posted (it could repeat one); the suggestions are listed in the overview only. | The comments or the token's user could not be read, so review-mcp cannot tell which suggestions are already on the PR and posts none inline. The overview was posted. Their `anchor.status` is `failed` with the error "the comments already on the PR could not be read". Fix the read access and run again. (`pr_review` posts anyway in this case; `pr_improve` does not.) |
 | 1 older overview comment by the same user was left unchanged. (or "N older overview comments by the same user were left unchanged.") | Several comments of yours carry the `pr_improve` overview marker. The newest was edited; the others are never deleted by review-mcp. Delete them in the web UI if you do not want them. |
 | N suggestions could not be placed on changed lines of one hunk and are listed in the overview only. (singular: "1 suggestion could not be placed on changed lines of one hunk and is listed in the overview only.") | A verified suggestion's lines are not all on new-side lines of one hunk of the provider's diff (they are in unchanged code far from the change, span two hunks, or are in a deleted or binary file), or the server refused the position. They are in the overview, with their full text. Nothing to fix. |
-| N suggestions were already posted on this PR and were not repeated. (singular: "1 suggestion was already posted on this PR and was not repeated.") | An inline comment with the same key (file, existing code and improved code) by the token's user is on the PR, from an earlier run. This is the expected outcome of a second run. To get a fresh inline comment for a suggestion, delete the old one first. |
+| N suggestions were already posted on this PR and were not repeated. (singular: "1 suggestion was already posted on this PR and was not repeated.") | An inline comment with the same key (file, existing code and improved code) by the token's user is on the PR, from an earlier run. This is the expected outcome of a second run. The suggestion's `anchor.url` and the overview link to that comment. To get a fresh inline comment for a suggestion, delete the old one first. |
 | N suggestions could not be posted as inline comments and are listed in the overview only. (singular: "1 suggestion could not be posted as an inline comment and is listed in the overview only.") | The inline post failed; the `error` of each suggestion's `anchor` has the reason (see below). |
 | the suggestions could not be posted as a PR comment | `publish.error`: the overview could not be posted and the error is not a classified provider error. Rerun with `REVIEW_MCP_LOG_LEVEL=debug`; the log names the failing step, never content. No inline comment is posted without the overview. |
 | authentication failed: check the token and its scopes (HTTP 403) | `publish.error`: the token may read the pull request but not write it. See [Token scopes](#token-scopes). The suggestions are still returned. |

@@ -116,13 +116,13 @@ func TestListThreads(t *testing.T) {
 	want := []provider.Thread{
 		{ID: "1", Kind: provider.ThreadGeneral, Resolved: &no, ReplyInThread: true, Comments: []provider.CommentItem{
 			{ID: "1", Author: "alice", Body: "general root " + testMarker, CreatedAt: tm(1), UpdatedAt: tm(2), AuthorLogin: "alice", AuthorID: "9", URL: overview + "1"},
-			{ID: "2", Author: "bob", Body: "reply one", CreatedAt: tm(2), UpdatedAt: tm(3), AuthorLogin: "bob"},
-			{ID: "3", Author: "alice", Body: "reply two", CreatedAt: tm(3), UpdatedAt: tm(4), AuthorLogin: "alice"},
-			{ID: "4", Author: "alice", Body: "nested reply", CreatedAt: tm(5), UpdatedAt: tm(6), AuthorLogin: "alice"},
+			{ID: "2", Author: "bob", Body: "reply one", CreatedAt: tm(2), UpdatedAt: tm(3), AuthorLogin: "bob", URL: overview + "2"},
+			{ID: "3", Author: "alice", Body: "reply two", CreatedAt: tm(3), UpdatedAt: tm(4), AuthorLogin: "alice", URL: overview + "3"},
+			{ID: "4", Author: "alice", Body: "nested reply", CreatedAt: tm(5), UpdatedAt: tm(6), AuthorLogin: "alice", URL: overview + "4"},
 		}},
 		{ID: "60", Kind: provider.ThreadGeneral, Resolved: &no, ReplyInThread: true, Comments: []provider.CommentItem{
 			{ID: "60", Author: "alice", Body: "has deleted reply", CreatedAt: tm(6), UpdatedAt: tm(7), AuthorLogin: "alice", URL: overview + "60"},
-			{ID: "62", Author: "bob", Body: "kept", CreatedAt: tm(7), UpdatedAt: tm(8), AuthorLogin: "bob"},
+			{ID: "62", Author: "bob", Body: "kept", CreatedAt: tm(7), UpdatedAt: tm(8), AuthorLogin: "bob", URL: overview + "62"},
 		}},
 		{ID: "80", Kind: provider.ThreadGeneral, Resolved: &yes, ReplyInThread: true, Comments: []provider.CommentItem{
 			{ID: "80", Author: "Carol C", Body: "no state, display name only", CreatedAt: tm(8), UpdatedAt: tm(8), URL: overview + "80"},

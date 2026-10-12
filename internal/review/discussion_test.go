@@ -140,22 +140,6 @@ func TestHumanThreads(t *testing.T) {
 	}
 }
 
-func TestFingerprintsOf(t *testing.T) {
-	a, b, c := FingerprintMarker("aaaaaaaaaaaa"), FingerprintMarker("bbbbbbbbbbbb"), FingerprintMarker("cccccccccccc")
-	threads := []provider.Thread{
-		inlineThread("a.go", 1, false, citem(botUser, 0, "t\n\n"+a)),
-		// Gitea groups the review comments of one line: ours may be a reply.
-		inlineThread("a.go", 2, false, citem(alice, 0, "human"), citem(botUser, 1, "t\n\n"+b)),
-		// Not ours, and not an inline thread.
-		inlineThread("a.go", 3, false, citem(mallory, 0, "t\n\n"+c)),
-		general(citem(botUser, 0, "t\n\n"+c)),
-	}
-	got := fingerprintsOf(threads, botUser)
-	if len(got) != 2 || !got["aaaaaaaaaaaa"] || !got["bbbbbbbbbbbb"] {
-		t.Errorf("fingerprints = %v", got)
-	}
-}
-
 func TestCleanBody(t *testing.T) {
 	long := strings.Repeat("é", 700)
 	for name, tc := range map[string]struct{ in, want string }{

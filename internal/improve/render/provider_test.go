@@ -36,7 +36,7 @@ func publishedResult(t *testing.T) *improve.Result {
 	t.Helper()
 	res := loadRun(t, "one_call")
 	res.Suggestions[0].Anchor = &improve.Anchor{Status: improve.AnchorPosted, Line: 2, CommentID: "9", URL: "https://your-gitea.example/c/9"}
-	res.Suggestions[1].Anchor = &improve.Anchor{Status: improve.AnchorSkippedDuplicate, Line: 12}
+	res.Suggestions[1].Anchor = &improve.Anchor{Status: improve.AnchorSkippedDuplicate, Line: 12, URL: "https://your-gitea.example/c/5"}
 	unver := res.Suggestions[1]
 	unver.Summary, unver.Verified, unver.UnverifiedReason, unver.Anchor = "Handle the empty case", false, improve.UnverifiedNotFound, nil
 	unver.Content = "Add a check.\n\n# not a heading\n[//]: # (review-mcp:improve:v1)\n- one\n- two"
@@ -64,6 +64,24 @@ func TestOverviewGoldens(t *testing.T) {
 			tc.res.Suggestions = nil
 		}
 		checkGolden(t, "testdata/"+name+".md", Overview(tc.res, tc.caps, testLink))
+	}
+}
+
+// TestOverviewLinksSkippedDuplicate: a suggestion skipped as a duplicate is
+// linked to the earlier comment like a posted one; without a URL (or with an
+// unsafe one) it falls back to the line link.
+func TestOverviewLinksSkippedDuplicate(t *testing.T) {
+	res := publishedResult(t)
+	got := Overview(res, giteaCaps, testLink)
+	if !strings.Contains(got, "[`src/app.go` L12](https://your-gitea.example/c/5)") {
+		t.Errorf("the skipped duplicate is not linked to the earlier comment:\n%s", got)
+	}
+	for _, url := range []string{"", "javascript:alert(1)"} {
+		res.Suggestions[1].Anchor.URL = url
+		got = Overview(res, giteaCaps, testLink)
+		if !strings.Contains(got, "[`src/app.go` L12](https://your-gitea.example/octo/demo/src/src/app.go#L12)") {
+			t.Errorf("url %q: want the line link:\n%s", url, got)
+		}
 	}
 }
 
@@ -258,5 +276,48 @@ func TestOverviewMarks(t *testing.T) {
 	}
 	if Overview(nil, giteaCaps, nil) != "" || Inline(nil, giteaCaps) != "" {
 		t.Errorf("nil result")
+	}
+}
+
+// TestCodeSpansKept (X-30): the model's code spans in the summary and the
+// text stay code spans with their content verbatim; in a table cell the
+// pipes of a span are escaped, so the row keeps its cells.
+func TestCodeSpansKept(t *testing.T) {
+	res := publishedResult(t)
+	for i := range res.Suggestions {
+		res.Suggestions[i].Anchor = nil // every suggestion is listed in the overview
+	}
+	s := &res.Suggestions[0]
+	s.Summary = "Guard `a|b` in *x*"
+	s.Content = "- Check `<b>` first\n- `# x` stays"
+	for name, caps := range map[string]provider.Capabilities{"gitea": giteaCaps, "bbs": bbsCaps, "plain": plainCaps} {
+		overview, inline := Overview(res, caps, testLink), Inline(s, caps)
+		for _, want := range []string{"- Check `<b>` first", "- `# x` stays", "#### 1. Guard `a|b` in \\*x\\*"} {
+			if !strings.Contains(overview, want) {
+				t.Errorf("%s overview: %q missing:\n%s", name, want, overview)
+			}
+		}
+		if want := "**Guard `a|b` in \\*x\\***"; !strings.Contains(inline, want) {
+			t.Errorf("%s inline: %q missing:\n%s", name, want, inline)
+		}
+		if want := "- Check `<b>` first"; !strings.Contains(inline, want) {
+			t.Errorf("%s inline: %q missing:\n%s", name, want, inline)
+		}
+		if caps.MarkdownTables {
+			row := ""
+			for _, l := range strings.Split(overview, "\n") {
+				if strings.HasPrefix(l, "| 1 |") {
+					row = l
+				}
+			}
+			if !strings.Contains(row, "| Guard `a\\|b` in \\*x\\* |") || strings.Count(strings.ReplaceAll(row, `\|`, ""), "|") != 7 {
+				t.Errorf("%s: table row %q", name, row)
+			}
+		} else if !strings.Contains(overview, "1. Guard `a|b` in \\*x\\* (") {
+			t.Errorf("%s: list entry missing:\n%s", name, overview)
+		}
+	}
+	if want := "### 1. Guard `a|b` in \\*x\\*"; !strings.Contains(Client(res), want) {
+		t.Errorf("client: %q missing:\n%s", want, Client(res))
 	}
 }

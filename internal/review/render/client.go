@@ -62,10 +62,10 @@ func Client(res *review.Result) string {
 		}
 	}
 	if v.showSec && v.hasConcerns {
-		b.WriteString("\n### " + textSecurity + "\n\n" + mdutil.Escape(strings.TrimSpace(*v.security)) + "\n")
+		b.WriteString("\n### " + textSecurity + "\n\n" + proseText(*v.security) + "\n")
 	}
 	if v.showPerf && v.hasPerf {
-		b.WriteString("\n### " + textPerf + "\n\n" + mdutil.Escape(strings.TrimSpace(*v.perf)) + "\n")
+		b.WriteString("\n### " + textPerf + "\n\n" + proseText(*v.perf) + "\n")
 	}
 	if v.showIssues && v.hasReview {
 		writeClientIssues(&b, v.issues, v.noIssues())
@@ -110,20 +110,20 @@ func writeClientIssues(b *strings.Builder, issues []review.KeyIssue, none string
 		}
 		prefix := strconv.Itoa(n+1) + ". "
 		indent := strings.Repeat(" ", len(prefix))
-		b.WriteString(prefix + "**" + mdutil.Inline(issueHeader(i.IssueHeader)) + "**")
+		b.WriteString(prefix + "**" + mdutil.InlineKeepingCodeSpans(issueHeader(i.IssueHeader)) + "**")
 		if loc := clientLocation(i); loc != "" {
 			b.WriteString(" — " + loc)
 		}
 		b.WriteString("\n")
 		if c := strings.TrimSpace(i.IssueContent); c != "" {
-			b.WriteString("\n" + indentLines(mdutil.Escape(c), indent) + "\n")
+			b.WriteString("\n" + indentLines(proseText(c), indent) + "\n")
 		}
 		if i.Snippet != "" {
 			b.WriteString("\n")
 			mdutil.WriteFenced(b, i.Snippet, langTag(i.RelevantFile), indent)
 		}
 		if i.SnippetNote != "" {
-			b.WriteString("\n" + indent + textSnippetNote + mdutil.Inline(i.SnippetNote) + "\n")
+			b.WriteString("\n" + indent + textSnippetNote + mdutil.InlineKeepingCodeSpans(i.SnippetNote) + "\n")
 		}
 	}
 }

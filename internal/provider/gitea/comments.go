@@ -135,7 +135,7 @@ func (c *apiReviewComment) item() provider.CommentItem {
 	return provider.CommentItem{
 		ID: strconv.FormatInt(c.ID, 10), Author: login(c.User), Body: c.Body,
 		CreatedAt: c.CreatedAt.Time, UpdatedAt: c.UpdatedAt.Time,
-		AuthorID: userID(c.User), AuthorLogin: login(c.User),
+		AuthorID: userID(c.User), AuthorLogin: login(c.User), URL: c.HTMLURL,
 	}
 }
 
@@ -205,7 +205,8 @@ func (p *Provider) reviewComments(ctx context.Context, pp string) ([]apiReviewCo
 // line; the earliest comment of a group is the root and the thread ID is its
 // ID. Resolved comes from the root's resolver, Outdated from
 // position == 0 && original_position != 0, and both are live-verification
-// items.
+// items. Gitea anchors a comment on one line, so StartLine stays 0; every
+// comment carries its html_url.
 func (p *Provider) ListThreads(ctx context.Context, ref provider.PRRef) ([]provider.Thread, error) {
 	pp, err := prPath(ref)
 	if err != nil {

@@ -5,7 +5,8 @@
 // It lives apart from internal/describe so that the pipeline package has no
 // rendering code, as internal/ask/render does. The fixed headings stay
 // English. The title and the labels are model-authored one-liners and are
-// escaped; the summary and the per-file summaries are model-authored
+// escaped (the title and the walkthrough titles with the model's code spans
+// kept, X-30); the summary and the per-file summaries are model-authored
 // markdown bullet lists (the prompt asks for '- ' bullets and backticks) and
 // are shown as they are, as pr_ask shows its answer.
 package render
@@ -62,7 +63,7 @@ func Client(res *describe.Result) string {
 	}
 	b.WriteString("## " + TextTitle + "\n\n")
 	if res.Title != nil {
-		b.WriteString(mdutil.Inline(*res.Title) + "\n")
+		b.WriteString(mdutil.InlineKeepingCodeSpans(*res.Title) + "\n")
 	} else {
 		b.WriteString(textNotGenerated + "\n")
 	}
@@ -97,7 +98,7 @@ func Client(res *describe.Result) string {
 			line += " (" + mdutil.Inline(l) + ")"
 		}
 		if t := strings.TrimSpace(f.Title); t != "" {
-			line += ": " + mdutil.Inline(t)
+			line += ": " + mdutil.InlineKeepingCodeSpans(t)
 		}
 		b.WriteString(MarkPartial(line, f.Path, &res.Coverage) + "\n")
 		if s := strings.TrimSpace(f.Summary); s != "" {

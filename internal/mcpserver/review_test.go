@@ -593,8 +593,17 @@ func TestPRReviewPublish(t *testing.T) {
 		p.Inline == nil || *p.Inline != (review.InlineSummary{SkippedDuplicate: 1}) {
 		t.Errorf("second publish = %+v", second.Publish)
 	}
-	// The finding is already on the PR with its fingerprint (WP-PR-7e): the
-	// second run posts no review, only the in-place overview edit.
+	// The finding is already on the PR, at its place and with its
+	// fingerprint (X-29, WP-PR-7e): the second run posts no review, only the
+	// in-place overview edit, and links the finding to the first run's
+	// inline comment.
+	if ki := second.Review.KeyIssuesToReview[0]; ki.InlineStatus != review.InlineSkippedDuplicate ||
+		ki.InlineURL != first.Review.KeyIssuesToReview[0].InlineURL {
+		t.Errorf("second finding = %+v", ki)
+	}
+	if ov := g.overviewBodies(); len(ov) != 2 || !strings.Contains(ov[1], first.Review.KeyIssuesToReview[0].InlineURL) {
+		t.Errorf("the second overview does not link the earlier inline comment")
+	}
 	wantSecond := append(wantFirst, "PATCH "+api+"/issues/comments/56")
 	if got := g.writeLog(); !slices.Equal(got, wantSecond) {
 		t.Errorf("writes %v, want %v", got, wantSecond)

@@ -23,6 +23,12 @@ func TestContract(t *testing.T) {
 	contract.Run(t, ctFixture{})
 }
 
+// TestReviewDuplicates runs pr_review's duplicate scenario (X-29) through
+// this provider and the contract fake.
+func TestReviewDuplicates(t *testing.T) {
+	contract.RunReviewDuplicates(t, ctFixture{})
+}
+
 const (
 	ctPrefix    = "/bitbucket" // context path
 	ctRepo      = "/rest/api/1.0/projects/PROJ/repos/demo"
@@ -90,6 +96,9 @@ func newCtBBS(t *testing.T, pr contract.Spec) *ctBBS {
 		root := &ctComment{c: th.Comments[0], resolved: th.Resolved}
 		if th.Kind == provider.ThreadInline {
 			root.anchor = ctAnchor(pr.Files, th.Path, th.Line)
+			// Bitbucket Server marks an anchor that no longer matches the
+			// diff as orphaned.
+			root.anchor["orphaned"] = th.Outdated
 		}
 		b.add(root, nil)
 		for _, c := range th.Comments[1:] {

@@ -18,7 +18,8 @@ import (
 // The header and content are escaped as in the overview (Provider): with
 // caps.GFM (Gitea) markdown control characters are backslash-escaped and
 // HTML metacharacters become entities; without it (Bitbucket Server) they
-// are backslash-escaped. Neither form contains HTML.
+// are backslash-escaped. Neither form contains HTML. The model's code spans
+// are kept in both (X-30).
 func Inline(i *review.KeyIssue, caps provider.Capabilities) string {
 	if i == nil {
 		return ""
@@ -32,9 +33,9 @@ func Inline(i *review.KeyIssue, caps provider.Capabilities) string {
 			b.WriteString("\n" + gfmText(content) + "\n")
 		}
 	} else {
-		b.WriteString("**" + mdutil.Inline(header) + "**\n")
+		b.WriteString("**" + mdutil.InlineKeepingCodeSpans(header) + "**\n")
 		if content != "" {
-			b.WriteString("\n" + mdutil.Escape(content) + "\n")
+			b.WriteString("\n" + proseText(content) + "\n")
 		}
 	}
 	if i.StartLine > 0 && i.EndLine > i.StartLine {

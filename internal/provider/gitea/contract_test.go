@@ -24,6 +24,12 @@ func TestContract(t *testing.T) {
 	contract.Run(t, ctFixture{})
 }
 
+// TestReviewDuplicates runs pr_review's duplicate scenario (X-29) through
+// this provider and the contract fake.
+func TestReviewDuplicates(t *testing.T) {
+	contract.RunReviewDuplicates(t, ctFixture{})
+}
+
 const (
 	ctWeb     = "https://your-gitea.example"
 	ctRepo    = "/api/v1/repos/octo/demo"
@@ -77,6 +83,9 @@ type ctReviewComment struct {
 	line       int
 	at         time.Time
 	resolver   *contract.User
+	// outdated is served as Gitea serves an outdated comment: position 0,
+	// original_position the line it was made on.
+	outdated bool
 }
 
 // ctGitea is a fake Gitea API v1 that serves one contract.Spec: issue
@@ -102,7 +111,8 @@ func newCtGitea(t *testing.T, pr contract.Spec) *ctGitea {
 			continue
 		}
 		for i, c := range th.Comments {
-			rc := ctReviewComment{id: c.ID, user: c.Author, body: c.Body, path: th.Path, line: th.Line, at: c.Created}
+			rc := ctReviewComment{id: c.ID, user: c.Author, body: c.Body, path: th.Path, line: th.Line, at: c.Created,
+				outdated: th.Outdated}
 			if i == 0 && th.Resolved {
 				rc.resolver = &pr.Author
 			}
@@ -227,6 +237,9 @@ func (c *ctReviewComment) json() map[string]any {
 	}
 	if c.resolver != nil {
 		m["resolver"] = ctUser(*c.resolver)
+	}
+	if c.outdated {
+		m["position"] = 0
 	}
 	return m
 }

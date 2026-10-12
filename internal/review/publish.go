@@ -26,7 +26,8 @@ func noteUnanchorable(n int) string {
 		"findings could not be placed on a changed line and are") + " listed in the overview only."
 }
 
-// noteDuplicates: findings whose inline comment is already on the PR.
+// noteDuplicates: findings whose inline comment is already on the PR, at
+// their place or with their fingerprint (X-29).
 func noteDuplicates(n int) string {
 	return countPhrase(n, "finding was already posted on this PR and was not repeated.",
 		"findings were already posted on this PR and were not repeated.")
@@ -91,7 +92,7 @@ func publish(ctx context.Context, deps Deps, args Args, pl *Plan) {
 	var sum *InlineSummary
 	notesBefore := len(res.Notes)
 	if inlineOn {
-		items, sum = planInline(res, pl.d, pl.postedFingerprints, deps.RenderInline, pl.p.Capabilities())
+		items, sum = planInline(res, pl.d, pl.own, deps.RenderInline, pl.p.Capabilities())
 		if sum.Unanchorable > 0 {
 			res.Notes = append(res.Notes, noteUnanchorable(sum.Unanchorable))
 		}
@@ -186,10 +187,13 @@ var errNoRenderer = errors.New("review: no provider renderer")
 
 // planInline resolves each finding's anchor on the provider's unextended
 // hunks (d.Files[i].Patch; spec P7 §3.1) and renders the inline comment of
-// every anchorable finding whose fingerprint is not in posted. The file is
+// every anchorable finding that is not already on the PR: a finding that
+// repeats one of review-mcp's own finding comments (duplicateOf: the same
+// place, else the same fingerprint) is skipped as a duplicate and links to
+// that comment through InlineURL when its URL is known. The file is
 // matched exactly, as for the finding's link. The summary counts the
 // unanchorable and duplicate findings; Posted and Failed are left 0.
-func planInline(res *Result, d *provider.Diff, posted map[string]bool, render InlineRenderer, caps provider.Capabilities) ([]inlineFinding, *InlineSummary) {
+func planInline(res *Result, d *provider.Diff, own []ownFinding, render InlineRenderer, caps provider.Capabilities) ([]inlineFinding, *InlineSummary) {
 	sum := &InlineSummary{}
 	if res.Review == nil {
 		return nil, sum
@@ -210,9 +214,10 @@ func planInline(res *Result, d *provider.Diff, posted map[string]bool, render In
 			continue
 		}
 		fp := Fingerprint(a.Path, ki.IssueHeader, ki.IssueContent)
-		if posted[fp] {
+		if dup := duplicateOf(own, a, fp); dup != nil {
 			sum.SkippedDuplicate++
 			ki.InlineStatus = InlineSkippedDuplicate
+			ki.InlineURL = dup.url
 			continue
 		}
 		body := strings.TrimRight(render(ki, caps), " \t\r\n") + "\n\n" + FingerprintMarker(fp)

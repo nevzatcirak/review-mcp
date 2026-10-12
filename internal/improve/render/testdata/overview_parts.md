@@ -14,7 +14,7 @@
 
 File: `src/f00.go` L2 · Label: general · Score: 9 of 10
 
-Explain the line in \`f00\`.
+Explain the line in `f00`.
 
 Existing code:
 
@@ -32,7 +32,7 @@ some added line of code here // f00
 
 File: `src/f02.go` L2 · Label: general · Score: 9 of 10
 
-Explain the line in \`f02\`.
+Explain the line in `f02`.
 
 Existing code:
 
@@ -50,7 +50,7 @@ some added line of code here // f02
 
 File: `src/f04.go` L2 · Label: general · Score: 9 of 10
 
-Explain the line in \`f04\`.
+Explain the line in `f04`.
 
 Existing code:
 
@@ -68,7 +68,7 @@ some added line of code here // f04
 
 File: `src/f01.go` L2 · Label: general · Score: 8 of 10
 
-Explain the line in \`f01\`.
+Explain the line in `f01`.
 
 Existing code:
 
@@ -86,7 +86,7 @@ some added line of code here // f01
 
 File: `src/f05.go` L2 · Label: general · Score: 8 of 10
 
-Explain the line in \`f05\`.
+Explain the line in `f05`.
 
 Existing code:
 

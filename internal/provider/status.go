@@ -58,9 +58,11 @@ const (
 	BlockerBuilds     = "required builds are missing or failing"
 	BlockerConflict   = "merge conflict"
 	BlockerOtherCheck = "other merge check"
-	// BlockerRequirements: the host blocks the merge for required reviews or
-	// required checks and does not say which (GitHub's "blocked").
-	BlockerRequirements = "required reviews or checks are not satisfied"
+	// BlockerRequirements: the host blocks the merge because a branch rule is
+	// not satisfied (required reviews, required checks or another
+	// restriction, such as a ruleset's update restriction) and does not say
+	// which (GitHub's "blocked").
+	BlockerRequirements = "branch rules are not satisfied (for example required reviews, required checks or other restrictions)"
 	// BlockerBehind: the head branch is behind the target branch and the
 	// host requires it to be up to date.
 	BlockerBehind = "the branch is behind the target branch"

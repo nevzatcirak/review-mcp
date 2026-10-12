@@ -3,7 +3,7 @@
 | # | Label | File | Summary | Score | Status |
 |---|---|---|---|---|---|
 | 1 | possible issue | [`src/app_test.go` L2](https://your-gitea.example/c/9) | Assert the retry count | 9/10 | inline comment posted |
-| 2 | possible issue | [`src/app.go` L12](https://your-gitea.example/octo/demo/src/src/app.go#L12) | Cap the retry delay | 8/10 | already posted on this PR |
+| 2 | possible issue | [`src/app.go` L12](https://your-gitea.example/c/5) | Cap the retry delay | 8/10 | already posted on this PR |
 | 3 | possible issue | `src/app.go` L12 | Handle the empty case | 8/10 | not anchored: the quoted code was not found at the given lines |
 | 4 | possible issue | [`src/app_test.go` L2](https://your-gitea.example/octo/demo/src/src/app_test.go#L2) | Close the file | unscored | listed here only |
 

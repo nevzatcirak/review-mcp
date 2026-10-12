@@ -122,11 +122,13 @@ func fixtures() map[string]*review.Result {
 	}
 	// published is a result after an inline publish that updated the
 	// overview of an earlier run (spec P7 §4.3): one finding posted inline,
-	// one not on a changed line, one whose inline comment failed; the
-	// "already discussed" count is set.
+	// one not on a changed line, one whose inline comment failed, and one
+	// skipped because review-mcp's earlier comment is at its place, linked
+	// to that comment (X-29); the "already discussed" count is set.
 	published := &review.Result{
 		PR: basePR(), EnabledFields: allKeys, Coverage: baseCoverage(),
-		Notes:    []string{"1 finding could not be placed on a changed line and is listed in the overview only."},
+		Notes: []string{"1 finding could not be placed on a changed line and is listed in the overview only.",
+			"1 finding was already posted on this PR and was not repeated."},
 		Metadata: review.Metadata{AlreadyDiscussed: 2},
 		Review: &review.Review{
 			EstimatedEffortToReview: ip(2), RelevantTests: bp(true), SecurityConcerns: sp(review.SecurityNo),
@@ -152,11 +154,18 @@ func fixtures() map[string]*review.Result {
 					Link:         "https://your-gitea.example/org/repo/src/commit/abc123/cmd/app/main.go#L12",
 					InlineStatus: review.InlineFailed,
 				},
+				{
+					RelevantFile: "cmd/app/main.go", IssueHeader: "Unchecked error", IssueContent: "The error is dropped.",
+					StartLine: 14, EndLine: 15, Snippet: "v, _ := parse()\nuse(v)",
+					Link:         "https://your-gitea.example/org/repo/src/commit/abc123/cmd/app/main.go#L14",
+					InlineURL:    "https://your-gitea.example/org/repo/pulls/12/files#issuecomment-880",
+					InlineStatus: review.InlineSkippedDuplicate,
+				},
 			},
 		},
 		Publish: &review.PublishResult{Published: true, Updated: true, CommentID: "55",
 			URL:    "https://your-gitea.example/org/repo/pulls/12#issuecomment-55",
-			Inline: &review.InlineSummary{Posted: 1, Unanchorable: 1, Failed: 1}},
+			Inline: &review.InlineSummary{Posted: 1, SkippedDuplicate: 1, Unanchorable: 1, Failed: 1}},
 	}
 	// complete is the run without findings whose coverage has nothing
 	// partial (filtered, binary and empty-diff files do not count, X-18):
@@ -449,6 +458,42 @@ func TestBitbucketHasNoHTMLAndEscapesPipes(t *testing.T) {
 	list := Provider(res, provider.Capabilities{})
 	if strings.Contains(list, "|---|") {
 		t.Errorf("table in a no-table profile\n%s", list)
+	}
+}
+
+// TestCodeSpansKept (X-30): the model's code spans stay code spans in the
+// overview, the client view and the inline comment, with their content
+// verbatim, while the text around them is escaped.
+func TestCodeSpansKept(t *testing.T) {
+	ki := review.KeyIssue{
+		RelevantFile: "a.go", IssueHeader: "Check `n|m`", IssueContent: "Use `<script>` here, not <script>.",
+		StartLine: 1, EndLine: 1, SnippetNote: "see `x*y`",
+	}
+	res := &review.Result{
+		PR: basePR(), EnabledFields: allKeys, Coverage: review.Coverage{},
+		Review: &review.Review{
+			EstimatedEffortToReview: ip(2), RelevantTests: bp(true), SecurityConcerns: sp("`[x](y)` is safe"),
+			PerformanceConcerns: sp("`- a` loops"), KeyIssuesToReview: []review.KeyIssue{ki},
+		},
+	}
+	for name, c := range map[string]struct {
+		out  string
+		want []string
+	}{
+		"gitea":            {Provider(res, capsGitea), []string{"`<script>` here, not &lt;script&gt;.", "`[x](y)` is safe", "`- a` loops", "see `x*y`"}},
+		"bitbucket":        {Provider(res, capsBB), []string{"**Check `n|m`**", "`<script>` here, not \\<script\\>.", "`[x](y)` is safe", "`- a` loops", "see `x*y`"}},
+		"client":           {Client(res), []string{"**Check `n|m`**", "`<script>` here, not \\<script\\>.", "`[x](y)` is safe", "`- a` loops", "see `x*y`"}},
+		"inline gitea":     {Inline(&ki, capsGitea), []string{"**Check `n|m`**", "`<script>` here, not &lt;script&gt;."}},
+		"inline bitbucket": {Inline(&ki, capsBB), []string{"**Check `n|m`**", "`<script>` here, not \\<script\\>."}},
+	} {
+		for _, w := range c.want {
+			if !strings.Contains(c.out, w) {
+				t.Errorf("%s: no %q in\n%s", name, w, c.out)
+			}
+		}
+		if strings.Contains(c.out, "\\`") || strings.Contains(c.out, "`&lt;script&gt;`") {
+			t.Errorf("%s: a code span was escaped\n%s", name, c.out)
+		}
 	}
 }
 

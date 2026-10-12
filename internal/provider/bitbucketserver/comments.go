@@ -79,7 +79,9 @@ func (c *apiComment) item() provider.CommentItem {
 
 // flattenReplies appends the descendants of c depth-first, children in
 // creation order, skipping deleted ones (their own replies are still kept).
-func flattenReplies(c *apiComment, deleted map[int64]struct{}, out *[]provider.CommentItem) {
+// Each reply gets the URL link returns for its id, as the root does: a reply
+// can be review-mcp's own inline finding (X-29).
+func flattenReplies(c *apiComment, deleted map[int64]struct{}, link func(int64) string, out *[]provider.CommentItem) {
 	kids := append([]apiComment(nil), c.Comments...)
 	sort.SliceStable(kids, func(i, j int) bool {
 		if kids[i].CreatedDate != kids[j].CreatedDate {
@@ -90,9 +92,11 @@ func flattenReplies(c *apiComment, deleted map[int64]struct{}, out *[]provider.C
 	for i := range kids {
 		k := &kids[i]
 		if _, gone := deleted[k.ID]; !gone && k.live() {
-			*out = append(*out, k.item())
+			it := k.item()
+			it.URL = link(k.ID)
+			*out = append(*out, it)
 		}
-		flattenReplies(k, deleted, out)
+		flattenReplies(k, deleted, link, out)
 	}
 }
 
@@ -122,6 +126,7 @@ func resolvedState(root *apiComment, act *apiActivity) *bool {
 // but Thread has no such field, so Path stays clean (the anchor path only) and
 // Line is 0 for any anchor whose fileType is not TO, including a missing one.
 // Comment IDs seen in COMMENTED/DELETED activities are excluded as well.
+// An anchor is one line, so StartLine stays 0.
 func (p *Provider) ListThreads(ctx context.Context, ref provider.PRRef) ([]provider.Thread, error) {
 	path, err := prPath(ref)
 	if err != nil {
@@ -179,7 +184,7 @@ func (p *Provider) ListThreads(ctx context.Context, ref provider.PRRef) ([]provi
 			}
 		}
 		var replies []provider.CommentItem
-		flattenReplies(root, deleted, &replies)
+		flattenReplies(root, deleted, func(id int64) string { return p.newComment(ref, id).URL }, &replies)
 		sort.SliceStable(replies, func(i, j int) bool {
 			if !replies[i].CreatedAt.Equal(replies[j].CreatedAt) {
 				return replies[i].CreatedAt.Before(replies[j].CreatedAt)

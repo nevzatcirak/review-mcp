@@ -150,10 +150,11 @@ Rules:
   read. The exact table is in [GitHub](github.md#pr_info).
 - `mergeable` is the pull request's own flag (`null` while GitHub has not
   computed it). The blockers come from `mergeable_state`: "merge conflict",
-  "required reviews or checks are not satisfied", "the branch is behind the
-  target branch", "the pull request is a draft", and "other merge check" for
-  an unknown state. **`unstable` is not a blocker**: it means that only checks
-  that are not required fail or are pending, and it adds the note "some checks
+  "branch rules are not satisfied (for example required reviews, required
+  checks or other restrictions)", "the branch is behind the target branch",
+  "the pull request is a draft", and "other merge check" for an unknown
+  state. **`unstable` is not a blocker**: it means that only checks that are
+  not required fail or are pending, and it adds the note "some checks
   that are not required are failing or pending".
 - A pull request with more than 250 commits gets the note "GitHub lists at most
   250 commits of a pull request; the commits past them are not available."

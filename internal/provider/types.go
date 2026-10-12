@@ -323,7 +323,9 @@ type CommentItem struct {
 	AuthorID    string `json:"-"`
 	AuthorLogin string `json:"-"`
 	// URL is the comment's web URL when the provider knows it; set for the
-	// comments a PR-level comment can be edited through (general threads).
+	// comments a PR-level comment can be edited through (general threads)
+	// and for the comments of inline threads, which pr_review links when it
+	// skips a finding that is already on the PR (X-29).
 	URL string `json:"-"`
 }
 
@@ -334,8 +336,14 @@ type Thread struct {
 	Kind ThreadKind `json:"kind"`
 	// Path is set for inline threads only.
 	Path string `json:"path"`
-	// Line is the new-side line of an inline thread; 0 when unknown.
+	// Line is the new-side line of an inline thread; 0 when unknown. For a
+	// comment anchored on a range of lines (GitHub) it is the range's last
+	// line.
 	Line int `json:"line"`
+	// StartLine is the first new-side line of an inline thread on a range of
+	// lines, below Line, for a provider that reports it (GitHub start_line);
+	// 0 for a single line, an unknown start and every other provider.
+	StartLine int `json:"start_line"`
 	// Outdated is true when the provider says the anchor no longer matches
 	// the current diff.
 	Outdated bool `json:"outdated"`

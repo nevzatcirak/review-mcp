@@ -79,9 +79,10 @@ func Provider(res *review.Result, caps provider.Capabilities) string {
 
 // gfmText makes untrusted text safe inside HTML and markdown at once:
 // markdown control characters are escaped, then HTML metacharacters become
-// entities, which render as the literal characters in both contexts.
+// entities, which render as the literal characters in both contexts. The
+// model's code spans are kept (X-30); their content is inert as it is.
 func gfmText(s string) string {
-	return html.EscapeString(mdutil.EscapeControl(strings.TrimSpace(s)))
+	return mdutil.EscapeKeepingCodeSpans(strings.TrimSpace(s), mdutil.EscapeGFM)
 }
 
 // ---- GFM (Gitea) ----
@@ -202,10 +203,10 @@ func writePlain(b *strings.Builder, res *review.Result, v *view, tables bool) {
 		b.WriteString("\n")
 	}
 	if v.showSec && v.hasConcerns {
-		b.WriteString("### " + emojiSecurity + " " + textSecurity + "\n\n" + mdutil.Escape(strings.TrimSpace(*v.security)) + "\n\n")
+		b.WriteString("### " + emojiSecurity + " " + textSecurity + "\n\n" + proseText(*v.security) + "\n\n")
 	}
 	if v.showPerf && v.hasPerf {
-		b.WriteString("### " + emojiPerf + " " + textPerf + "\n\n" + mdutil.Escape(strings.TrimSpace(*v.perf)) + "\n\n")
+		b.WriteString("### " + emojiPerf + " " + textPerf + "\n\n" + proseText(*v.perf) + "\n\n")
 	}
 	if !v.showIssues || !v.hasReview {
 		return
@@ -229,7 +230,7 @@ func writePlainIssue(b *strings.Builder, n int, i *review.KeyIssue) {
 	prefix := strconv.Itoa(n) + ". "
 	indent := strings.Repeat(" ", len(prefix))
 	sub := indent + "  "
-	b.WriteString(prefix + "**" + mdutil.Inline(issueHeader(i.IssueHeader)) + "**")
+	b.WriteString(prefix + "**" + mdutil.InlineKeepingCodeSpans(issueHeader(i.IssueHeader)) + "**")
 	if loc := clientLocation(i); loc != "" {
 		b.WriteString(" — " + loc)
 	}
@@ -238,7 +239,7 @@ func writePlainIssue(b *strings.Builder, n int, i *review.KeyIssue) {
 	}
 	b.WriteString("\n")
 	if c := strings.TrimSpace(i.IssueContent); c != "" {
-		b.WriteString(indent + "- " + strings.TrimPrefix(indentLines(mdutil.Escape(c), sub), sub) + "\n")
+		b.WriteString(indent + "- " + strings.TrimPrefix(indentLines(proseText(c), sub), sub) + "\n")
 		if i.Snippet != "" {
 			b.WriteString("\n")
 			mdutil.WriteFenced(b, i.Snippet, langTag(i.RelevantFile), sub)
@@ -248,7 +249,7 @@ func writePlainIssue(b *strings.Builder, n int, i *review.KeyIssue) {
 		mdutil.WriteFenced(b, i.Snippet, langTag(i.RelevantFile), sub)
 	}
 	if i.SnippetNote != "" {
-		b.WriteString(indent + "- " + textSnippetNote + mdutil.Inline(i.SnippetNote) + "\n")
+		b.WriteString(indent + "- " + textSnippetNote + mdutil.InlineKeepingCodeSpans(i.SnippetNote) + "\n")
 	}
 	b.WriteString("\n")
 }

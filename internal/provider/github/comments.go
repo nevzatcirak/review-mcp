@@ -65,6 +65,12 @@ type apiReviewComment struct {
 	UpdatedAt      lenientTime `json:"updated_at"`
 	HTMLURL        string      `json:"html_url"`
 	PullRequestURL string      `json:"pull_request_url"`
+	// StartLine and OriginalStartLine are the first line of a comment on a
+	// range (null for one line), current and as made, like Line and
+	// OriginalLine; StartSide is the side of that first line.
+	StartLine         *int   `json:"start_line"`
+	OriginalStartLine *int   `json:"original_start_line"`
+	StartSide         string `json:"start_side"`
 }
 
 // apiReview is an entry of GET /pulls/{n}/reviews.
@@ -117,22 +123,29 @@ func (r *apiReview) item() provider.CommentItem {
 	}
 }
 
-// anchor returns the line of a review comment and whether it is outdated.
-// GitHub sends line null when the comment no longer maps onto the current
-// diff; original_line is then the line it was made on. A comment on the
-// base (LEFT) side has no new-side line: Thread.Line is the new side, so it
-// is 0 (unknown).
-func (c *apiReviewComment) anchor() (line int, outdated bool) {
+// anchor returns the line of a review comment, the first line of its range
+// (0 for one line) and whether it is outdated. GitHub sends line null when
+// the comment no longer maps onto the current diff; original_line is then
+// the line it was made on, and original_start_line the first line of its
+// range. A comment on the base (LEFT) side has no new-side line:
+// Thread.Line is the new side, so it is 0 (unknown), and so is the start of
+// a range that begins on the base side. A start that is not below the line
+// is not a range.
+func (c *apiReviewComment) anchor() (start, line int, outdated bool) {
+	startLine := c.StartLine
 	switch {
 	case c.Line != nil:
 		line = *c.Line
 	case c.OriginalLine != nil:
-		line, outdated = *c.OriginalLine, true
+		line, outdated, startLine = *c.OriginalLine, true, c.OriginalStartLine
 	}
 	if strings.EqualFold(c.Side, "LEFT") {
 		line = 0
 	}
-	return line, outdated
+	if startLine != nil && *startLine > 0 && *startLine < line && !strings.EqualFold(c.StartSide, "LEFT") {
+		start = *startLine
+	}
+	return start, line, outdated
 }
 
 func listPath(base string) string { return base + "?per_page=" + strconv.Itoa(perPage) }
@@ -142,8 +155,10 @@ func listPath(base string) string { return base + "?per_page=" + strconv.Itoa(pe
 // Every issue comment is a general thread of its own, and so is every
 // review with a body (authored by the reviewer; a pending draft is not
 // visible to others and is skipped). Review comments become inline threads:
-// replies point at their root through in_reply_to_id. GitHub's REST API does
-// not expose whether a thread is resolved, so Resolved is always nil.
+// replies point at their root through in_reply_to_id; a comment on a range
+// is listed at its last line with StartLine its first (start_line). GitHub's
+// REST API does not expose whether a thread is resolved, so Resolved is
+// always nil.
 func (p *Provider) ListThreads(ctx context.Context, ref provider.PRRef) ([]provider.Thread, error) {
 	pp, err := prPath(ref)
 	if err != nil {
@@ -224,10 +239,10 @@ func inlineThreads(rcs []apiReviewComment) []provider.Thread {
 			out[at].Comments = append(out[at].Comments, c.item())
 			continue
 		}
-		line, outdated := c.anchor()
+		start, line, outdated := c.anchor()
 		idx[key] = len(out)
 		out = append(out, provider.Thread{
-			ID: idStr(c.ID), Kind: provider.ThreadInline, Path: c.Path, Line: line, Outdated: outdated,
+			ID: idStr(c.ID), Kind: provider.ThreadInline, Path: c.Path, Line: line, StartLine: start, Outdated: outdated,
 			Comments: []provider.CommentItem{c.item()}, ReplyInThread: true,
 		})
 	}

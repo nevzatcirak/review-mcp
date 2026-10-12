@@ -8,6 +8,10 @@
 // Run never branches on a provider kind, so a new provider only adds a
 // Fixture.
 //
+// RunReviewDuplicates (review.go) is the one scenario above the provider: it
+// drives pr_review's publish through each Fixture, so that the duplicate
+// rule of X-29 is tested end to end on every provider's fake.
+//
 // The package is test support. It imports testing and net/http/httptest and
 // must only be imported from _test.go files; no production package imports
 // it. Run, the Spec types and the server helpers live in non-test files only
@@ -41,8 +45,10 @@ type Traits struct {
 	OmitsNoNewlineMarker bool
 	// InlineRanges is true for a provider that anchors an inline comment on
 	// its whole range, InlineComment.Line to EndLine, and lists the thread
-	// at the range's last line (GitHub's line). Without it the provider
-	// ignores EndLine: the comment is posted on Line and listed there.
+	// at the range's last line (GitHub's line) with Thread.StartLine the
+	// range's first line (GitHub's start_line). Without it the provider
+	// ignores EndLine: the comment is posted on Line and listed there, with
+	// StartLine 0.
 	InlineRanges bool
 }
 

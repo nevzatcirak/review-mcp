@@ -10,11 +10,14 @@ This page is the reference for what is specific to GitHub. Installation and
 the LLM endpoint are in the [Setup guide](setup.md); the fixed sentences you
 may see are collected in [Troubleshooting](troubleshooting.md#github).
 
-> **Not yet checked against a live GitHub.** The provider is tested against
-> fake servers (and a real `git` for the repository context). The scopes
-> below, the review without a body, the GHES behaviour and the real shape of
-> the rules endpoints are verified at the v2 live acceptance (items Q1 to Q5);
-> each place where that matters says so.
+> **Checked live on github.com, not on GitHub Enterprise Server.** The provider
+> is tested against fake servers (and a real `git` for the repository
+> context). The rc.3 acceptance ran the tools against a throwaway pull request
+> on github.com (items Q1 to Q5, [below](#still-to-be-checked-at-live-acceptance)):
+> a review without a body is accepted, and a native suggestion block applies
+> cleanly with **Commit suggestion**. What has not run live is GitHub Enterprise
+> Server, a renamed or transferred repository and a real rate limit; each place
+> where that matters says so.
 
 ## Configuration
 
@@ -230,11 +233,13 @@ or nothing.
 
 - **The review has no body.** The review only carries its comments, and a
   review with a body would show up as a general entry in `pr_comments`. GitHub's
-  documentation says a body is required for the event `COMMENT`; a review that
-  carries comments is believed to be accepted without one, but **this is not
-  verified** (live acceptance item Q3). If GitHub refuses it, the fallback
-  below posts every comment alone, so nothing is lost. The decision for that
-  case is a fixed one-line body that ends with a review-mcp marker line.
+  documentation says a body is required for the event `COMMENT`, but in the
+  rc.3 acceptance on github.com a review that carries comments and no body was
+  accepted, and `line` and `start_line` came back from
+  `GET /pulls/{n}/reviews/{id}/comments`. Not checked on GitHub Enterprise
+  Server. If a server refuses it, the fallback below posts every comment alone,
+  so nothing is lost; the decision for that case would be a fixed one-line body
+  that ends with a review-mcp marker line.
 - **Ids and links** of the posted comments are read back from
   `GET /pulls/{n}/reviews/{id}/comments`. If that read fails, the comments are
   still `posted` and carry the review's link.
@@ -254,12 +259,15 @@ or nothing.
 - For `n` comments a successful run costs one `POST` and about `n / 100`
   `GET`s; after a 422 it costs the first `POST` plus at most `n` more.
 
-Running the tool again does not repeat a comment: the markers described in
-[Reviewing pull requests](review.md#no-repeated-findings) and
-[Suggesting code changes](improve.md#no-repeated-suggestions) work as on the
-other providers. The reviews appear in the pull request's **Files changed**
-view as ordinary reviews of the token's user. They are neither approvals nor
-change requests, and `pr_info` leaves them out of the reviewers (see below).
+Running the tool again does not repeat a comment: the checks described in
+[Reviewing pull requests](review.md#no-repeated-findings) (by place, then by
+fingerprint) and [Suggesting code changes](improve.md#no-repeated-suggestions)
+work as on the other providers. GitHub reports the first line of a range
+comment (`start_line`) as well as its last, so a later finding anywhere inside
+an earlier range is recognised; a skipped one links to the earlier comment.
+The reviews appear in the pull request's **Files changed** view as ordinary
+reviews of the token's user. They are neither approvals nor change requests,
+and `pr_info` leaves them out of the reviewers (see below).
 
 ### Ranges
 
@@ -353,7 +361,7 @@ adds:
   | `clean`, `has_hooks` | no blocker |
   | `unknown`, empty | no blocker (not computed yet; `mergeable` is `null`) |
   | `dirty` | `merge conflict` |
-  | `blocked` | `required reviews or checks are not satisfied` |
+  | `blocked` | `branch rules are not satisfied (for example required reviews, required checks or other restrictions)` |
   | `behind` | `the branch is behind the target branch` |
   | `draft` | `the pull request is a draft` |
   | `unstable` | **no blocker**; the note `some checks that are not required are failing or pending` |
@@ -404,18 +412,31 @@ review-mcp fetches the pull request head into its cache:
   may therefore be `not_found`. Use the current URL. If live acceptance shows it,
   the comparison will use the repository name from the pull request's metadata
   instead.
-- Nothing in this guide has run against a real github.com or GHES yet; see the
-  checks below.
+- GitHub Enterprise Server has not run yet, and nothing here has met a real
+  rate limit (it is covered by tests with fake servers); see the checks below.
+- A quote that uses spaces where the file uses tabs does not verify: a
+  `pr_improve` suggestion whose `existing_code` indents a loop with spaces
+  while the file uses tabs is `not_found` and is listed in the overview only,
+  never inline. A quote that only drops the indentation is fine (the block is
+  re-indented onto the real lines). Matching tabs and spaces loosely is on the
+  backlog.
 
 ### Still to be checked at live acceptance
 
-| Item | Check |
-|---|---|
-| Q1 | `diag pr` and `diag comments` on a real pull request: files, renames and threads match the UI. Also a reply or a read through an old-name URL of a renamed or transferred repository (to see whether `not_found` appears); if no such repository is available this is recorded as not verified. |
-| Q2 | `pr_info` on a merged and an open pull request: target branch, reviewers, blockers. An open pull request with a failing non-required check shows the `unstable` note and no blocker. A branch with rulesets and/or classic protection reports the expected count (the larger one, and the note when only the rulesets are readable). |
-| Q3 | `pr_review` and `pr_improve` with `publish=true` on a throwaway pull request: one review, comments on the right lines, a second run posts no duplicates. Also: whether GitHub accepts the review **without a body**; whether `line` is present in `GET /pulls/{n}/reviews/{id}/comments` (it is used to match the posted comments); and a suggestion block that applies cleanly with GitHub's **Commit suggestion**. |
-| Q4 | `pr_describe` in description mode: the author's text is unchanged. |
-| Q5 | Rate-limit handling observed or simulated. |
+The rc.3 acceptance ran on a throwaway pull request on github.com. Its outcome,
+and what is left:
+
+| Item | Result | Still to be checked |
+|---|---|---|
+| Q1 | Passed: a rename is `renamed` with `old_path`, an added file and its line counts are right, and the base is the merge base (`github:merge_base`). | A read or a reply through an old-name URL of a renamed or transferred repository (whether `not_found` appears); not verified, no such repository was available. |
+| Q2 | Passed: an open pull request gives `mergeable` and, when the branch is `blocked`, the blocker; `required_approvals` is `null` with "not readable with this token" when the rulesets have no pull request rule and the classic protection needs admin rights; a merged pull request has no blockers. The blocker wording was too narrow (the branch was blocked by a ruleset's update restriction) and now reads as in the [table above](#pr_info). | An open pull request with a failing check that is not required (the `unstable` note without a blocker), and a branch whose rulesets or classic protection give a count. |
+| Q3 | Passed with one defect, fixed in rc.4. `pr_review` and `pr_improve` with `publish=true`: one review, comments on the right lines, the overview edited in place. A review **without a body** is accepted; `line` and `start_line` are returned; **Commit suggestion** applied a suggestion block cleanly (one line, tab indentation intact); a block was re-indented onto the real lines when the model's quote dropped the indentation. The defect: a second `pr_review` run posted a reworded finding again; it is now recognised by place ([No repeated findings](review.md#no-repeated-findings)). | The second run on a new pull request with rc.4: no new comment, skipped findings linked. |
+| Q4 | Passed: the author's text is unchanged, the marked region is appended and the title is untouched. | |
+| Q5 | Simulated only (no rate limit was hit); covered by the tests. | A real rate limit. |
+
+Also open: GitHub Enterprise Server for all of the above, and the code spans of
+the model's text shown as code on github.com (rc.4, [Code in the model's
+text](review.md#code-in-the-models-text)).
 
 ## What is not supported
 

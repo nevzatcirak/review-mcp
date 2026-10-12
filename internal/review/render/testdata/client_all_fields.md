@@ -21,8 +21,8 @@ Batch the \<ids\> instead.
 
 1. **Possible Issue** — [`cmd/app/main.go` L10-12](https://your-gitea.example/org/repo/src/commit/abc123/cmd/app/main.go#L10-L12)
 
-   The retry loop never stops when \`max\` is 0, so it spins forever.
-   See the \`for\` loop.
+   The retry loop never stops when `max` is 0, so it spins forever.
+   See the `for` loop.
 
    ```go
    for {

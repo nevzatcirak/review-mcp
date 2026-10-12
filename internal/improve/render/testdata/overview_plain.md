@@ -1,7 +1,7 @@
 ## Code Suggestions
 
 1. Assert the retry count (possible issue, [`src/app_test.go` L2](https://your-gitea.example/c/9), score: 9/10, inline comment posted)
-2. Cap the retry delay (possible issue, [`src/app.go` L12](https://your-gitea.example/octo/demo/src/src/app.go#L12), score: 8/10, already posted on this PR)
+2. Cap the retry delay (possible issue, [`src/app.go` L12](https://your-gitea.example/c/5), score: 8/10, already posted on this PR)
 3. Handle the empty case (possible issue, `src/app.go` L12, score: 8/10, not anchored: the quoted code was not found at the given lines)
 4. Close the file (possible issue, [`src/app_test.go` L2](https://your-gitea.example/octo/demo/src/src/app_test.go#L2), score: unscored, listed here only)
 

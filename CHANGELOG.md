@@ -5,6 +5,51 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.4] - Unreleased
+
+Fourth v2 release candidate, built on 2.0.0-rc.3 (the npm dist-tag `next`;
+`latest` moves only at 2.0.0). Fixes from the rc.3 acceptance on a throwaway
+GitHub pull request. Nothing in the tools or in the configuration is removed or
+renamed.
+
+### Fixed
+
+- `pr_review` posted a finding again when the model had reworded it between
+  runs (all providers, since 1.0), because the already-posted check compared
+  only the fingerprint of the finding's text (X-29). A finding is now also a
+  duplicate when its place overlaps an inline finding comment by the token's own
+  user on the same file, whatever the model wrote. A thread that is outdated
+  (the code under it changed) does not suppress a finding; a resolved thread
+  does. The exact fingerprint stays as a second rule. The note "N findings were
+  already posted on this PR and were not repeated." now counts both.
+  `provider.Thread` gains `StartLine` (GitHub fills it from `start_line`;
+  Gitea and Bitbucket Server know only the first line of a range), and Gitea
+  inline comments and Bitbucket Server replies now carry their URLs.
+- The model's inline code spans were published with escaped backticks (`` \`code\` ``)
+  in the overview, the inline comments and the description, so the hosts showed
+  literal backticks (X-30). A well-formed code span in the model's text is now
+  kept as a code span in `pr_review`, `pr_describe` and `pr_improve`; its
+  content is never escaped, and text outside spans is escaped as before. An
+  unmatched backtick is still escaped. The key-issue header of the GitHub and
+  Gitea overview, which sits inside HTML, is unchanged.
+- The GitHub merge blocker for `mergeable_state` `blocked` said "required
+  reviews or checks are not satisfied", but a branch can also be blocked by
+  other rules (for example a ruleset's update restriction). It now reads
+  "branch rules are not satisfied (for example required reviews, required checks
+  or other restrictions)". Bitbucket Server and Gitea blockers are unchanged.
+
+### Changed
+
+- A finding that `pr_review` skips as a duplicate, and a suggestion that
+  `pr_improve` skips as a duplicate (`skipped_duplicate`), now link to the
+  earlier comment: `inline_url` of the finding, `anchor.url` of the suggestion,
+  and the link in the overview. Without a URL from the server the overview
+  falls back to the file line.
+- The documentation records the live results of the rc.3 acceptance for GitHub
+  (a review without a body is accepted; "Commit suggestion" applies a native
+  suggestion block cleanly) and which checks remain open
+  ([GitHub](docs/github.md#still-to-be-checked-at-live-acceptance)).
+
 ## [2.0.0-rc.3]
 
 Third v2 release candidate, built on 2.0.0-rc.2 (the npm dist-tag `next`;
@@ -743,6 +788,7 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[2.0.0-rc.4]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.0.0-rc.4
 [2.0.0-rc.3]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.0.0-rc.3
 [2.0.0-rc.2]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.0.0-rc.2
 [2.0.0-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.0.0-rc.1

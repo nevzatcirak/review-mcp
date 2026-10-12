@@ -27,6 +27,12 @@ func TestContract(t *testing.T) {
 	contract.Run(t, ctFixture{})
 }
 
+// TestReviewDuplicates runs pr_review's duplicate scenario (X-29) through
+// this provider and the contract fake.
+func TestReviewDuplicates(t *testing.T) {
+	contract.RunReviewDuplicates(t, ctFixture{})
+}
+
 const (
 	// ctAPI is the API prefix the provider derives for a GHES web base.
 	ctAPI  = "/api/v3"
@@ -156,9 +162,15 @@ type ctGitHub struct {
 
 type ctInline struct {
 	contract.Comment
-	path    string
-	line    int
-	replyTo int64
+	path string
+	line int
+	// startLine is the first line of a comment on a range (start_line); 0
+	// for one line.
+	startLine int
+	// outdated is served as GitHub serves an outdated comment: line and
+	// start_line null, original_line and original_start_line as made.
+	outdated bool
+	replyTo  int64
 	// review is the id of the review the comment was created in; 0 for a
 	// comment of the Spec or one posted alone.
 	review int64
@@ -175,7 +187,7 @@ func newCtGitHub(t *testing.T, pr contract.Spec) *ctGitHub {
 			continue
 		}
 		for i, c := range th.Comments {
-			in := ctInline{Comment: c, path: th.Path, line: th.Line}
+			in := ctInline{Comment: c, path: th.Path, line: th.Line, outdated: th.Outdated}
 			if i > 0 {
 				in.replyTo = th.Comments[0].ID
 			}
@@ -462,9 +474,16 @@ func (g *ctGitHub) issueJSON(c contract.Comment) map[string]any {
 func (g *ctGitHub) inlineJSON(c ctInline) map[string]any {
 	m := map[string]any{"id": c.ID, "user": ctUser(c.Author), "body": c.Body, "path": c.path,
 		"line": c.line, "original_line": c.line, "side": "RIGHT",
+		"start_line": nil, "original_start_line": nil, "start_side": nil,
 		"created_at": c.Created.Format(time.RFC3339), "updated_at": c.Created.Format(time.RFC3339),
 		"html_url":         "https://github.example.com/octo/demo/pull/7#discussion_r" + strconv.FormatInt(c.ID, 10),
 		"pull_request_url": ctPullURL}
+	if c.startLine != 0 {
+		m["start_line"], m["original_start_line"], m["start_side"] = c.startLine, c.startLine, "RIGHT"
+	}
+	if c.outdated {
+		m["line"], m["start_line"] = nil, nil
+	}
 	if c.replyTo != 0 {
 		m["in_reply_to_id"] = c.replyTo
 	}
@@ -561,7 +580,7 @@ func (g *ctGitHub) serveComments(w http.ResponseWriter, r *http.Request, path st
 				return true
 			}
 			c := ctInline{Comment: contract.Comment{ID: g.nextID, Author: g.pr.TokenUser, Body: body, Created: time.Now().UTC()},
-				path: root.path, line: root.line, replyTo: root.ID}
+				path: root.path, line: root.line, startLine: root.startLine, outdated: root.outdated, replyTo: root.ID}
 			g.nextID++
 			g.inline = append(g.inline, c)
 			ctJSON(w, http.StatusCreated, g.inlineJSON(c))
@@ -655,7 +674,7 @@ func ctHunks(hunks string) map[int]int {
 // create stores c as a review comment of the token's user.
 func (g *ctGitHub) create(c ctPosition, review int64) ctInline {
 	in := ctInline{Comment: contract.Comment{ID: g.nextID, Author: g.pr.TokenUser, Body: c.Body, Created: time.Now().UTC()},
-		path: c.Path, line: c.Line, review: review}
+		path: c.Path, line: c.Line, startLine: c.StartLine, review: review}
 	g.nextID++
 	g.inline = append(g.inline, in)
 	return in

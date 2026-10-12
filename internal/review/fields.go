@@ -117,8 +117,10 @@ type KeyIssue struct {
 	SnippetNote string `json:"snippet_note,omitempty"`
 	// Link is the provider URL of the file at StartLine, when available.
 	Link string `json:"link,omitempty"`
-	// InlineURL is the URL of the finding's inline comment, when one was
-	// posted and the server reported its URL.
+	// InlineURL is the URL of the finding's inline comment, when the server
+	// reported it: the comment posted for the finding, or, for a finding
+	// skipped as a duplicate (InlineSkippedDuplicate), review-mcp's earlier
+	// comment it repeats (X-29).
 	InlineURL string `json:"inline_url,omitempty"`
 	// InlineStatus is what happened to the finding in an inline publish
 	// (one of the Inline* values); empty when inline findings were not
@@ -220,7 +222,8 @@ var keyIssueExtraSchema = map[string]map[string]any{
 	"snippet":      {"type": "string", "description": "the verified code lines start_line to end_line (at most 30), joined by newlines"},
 	"snippet_note": {"type": "string", "description": "why the snippet is missing or shortened"},
 	"link":         {"type": "string", "description": "provider URL of the file at start_line"},
-	"inline_url":   {"type": "string", "description": "URL of the inline comment posted for this finding"},
+	"inline_url": {"type": "string", "description": "URL of the inline comment posted for this finding, or of the earlier comment " +
+		"it repeats when inline_status is skipped_duplicate"},
 	"inline_status": {"type": "string", "enum": []any{InlinePosted, InlineSkippedDuplicate, InlineUnanchorable, InlineFailed},
 		"description": "what happened to the finding in an inline publish; absent when inline findings were not considered"},
 }

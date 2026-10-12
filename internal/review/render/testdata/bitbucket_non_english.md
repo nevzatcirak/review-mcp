@@ -21,7 +21,7 @@ src/main.py: her istekte dosya yeniden okunuyor.
 ### ⚡ Recommended focus areas for review
 
 1. **Olası hata 🐞** — `src/main.py` L3-4
-   - Döngü, \`sınır\` sıfır olduğunda sonsuza kadar sürer. 日本語のテスト。
+   - Döngü, `sınır` sıfır olduğunda sonsuza kadar sürer. 日本語のテスト。
 
      ```python
      while True:

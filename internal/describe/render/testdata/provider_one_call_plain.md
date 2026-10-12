@@ -16,9 +16,9 @@ Enhancement, Tests
 ### Walkthrough
 
 - `src/app.go` (enhancement): Raise the retry count
-  - Raise \`retries\` from 1 to 3
+  - Raise `retries` from 1 to 3
 - `src/app_test.go` (tests): Add a retry test
-  - Add \`TestRetries\`
+  - Add `TestRetries`
 
 ### Coverage
 

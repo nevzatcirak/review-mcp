@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/patch"
@@ -158,13 +159,16 @@ func ParseSuggestionMarker(body string) (string, bool) {
 	return fp, true
 }
 
-// postedSuggestions collects the keys (current or legacy) of the suggestion comments by
-// the token's own user on the PR (as pr_review's fingerprintsOf does for
-// findings): every comment of every inline thread is examined, since Gitea
-// groups the comments of one line into one thread. A marker in anyone else's
-// comment does not count.
-func postedSuggestions(threads []provider.Thread, me provider.User) map[string]bool {
-	out := map[string]bool{}
+// postedSuggestions collects the keys (current or legacy) of the suggestion
+// comments by the token's own user on the PR, each with the URL of the
+// comment (as pr_review's ownFindingsOf does for findings): every comment of
+// every inline thread is examined, since Gitea groups the comments of one
+// line into one thread. A marker in anyone else's comment does not count. When a key
+// repeats, the URL of the oldest comment is kept; a key whose comment has no
+// URL is still in the map, with "".
+func postedSuggestions(threads []provider.Thread, me provider.User) map[string]string {
+	out := map[string]string{}
+	at := map[string]time.Time{}
 	for i := range threads {
 		t := &threads[i]
 		if t.Kind != provider.ThreadInline {
@@ -175,8 +179,12 @@ func postedSuggestions(threads []provider.Thread, me provider.User) map[string]b
 			if !provider.IsUser(me, c.AuthorID, c.AuthorLogin) {
 				continue
 			}
-			if fp, ok := ParseSuggestionMarker(c.Body); ok {
-				out[fp] = true
+			fp, ok := ParseSuggestionMarker(c.Body)
+			if !ok {
+				continue
+			}
+			if _, seen := out[fp]; !seen || c.CreatedAt.Before(at[fp]) {
+				out[fp], at[fp] = c.URL, c.CreatedAt
 			}
 		}
 	}
@@ -294,10 +302,11 @@ func (pl *Plan) readComments(ctx context.Context) ([]provider.Thread, provider.U
 // planInline resolves the inline comment of every verified suggestion and
 // records the outcome of the ones that are not posted in Suggestion.Anchor:
 // a range that is not on head-side lines of one hunk is unanchorable, one
-// whose key (current or legacy) is in posted is skipped as a duplicate. When
-// unchecked is set the PR's comments could not be read, so nothing is posted and every
-// anchorable suggestion is counted failed. A suggestion that is not verified
-// is not considered and keeps no anchor.
+// whose key (current or legacy) is in posted is skipped as a duplicate and
+// linked to the earlier comment. When unchecked is set the PR's comments
+// could not be read, so nothing is posted and every anchorable suggestion
+// is counted failed. A suggestion that is not verified is not considered and
+// keeps no anchor.
 //
 // On a provider with a native suggestion style the comment carries a
 // suggestion block only when all three hold (design §5, Y-11): the
@@ -306,7 +315,7 @@ func (pl *Plan) readComments(ctx context.Context) ([]provider.Thread, provider.U
 // (blockCode). The renderer then gets a copy of the suggestion with the
 // re-indented code; otherwise it gets caps without a suggestion style and
 // renders the diff block.
-func (pl *Plan) planInline(render InlineRenderer, posted map[string]bool, unchecked bool) ([]inlineItem, *InlineSummary) {
+func (pl *Plan) planInline(render InlineRenderer, posted map[string]string, unchecked bool) ([]inlineItem, *InlineSummary) {
 	sum := &InlineSummary{}
 	caps := pl.p.Capabilities()
 	native := caps.NativeSuggestionStyle() != provider.SuggestionStyleNone
@@ -326,14 +335,14 @@ func (pl *Plan) planInline(render InlineRenderer, posted map[string]bool, unchec
 			continue
 		}
 		fp := SuggestionFingerprint(s)
-		switch {
-		case unchecked:
+		if unchecked {
 			sum.Failed++
 			s.Anchor = &Anchor{Status: AnchorFailed, Line: a.Line, Error: errInlineNotChecked}
 			continue
-		case posted[fp] || posted[legacySuggestionFingerprint(s)]:
+		}
+		if url, dup := postedURL(posted, fp, legacySuggestionFingerprint(s)); dup {
 			sum.SkippedDuplicate++
-			s.Anchor = &Anchor{Status: AnchorSkippedDuplicate, Line: a.Line}
+			s.Anchor = &Anchor{Status: AnchorSkippedDuplicate, Line: a.Line, URL: url}
 			continue
 		}
 		rs, rcaps := s, plain
@@ -355,6 +364,18 @@ func (pl *Plan) planInline(render InlineRenderer, posted map[string]bool, unchec
 		pl.log.Debug("improve: suggestion blocks", "native", blocks, "diff_block", kept)
 	}
 	return out, sum
+}
+
+// postedURL reports whether one of the keys is in posted, and the URL of its
+// comment ("" when the server reported none). The current key wins over the
+// legacy one.
+func postedURL(posted map[string]string, keys ...string) (string, bool) {
+	for _, k := range keys {
+		if url, ok := posted[k]; ok {
+			return url, true
+		}
+	}
+	return "", false
 }
 
 // anchorFor places the head-side range start to end of fp on the provider's

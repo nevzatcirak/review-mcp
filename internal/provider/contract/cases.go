@@ -411,6 +411,9 @@ func (s *suite) threads(t *testing.T) {
 			if th.Path != w.Path || (w.Kind == provider.ThreadInline && th.Line != w.Line) {
 				t.Errorf("thread %s: anchor %s:%d, want %s:%d", th.ID, th.Path, th.Line, w.Path, w.Line)
 			}
+			if th.StartLine != 0 {
+				t.Errorf("thread %s: StartLine %d, want 0 for a thread on one line", th.ID, th.StartLine)
+			}
 			var g, e []string
 			for _, c := range th.Comments {
 				g = append(g, c.ID+"/"+c.Author+"/"+c.Body)
@@ -789,8 +792,9 @@ func (s *suite) updatePullRequest(t *testing.T) {
 // inline: comments on an added and a context line are posted; a comment on
 // a line outside the hunks is not, with a fixed sentence. A comment on a
 // range of new-side lines of one hunk (InlineComment.EndLine) is posted
-// too, and listed at its last line by a provider with Traits.InlineRanges,
-// at its first line by any other.
+// too, and listed at its last line with Thread.StartLine its first line by
+// a provider with Traits.InlineRanges, at its first line with StartLine 0 by
+// any other.
 func (s *suite) inline(t *testing.T) {
 	spec := samplePR()
 	p, ref, _ := s.serve(t, spec)
@@ -860,18 +864,21 @@ func (s *suite) inline(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListThreads: %v", err)
 		}
-		want := it.Line
+		want, wantStart := it.Line, 0
 		if s.tr.InlineRanges {
-			want = it.EndLine
+			want, wantStart = it.EndLine, it.Line
 		}
-		var at []int
+		var at, starts []int
 		for _, th := range threads {
 			if th.Kind == provider.ThreadInline && th.Path == it.Path && len(th.Comments) > 0 && th.Comments[0].Body == it.Body {
-				at = append(at, th.Line)
+				at, starts = append(at, th.Line), append(starts, th.StartLine)
 			}
 		}
 		if len(at) != 1 || at[0] != want {
 			t.Errorf("the range comment is listed at lines %v, want once at line %d (Traits.InlineRanges %v)", at, want, s.tr.InlineRanges)
+		}
+		if len(starts) == 1 && starts[0] != wantStart {
+			t.Errorf("the range comment is listed with StartLine %d, want %d (Traits.InlineRanges %v)", starts[0], wantStart, s.tr.InlineRanges)
 		}
 	})
 }

@@ -48,31 +48,6 @@ func humanThreads(threads []provider.Thread, me provider.User) []provider.Thread
 	return llmrun.HumanThreads(threads, func(c *provider.CommentItem) bool { return ownMarked(c, me) })
 }
 
-// fingerprintsOf collects the fingerprints of the review's inline comments
-// by the token's own user (spec P7 §5.3). Every comment of every thread is
-// examined: Gitea groups the review comments of one line into one thread,
-// so ours may be a reply. A fingerprint marker in anyone else's comment does
-// not count.
-func fingerprintsOf(threads []provider.Thread, me provider.User) map[string]bool {
-	out := map[string]bool{}
-	for i := range threads {
-		t := &threads[i]
-		if t.Kind != provider.ThreadInline {
-			continue
-		}
-		for j := range t.Comments {
-			c := &t.Comments[j]
-			if !provider.IsUser(me, c.AuthorID, c.AuthorLogin) {
-				continue
-			}
-			if fp, ok := ParseFingerprintMarker(c.Body); ok {
-				out[fp] = true
-			}
-		}
-	}
-	return out
-}
-
 // discussion is the rendered prompt block and what it covers
 // (llmrun.Discussion).
 type discussion = llmrun.Discussion

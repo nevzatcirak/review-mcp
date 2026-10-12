@@ -115,12 +115,17 @@ func validContentPath(p string) bool {
 	return true
 }
 
-func contentsPath(repo, p, sha string) string {
+// escapePath escapes every segment of a repository path.
+func escapePath(p string) string {
 	segs := strings.Split(p, "/")
 	for i, s := range segs {
 		segs[i] = url.PathEscape(s)
 	}
-	return repo + "/contents/" + strings.Join(segs, "/") + "?ref=" + url.QueryEscape(sha)
+	return strings.Join(segs, "/")
+}
+
+func contentsPath(repo, p, sha string) string {
+	return repo + "/contents/" + escapePath(p) + "?ref=" + url.QueryEscape(sha)
 }
 
 // GetDiff implements provider.Provider. The files come from GET
@@ -258,12 +263,7 @@ func (p *Provider) fetchContent(ctx context.Context, repo string, t fetchTask) (
 	if ctx.Err() != nil {
 		return nil, provider.ContentFetchFailed
 	}
-	if t.sha == "" || !validContentPath(t.path) {
-		p.logger.Debug("github content fetch skipped: unusable path or revision", "path", t.path)
-		return nil, provider.ContentFetchFailed
-	}
-	resp, err := p.do(ctx, request{method: http.MethodGet, path: contentsPath(repo, t.path, t.sha), accept: mediaRaw,
-		maxBytes: p.maxFile, capKey: capKeyFile})
+	data, err := p.getRaw(ctx, repo, t.path, t.sha)
 	if err != nil {
 		var perr *provider.Error
 		if errors.As(err, &perr) && perr.Class == provider.ClassTooLarge {
@@ -272,8 +272,24 @@ func (p *Provider) fetchContent(ctx context.Context, repo string, t fetchTask) (
 		p.logger.Debug("github content fetch failed", "path", t.path, "side", sideName(t.base), "error", errClass(err))
 		return nil, provider.ContentFetchFailed
 	}
-	s := string(resp.Data)
+	s := string(data)
 	return &s, provider.ContentFull
+}
+
+// getRaw reads the content of path at sha with the raw media type, capped
+// at diff.max_file_bytes. It is the one content request of GetDiff and
+// GetFileAt. An unusable path or revision is a protocol error, with no
+// request.
+func (p *Provider) getRaw(ctx context.Context, repo, path, sha string) ([]byte, error) {
+	if !provider.ValidRevision(sha) || !validContentPath(path) {
+		return nil, protocolErr("unusable path or revision")
+	}
+	resp, err := p.do(ctx, request{method: http.MethodGet, path: contentsPath(repo, path, sha), accept: mediaRaw,
+		maxBytes: p.maxFile, capKey: capKeyFile})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
 }
 
 func sideName(base bool) string {

@@ -24,30 +24,56 @@ func pageLimitError() error {
 	return &provider.Error{Class: provider.ClassProtocol, Hint: "pagination did not terminate within the page limit"}
 }
 
+// Cap bounds a capped page walk (the *Capped functions): it stops after
+// Pages pages or as soon as it holds more than Items items, whichever comes
+// first, and reports truncated when the host had more. Zero means no bound
+// of that kind; the package ceiling of 1000 pages still applies and stays
+// a protocol error.
+type Cap struct {
+	Pages, Items int
+}
+
 // PagesUntilEmpty collects a Gitea-style paged JSON array. path must not
 // contain page or limit parameters; "page=N" (from 1) and, when limit > 0,
 // "limit=L" are appended. Requests continue until a page comes back empty: a
 // short page is NOT the end. More than 1000 pages is a protocol error.
 func PagesUntilEmpty[T any](ctx context.Context, c *Client, path string, limit int) ([]T, error) {
+	all, _, err := PagesUntilEmptyCapped(ctx, c, path, limit, Cap{}, func(p *[]T) []T { return *p })
+	return all, err
+}
+
+// PagesUntilEmptyCapped is PagesUntilEmpty for a page whose JSON body is
+// an E holding the items (items extracts them), bounded by cp. Gitea does
+// not say whether a page is the last, so a walk that stops at cp.Pages
+// reports truncated whenever its last page was not empty.
+func PagesUntilEmptyCapped[E, T any](ctx context.Context, c *Client, path string, limit int, cp Cap, items func(*E) []T) ([]T, bool, error) {
 	var all []T
 	for page := 1; page <= maxPages; page++ {
 		q := "page=" + strconv.Itoa(page)
 		if limit > 0 {
 			q += "&limit=" + strconv.Itoa(limit)
 		}
-		var items []T
-		if err := c.GetJSON(ctx, appendQuery(path, q), &items); err != nil {
-			return nil, err
+		var env E
+		if err := c.GetJSON(ctx, appendQuery(path, q), &env); err != nil {
+			return nil, false, err
 		}
-		if len(items) == 0 {
-			return all, nil
+		got := items(&env)
+		if len(got) == 0 {
+			return all, false, nil
 		}
-		all = append(all, items...)
+		all = append(all, got...)
+		if cp.Items > 0 && len(all) > cp.Items {
+			return all[:cp.Items], true, nil
+		}
+		if page == cp.Pages {
+			return all, true, nil
+		}
 	}
-	return nil, pageLimitError()
+	return nil, false, pageLimitError()
 }
 
-type startLimitPage[T any] struct {
+// StartLimitPage is one page of a Bitbucket Server paged resource.
+type StartLimitPage[T any] struct {
 	Values        []T  `json:"values"`
 	IsLastPage    bool `json:"isLastPage"`
 	NextPageStart *int `json:"nextPageStart"`
@@ -58,27 +84,46 @@ type startLimitPage[T any] struct {
 // limit. A missing or non-advancing nextPageStart while isLastPage is false,
 // or more than 1000 pages, is a protocol error.
 func PagesStartLimit[T any](ctx context.Context, c *Client, path string, limit int) ([]T, error) {
+	all, _, err := PagesStartLimitCapped(ctx, c, path, limit, Cap{}, func(p *StartLimitPage[T]) *StartLimitPage[T] { return p })
+	return all, err
+}
+
+// PagesStartLimitCapped is PagesStartLimit for a response body E that
+// holds the page (page extracts it, such as the children of a Bitbucket
+// browse response), bounded by cp. A body without a page (page returns
+// nil) is a protocol error.
+func PagesStartLimitCapped[E, T any](ctx context.Context, c *Client, path string, limit int, cp Cap, page func(*E) *StartLimitPage[T]) ([]T, bool, error) {
 	var all []T
 	start := 0
-	for n := 0; n < maxPages; n++ {
+	for n := 1; n <= maxPages; n++ {
 		q := "start=" + strconv.Itoa(start)
 		if limit > 0 {
 			q += "&limit=" + strconv.Itoa(limit)
 		}
-		var pg startLimitPage[T]
-		if err := c.GetJSON(ctx, appendQuery(path, q), &pg); err != nil {
-			return nil, err
+		var env E
+		if err := c.GetJSON(ctx, appendQuery(path, q), &env); err != nil {
+			return nil, false, err
+		}
+		pg := page(&env)
+		if pg == nil {
+			return nil, false, &provider.Error{Class: provider.ClassProtocol, Hint: "response is not valid JSON of the expected shape"}
 		}
 		all = append(all, pg.Values...)
+		if cp.Items > 0 && len(all) > cp.Items {
+			return all[:cp.Items], true, nil
+		}
 		if pg.IsLastPage {
-			return all, nil
+			return all, false, nil
+		}
+		if n == cp.Pages {
+			return all, true, nil
 		}
 		if pg.NextPageStart == nil || *pg.NextPageStart <= start {
-			return nil, &provider.Error{Class: provider.ClassProtocol, Hint: "paged response lacks a usable nextPageStart"}
+			return nil, false, &provider.Error{Class: provider.ClassProtocol, Hint: "paged response lacks a usable nextPageStart"}
 		}
 		start = *pg.NextPageStart
 	}
-	return nil, pageLimitError()
+	return nil, false, pageLimitError()
 }
 
 // PageFetch performs the GET of one page and returns its body and its
@@ -96,6 +141,23 @@ type PageFetch func(ctx context.Context, pathAndQuery string) ([]byte, http.Head
 // error. fetch nil means a plain GET through c (10 MiB cap); pageCap <= 0
 // means the package ceiling of 1000 pages.
 func PagesByLink[T any](ctx context.Context, c *Client, fetch PageFetch, first string, pageCap int) ([]T, error) {
+	all, _, err := pagesByLink(ctx, c, fetch, first, pageCap, true, 0, func(p *[]T) []T { return *p })
+	return all, err
+}
+
+// PagesByLinkCapped is PagesByLink for a page whose JSON body is an E
+// holding the items (items extracts them, such as the check_runs of a
+// GitHub response), bounded by cp: a next link after cp.Pages pages, or
+// more than cp.Items items, stops the walk with truncated instead of an
+// error.
+func PagesByLinkCapped[E, T any](ctx context.Context, c *Client, fetch PageFetch, first string, cp Cap, items func(*E) []T) ([]T, bool, error) {
+	return pagesByLink(ctx, c, fetch, first, cp.Pages, false, cp.Items, items)
+}
+
+// pagesByLink is the walk of PagesByLink and PagesByLinkCapped. A next link
+// after pageCap pages is a protocol error when capErr is set, else it ends
+// the walk with truncated; maxItems > 0 bounds the items.
+func pagesByLink[E, T any](ctx context.Context, c *Client, fetch PageFetch, first string, pageCap int, capErr bool, maxItems int, items func(*E) []T) ([]T, bool, error) {
 	if fetch == nil {
 		fetch = func(ctx context.Context, pq string) ([]byte, http.Header, error) {
 			r, err := c.DoRequest(ctx, Request{Method: http.MethodGet, PathAndQuery: pq, MaxBytes: MaxJSONBytes, CapKey: JSONCapKey})
@@ -103,37 +165,43 @@ func PagesByLink[T any](ctx context.Context, c *Client, fetch PageFetch, first s
 		}
 	}
 	if pageCap <= 0 {
-		pageCap = maxPages
+		pageCap, capErr = maxPages, true
 	}
 	var all []T
 	seen := map[string]bool{}
 	next := first
 	for n := 0; ; n++ {
 		if n == pageCap {
-			return nil, pageLimitError()
+			if capErr {
+				return nil, false, pageLimitError()
+			}
+			return all, true, nil
 		}
 		if seen[next] {
-			return nil, &provider.Error{Class: provider.ClassProtocol, Hint: "a paged response links back to an earlier page"}
+			return nil, false, &provider.Error{Class: provider.ClassProtocol, Hint: "a paged response links back to an earlier page"}
 		}
 		seen[next] = true
 		data, h, err := fetch(ctx, next)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
-		var items []T
-		if err := decodeJSON(data, &items); err != nil {
-			return nil, err
+		var env E
+		if err := decodeJSON(data, &env); err != nil {
+			return nil, false, err
 		}
-		all = append(all, items...)
+		all = append(all, items(&env)...)
+		if maxItems > 0 && len(all) > maxItems {
+			return all[:maxItems], true, nil
+		}
 		target, err := NextLink(h.Values("Link"))
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		if target == "" {
-			return all, nil
+			return all, false, nil
 		}
 		if next, err = c.PathOf(target); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 	}
 }

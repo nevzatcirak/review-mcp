@@ -62,12 +62,17 @@ func validRawPath(path string) bool {
 	return true
 }
 
-func rawPath(repo, path, sha string) string {
+// escapePath escapes every segment of a repository path.
+func escapePath(path string) string {
 	segs := strings.Split(path, "/")
 	for i, s := range segs {
 		segs[i] = url.PathEscape(s)
 	}
-	return repo + "/raw/" + strings.Join(segs, "/") + "?at=" + url.QueryEscape(sha)
+	return strings.Join(segs, "/")
+}
+
+func rawPath(repo, path, sha string) string {
+	return repo + "/raw/" + escapePath(path) + "?at=" + url.QueryEscape(sha)
 }
 
 // work is one processed (not filtered, not over the file limit) change.
@@ -241,11 +246,7 @@ func hasNUL(s string) bool {
 // the Skipped reason: size_limit for an oversized side, fetch_failed for any
 // other failure (including an unusable path or revision, with no request).
 func (p *Provider) fetchSide(ctx context.Context, repo, path, sha, side string) (content, reason string) {
-	if sha == "" || !validRawPath(path) {
-		p.logger.Debug("bitbucket server content fetch skipped: unusable path or revision", "path", path, "side", side)
-		return "", provider.SkipFetchFailed
-	}
-	data, _, err := p.client.Get(ctx, rawPath(repo, path, sha), p.maxFile, capKeyFile)
+	data, err := p.getRaw(ctx, repo, path, sha)
 	if err != nil {
 		var perr *provider.Error
 		if errors.As(err, &perr) && perr.Class == provider.ClassTooLarge {
@@ -255,6 +256,18 @@ func (p *Provider) fetchSide(ctx context.Context, repo, path, sha, side string) 
 		return "", provider.SkipFetchFailed
 	}
 	return string(data), ""
+}
+
+// getRaw reads the raw content of path at sha, capped at
+// diff.max_file_bytes. It is the one content request of GetDiff and
+// GetFileAt. An unusable path or revision is a protocol error, with no
+// request.
+func (p *Provider) getRaw(ctx context.Context, repo, path, sha string) ([]byte, error) {
+	if !provider.ValidRevision(sha) || !validRawPath(path) {
+		return nil, protocolErr("unusable path or revision")
+	}
+	data, _, err := p.client.Get(ctx, rawPath(repo, path, sha), p.maxFile, capKeyFile)
+	return data, err
 }
 
 // errClass returns only the class (and status) of a provider error.

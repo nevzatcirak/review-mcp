@@ -69,7 +69,14 @@ func (fakeProvider) PostInlineComments(_ ctxT, _ PRRef, _ *PullRequest, _ []Inli
 func (fakeProvider) GetReviewStatus(_ ctxT, _ PRRef, _ *PullRequest, _ ReviewStatusOptions) *ReviewStatus {
 	return nil
 }
-func (fakeProvider) UpdatePullRequest(_ ctxT, _ PRRef, _ UpdatePR) error { return nil }
+func (fakeProvider) UpdatePullRequest(_ ctxT, _ PRRef, _ UpdatePR) error  { return nil }
+func (fakeProvider) GetChecks(_ ctxT, _ PRRef, _ string) (*Checks, error) { return nil, nil }
+func (fakeProvider) GetFileAt(_ ctxT, _ PRRef, _, _ string) ([]byte, error) {
+	return nil, nil
+}
+func (fakeProvider) ListDir(_ ctxT, _ PRRef, _, _ string) (*DirListing, error) {
+	return nil, nil
+}
 func (fakeProvider) FileLineURL(PRRef, *PullRequest, string, int) string { return "" }
 
 func cfgFor(gitea, web, bbs string) *config.Config {

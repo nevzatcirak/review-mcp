@@ -36,8 +36,33 @@ type Spec struct {
 	Reviewers []Reviewer
 	// Draft marks a draft pull request, on a host that has the flag.
 	Draft bool
+	// Checks are the CI statuses and checks the host reports for HeadSHA.
+	// Any other commit has none: the host does not know it.
+	Checks []Check
+	// Unchanged are files the pull request does not touch: they exist with
+	// the same content at BaseSHA and HeadSHA, next to Files (see TreeAt).
+	Unchanged []RepoFile
 	// Env is the harness side of the Spec: not pull request data.
 	Env Env
+}
+
+// Check is one CI status or check of HeadSHA. A fixture serves Name, URL
+// and the host's value for State as they are; WantName and WantURL are
+// what the provider must report for them after cleaning.
+type Check struct {
+	Name, URL string
+	// State is the state the provider must report. A fixture serves the
+	// host's own value for it (see Traits.CheckStates).
+	State provider.CheckState
+	// Unknown makes the fixture serve a state value its host does not
+	// document instead; State is then neutral.
+	Unknown           bool
+	WantName, WantURL string
+}
+
+// RepoFile is a file at a revision.
+type RepoFile struct {
+	Path, Content string
 }
 
 // User is an account of the synthetic host.
@@ -167,6 +192,11 @@ type Env struct {
 	MaxFiles, MaxFileBytes int
 	// Failure, when set, makes every request fail (see StartServer).
 	Failure Failure
+	// LegacyChecks makes the host an older server whose current checks
+	// endpoint answers 404: a fixture whose provider falls back to an older
+	// endpoint (Bitbucket Server's legacy build status) serves the checks
+	// only there; any other fixture ignores it.
+	LegacyChecks bool
 
 	log *requestLog
 }
@@ -299,6 +329,8 @@ func samplePR() Spec {
 				{ID: idGeneralOwn, Author: tokenUser, Body: "Automated summary of the pull request.", Created: at(0)},
 			}},
 		},
+		Checks:    sampleChecks(),
+		Unchanged: sampleUnchanged(),
 		TokenUser: tokenUser,
 		Reviewers: []Reviewer{
 			{User: dave, State: provider.ReviewApproved},

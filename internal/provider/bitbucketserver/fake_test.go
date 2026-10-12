@@ -70,8 +70,8 @@ func (f *fakeBBS) serve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if !strings.HasPrefix(esc, f.prefix+"/rest/api/") {
-		f.t.Errorf("request outside %s/rest/api/: %s", f.prefix, esc)
+	if !strings.HasPrefix(esc, f.prefix+"/rest/api/") && !strings.HasPrefix(esc, f.prefix+"/rest/build-status/") {
+		f.t.Errorf("request outside %s/rest/api/ and %s/rest/build-status/: %s", f.prefix, f.prefix, esc)
 		http.NotFound(w, r)
 		return
 	}

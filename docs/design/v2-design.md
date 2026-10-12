@@ -63,7 +63,7 @@
 - **Y-16 — Repository context.** Clone `{web}/{owner}/{repo}.git`, ref `refs/pull/{n}/head`, Basic `x-access-token:<token>` through `http.extraHeader` (X-22 rules unchanged).
 - **Acceptance:** this repository's own PRs on github.com.
 
-## 5a. Phase 2F — Review quality (scope; design pending)
+## 5a. Phase 2F — Review quality (scope; binding spec `docs/plan/v2-2F-spec.md`, X-31 to X-33)
 
 Origin: the owner's proposal that a review should know whether the change builds, whether it fits the project, and look at it from specialist angles (security, architecture, performance, UX). Market reference points: CodeRabbit (linters plus path instructions), Greptile (codebase graph; hosted sandbox execution), Qodo Merge / PR-Agent (best-practices file, CI feedback, ticket compliance), multi-agent review plugins. The design note and the spec follow; the entries below fix the scope only.
 
@@ -91,6 +91,7 @@ Origin: the owner's proposal that a review should know whether the change builds
 1. Order: tools first (2A → 2D → 2E → 2B → 2C).
 2. One `v2.0.0` release, with a release candidate per phase.
 3. `pr_describe` may edit PR descriptions, only inside its marked region; the default stays `comment`.
+5. (2026-10-13) 2F defaults: CI status on in `pr_review`; guidelines paths `.review-mcp/guidelines.md`, then `CONTRIBUTING.md`, read at the base revision; file tree on; a focused review never publishes (merged findings are published with `findings`); GitHub CI reads need the read-only "Commit statuses" and "Checks" permissions.
 4. (2026-10-10) Phase 2F, review quality, is added between 2B and 2C (now `v2.0.0-rc.5`, after the rc.4 fixes package of 2026-10-11; GitLab `rc.6`). Building or running pull request code is rejected (R-1 in the decisions document).
 
 ## 9. After 2.0 — v2.1 and later (owner decision 2026-10-10; scope only, each item gets a design note)

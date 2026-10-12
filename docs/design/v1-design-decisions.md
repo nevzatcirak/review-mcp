@@ -570,7 +570,7 @@ implementation must do or must not do).
   - **Overlap rule.** A finding whose resolved anchor (`Line` to `max(Line, EndLine)`) shares a line with an own finding comment on the same new path, inclusive on both ends, is `skipped_duplicate`, unless that thread is outdated (the code under it changed, so a finding there may be new). A resolved thread counts: a person closed it, and posting again is noise. The exact fingerprint stays as a second check.
   - **Link.** A skipped finding keeps `inline_status: skipped_duplicate` and gets `inline_url` = the earlier comment's URL; the overview links it like a posted one. The note "N findings were already posted on this PR and were not repeated." counts both rules.
   - **`provider.Thread.StartLine`** (0 = single line): GitHub fills it from `start_line` (`original_start_line` when outdated); Gitea and Bitbucket Server leave it 0 and know only the first line of a range comment. Gitea inline comments and Bitbucket Server replies now carry their URLs. The contract suite has a review-duplicates scenario that runs on all three providers.
-- **Settled on the rc.4 PR (architect, WP-4a review):**
+- **Settled on PR #21 (architect, WP-4a review):**
   - Any comment of an inline thread by the token's user counts, not only the root: Gitea groups the comments of one line into one thread, so a finding can be a reply (DQ-1).
   - Between several overlapping own comments the one whose first line is closest to the finding's wins, then the oldest; for the rewording of a range this links the comment it rewords (DQ-2).
   - A thread on a renamed file's old path never suppresses: its line numbers belong to another version of the file (DQ-3).
@@ -589,7 +589,7 @@ implementation must do or must not do).
   - **`mdutil.EscapeKeepingCodeSpans(s, esc)`.** Each line is scanned for CommonMark code spans: an opening run of N backticks closed by the next run of exactly N on the same line; a run without a closer is text. A span is re-emitted through `mdutil.CodeSpan` of its content (CommonMark's one-space stripping applied), so its delimiter adapts; the text between spans goes through `esc`. Nothing inside a span is backslash- or HTML-escaped.
   - **Use.** Every place that escapes model prose for publishing or for the client text: `pr_review` (overview fields, key issues, inline comments, the client rendering), `pr_describe` (title in the body, summary, walkthrough), `pr_improve` (summary, content). Paths, URLs, labels, provider data and fixed notes keep their helpers; `pr_ask` answers were already raw.
   - **Safety.** Text outside spans is escaped byte for byte as before (pinned for all three escapers); a span cannot open HTML, a link, a heading or a table.
-- **Settled on the rc.4 PR (architect, WP-4b review):**
+- **Settled on PR #21 (architect, WP-4b review):**
   - The key-issue header inside the GFM `<summary><strong>` keeps `html.EscapeString`, since Markdown is not reliably rendered inside `<summary>` and a backtick there shows as a plain backtick (DQ-1); rendering the spans as `<code>...</code>` there is a backlog item.
   - In a pipe-table cell a `|` inside a span becomes `\|`, the GFM rule; the cell cannot split (DQ-2).
   - `InlineKeepingCodeSpans` folds line breaks before scanning, so a span written over a line break becomes a span in a one-line context; safe through `CodeSpan` and in line with CommonMark soft breaks (DQ-3).

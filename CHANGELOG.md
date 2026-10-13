@@ -5,7 +5,7 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.0-rc.5] - Unreleased
+## [2.0.0-rc.5]
 
 Fifth v2 release candidate, built on 2.0.0-rc.4 (the npm dist-tag `next`;
 `latest` moves only at 2.0.0). Phase 2F, review quality: a review now knows what

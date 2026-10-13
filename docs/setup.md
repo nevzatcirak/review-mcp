@@ -218,8 +218,9 @@ personal access token (not an app or an OAuth flow). The full reference is
      selected for you). For read-only use, *Read-only* on Pull requests is
      enough. **Commit statuses** and **Checks** are needed only for the CI
      results (`pr_info`, and `pr_review` unless `review.ci_status` is
-     false); without them the CI state is `unreadable` with a note and
-     everything else works.
+     false); with only one of them the CI results are partial with a note,
+     without both the CI state is `unreadable` with a note, and everything
+     else works.
    - **Classic token.** Select the scope `repo` (private repositories), or
      `public_repo` if you only use public repositories.
 2. If your organisation uses SAML single sign-on, authorise the token for it

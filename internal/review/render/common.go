@@ -282,6 +282,7 @@ const (
 	textCINone       = "CI: no checks reported"
 	textCIUnreadable = "CI status could not be read"
 	textCIIncomplete = "more checks exist than were read"
+	textCIPartial    = "only part of the CI results could be read with this token"
 	// ciListedFailing is the most failing checks the line names.
 	ciListedFailing = 5
 )
@@ -289,7 +290,9 @@ const (
 // CILine is the renderer-built CI line of the overview and of pr_info
 // (X-31): "CI: N failing, M pending, K passing", with the failing checks
 // named after it, or one of two fixed sentences. Neutral and skipped checks
-// count as passing, as in the state "passing". It returns "" for a nil ci.
+// count as passing, as in the state "passing". A partial or truncated read
+// adds a fixed suffix (the partial one also to "no checks reported"). It
+// returns "" for a nil ci.
 // Check names are untrusted: each goes through mdutil.Inline (one line, no
 // markdown or HTML survives), and a link only through safeLink. It is plain
 // markdown without HTML, so it is the same for every provider and the
@@ -300,6 +303,9 @@ func CILine(ci *review.CI) string {
 	}
 	switch ci.State {
 	case review.CINone:
+		if ci.IsPartial() {
+			return textCINone + "; " + textCIPartial
+		}
 		return textCINone
 	case review.CIUnreadable:
 		return textCIUnreadable
@@ -330,7 +336,10 @@ func CILine(ci *review.CI) string {
 		}
 		line += ")"
 	}
-	if ci.Note == review.NoteCITruncated {
+	if ci.IsPartial() {
+		line += "; " + textCIPartial
+	}
+	if ci.IsTruncated() {
 		line += "; " + textCIIncomplete
 	}
 	return line

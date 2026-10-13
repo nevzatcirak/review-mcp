@@ -37,6 +37,9 @@ const (
 	NoteCIUnreadable = "The CI results of the head commit could not be read."
 	// NoteCITruncated: the host reported more checks than were read.
 	NoteCITruncated = "The host reported more CI checks than could be read; the counts and the list are incomplete."
+	// NoteCIPartial: only one of the host's check lists could be read
+	// (GitHub: a token with Checks or Commit statuses, not both).
+	NoteCIPartial = "Only part of the CI results could be read with this token (check runs or commit statuses)."
 	// NoteCILeftOut: the CI block did not fit the prompt.
 	NoteCILeftOut = "The CI results were left out of the prompt to stay within the CI token budget."
 )
@@ -78,8 +81,16 @@ type CI struct {
 	State  string    `json:"state" jsonschema:"passing (all success, neutral or skipped), failing (any failure or error), pending (any pending and none failing), none (no checks) or unreadable (the checks could not be read)"`
 	Counts CICounts  `json:"counts" jsonschema:"checks counted by state"`
 	Checks []CICheck `json:"checks" jsonschema:"failing and pending checks first, then the rest, at most 20"`
-	Note   string    `json:"note,omitempty" jsonschema:"fixed text; set when state is unreadable or the host reported more checks than were read"`
+	Note   string    `json:"note,omitempty" jsonschema:"fixed text; set when state is unreadable, when only part of the CI results could be read with this token, or when the host reported more checks than were read"`
 }
+
+// IsPartial reports whether only part of the CI results could be read
+// (NoteCIPartial).
+func (c *CI) IsPartial() bool { return strings.Contains(c.Note, NoteCIPartial) }
+
+// IsTruncated reports whether the host had more checks than were read
+// (NoteCITruncated).
+func (c *CI) IsTruncated() bool { return strings.Contains(c.Note, NoteCITruncated) }
 
 // Failing is the count of failing checks (failure and error).
 func (c CICounts) Failing() int { return c.Failure + c.Error }
@@ -94,7 +105,9 @@ func failingOrPending(s string) bool {
 
 // SummarizeChecks builds the summary of what GetChecks returned. An error of
 // any class, or a nil answer, is CIUnreadable with a fixed note: the cause
-// is never shown, and the summary never fails the tool.
+// is never shown, and the summary never fails the tool. A partial answer
+// keeps the state of the checks that were read and gets NoteCIPartial,
+// before NoteCITruncated when both apply.
 func SummarizeChecks(c *provider.Checks, err error) CI {
 	if err != nil || c == nil {
 		return CI{State: CIUnreadable, Checks: []CICheck{}, Note: NoteCIUnreadable}
@@ -143,9 +156,14 @@ func SummarizeChecks(c *provider.Checks, err error) CI {
 			}
 		}
 	}
-	if c.Truncated {
-		ci.Note = NoteCITruncated
+	var notes []string
+	if c.Partial {
+		notes = append(notes, NoteCIPartial)
 	}
+	if c.Truncated {
+		notes = append(notes, NoteCITruncated)
+	}
+	ci.Note = strings.Join(notes, " ")
 	return ci
 }
 
@@ -215,7 +233,10 @@ func ciBlockOf(ci *CI, lines []string) string {
 		body = append(body, strconv.Itoa(more)+" more failing or pending not listed")
 	}
 	body = append(body, "passing (success, neutral or skipped): "+strconv.Itoa(ci.Counts.Passing()))
-	if ci.Note == NoteCITruncated {
+	if ci.IsPartial() {
+		body = append(body, "only part of the CI results could be read (check runs or commit statuses)")
+	}
+	if ci.IsTruncated() {
 		body = append(body, "more checks exist than were read")
 	}
 	var b strings.Builder

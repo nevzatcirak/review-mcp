@@ -360,7 +360,8 @@ log as an error class (`REVIEW_MCP_LOG_LEVEL=debug`). See
 
 | Sentence | Where | Cause and what to do |
 |---|---|---|
-| The CI results of the head commit could not be read. | `ci.note` (`ci.state` is `unreadable`); the overview line is "CI status could not be read" | Reading the head commit's statuses or checks failed, for any reason. On GitHub the token needs **Commit statuses: Read** and **Checks: Read**; if either is missing, the whole read fails (no partial answer). On Gitea and Bitbucket Server the read access to the repository is enough, so check the token and the server ([Token scopes](#token-scopes)). `pr_info` shows the same sentence. The debug log line `ci: checks not read` names the error class. |
+| The CI results of the head commit could not be read. | `ci.note` (`ci.state` is `unreadable`); the overview line is "CI status could not be read" | Reading the head commit's statuses or checks failed, for any reason. On GitHub the token needs **Commit statuses: Read** and **Checks: Read**; with only one of them the read is partial (next row), with neither it is `unreadable`. On Gitea and Bitbucket Server the read access to the repository is enough, so check the token and the server ([Token scopes](#token-scopes)). `pr_info` shows the same sentence. The debug log line `ci: checks not read` names the error class. |
+| Only part of the CI results could be read with this token (check runs or commit statuses). | `ci.note`; the overview line ends with "; only part of the CI results could be read with this token" | GitHub only: the token may read the check runs but not the commit statuses, or the reverse (one list answered 401, 403 or 404). `state` and the counts cover the list that was read, so a failing check in the other list is not seen. Give a fine-grained token both **Checks: Read** and **Commit statuses: Read** ([Token scopes](#token-scopes)); the debug log line `github checks: ... not readable` names which list and the error class. |
 | The host reported more CI checks than could be read; the counts and the list are incomplete. | `ci.note`; the overview line ends with "; more checks exist than were read" | The commit has more than 500 checks. The counts and `state` cover what was read, so a failing check among the unread ones is not seen. Nothing to change in review-mcp; look at the CI page. |
 | The CI results were left out of the prompt to stay within the CI token budget. | `notes` | The CI block did not fit `review.max_ci_tokens`, or the context window left no room for the diff beside it (the CI block is the last optional block to go). The `ci` object and the overview line are unaffected. Raise `review.max_ci_tokens`, or use a larger `llm.context_window`. |
 | `CI: no checks reported` (overview line, `ci.state` `none`) | overview | The host has no statuses or checks for the head commit yet (CI not started, not configured, or reporting on another commit). Not an error. |
@@ -1035,8 +1036,9 @@ A3) has verified them.
   token with `repo` (`public_repo` for public repositories). Administration
   (read) is optional and only lets `pr_info` read classic branch protection.
   The CI results (`pr_info`, and `pr_review` unless `review.ci_status` is
-  false) also need **Commit statuses** (read) and **Checks** (read); without
-  either the CI state is `unreadable` with a note, and the rest still works. A
+  false) also need **Commit statuses** (read) and **Checks** (read); with only
+  one of them the CI results are partial with a note, without both the CI
+  state is `unreadable` with a note, and the rest still works. A
   classic token's `repo` scope covers them. See [GitHub](github.md#token).
 - **Bitbucket Server / Data Center:** an HTTP access token with repository
   read permission, plus write permission only for comments and for

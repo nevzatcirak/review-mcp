@@ -45,8 +45,10 @@ done, and the token permissions below are unconfirmed until then.
     failed read is `unreadable` with a note, never a failed tool.
   - Token: a fine-grained GitHub token needs **Commit statuses: Read** and
     **Checks: Read** for this (a classic token's `repo` scope covers them);
-    Gitea and Bitbucket Server need only read access. Without them the CI state
-    is `unreadable` and everything else works.
+    Gitea and Bitbucket Server need only read access. A GitHub token with only
+    one of the two gets the list it can read with the note "Only part of the CI
+    results could be read with this token (check runs or commit statuses).";
+    without both the CI state is `unreadable`, and everything else works.
 - Project guidelines and file tree (X-32). `pr_review` and `pr_improve` give the
   model the first existing file of `review.guidelines_paths` and a listing of
   the directories the change touches, both read at the **base** revision (the

@@ -79,7 +79,7 @@ classic scope) is needed only for `publish=true`, `pr_comment_reply` and
 | Use | Needs |
 |---|---|
 | `pr_review`, `pr_ask`, `pr_describe`, `pr_improve` with `publish=false`, `pr_comments`, `pr_info` | Pull requests: read; Contents: read (file contents, the merge base and the repository context); Metadata: read |
-| The CI results of the head commit: `pr_info`, and `pr_review` unless `review.ci_status` is false | Commit statuses: read and Checks: read (fine-grained). Both are needed: the check runs need Checks, the legacy statuses need Commit statuses, and a read that fails in either list is `unreadable` as a whole, with a note, never a partial answer. A classic token's `repo` scope covers them. Everything else keeps working without them |
+| The CI results of the head commit: `pr_info`, and `pr_review` unless `review.ci_status` is false | Commit statuses: read and Checks: read (fine-grained). Both are needed: the check runs need Checks, the legacy statuses need Commit statuses. With only one of them the other list is still read and `ci` carries the note "Only part of the CI results could be read with this token (check runs or commit statuses)."; with neither, `ci` is `unreadable` with a note. A classic token's `repo` scope covers them. Everything else keeps working without them |
 | The guidelines file and the file tree of `pr_review` and `pr_improve` | Contents: read (they are read at the target branch) |
 | `publish=true`, `pr_comment_reply`, `pr_comment_create` | the same, with Pull requests: write |
 | `pr_describe` with `publish_mode=description` (and `update_title`) | Pull requests: write (it edits the pull request itself) |
@@ -383,8 +383,13 @@ adds:
   `conclusion` (`cancelled` is `error`, `timed_out` is `failure`,
   `action_required` is `pending`, `stale` and unknown values are `neutral`).
   The permissions are Checks read and Commit statuses read (see
-  [Token](#token)); if one of the two lists cannot be read, the whole `ci` is
-  `unreadable` with a note.
+  [Token](#token)). When exactly one of the two lists fails with `auth` or
+  `not_found` (a token with only one of the two permissions), the other list
+  is used: `ci` keeps the state of the checks that were read and gets the note
+  "Only part of the CI results could be read with this token (check runs or
+  commit statuses).", and the overview line ends with "; only part of the CI
+  results could be read with this token". Both lists failing, or either
+  failing with any other class, is `unreadable` with a note.
 
 ## The description edit
 
@@ -425,9 +430,6 @@ review-mcp fetches the pull request head into its cache:
   may therefore be `not_found`. Use the current URL. If live acceptance shows it,
   the comparison will use the repository name from the pull request's metadata
   instead.
-- A token with only one of **Checks: Read** and **Commit statuses: Read** gets
-  `ci.state` `unreadable`, not the half it could read. A partial result with a
-  note is on the backlog.
 - GitHub Enterprise Server has not run yet, and nothing here has met a real
   rate limit (it is covered by tests with fake servers); see the checks below.
 - A quote that uses spaces where the file uses tabs does not verify: a

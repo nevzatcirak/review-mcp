@@ -78,15 +78,77 @@ func TestGetChecksMergesByName(t *testing.T) {
 	}
 }
 
-// A failure of either list fails the call with the class of the status.
-func TestGetChecksEitherListFails(t *testing.T) {
-	f := newFake(t, "/api/v3")
+// A token with only one of Checks and Commit statuses: when exactly one list
+// fails with auth or not_found, the other is returned with Partial set.
+func TestGetChecksPartial(t *testing.T) {
 	commit := "/repos/octo/demo/commits/headsha"
-	f.json(commit+"/check-runs", map[string]any{"check_runs": []any{}})
-	f.handle(http.MethodGet, commit+"/status", func(w http.ResponseWriter, _ *http.Request) { fakeError(w, http.StatusForbidden) })
-	p, _ := f.provider(f.config(""), time.Now())
-	_, err := p.GetChecks(t.Context(), testRef(), "headsha")
-	if err == nil || err.Error() != (&provider.Error{Class: provider.ClassAuth, Status: 403}).Error() {
-		t.Errorf("GetChecks: error %v, want the fixed auth sentence", err)
+	runs := map[string]any{"check_runs": []any{
+		map[string]any{"name": "build", "status": "completed", "conclusion": "failure"},
+	}}
+	statuses := map[string]any{"statuses": []any{
+		map[string]any{"context": "legacy/ci", "state": "success"},
+	}}
+	for name, tc := range map[string]struct {
+		failRuns bool
+		status   int
+		want     []provider.Check
+	}{
+		"statuses 403": {false, http.StatusForbidden, []provider.Check{{Name: "build", State: provider.CheckFailure}}},
+		"statuses 404": {false, http.StatusNotFound, []provider.Check{{Name: "build", State: provider.CheckFailure}}},
+		"runs 403":     {true, http.StatusForbidden, []provider.Check{{Name: "legacy/ci", State: provider.CheckSuccess}}},
+		"runs 401":     {true, http.StatusUnauthorized, []provider.Check{{Name: "legacy/ci", State: provider.CheckSuccess}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFake(t, "/api/v3")
+			fail := func(w http.ResponseWriter, _ *http.Request) { fakeError(w, tc.status) }
+			if tc.failRuns {
+				f.handle(http.MethodGet, commit+"/check-runs", fail)
+				f.json(commit+"/status", statuses)
+			} else {
+				f.json(commit+"/check-runs", runs)
+				f.handle(http.MethodGet, commit+"/status", fail)
+			}
+			p, _ := f.provider(f.config(""), time.Now())
+			got, err := p.GetChecks(t.Context(), testRef(), "headsha")
+			if err != nil {
+				t.Fatalf("GetChecks: %v, want a partial result", err)
+			}
+			if !got.Partial || got.Truncated || !slices.Equal(got.Items, tc.want) {
+				t.Errorf("GetChecks = %+v, want %+v and Partial", got, tc.want)
+			}
+		})
+	}
+}
+
+// Both lists failing, or one failing with any class but auth and not_found,
+// fails the call with the class of the status.
+func TestGetChecksFails(t *testing.T) {
+	commit := "/repos/octo/demo/commits/headsha"
+	for name, tc := range map[string]struct {
+		runs, status int // 0 answers the list
+		want         provider.ErrorClass
+		code         int
+	}{
+		"both 403":          {http.StatusForbidden, http.StatusForbidden, provider.ClassAuth, 403},
+		"both 404":          {http.StatusNotFound, http.StatusNotFound, provider.ClassNotFound, 404},
+		"statuses 500":      {0, http.StatusInternalServerError, provider.ClassUpstream, 500},
+		"runs 500":          {http.StatusInternalServerError, 0, provider.ClassUpstream, 500},
+		"runs 403, sts 500": {http.StatusForbidden, http.StatusInternalServerError, provider.ClassAuth, 403},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFake(t, "/api/v3")
+			for path, code := range map[string]int{commit + "/check-runs": tc.runs, commit + "/status": tc.status} {
+				if code == 0 {
+					f.json(path, map[string]any{"check_runs": []any{}, "statuses": []any{}})
+					continue
+				}
+				f.handle(http.MethodGet, path, func(w http.ResponseWriter, _ *http.Request) { fakeError(w, code) })
+			}
+			p, _ := f.provider(f.config(""), time.Now())
+			got, err := p.GetChecks(t.Context(), testRef(), "headsha")
+			if err == nil || err.Error() != (&provider.Error{Class: tc.want, Status: tc.code}).Error() {
+				t.Errorf("GetChecks = %+v, %v; want the fixed %s sentence", got, err, tc.want)
+			}
+		})
 	}
 }

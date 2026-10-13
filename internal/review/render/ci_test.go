@@ -38,6 +38,17 @@ func TestCILine(t *testing.T) {
 		"incomplete read": {
 			&review.CI{State: review.CIPassing, Counts: review.CICounts{Success: 3}, Checks: []review.CICheck{}, Note: review.NoteCITruncated},
 			"CI: 0 failing, 0 pending, 3 passing; more checks exist than were read"},
+		"partial read": {
+			&review.CI{State: review.CIFailing, Counts: review.CICounts{Failure: 1}, Note: review.NoteCIPartial,
+				Checks: []review.CICheck{{Name: "build", State: "failure"}}},
+			"CI: 1 failing, 0 pending, 0 passing (failing: build); only part of the CI results could be read with this token"},
+		"partial and incomplete": {
+			&review.CI{State: review.CIPassing, Counts: review.CICounts{Success: 1}, Checks: []review.CICheck{},
+				Note: review.NoteCIPartial + " " + review.NoteCITruncated},
+			"CI: 0 failing, 0 pending, 1 passing; only part of the CI results could be read with this token; more checks exist than were read"},
+		"partial without checks": {
+			&review.CI{State: review.CINone, Checks: []review.CICheck{}, Note: review.NoteCIPartial},
+			"CI: no checks reported; only part of the CI results could be read with this token"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if got := CILine(tc.ci); got != tc.want {

@@ -614,13 +614,16 @@ summary says so.
 | `state` | `failing` (any check failed or errored), `pending` (any pending, none failing), `passing` (every check succeeded, was neutral or was skipped), `none` (the commit has no checks) or `unreadable` |
 | `counts` | the checks counted by state: `success`, `failure`, `pending`, `neutral`, `skipped`, `error` |
 | `checks` | failing and pending checks first, then the rest, each group in the host's order, at most 20; each has `name`, `state` and `url` (empty when none) |
-| `note` | a fixed sentence, set when `state` is `unreadable` or the host reported more checks than were read |
+| `note` | fixed text, set when `state` is `unreadable`, when only part of the CI results could be read with this token (GitHub), or when the host reported more checks than were read (both sentences then, the partial one first) |
 
 A read that fails for any reason is `state` `unreadable` with the note "The CI
 results of the head commit could not be read." (never the cause); it never
 fails the review. A read that was cut at the cap keeps its computed state, with
 the note "The host reported more CI checks than could be read; the counts and
-the list are incomplete."
+the list are incomplete." On GitHub, a token that may read only the check runs
+or only the commit statuses gets the list it can read, its state, and the note
+"Only part of the CI results could be read with this token (check runs or
+commit statuses)."; the overview line and the prompt block say so too.
 
 ### What the model sees
 

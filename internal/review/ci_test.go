@@ -100,6 +100,29 @@ func TestSummarizeChecksList(t *testing.T) {
 	}
 }
 
+// TestSummarizeChecksPartial: a partial read keeps the state of the checks
+// that were read and gets the fixed note, before the truncation note.
+func TestSummarizeChecksPartial(t *testing.T) {
+	ci := SummarizeChecks(&provider.Checks{Items: []provider.Check{chk("build", provider.CheckFailure)}, Partial: true}, nil)
+	if ci.State != CIFailing || ci.Counts.Failure != 1 || ci.Note != NoteCIPartial || !ci.IsPartial() || ci.IsTruncated() {
+		t.Errorf("partial = %+v", ci)
+	}
+	if NoteCIPartial != "Only part of the CI results could be read with this token (check runs or commit statuses)." {
+		t.Errorf("the note changed: %q", NoteCIPartial)
+	}
+	both := SummarizeChecks(&provider.Checks{Items: []provider.Check{chk("build", provider.CheckSuccess)}, Partial: true, Truncated: true}, nil)
+	if both.State != CIPassing || both.Note != NoteCIPartial+" "+NoteCITruncated || !both.IsPartial() || !both.IsTruncated() {
+		t.Errorf("partial and truncated = %+v", both)
+	}
+	if none := SummarizeChecks(&provider.Checks{Partial: true}, nil); none.State != CINone || none.Note != NoteCIPartial {
+		t.Errorf("partial without checks = %+v", none)
+	}
+	b, _ := CIBlock(&both, 200, 1.0)
+	if !strings.Contains(b, "\nonly part of the CI results could be read (check runs or commit statuses)\nmore checks exist than were read\n") {
+		t.Errorf("block = %q", b)
+	}
+}
+
 func TestCIBlock(t *testing.T) {
 	const factor = 1.0
 	ci := SummarizeChecks(checksOf(

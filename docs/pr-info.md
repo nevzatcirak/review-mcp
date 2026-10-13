@@ -201,9 +201,12 @@ controls `pr_review`. The same object, with the same rules, is in the
 - Where the facts come from: Gitea, the combined commit status of the head
   commit; Bitbucket Server, the repository's build statuses (the older build
   status API only when the first answers 404); GitHub, the check runs and the
-  combined commit status, merged by name with the check run winning. Both GitHub
-  lists must be readable: without the **Checks** or **Commit statuses**
-  permission the state is `unreadable`, not a partial answer.
+  combined commit status, merged by name with the check run winning. Without
+  the **Checks** or the **Commit statuses** permission only the other list is
+  read: the state covers that list, `ci.note` says "Only part of the CI results
+  could be read with this token (check runs or commit statuses).", and the
+  line ends with "; only part of the CI results could be read with this
+  token". Without both the state is `unreadable`.
 
 ## Why review-mcp's own reviews are not reviewers
 

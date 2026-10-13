@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"net/url"
 
 	"github.com/nevzatcirak/review-mcp/internal/provider"
@@ -83,9 +84,12 @@ func mapCommitStatus(s string) provider.CheckState {
 // /commits/{sha}/check-runs) and its legacy statuses (GET
 // /commits/{sha}/status), both Link-paged, merged by name; a check run wins
 // over a status of the same name. Each list is bounded by checksPageCap
-// pages and provider.MaxChecks items, and so is the merged result. A failure
-// of either list fails the call. GitHub cannot say whether a check is
-// required without more requests, so Required stays nil.
+// pages and provider.MaxChecks items, and so is the merged result. The two
+// lists need different permissions of a fine-grained token (Checks and
+// Commit statuses), so when exactly one of them fails with auth or
+// not_found the other is returned with Checks.Partial set. Any other
+// failure, or both lists failing, fails the call. GitHub cannot say whether
+// a check is required without more requests, so Required stays nil.
 func (p *Provider) GetChecks(ctx context.Context, ref provider.PRRef, sha string) (*provider.Checks, error) {
 	rp, err := repoPath(ref)
 	if err != nil {
@@ -99,21 +103,31 @@ func (p *Provider) GetChecks(ctx context.Context, ref provider.PRRef, sha string
 	type runsPage struct {
 		CheckRuns []apiCheckRun `json:"check_runs"`
 	}
-	runs, runsCut, err := httpx.PagesByLinkCapped(ctx, p.client, p.fetchPage, listPath(commit+"/check-runs"), cp,
+	runs, runsCut, runsErr := httpx.PagesByLinkCapped(ctx, p.client, p.fetchPage, listPath(commit+"/check-runs"), cp,
 		func(pg *runsPage) []apiCheckRun { return pg.CheckRuns })
-	if err != nil {
-		return nil, err
+	if runsErr != nil && !permissionLike(runsErr) {
+		return nil, runsErr
 	}
 	type statusPage struct {
 		Statuses []apiCommitStatus `json:"statuses"`
 	}
-	sts, stsCut, err := httpx.PagesByLinkCapped(ctx, p.client, p.fetchPage, listPath(commit+"/status"), cp,
+	sts, stsCut, stsErr := httpx.PagesByLinkCapped(ctx, p.client, p.fetchPage, listPath(commit+"/status"), cp,
 		func(pg *statusPage) []apiCommitStatus { return pg.Statuses })
-	if err != nil {
-		return nil, err
+	switch {
+	case runsErr != nil && stsErr != nil:
+		return nil, runsErr
+	case stsErr != nil && !permissionLike(stsErr):
+		return nil, stsErr
+	case runsErr != nil:
+		runs, runsCut = nil, false
+		p.logger.Debug("github checks: check runs not readable; using the commit statuses only", "class", errClass(runsErr))
+	case stsErr != nil:
+		sts, stsCut = nil, false
+		p.logger.Debug("github checks: commit statuses not readable; using the check runs only", "class", errClass(stsErr))
 	}
 
-	out := &provider.Checks{Truncated: runsCut || stsCut, Strategy: provider.ChecksGitHubRunsAndStatuses}
+	out := &provider.Checks{Truncated: runsCut || stsCut, Partial: runsErr != nil || stsErr != nil,
+		Strategy: provider.ChecksGitHubRunsAndStatuses}
 	seen := make(map[string]bool, len(runs))
 	for _, r := range runs {
 		link := r.HTMLURL
@@ -135,8 +149,16 @@ func (p *Provider) GetChecks(ctx context.Context, ref provider.PRRef, sha string
 	if len(out.Items) > provider.MaxChecks {
 		out.Items, out.Truncated = out.Items[:provider.MaxChecks], true
 	}
-	p.logger.Debug("github checks read", "check_runs", len(runs), "statuses", len(sts), "truncated", out.Truncated)
+	p.logger.Debug("github checks read", "check_runs", len(runs), "statuses", len(sts), "truncated", out.Truncated,
+		"partial", out.Partial)
 	return out, nil
+}
+
+// permissionLike reports a failure of one check list that a token without
+// that list's permission produces (auth or not_found), as opposed to a
+// failure of the host or the transport.
+func permissionLike(err error) bool {
+	return errors.Is(err, provider.ErrAuth) || errors.Is(err, provider.ErrNotFound)
 }
 
 // GetFileAt implements provider.Provider through GetDiff's content request

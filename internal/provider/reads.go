@@ -74,6 +74,10 @@ type Checks struct {
 	// Truncated is true when the host had more checks than were read
 	// (MaxChecks, or a page cap).
 	Truncated bool
+	// Partial is true when only some of the provider's check lists could be
+	// read (GitHub: a token that may read the check runs but not the commit
+	// statuses, or the reverse); Items then hold the lists that were read.
+	Partial bool
 	// Strategy says which endpoint answered, like PullRequest.BaseStrategy;
 	// it is one of the Checks* constants.
 	Strategy string

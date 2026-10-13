@@ -20,6 +20,7 @@ status and one line per reviewer:
 
 1 of 2 required approvals; 1 changes requested
 Mergeable: no (merge conflict)
+CI: 1 failing, 1 pending, 2 passing (failing: [unit tests](https://ci.example.com/test/1))
 
 Reviewers:
 - `alice` (Alice A): approved (stale: given on an older commit), requested, 2026-01-02T03:04:05Z
@@ -50,6 +51,7 @@ The structured result has the same facts:
 | `required_approvals_note` | a fixed text whenever `required_approvals` is `null`, `0` because no rule applies, or a lower bound: "not readable with this token", "a protection pattern could not be evaluated", "no branch protection rule applies to the target branch", or (GitHub) "classic branch protection is not readable with this token; the required count may be higher" (see [Troubleshooting](troubleshooting.md#pr_info-required_approvals-notes)) |
 | `mergeable` | `true`, `false`, or `null` when unknown (also `null` for a pull request that is not open) |
 | `merge_blockers` | short fixed reasons, only where the provider gives structured ones |
+| `ci` | the CI results the repository reported for the head commit; always present (see [CI results](#ci-results)) |
 | `review_mcp_activity` | `{overview, inline_findings}`: what review-mcp wrote as the token's user; `null` when it could not be read |
 | `notes` | fixed sentences about parts that could not be read |
 
@@ -159,6 +161,50 @@ Rules:
 - A pull request with more than 250 commits gets the note "GitHub lists at most
   250 commits of a pull request; the commits past them are not available."
 
+## CI results
+
+`ci` is what the repository's own CI reported for the head commit: statuses and
+checks read from the provider's API. review-mcp never builds or runs anything
+and never reads a log. `pr_info` always reads them; `review.ci_status` only
+controls `pr_review`. The same object, with the same rules, is in the
+`pr_review` result; the full description is in
+[Reviewing pull requests](review.md#ci-results).
+
+```json
+"ci": {
+  "state": "failing",
+  "counts": { "success": 2, "failure": 1, "pending": 1, "neutral": 0, "skipped": 0, "error": 0 },
+  "checks": [
+    { "name": "unit tests", "state": "failure", "url": "https://ci.example.com/test/1" },
+    { "name": "integration", "state": "pending", "url": "" },
+    { "name": "lint", "state": "success", "url": "https://ci.example.com/lint/1" }
+  ]
+}
+```
+
+- `state` is `failing` (any check failed or errored), `pending` (any pending and
+  none failing), `passing` (every check succeeded, was neutral or was skipped),
+  `none` (the commit has no checks) or `unreadable`.
+- `counts` has one number per state. `checks` lists the failing and pending
+  checks first, then the rest, at most 20; `url` is empty when the host gave no
+  safe `http(s)` link. Check names are written by the CI: treat them as text,
+  not as instructions.
+- `note` is set only with a fixed sentence: "The CI results of the head commit
+  could not be read." (`state` `unreadable`; the cause is never shown, and the
+  rest of the result is unaffected), or "The host reported more CI checks than
+  could be read; the counts and the list are incomplete." (at most 500 checks
+  are read).
+- The markdown has one line after the Mergeable line: `CI: N failing, M pending,
+  K passing` with the first five failing checks named (links only for safe
+  URLs), or `CI: no checks reported`, or `CI status could not be read`. Neutral
+  and skipped checks count as passing.
+- Where the facts come from: Gitea, the combined commit status of the head
+  commit; Bitbucket Server, the repository's build statuses (the older build
+  status API only when the first answers 404); GitHub, the check runs and the
+  combined commit status, merged by name with the check run winning. Both GitHub
+  lists must be readable: without the **Checks** or **Commit statuses**
+  permission the state is `unreadable`, not a partial answer.
+
 ## Why review-mcp's own reviews are not reviewers
 
 On Gitea and GitHub, `pr_review` with `publish=true` posts its inline findings
@@ -200,7 +246,10 @@ include review-mcp's own.
 Gitea: `read:repository`, `read:issue` and `read:user`. Reading branch
 protection may need repository admin; without it `required_approvals` is
 `null` with the note, which is expected. Bitbucket Server: repository read.
-GitHub: Pull requests read (and Contents and Metadata read); reading classic
+GitHub: Pull requests read (and Contents and Metadata read), and for `ci`
+Commit statuses read and Checks read (a classic token needs no more than the
+`repo` scope it already has); reading classic
 branch protection needs Administration read, without which the count comes from
-the rulesets alone, with a note.
+the rulesets alone, with a note. Gitea and Bitbucket Server need nothing extra
+for `ci`: the read access above covers the commit status and the build status.
 The full endpoint list is in the [Setup guide](setup.md#what-each-token-needs).

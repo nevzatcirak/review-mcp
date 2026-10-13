@@ -65,6 +65,9 @@ request** contains:
 - the PR's existing **comment threads**, as untrusted data, unless
   `review.max_discussion_tokens` is 0 (see
   [The discussion block](#the-discussion-block));
+- the project's **guidelines file** and a **listing of the directories the
+  change touches**, both read at the target branch, as untrusted data (see
+  [Guidelines and the file tree](#guidelines-and-the-file-tree));
 - with [repository context](repo-context.md) on, a block of places outside the
   pull request that use the symbols it changes;
 - the output-language instruction.
@@ -138,6 +141,44 @@ people said.
 A prompt-injection attempt in a comment cannot be ruled out by construction;
 treat the suggestions as you would any review comment: read them before you
 apply them.
+
+### Guidelines and the file tree
+
+`pr_improve` gives the model the same two blocks as `pr_review`: the first
+existing file of `review.guidelines_paths` (by default
+`.review-mcp/guidelines.md`, then `CONTRIBUTING.md`) and a listing of the
+directories the change touches. They are the settings `review.guidelines_paths`,
+`review.max_guidelines_tokens`, `review.file_tree` and `review.max_tree_tokens`,
+shared with `pr_review`; their defaults, the path rules and the block headers
+are in [Project guidelines and file
+tree](review.md#project-guidelines-and-file-tree).
+
+- **Read at the target branch.** Both are read at the revision the diff is
+  computed against, never at the head, so a pull request that edits the
+  guidelines is improved by the rules the target branch has. If repository
+  context already holds the base commit, the cache answers; otherwise the
+  provider's API.
+- **Where they sit in the suggestion prompt.** After the PR information and
+  description, guidelines first, then the file tree, then the repository
+  context, the part line and the diff; the discussion block still follows the
+  diff. `pr_improve` has no CI block. The self-review request gets neither
+  block, as it gets neither the discussion nor the repository context. In a run
+  in parts, every part's suggestion prompt carries both.
+- **The model's instructions** gain, only while a block is present: "A
+  suggestion may say that a new file looks misplaced or that a change breaks a
+  stated convention only when the project guidelines or the directory listing
+  show it." Without a block the prompt is the same as before.
+- **Budget.** When the diff does not fit, the file tree is dropped first, then
+  the guidelines are cut at a line boundary, then the discussion, as in
+  `pr_review` (see [Drop order](review.md#drop-order)); the notes say what
+  happened.
+- **Coverage.** `coverage.guidelines` (`path`, `status`, `tokens`) and
+  `coverage.file_tree` (`directories`, `status`) are always set, also for a run
+  in parts and a run with nothing to improve. Their values are those of
+  [`pr_review`](review.md#coverage-of-the-guidelines-and-the-tree). The overview has no line for them.
+- **Notes.** A missing file is silent while the paths are the defaults; the
+  notes are listed in
+  [Troubleshooting](troubleshooting.md#ci-guidelines-and-file-tree-notes).
 
 ## Large pull requests
 
@@ -461,6 +502,8 @@ Besides these:
   clipped file; the singular is "1 file was included only in part (clipped) to
   fit the context window."), and the notes that say how to cover every file in a
   partial run, which are those of a review (see [Notes](review.md#notes));
+- the notes about the guidelines and the file tree, which are those of
+  `pr_review` ([Troubleshooting](troubleshooting.md#ci-guidelines-and-file-tree-notes));
 - the repository-context notes of [Repository context](repo-context.md), when
   it is on.
 
@@ -775,7 +818,10 @@ outside its range makes the configuration invalid at startup, with
 "improve.min_score: 11 is out of range (0-10)" in the `problems` list of
 `server_info`. The effective values are shown in `server_info`.
 
-The tool also follows `review.max_chunks`, `review.max_discussion_tokens`,
+The tool also follows `review.max_chunks`, `review.max_discussion_tokens`, the
+four project-context settings `review.guidelines_paths`,
+`review.max_guidelines_tokens`, `review.file_tree` and `review.max_tree_tokens`
+([Project guidelines and file tree](review.md#project-guidelines-and-file-tree)),
 `diff.*`, `llm.*`, `output.language`, `ignore.*` and `context.repo.*` like
 `pr_review` does. A lower `improve.min_score` shows more suggestions of a
 lesser quality; the right value depends on your model, and the notes tell you

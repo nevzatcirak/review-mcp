@@ -68,7 +68,7 @@ a service account of its own.
 
 | Token type | What to grant |
 |---|---|
-| **Fine-grained** (recommended) | Resource owner: the user or organisation that owns the repository. Repository access: only the repositories you review. Repository permissions: **Pull requests: Read and write**, **Contents: Read**, **Metadata: Read** (selected automatically). |
+| **Fine-grained** (recommended) | Resource owner: the user or organisation that owns the repository. Repository access: only the repositories you review. Repository permissions: **Pull requests: Read and write**, **Contents: Read**, **Commit statuses: Read**, **Checks: Read**, **Metadata: Read** (selected automatically). |
 | **Classic** | `repo` for private repositories, or `public_repo` for public ones only. |
 
 Read-only use needs only the read side: with a fine-grained token, **Pull
@@ -79,6 +79,8 @@ classic scope) is needed only for `publish=true`, `pr_comment_reply` and
 | Use | Needs |
 |---|---|
 | `pr_review`, `pr_ask`, `pr_describe`, `pr_improve` with `publish=false`, `pr_comments`, `pr_info` | Pull requests: read; Contents: read (file contents, the merge base and the repository context); Metadata: read |
+| The CI results of the head commit: `pr_info`, and `pr_review` unless `review.ci_status` is false | Commit statuses: read and Checks: read (fine-grained). Both are needed: the check runs need Checks, the legacy statuses need Commit statuses, and a read that fails in either list is `unreadable` as a whole, with a note, never a partial answer. A classic token's `repo` scope covers them. Everything else keeps working without them |
+| The guidelines file and the file tree of `pr_review` and `pr_improve` | Contents: read (they are read at the target branch) |
 | `publish=true`, `pr_comment_reply`, `pr_comment_create` | the same, with Pull requests: write |
 | `pr_describe` with `publish_mode=description` (and `update_title`) | Pull requests: write (it edits the pull request itself) |
 | `pr_info` required approvals from classic branch protection | Administration: read (fine-grained) or admin rights (classic). Optional: without it the count falls back to the rulesets, with a note (see [`pr_info`](#pr_info)) |
@@ -372,6 +374,17 @@ adds:
   give `blocked`. The state itself is never shown, only the fixed texts.
 - **Commits.** A pull request with more than 250 commits gets the commits note
   above.
+- **CI results.** `ci` is read from the check runs
+  (`GET .../commits/{sha}/check-runs`) and the combined commit status
+  (`GET .../commits/{sha}/status`), both followed through the `Link` header (at
+  most 10 pages of 100 each, so at most 500 per list) and merged by name; a
+  check run wins over a status of the same name. A run that is queued,
+  in progress, waiting or requested is `pending`; a completed run is its
+  `conclusion` (`cancelled` is `error`, `timed_out` is `failure`,
+  `action_required` is `pending`, `stale` and unknown values are `neutral`).
+  The permissions are Checks read and Commit statuses read (see
+  [Token](#token)); if one of the two lists cannot be read, the whole `ci` is
+  `unreadable` with a note.
 
 ## The description edit
 
@@ -412,6 +425,9 @@ review-mcp fetches the pull request head into its cache:
   may therefore be `not_found`. Use the current URL. If live acceptance shows it,
   the comparison will use the repository name from the pull request's metadata
   instead.
+- A token with only one of **Checks: Read** and **Commit statuses: Read** gets
+  `ci.state` `unreadable`, not the half it could read. A partial result with a
+  note is on the backlog.
 - GitHub Enterprise Server has not run yet, and nothing here has met a real
   rate limit (it is covered by tests with fake servers); see the checks below.
 - A quote that uses spaces where the file uses tabs does not verify: a

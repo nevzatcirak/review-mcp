@@ -22,4 +22,5 @@ project's guidelines when it reviews pull requests to this repository
   `your-gitea.example` or `*.example.com`, never a real organisation's
   systems.
 - review-mcp never builds or runs pull request code (decision R-1).
+- Every exported helper must document the error cases it names in its doc comment.
 - New user-facing behaviour is documented in `docs/` and in `CHANGELOG.md`.

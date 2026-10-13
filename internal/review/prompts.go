@@ -65,6 +65,12 @@ type PromptInput struct {
 	// and the fenced uses of the changed symbols, see repoctx.Render); empty
 	// omits it. It is repository text, and part of the scaffolding.
 	RepoContext string
+	// Focus is the normalized focus of a focused run (X-33,
+	// NormalizeFocus); empty reviews everything and renders as before. A
+	// known value adds its fixed sentence to the system prompt; a free text
+	// adds the free-text sentence there and its fenced block (FocusHeader)
+	// to the user prompt.
+	Focus string
 	// Date is the prompt date (prompt.Date).
 	Date string
 	// PartHeader is the part line of a review in several parts (PartHeader);
@@ -96,6 +102,8 @@ func (in *PromptInput) vars() map[string]any {
 		"guidelines":         in.Guidelines,
 		"file_tree":          in.FileTree,
 		"repo_context":       in.RepoContext,
+		"focus":              focusInstruction(in.Focus),
+		"focus_block":        focusBlock(in.Focus),
 		"part_header":        in.PartHeader,
 		"diff":               in.Diff,
 	}

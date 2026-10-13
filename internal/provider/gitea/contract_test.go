@@ -42,6 +42,12 @@ func TestReviewProject(t *testing.T) {
 	contract.RunReviewProject(t, ctFixture{})
 }
 
+// TestReviewFindings runs pr_review's publish of supplied findings (X-33)
+// through this provider and the contract fake.
+func TestReviewFindings(t *testing.T) {
+	contract.RunReviewFindings(t, ctFixture{})
+}
+
 const (
 	ctWeb     = "https://your-gitea.example"
 	ctRepo    = "/api/v1/repos/octo/demo"

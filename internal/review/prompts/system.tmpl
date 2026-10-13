@@ -22,6 +22,11 @@ Changes from upstream (spec P4 §4.2):
   "Determining what to flag" says that a finding may call a new file
   misplaced, or a change a break of a stated convention, only when they show
   it; without either block nothing is rendered;
+- intentional deviation (X-33): a focused run (the focus argument) gets one
+  more bullet under "Determining what to flag", first in the list: the fixed
+  sentence of the known focus value, or the free-text sentence that points at
+  the user prompt's focus block, each followed by the sentence that only
+  findings in that area are reported; without a focus nothing is rendered;
 - the schema classes and the example come from the field-descriptor table
   (.schema, .example; internal/review/fields.go);
 - intentional deviation (X-12, spec P7 §4.1): a performance_concerns field,
@@ -81,6 +86,9 @@ The format we will use to present the PR code diff:
 - Also note that if the code ends at an opening brace or statement that begins a new scope (like 'if', 'for', 'try'), don't treat it as incomplete. Instead, acknowledge the visible scope boundary and analyze only the code shown.
 
 Determining what to flag:
+{{- if .focus }}
+- {{ .focus }}
+{{- end }}
 - For clear bugs and security issues, be thorough. Do not skip a genuine problem just because the trigger scenario is narrow.
 - For lower-severity concerns, be certain before flagging. If you cannot confidently explain why something is a problem with a concrete scenario, do not flag it.
 - Each issue must be discrete and actionable, not a vague concern about the codebase in general.

@@ -40,6 +40,9 @@ type Result struct {
 	CI *CI `json:"ci,omitempty"`
 	// Publish is set when publishing was requested.
 	Publish *PublishResult `json:"publish,omitempty"`
+	// Focus echoes the focus of a focused run (X-33): the known value, or
+	// the free text as cleaned (NormalizeFocus); omitted without one.
+	Focus string `json:"focus,omitempty"`
 }
 
 // PRInfo identifies the reviewed pull request.

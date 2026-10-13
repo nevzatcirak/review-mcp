@@ -43,6 +43,11 @@ const Header = "Related code that uses symbols changed in this pull request (rea
 // is "skipped", not "off": "off" means only "disabled".
 const ReasonNothingToReview = "nothing_to_review"
 
+// ReasonClientFindings is the reason of a pr_review publish of findings a
+// client supplied (X-33): no prompt is sent, so no repository context is
+// read.
+const ReasonClientFindings = "client_findings"
+
 // MarkNotReviewed marks a use in a file of the pull request that no prompt
 // of the review carries (left out by the budget, too large for a part,
 // skipped by the provider). The text is shown after the entry's symbol.

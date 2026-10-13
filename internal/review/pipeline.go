@@ -122,6 +122,18 @@ type Args struct {
 	// MaxChunks is the most model calls (parts) of the review (X-19); 0 or
 	// less takes review.max_chunks, and 1 reviews in one call as v1.0 did.
 	MaxChunks int
+	// Focus narrows the review to one area (X-33): a known value
+	// (FocusValues) or a free text; "" reviews everything. A focused run
+	// never publishes (Validated).
+	Focus string
+	// Findings, when not nil (an empty list included), are published
+	// without a model call instead of a model's review (X-33, merged
+	// publish); they need Publish and exclude Focus (Validated).
+	Findings []SuppliedFinding
+	// SecurityConcerns and PerformanceConcerns are the concerns texts of a
+	// merged publish; "" leaves the field absent. They need Findings.
+	SecurityConcerns    string
+	PerformanceConcerns string
 }
 
 // WithConfigDefaults returns a with every option the call left unset (nil,
@@ -250,9 +262,18 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 	if deps.Resolver == nil || deps.LLM == nil {
 		return nil, errNoWiring
 	}
+	args, err := args.Validated(deps.Config)
+	if err != nil {
+		return nil, err
+	}
 	pl, err := Prepare(ctx, deps, args)
 	if err != nil {
 		return nil, err
+	}
+	if args.Findings != nil {
+		// A merged publish (X-33): the client's findings take the place of
+		// the model's answer, and no model is called.
+		return pl.publishSupplied(ctx, deps, args), nil
 	}
 	res := pl.Result
 	if pl.Empty {
@@ -337,9 +358,13 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// pushes out go to a further part, so nothing is lost. With max_chunks
 	// 1 a reservation would leave files unreviewed, so the diff always wins
 	// there: the block uses only the room the diff leaves (placeRepo).
+	// A merged publish (Args.Findings, X-33) sends no prompt, so nothing
+	// that only feeds the prompt is fetched: no repository context and no
+	// project context.
+	supplied := args.Findings != nil
 	var rcs *repoctx.Session
 	reserve := 0
-	if cfg.Context.Repo.Enabled {
+	if cfg.Context.Repo.Enabled && !supplied {
 		rcs = repoctx.Open(cfg, deps.RepoContext, ref, p, pr.HeadSHA, d.Files, d.Skipped, flt, log)
 		if len(rcs.Symbols(d.Files)) > 0 {
 			progress(deps, StageRepoContext)
@@ -374,7 +399,12 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// touches (X-32), read at the base revision the diff used, so that the
 	// pull request cannot rewrite the rules it is judged by. A failed read
 	// is a status and a note, never a failed review.
-	proj := projctx.ReadFor(ctx, cfg, p, ref, pr, d, rcs, log)
+	var proj *projctx.Context
+	if supplied {
+		proj = projctx.Read(ctx, nil, "", projctx.Settings{}, nil, nil, factor, log)
+	} else {
+		proj = projctx.ReadFor(ctx, cfg, p, ref, pr, d, rcs, log)
+	}
 	pl.proj = proj
 
 	// Step 3: description.
@@ -390,6 +420,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		CI:                ciBlock,
 		Guidelines:        proj.Guidelines(),
 		FileTree:          proj.Tree(),
+		Focus:             args.Focus,
 		Date:              prompt.Date(deps.Clock),
 	}
 
@@ -521,6 +552,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			// of its findings the discussion made it drop.
 			AlreadyDiscussed: disc.Included,
 		},
+		Focus: args.Focus,
 	}
 	// Changed files the provider could not list at all (GitHub lists at
 	// most 3000) are named by its fixed note.
@@ -640,7 +672,6 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 // the merge of the parts' answers (X-19), snippets, links and the publish.
 func (pl *Plan) finish(ctx context.Context, deps Deps, args Args) (*Result, error) {
 	res, log := pl.Result, pl.log
-	ref, p, pr, d := pl.ref, pl.p, pl.pr, pl.d
 	n := len(pl.parts)
 
 	// Steps 7 and 8, per part and sequentially: call the model, parse,
@@ -697,33 +728,9 @@ func (pl *Plan) finish(ctx context.Context, deps Deps, args Args) (*Result, erro
 
 	// Steps 10 and 11: snippets and links, on the merged list against every
 	// file of the PR.
-	files := map[string]*provider.FilePatch{}
-	for i := range d.Files {
-		files[d.Files[i].Path] = &d.Files[i]
-	}
-	unverified := 0
-	for i := range rev.KeyIssuesToReview {
-		ki := &rev.KeyIssuesToReview[i]
-		// DESIGN-QUESTION: how is relevant_file matched to a changed file? —
-		// chose an exact match (after trimming) against the paths of the
-		// PR's reviewable files, because any normalization (a "./" or "a/"
-		// prefix, a basename) could pick the wrong file and show unrelated
-		// lines; an unmatched file keeps the finding without a snippet or link.
-		fp := files[ki.RelevantFile]
-		ki.Snippet, ki.SnippetNote = snippet(fp, ki.StartLine, ki.EndLine)
-		if ki.SnippetNote == SnippetNoteUnverified {
-			unverified++
-		}
-		// The path is model-authored: link only a file the PR contains. A
-		// hallucinated path (for example one with ".." segments, which
-		// browsers resolve to another location on the same host) keeps its
-		// file and line text but gets no link.
-		if fp != nil {
-			ki.Link = p.FileLineURL(ref, pr, ki.RelevantFile, ki.StartLine)
-		}
-	}
+	pl.attachSnippets(rev)
 	res.Review = rev
-	log.Debug("review: done", "findings", len(rev.KeyIssuesToReview), "unverified_snippets", unverified,
+	log.Debug("review: done", "findings", len(rev.KeyIssuesToReview),
 		"llm_calls", res.Metadata.LLMCalls, "reasked", res.Metadata.Reasked, "parts", n, "failed_parts", failed)
 
 	// Step 13: publish.

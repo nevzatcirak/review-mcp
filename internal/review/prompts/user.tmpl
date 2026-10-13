@@ -59,6 +59,14 @@ at the base revision, inside an adaptive code fence). Both follow the CI
 block and precede the repository context, guidelines first; without them
 nothing is rendered, so the prompt is byte-identical to the one without the
 feature.
+
+Intentional deviation (X-33): upstream has no focused review. When a
+focused run's focus is a free text, the pipeline supplies .focus_block (the
+fixed header of FocusHeader and "Focus only on: <text>" inside an adaptive
+code fence). It follows the repository context and precedes the part line
+and the diff; a known focus value and no focus render nothing here, so the
+prompt is byte-identical to the one without the feature (the known values'
+sentences are in the system prompt).
 */}}
 
 
@@ -97,6 +105,10 @@ PR Description:
 {{- if .repo_context }}
 
 {{ .repo_context }}
+{{- end }}
+{{- if .focus_block }}
+
+{{ .focus_block }}
 {{- end }}
 {{- if .part_header }}
 

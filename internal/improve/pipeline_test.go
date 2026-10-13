@@ -46,6 +46,54 @@ type fakeProvider struct {
 	threadsErr error
 	diffNotes  []string
 	calls      []string
+	// revs are the repository's files (path to content) at a revision (a
+	// SHA), which GetFileAt and ListDir serve (X-32); a revision not in it
+	// is unknown, so every path is not_found. reads records each call as
+	// "file <path>@<rev>" or "dir <dir>@<rev>" (apart from calls, which
+	// the tests compare whole); readErr fails both.
+	revs    map[string]map[string]string
+	reads   []string
+	readErr error
+}
+
+func (f *fakeProvider) GetFileAt(_ context.Context, _ provider.PRRef, path, rev string) ([]byte, error) {
+	f.reads = append(f.reads, "file "+path+"@"+rev)
+	if f.readErr != nil {
+		return nil, f.readErr
+	}
+	c, ok := f.revs[rev][path]
+	if !ok {
+		return nil, &provider.Error{Class: provider.ClassNotFound, Status: 404}
+	}
+	return []byte(c), nil
+}
+
+func (f *fakeProvider) ListDir(_ context.Context, _ provider.PRRef, dir, rev string) (*provider.DirListing, error) {
+	f.reads = append(f.reads, "dir "+dir+"@"+rev)
+	if f.readErr != nil {
+		return nil, f.readErr
+	}
+	prefix := ""
+	if dir != "" {
+		prefix = dir + "/"
+	}
+	var entries []provider.DirEntry
+	seen := map[string]bool{}
+	for p := range f.revs[rev] {
+		rest, found := strings.CutPrefix(p, prefix)
+		if !found || rest == "" {
+			continue
+		}
+		name, _, isDir := strings.Cut(rest, "/")
+		if !seen[name] {
+			seen[name] = true
+			entries = append(entries, provider.DirEntry{Name: name, Dir: isDir})
+		}
+	}
+	if len(entries) == 0 {
+		return nil, &provider.Error{Class: provider.ClassNotFound, Status: 404}
+	}
+	return provider.FinishDirListing(entries, false), nil
 }
 
 func (f *fakeProvider) GetPullRequest(context.Context, provider.PRRef) (*provider.PullRequest, error) {
@@ -181,6 +229,17 @@ func sampleFiles() []provider.FilePatch {
 	}
 }
 
+// sampleBaseTree is the repository at the base revision of sampleFiles'
+// pull request (X-32): the modified file, an unchanged one, and no
+// guidelines file.
+func sampleBaseTree() map[string]string {
+	return map[string]string{
+		"README.md":     "# Demo\n",
+		"src/app.go":    "package app\n",
+		"src/config.go": "package app\n",
+	}
+}
+
 func comment(author provider.User, minutes int, body string) provider.CommentItem {
 	at := time.Date(2026, 10, 8, 9, minutes, 0, 0, time.UTC)
 	return provider.CommentItem{ID: "c" + strconv.Itoa(minutes), Author: author.Name, Body: body, CreatedAt: at,
@@ -204,9 +263,10 @@ func newHarness(answers map[int][]string) *harness {
 	h := &harness{logs: &bytes.Buffer{}}
 	h.prov = &fakeProvider{
 		pr: provider.PullRequest{Title: "Retry more " + titleMarker, Description: "Raises the retry count. " + descMarker,
-			SourceBranch: "feature/retry", TargetBranch: "main", HeadSHA: "abc"},
+			SourceBranch: "feature/retry", TargetBranch: "main", HeadSHA: "abc", BaseSHA: "base0"},
 		files:   sampleFiles(),
 		threads: sampleThreads(),
+		revs:    map[string]map[string]string{"base0": sampleBaseTree()},
 	}
 	if answers == nil {
 		answers = map[int][]string{}

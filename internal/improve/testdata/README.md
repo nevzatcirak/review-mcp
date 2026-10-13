@@ -36,6 +36,10 @@ The prompts of every model call of a run with the fake LLM of
 - `three_parts/`: six files with `diff.max_tokens` 2000; per part the
   suggestion call (`partN.*`) and its self-review (`partN.reflect.*`).
 
+Both runs use the default configuration, so their suggestion prompts carry
+the file-tree block of the touched directory at the base revision (X-32);
+the base has no guidelines file, so there is no guidelines block.
+
 `../render/testdata/*.md` are the client renderings of these results
 (`TestClientGoldens` in `../render`), so a change to a run golden shows up in
 the rendering goldens too.

@@ -1,5 +1,7 @@
 package review
 
+import "github.com/nevzatcirak/review-mcp/internal/llmrun"
+
 // ResultSchema is the JSON schema (draft 2020-12) of Result, for the
 // pr_review tool's MCP output schema (DQ-6; WP-PR-4e attaches it). The
 // review part comes from the descriptor table (ReviewSchema).
@@ -58,11 +60,13 @@ func ResultSchema() map[string]any {
 			"failed_parts":       integer("parts whose model call failed; their files are skipped with reason model_call_failed and are not reviewed"),
 			"repo_context": object("repository context in the prompt (RC-9)", map[string]any{
 				"status":     map[string]any{"type": "string", "enum": []any{"used", "skipped", "off"}, "description": "off: context.repo.enabled is false; used: the repository was searched; skipped: it is on but not in the prompt"},
-				"reason":     str("fixed reason when skipped (auth, not_found, timeout, too_large, sha_mismatch, redirect, git_failed, git_unavailable, busy, cache_unusable, unsupported, budget, nothing_to_review); empty otherwise"),
+				"reason":     str("fixed reason when skipped (auth, not_found, timeout, too_large, sha_mismatch, redirect, git_failed, git_unavailable, busy, cache_unusable, unsupported, budget, nothing_to_review, client_findings); empty otherwise"),
 				"symbols":    integer("symbols searched (summed over the parts of a review in parts)"),
 				"references": integer("uses of those symbols shown to the model"),
 				"files":      integer("distinct files among the shown uses (summed over the parts of a review in parts)"),
 			}, "status", "reason", "symbols", "references", "files"),
+			"guidelines": llmrun.GuidelinesSchema("the project guidelines read at the target branch (X-32); present except in a publish of supplied findings, which sends no prompt"),
+			"file_tree":  llmrun.FileTreeSchema("the listing of the directories the change touches, at the target branch (X-32); present except in a publish of supplied findings, which sends no prompt"),
 		}, "included", "clipped", "deleted_listed", "omitted", "skipped", "filtered", "partial", "reviewed_files",
 			"total_files", "not_reviewed_files", "model_calls", "failed_parts", "repo_context"),
 		"notes": strList("notes about truncation, dropped findings, clipped or trimmed files and the re-ask"),
@@ -73,7 +77,7 @@ func ResultSchema() map[string]any {
 			"diff_tokens":       integer("estimated tokens of the diff sent, summed over the parts"),
 			"request_tokens":    integer("estimated tokens of the request, the largest part's for a review in parts; 0 without a model call"),
 			"fast_path":         boolean("whether the whole extended diff fit one call"),
-			"llm_calls":         integer("number of chat completions: 0 to 2 per part (a part is re-asked at most once)"),
+			"llm_calls":         integer("number of chat completions: 0 to 2 per part (a part is re-asked at most once); 0 for a publish of supplied findings"),
 			"repair_tactic":     str("how the answer was parsed: direct or a YAML repair tactic; empty without a model call"),
 			"reasked":           boolean("whether the model was asked a second time after an unparseable answer"),
 			"truncated":         boolean("whether the answer was cut off by the output limit"),
@@ -82,6 +86,9 @@ func ResultSchema() map[string]any {
 			"already_discussed": integer("comment threads of the existing pull request discussion that were shown to the model (X-13); absent when 0"),
 		}, "model", "context_window", "prompt_tokens", "diff_tokens", "request_tokens", "fast_path", "llm_calls",
 			"repair_tactic", "reasked", "truncated", "diff_trimmed", "reviewed_at"),
+		"ci": CISchema(),
+		"focus": str("the focus of a focused run (X-33): security, architecture, performance, ux, tests or the " +
+			"cleaned free text; absent without one"),
 		"publish": object("publishing outcome; present when publish was requested", map[string]any{
 			"published":  boolean("whether the overview was posted or updated"),
 			"comment_id": str("id of the overview comment"),
@@ -96,4 +103,37 @@ func ResultSchema() map[string]any {
 			}, "posted", "skipped_duplicate", "unanchorable", "failed"),
 		}, "published"),
 	}, "pr", "enabled_fields", "review", "coverage", "notes", "metadata")
+}
+
+// CISchema is the JSON schema of CI (X-31), for the pr_review output schema.
+func CISchema() map[string]any {
+	str := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
+	integer := func(desc string) map[string]any { return map[string]any{"type": "integer", "description": desc} }
+	object := func(desc string, props map[string]any, required ...string) map[string]any {
+		req := []any{}
+		for _, r := range required {
+			req = append(req, r)
+		}
+		return map[string]any{"type": "object", "description": desc, "properties": props,
+			"required": req, "additionalProperties": false}
+	}
+	return object("CI results the repository reported for the head commit (X-31); present when review.ci_status is on", map[string]any{
+		"state": map[string]any{"type": "string", "enum": []any{CIPassing, CIFailing, CIPending, CINone, CIUnreadable},
+			"description": "passing: all success, neutral or skipped; failing: any failure or error; pending: any pending and none failing; none: no checks; unreadable: the checks could not be read"},
+		"counts": object("checks counted by state", map[string]any{
+			"success": integer("checks that passed"),
+			"failure": integer("checks that failed"),
+			"pending": integer("checks that are queued or running"),
+			"neutral": integer("checks with a neutral result"),
+			"skipped": integer("checks that were skipped"),
+			"error":   integer("checks that errored or were cancelled"),
+		}, "success", "failure", "pending", "neutral", "skipped", "error"),
+		"checks": map[string]any{"type": "array", "description": "failing and pending checks first, then the rest, at most 20",
+			"items": object("one check", map[string]any{
+				"name":  str("check name; untrusted third-party text"),
+				"state": str("success, failure, pending, neutral, skipped or error"),
+				"url":   str("http(s) link to the check's details; empty when none"),
+			}, "name", "state", "url")},
+		"note": str("fixed text; set when state is unreadable or the host reported more checks than were read"),
+	}, "state", "counts", "checks")
 }

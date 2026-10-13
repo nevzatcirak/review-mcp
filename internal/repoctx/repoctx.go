@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"unicode"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
@@ -41,6 +42,11 @@ const Header = "Related code that uses symbols changed in this pull request (rea
 // filtering: no model call is made, so no repository context is either. It
 // is "skipped", not "off": "off" means only "disabled".
 const ReasonNothingToReview = "nothing_to_review"
+
+// ReasonClientFindings is the reason of a pr_review publish of findings a
+// client supplied (X-33): no prompt is sent, so no repository context is
+// read.
+const ReasonClientFindings = "client_findings"
 
 // MarkNotReviewed marks a use in a file of the pull request that no prompt
 // of the review carries (left out by the budget, too large for a part,
@@ -118,6 +124,9 @@ type Session struct {
 	once sync.Once
 	co   gitctx.Checkout
 	err  error
+	// fetched is set once the head was fetched without error, so that
+	// AtRevision can use the cache without ever fetching itself.
+	fetched atomic.Bool
 }
 
 // Open returns the Session of a review of pr in ref. cfg.Context.Repo must be
@@ -149,6 +158,56 @@ func Open(cfg *config.Config, backend Backend, ref provider.PRRef, p provider.Pr
 		settings: SettingsFrom(cfg.Context.Repo),
 		log:      log,
 	}
+}
+
+// TreeReader reads a commit the cache already holds, offline (X-32).
+// *gitctx.Runner implements it; a Backend that does not is never used for
+// such reads, and the caller reads through the provider.
+type TreeReader interface {
+	HasCommit(ctx context.Context, c gitctx.Checkout, rev string) bool
+	FileAt(ctx context.Context, c gitctx.Checkout, rev, path string, maxBytes int) ([]byte, error)
+	ListDir(ctx context.Context, c gitctx.Checkout, rev, dir string) (*provider.DirListing, error)
+}
+
+var _ TreeReader = (*gitctx.Runner)(nil)
+
+// RevisionReader reads the files and directory listings of one commit from
+// the cache. Its errors follow the provider's GetFileAt and ListDir for a
+// missing path (not_found) and a file over the cap (too_large); any other
+// error means the cache could not answer.
+type RevisionReader struct {
+	tr       TreeReader
+	co       gitctx.Checkout
+	rev      string
+	maxBytes int
+}
+
+// FileAt reads the file path at the reader's commit, at most
+// diff.max_file_bytes.
+func (r *RevisionReader) FileAt(ctx context.Context, path string) ([]byte, error) {
+	return r.tr.FileAt(ctx, r.co, r.rev, path, r.maxBytes)
+}
+
+// ListDir lists the directory dir ("" is the root) at the reader's commit.
+func (r *RevisionReader) ListDir(ctx context.Context, dir string) (*provider.DirListing, error) {
+	return r.tr.ListDir(ctx, r.co, r.rev, dir)
+}
+
+// AtRevision returns a reader of commit rev from the cache, or nil. It is
+// non-nil only when this session already fetched the pull request head
+// without error (it never fetches), the backend can read trees, and the
+// cache entry holds rev (an earlier fetch brought it in; the shallow fetch
+// of the head alone usually does not hold the base). maxBytes caps a file
+// (diff.max_file_bytes). Only git plumbing runs, offline (R-1).
+func (s *Session) AtRevision(ctx context.Context, rev string, maxBytes int) *RevisionReader {
+	if s == nil || !s.fetched.Load() || rev == "" {
+		return nil
+	}
+	tr, ok := s.backend.(TreeReader)
+	if !ok || !tr.HasCommit(ctx, s.co, rev) {
+		return nil
+	}
+	return &RevisionReader{tr: tr, co: s.co, rev: rev, maxBytes: maxBytes}
 }
 
 // Scope narrows a search to one prompt of a review in parts (X-19): the
@@ -195,6 +254,7 @@ func (s *Session) ready(ctx context.Context) string {
 			return
 		}
 		s.co, s.err = s.backend.Ensure(ctx, s.repo, s.pr)
+		s.fetched.Store(s.err == nil)
 	})
 	if s.err != nil {
 		return reasonOf(s.err)

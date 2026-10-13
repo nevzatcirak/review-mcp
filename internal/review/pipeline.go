@@ -14,6 +14,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
+	"github.com/nevzatcirak/review-mcp/internal/projctx"
 	"github.com/nevzatcirak/review-mcp/internal/prompt"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/repoctx"
@@ -121,6 +122,18 @@ type Args struct {
 	// MaxChunks is the most model calls (parts) of the review (X-19); 0 or
 	// less takes review.max_chunks, and 1 reviews in one call as v1.0 did.
 	MaxChunks int
+	// Focus narrows the review to one area (X-33): a known value
+	// (FocusValues) or a free text; "" reviews everything. A focused run
+	// never publishes (Validated).
+	Focus string
+	// Findings, when not nil (an empty list included), are published
+	// without a model call instead of a model's review (X-33, merged
+	// publish); they need Publish and exclude Focus (Validated).
+	Findings []SuppliedFinding
+	// SecurityConcerns and PerformanceConcerns are the concerns texts of a
+	// merged publish; "" leaves the field absent. They need Findings.
+	SecurityConcerns    string
+	PerformanceConcerns string
 }
 
 // WithConfigDefaults returns a with every option the call left unset (nil,
@@ -197,7 +210,10 @@ type Plan struct {
 	repoCtx llmrun.RepoContext
 	// RepoReport is the repository-context detail for diag review
 	// --dry-run; nil when repository context is off.
-	RepoReport  *repoctx.Report
+	RepoReport *repoctx.Report
+	// proj is the project context (X-32), whose coverage a review in parts
+	// carries too.
+	proj        *projctx.Context
 	ref         provider.PRRef
 	p           provider.Provider
 	pr          *provider.PullRequest
@@ -246,9 +262,18 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 	if deps.Resolver == nil || deps.LLM == nil {
 		return nil, errNoWiring
 	}
+	args, err := args.Validated(deps.Config)
+	if err != nil {
+		return nil, err
+	}
 	pl, err := Prepare(ctx, deps, args)
 	if err != nil {
 		return nil, err
+	}
+	if args.Findings != nil {
+		// A merged publish (X-33): the client's findings take the place of
+		// the model's answer, and no model is called.
+		return pl.publishSupplied(ctx, deps, args), nil
 	}
 	res := pl.Result
 	if pl.Empty {
@@ -333,9 +358,13 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// pushes out go to a further part, so nothing is lost. With max_chunks
 	// 1 a reservation would leave files unreviewed, so the diff always wins
 	// there: the block uses only the room the diff leaves (placeRepo).
+	// A merged publish (Args.Findings, X-33) sends no prompt, so nothing
+	// that only feeds the prompt is fetched: no repository context and no
+	// project context.
+	supplied := args.Findings != nil
 	var rcs *repoctx.Session
 	reserve := 0
-	if cfg.Context.Repo.Enabled {
+	if cfg.Context.Repo.Enabled && !supplied {
 		rcs = repoctx.Open(cfg, deps.RepoContext, ref, p, pr.HeadSHA, d.Files, d.Skipped, flt, log)
 		if len(rcs.Symbols(d.Files)) > 0 {
 			progress(deps, StageRepoContext)
@@ -356,6 +385,28 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 	disc, discNotes := pl.readDiscussion(ctx, maxDisc, args.Publish && inlineEnabled(deps, args), factor)
 
+	// The head commit's CI results (X-31): a failed read is an unreadable
+	// summary, never a failed review.
+	var ci *CI
+	ciBlock, ciLeft := "", false
+	if cfg.Review.CIStatus {
+		c := ReadCI(ctx, p, ref, pr.HeadSHA, log)
+		ci = &c
+		ciBlock, ciLeft = CIBlock(ci, cfg.Review.MaxCITokens, factor)
+	}
+
+	// The project's guidelines and the listing of the directories the change
+	// touches (X-32), read at the base revision the diff used, so that the
+	// pull request cannot rewrite the rules it is judged by. A failed read
+	// is a status and a note, never a failed review.
+	var proj *projctx.Context
+	if supplied {
+		proj = projctx.Read(ctx, nil, "", projctx.Settings{}, nil, nil, factor, log)
+	} else {
+		proj = projctx.ReadFor(ctx, cfg, p, ref, pr, d, rcs, log)
+	}
+	pl.proj = proj
+
 	// Step 3: description.
 	in := PromptInput{
 		Toggles:           toggles,
@@ -366,6 +417,10 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		Branch:            pr.SourceBranch,
 		Description:       tokens.ClipDescription(pr.Description, cfg.Diff.MaxDescriptionTokens, factor),
 		Discussion:        disc.Block,
+		CI:                ciBlock,
+		Guidelines:        proj.Guidelines(),
+		FileTree:          proj.Tree(),
+		Focus:             args.Focus,
 		Date:              prompt.Date(deps.Clock),
 	}
 
@@ -381,11 +436,44 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		Factor:          factor,
 		MaxDiffTokens:   tokens.Cap(cfg.Diff.MaxTokens),
 	}
+	// When the scaffolding leaves no room for the diff, the optional blocks
+	// give way in a fixed order: the file tree, then the guidelines (cut at
+	// a line boundary by what is missing, until none is left), then the
+	// discussion, then the CI results. The blocks of X-32 go first, so
+	// that the discussion and the CI block keep the room they had before.
+	// The blocks of X-32 give way again, in the same order, when the diff
+	// prepared below does not fit beside them (step 5).
+	remeasure := func() error {
+		promptTokens, err = ScaffoldingTokens(in, factor)
+		budget.PromptTokens = promptTokens
+		return err
+	}
+	if budget.RequireCapacity() != nil && proj.DropTree() {
+		in.FileTree = ""
+		if err := remeasure(); err != nil {
+			return nil, err
+		}
+	}
+	for budget.RequireCapacity() != nil && proj.CutGuidelines(1-budget.SoftLimit()) {
+		in.Guidelines = proj.Guidelines()
+		if err := remeasure(); err != nil {
+			return nil, err
+		}
+	}
 	if budget.RequireCapacity() != nil && in.Discussion != "" {
 		// The discussion is optional: a context window too small for it
 		// still reviews the diff, without it.
 		disc = discussion{Omitted: disc.Included + disc.Omitted}
 		in.Discussion = ""
+		if promptTokens, err = ScaffoldingTokens(in, factor); err != nil {
+			return nil, err
+		}
+		budget.PromptTokens = promptTokens
+	}
+	if budget.RequireCapacity() != nil && in.CI != "" {
+		// The CI block is optional too, and goes second: the discussion is
+		// the larger of the two.
+		in.CI, ciLeft = "", true
 		if promptTokens, err = ScaffoldingTokens(in, factor); err != nil {
 			return nil, err
 		}
@@ -418,6 +506,32 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		reserve = 0
 		prep, err = prepare(0)
 	}
+	// A diff that does not fit beside the blocks of X-32 (it cannot be
+	// prepared, a file is clipped, or a review in one call leaves files
+	// out) makes them give way in the same order: the file tree, then the
+	// guidelines, halved until the diff fits. Only when the diff would fit
+	// without them, so that they never go for nothing.
+	oneCall := maxChunks <= 1
+	if projctx.DiffDoesNotFit(prep, err, oneCall) && proj.HasBlocks() {
+		bare := in
+		bare.Guidelines, bare.FileTree = "", ""
+		bareTokens, serr := ScaffoldingTokens(bare, factor)
+		if serr != nil {
+			return nil, serr
+		}
+		probe := dIn
+		probe.Budget.PromptTokens = bareTokens
+		if bp, berr := diffpipe.Prepare(probe); !projctx.DiffDoesNotFit(bp, berr, oneCall) {
+			for projctx.DiffDoesNotFit(prep, err, oneCall) && proj.Shrink() {
+				in.Guidelines, in.FileTree = proj.Guidelines(), proj.Tree()
+				if serr := remeasure(); serr != nil {
+					return nil, serr
+				}
+				base, dIn.Budget = budget, budget
+				prep, err = prepare(reserve)
+			}
+		}
+	}
 	if err != nil {
 		if errors.Is(err, tokens.ErrDoesNotFit) {
 			return nil, doesNotFit(err)
@@ -438,6 +552,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			// of its findings the discussion made it drop.
 			AlreadyDiscussed: disc.Included,
 		},
+		Focus: args.Focus,
 	}
 	// Changed files the provider could not list at all (GitHub lists at
 	// most 3000) are named by its fixed note.
@@ -446,6 +561,12 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	if disc.Omitted > 0 {
 		res.Notes = append(res.Notes, noteDiscussionLeftOut(disc.Omitted))
 	}
+	res.CI = ci
+	if ciLeft {
+		res.Notes = append(res.Notes, NoteCILeftOut)
+	}
+	res.Notes = append(res.Notes, proj.Notes()...)
+	res.Coverage.Guidelines, res.Coverage.FileTree = proj.Coverage()
 	for _, f := range enabledFields(toggles) {
 		res.EnabledFields = append(res.EnabledFields, f.key)
 	}
@@ -490,6 +611,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			budget = base
 			pl.Budget = budget
 			res.Coverage, res.Metadata.DiffTokens, res.Metadata.FastPath = buildCoverage(prep, flt), prep.Tokens, prep.FastPath
+			res.Coverage.Guidelines, res.Coverage.FileTree = proj.Coverage()
 			if leavesFilesOut(prep) {
 				if ok, err = pl.planParts(ctx, dIn, in, maxChunks, rcs, 0); err != nil {
 					return nil, err
@@ -550,7 +672,6 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 // the merge of the parts' answers (X-19), snippets, links and the publish.
 func (pl *Plan) finish(ctx context.Context, deps Deps, args Args) (*Result, error) {
 	res, log := pl.Result, pl.log
-	ref, p, pr, d := pl.ref, pl.p, pl.pr, pl.d
 	n := len(pl.parts)
 
 	// Steps 7 and 8, per part and sequentially: call the model, parse,
@@ -607,33 +728,9 @@ func (pl *Plan) finish(ctx context.Context, deps Deps, args Args) (*Result, erro
 
 	// Steps 10 and 11: snippets and links, on the merged list against every
 	// file of the PR.
-	files := map[string]*provider.FilePatch{}
-	for i := range d.Files {
-		files[d.Files[i].Path] = &d.Files[i]
-	}
-	unverified := 0
-	for i := range rev.KeyIssuesToReview {
-		ki := &rev.KeyIssuesToReview[i]
-		// DESIGN-QUESTION: how is relevant_file matched to a changed file? —
-		// chose an exact match (after trimming) against the paths of the
-		// PR's reviewable files, because any normalization (a "./" or "a/"
-		// prefix, a basename) could pick the wrong file and show unrelated
-		// lines; an unmatched file keeps the finding without a snippet or link.
-		fp := files[ki.RelevantFile]
-		ki.Snippet, ki.SnippetNote = snippet(fp, ki.StartLine, ki.EndLine)
-		if ki.SnippetNote == SnippetNoteUnverified {
-			unverified++
-		}
-		// The path is model-authored: link only a file the PR contains. A
-		// hallucinated path (for example one with ".." segments, which
-		// browsers resolve to another location on the same host) keeps its
-		// file and line text but gets no link.
-		if fp != nil {
-			ki.Link = p.FileLineURL(ref, pr, ki.RelevantFile, ki.StartLine)
-		}
-	}
+	pl.attachSnippets(rev)
 	res.Review = rev
-	log.Debug("review: done", "findings", len(rev.KeyIssuesToReview), "unverified_snippets", unverified,
+	log.Debug("review: done", "findings", len(rev.KeyIssuesToReview),
 		"llm_calls", res.Metadata.LLMCalls, "reasked", res.Metadata.Reasked, "parts", n, "failed_parts", failed)
 
 	// Step 13: publish.

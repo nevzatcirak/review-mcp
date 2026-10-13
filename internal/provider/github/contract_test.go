@@ -33,6 +33,24 @@ func TestReviewDuplicates(t *testing.T) {
 	contract.RunReviewDuplicates(t, ctFixture{})
 }
 
+// TestReviewCI runs pr_review's CI scenario (X-31) through this provider and
+// the contract fake.
+func TestReviewCI(t *testing.T) {
+	contract.RunReviewCI(t, ctFixture{})
+}
+
+// TestReviewProject runs the project-context scenario (X-32) of pr_review
+// and pr_improve through this provider and the contract fake.
+func TestReviewProject(t *testing.T) {
+	contract.RunReviewProject(t, ctFixture{})
+}
+
+// TestReviewFindings runs pr_review's publish of supplied findings (X-33)
+// through this provider and the contract fake.
+func TestReviewFindings(t *testing.T) {
+	contract.RunReviewFindings(t, ctFixture{})
+}
+
 const (
 	// ctAPI is the API prefix the provider derives for a GHES web base.
 	ctAPI  = "/api/v3"
@@ -56,8 +74,9 @@ func (ctFixture) Kind() provider.Kind { return provider.KindGitHub }
 
 func (ctFixture) Traits() contract.Traits {
 	return contract.Traits{
-		BaseStrategies: github.BaseStrategies(),
-		InlineRanges:   true,
+		BaseStrategies:  github.BaseStrategies(),
+		CheckStrategies: github.CheckStrategies(),
+		InlineRanges:    true,
 	}
 }
 
@@ -365,7 +384,9 @@ func (g *ctGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer g.mu.Unlock()
 	path := r.URL.EscapedPath()
 	accept := "application/vnd.github+json"
-	if strings.HasPrefix(path, ctRepo+"/contents/") {
+	contents := path == ctRepo+"/contents" || strings.HasPrefix(path, ctRepo+"/contents/")
+	if contents && r.Header.Get("Accept") != accept {
+		// A file is read raw; a directory is listed as JSON.
 		accept = "application/vnd.github.raw"
 	}
 	if !g.checkHeaders(r, accept) {
@@ -405,8 +426,10 @@ func (g *ctGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.ctPage(w, r, g.filesJSON(), ctRepoByID+"/pulls/7/files")
 	case path == ctPull+"/commits" || path == ctRepoByID+"/pulls/7/commits":
 		g.ctPage(w, r, nil, ctRepoByID+"/pulls/7/commits")
-	case strings.HasPrefix(path, ctRepo+"/contents/"):
-		g.serveContents(w, r, strings.TrimPrefix(path, ctRepo+"/contents/"))
+	case contents:
+		g.serveContents(w, r, strings.TrimPrefix(strings.TrimPrefix(path, ctRepo+"/contents"), "/"))
+	case strings.HasSuffix(path, "/check-runs"), strings.HasSuffix(path, "/status"):
+		g.serveChecks(w, r, path)
 	default:
 		g.t.Errorf("unexpected request %s %s", r.Method, path)
 		contract.WriteError(w, http.StatusNotFound)
@@ -446,17 +469,119 @@ func (g *ctGitHub) serveContents(w http.ResponseWriter, r *http.Request, escaped
 		return
 	}
 	sha := r.URL.Query().Get("ref")
-	for _, f := range g.pr.Files {
-		switch {
-		case f.Type != provider.ChangeAdded && sha == g.pr.BaseSHA && p == f.BasePath():
-			_, _ = io.WriteString(w, f.Base)
-			return
-		case f.Type != provider.ChangeDeleted && sha == g.pr.HeadSHA && p == f.Path:
-			_, _ = io.WriteString(w, f.Head)
+	content, isFile := g.pr.FileAt(sha, p)
+	if r.Header.Get("Accept") == "application/vnd.github.raw" {
+		if !isFile {
+			contract.WriteError(w, http.StatusNotFound)
 			return
 		}
+		_, _ = io.WriteString(w, content) //nolint:gosec // test fake; the content is a fixed Spec fixture, not request input
+		return
 	}
-	contract.WriteError(w, http.StatusNotFound)
+	if isFile {
+		ctJSON(w, http.StatusOK, map[string]any{"type": "file", "name": p[strings.LastIndex(p, "/")+1:], "path": p,
+			"size": len(content)})
+		return
+	}
+	entries, ok := g.pr.DirAt(sha, p)
+	if !ok {
+		contract.WriteError(w, http.StatusNotFound)
+		return
+	}
+	out := []any{}
+	for _, e := range entries {
+		typ := "file"
+		if e.Dir {
+			typ = "dir"
+		}
+		out = append(out, map[string]any{"type": typ, "name": e.Name, "path": strings.TrimPrefix(p+"/"+e.Name, "/")})
+	}
+	ctJSON(w, http.StatusOK, out)
+}
+
+// ctLegacy reports whether the fake serves check i as a legacy commit
+// status rather than a check run: every other check whose state a status
+// can carry.
+func ctLegacy(i int, c contract.Check) bool {
+	switch c.State {
+	case provider.CheckSuccess, provider.CheckFailure, provider.CheckPending, provider.CheckError:
+		return i%2 == 1 && !c.Unknown
+	}
+	return false
+}
+
+// ctCheckRun serves a check run for c.
+func ctCheckRun(c contract.Check) map[string]any {
+	run := map[string]any{"name": c.Name, "status": "completed", "html_url": c.URL,
+		"details_url": "javascript:void(0)", "app": map[string]any{"slug": "synthetic-ci"}}
+	switch {
+	case c.Unknown:
+		run["conclusion"] = "mystery"
+	case c.State == provider.CheckPending:
+		run["status"], run["conclusion"] = "in_progress", nil
+	case c.State == provider.CheckError:
+		run["conclusion"] = "cancelled"
+	default: // success, failure, neutral and skipped are conclusions as they are
+		run["conclusion"] = string(c.State)
+	}
+	return run
+}
+
+// serveChecks answers the check runs and the combined status of the head
+// commit, Link-paged in envelopes of per_page items; another commit is
+// unknown (404).
+func (g *ctGitHub) serveChecks(w http.ResponseWriter, r *http.Request, path string) {
+	runs := strings.HasSuffix(path, "/check-runs")
+	rest := strings.TrimSuffix(strings.TrimSuffix(path, "/check-runs"), "/status")
+	sha, ok := strings.CutPrefix(rest, ctRepo+"/commits/")
+	if !ok {
+		sha, ok = strings.CutPrefix(rest, ctRepoByID+"/commits/")
+	}
+	if !ok || sha != g.pr.HeadSHA {
+		contract.WriteError(w, http.StatusNotFound)
+		return
+	}
+	var items []any
+	for i, c := range g.pr.Checks {
+		switch {
+		case runs && !ctLegacy(i, c):
+			items = append(items, ctCheckRun(c))
+		case !runs && ctLegacy(i, c):
+			items = append(items, map[string]any{"context": c.Name, "state": string(c.State), "target_url": c.URL,
+				"description": "synthetic"})
+		}
+	}
+	key, byID := "statuses", ctRepoByID+"/commits/"+sha+"/status"
+	if runs {
+		key, byID = "check_runs", ctRepoByID+"/commits/"+sha+"/check-runs"
+	}
+	q := r.URL.Query()
+	size, err := strconv.Atoi(q.Get("per_page"))
+	if err != nil || size < 1 || size > 100 {
+		size = 30
+	}
+	start := 0
+	if c := q.Get("cursor"); c != "" {
+		raw, err := base64.RawURLEncoding.DecodeString(c)
+		n, aerr := strconv.Atoi(strings.TrimPrefix(string(raw), "offset:"))
+		if err != nil || aerr != nil || n < 0 || n > len(items) {
+			contract.WriteError(w, http.StatusBadRequest)
+			return
+		}
+		start = n
+	}
+	end := min(start+size, len(items))
+	if end < len(items) {
+		next := "http://" + r.Host + byID + "?per_page=" + strconv.Itoa(size) + "&cursor=" +
+			base64.RawURLEncoding.EncodeToString([]byte("offset:"+strconv.Itoa(end)))
+		w.Header().Set("Link", `<`+next+`>; rel="next"`)
+	}
+	page := append([]any{}, items[start:end]...)
+	body := map[string]any{"total_count": len(items), key: page}
+	if !runs {
+		body["state"], body["sha"] = "pending", sha
+	}
+	ctJSON(w, http.StatusOK, body)
 }
 
 const (

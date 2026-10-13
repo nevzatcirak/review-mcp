@@ -16,7 +16,12 @@ import (
 // prReviewDescription is the tool description from spec P4 §6.1.
 //
 // In stdio mode the description gains prReviewJobSentence (X-16).
-const prReviewDescription = "Reviews a pull request with the configured LLM and returns a structured review (key issues, effort, tests, security, performance) with code excerpts. Set publish=true to also post it: one overview comment that later runs edit in place, and the findings on changed lines as inline comments. The PR's title, description, existing comments and diff are sent to the configured LLM endpoint." + partialSentence
+const prReviewDescription = "Reviews a pull request with the configured LLM and returns a structured review (key issues, effort, tests, security, performance) with code excerpts. Set publish=true to also post it: one overview comment that later runs edit in place, and the findings on changed lines as inline comments. The PR's title, description, existing comments and diff are sent to the configured LLM endpoint." + focusSentence + partialSentence
+
+// focusSentence points at the focused-review pattern of X-33 (spec 2F
+// §4.3): the same recipe as serverInstructions and the
+// multi_perspective_review prompt.
+const focusSentence = " For a thorough review, run it with focus for several areas without publish, merge the findings, then call it once with findings and publish=true, which publishes them without a model call; a focused run never publishes."
 
 // partialSentence ends the pr_review, pr_ask and job_result descriptions
 // (X-18). The job sentence of stdio mode follows it.
@@ -34,6 +39,35 @@ type prReviewInput struct {
 	Publish           bool   `json:"publish,omitempty" jsonschema:"also post the review: the overview comment, and with inline_findings the findings on changed lines as inline comments (default false)"`
 	InlineFindings    *bool  `json:"inline_findings,omitempty" jsonschema:"with publish, post each finding that falls on a changed line as an inline comment; replaces review.inline_findings for this call"`
 	WaitSeconds       *int   `json:"wait_seconds,omitempty" jsonschema:"seconds to wait for the result before answering with a job_id for job_result, 0 to 600; replaces llm.wait_seconds (default 45) for this call; ignored in serve mode"`
+	Focus             string `json:"focus,omitempty" jsonschema:"review only one area: security, architecture, performance, ux, tests, or a description of at most 200 characters; the findings then cover that area only. A focused review never publishes: combine it with publish=true and the call is refused"`
+	// Findings is nil when the argument is absent and empty for [].
+	Findings            []prReviewFinding `json:"findings,omitempty" jsonschema:"publish these findings instead of calling the model: the merged and de-duplicated findings of focused runs, in the shape of review.key_issues_to_review. Needs publish=true and no focus; at most twice review.max_total_findings items. Items whose file is not in the diff or whose lines are not positive are dropped with a note, exact repeats are merged, and the list is capped at review.max_total_findings"`
+	SecurityConcerns    string            `json:"security_concerns,omitempty" jsonschema:"with findings, the overview's security concerns text (No when there are none), for example from a focused security run; at most 5000 characters"`
+	PerformanceConcerns string            `json:"performance_concerns,omitempty" jsonschema:"with findings, the overview's performance concerns text (No when there are none), for example from a focused performance run; at most 5000 characters"`
+}
+
+// prReviewFinding is one item of the findings argument (X-33).
+type prReviewFinding struct {
+	RelevantFile string `json:"relevant_file" jsonschema:"path of the changed file (its new path), exactly as in the diff"`
+	StartLine    int    `json:"start_line" jsonschema:"first new-side line of the finding, 1 or more"`
+	EndLine      int    `json:"end_line" jsonschema:"last new-side line of the finding, at least start_line"`
+	IssueHeader  string `json:"issue_header" jsonschema:"one or two word title of the issue, at most 200 characters"`
+	IssueContent string `json:"issue_content" jsonschema:"description of the issue, at most 5000 characters"`
+	Focus        string `json:"focus,omitempty" jsonschema:"the focus of the run that found it (optional)"`
+}
+
+// suppliedFindings converts the findings argument; nil stays nil (the
+// argument was not given).
+func suppliedFindings(in []prReviewFinding) []review.SuppliedFinding {
+	if in == nil {
+		return nil
+	}
+	out := make([]review.SuppliedFinding, len(in))
+	for i, f := range in {
+		out[i] = review.SuppliedFinding{RelevantFile: f.RelevantFile, StartLine: f.StartLine, EndLine: f.EndLine,
+			IssueHeader: f.IssueHeader, IssueContent: f.IssueContent, Focus: f.Focus}
+	}
+	return out
 }
 
 // progressTotal is the number of stages of a review or an answer.
@@ -125,6 +159,8 @@ func registerPRReview(s *mcp.Server, deps Deps) {
 		}, tools.PRReviewArgs{
 			PRURL: in.PRURL, ExtraInstructions: in.ExtraInstructions, OutputLanguage: in.OutputLanguage,
 			MaxFindings: in.MaxFindings, Publish: in.Publish, InlineFindings: in.InlineFindings,
+			Focus: in.Focus, Findings: suppliedFindings(in.Findings),
+			SecurityConcerns: in.SecurityConcerns, PerformanceConcerns: in.PerformanceConcerns,
 		})
 		wait := 0
 		if err == nil && deps.background() {
@@ -146,7 +182,8 @@ func registerPRReview(s *mcp.Server, deps Deps) {
 			// Counts and the redacted URL only: never the review text,
 			// prompts or PR content.
 			log.Debug("pr_review", "url", res.PR.URL, "findings", len(res.Review.KeyIssuesToReview),
-				"llm_calls", res.Metadata.LLMCalls, "notes", len(res.Notes), "published", res.Publish != nil && res.Publish.Published)
+				"llm_calls", res.Metadata.LLMCalls, "notes", len(res.Notes), "published", res.Publish != nil && res.Publish.Published,
+				"focused", res.Focus != "", "supplied_findings", in.Findings != nil)
 			return jobOutcome{text: text, out: *res}, nil
 		})
 	})

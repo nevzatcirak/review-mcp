@@ -53,6 +53,22 @@ type Provider interface {
 	// cannot, and the caller compares the text it read (see
 	// internal/describe). Callers need Capabilities().DescriptionEdit.
 	UpdatePullRequest(ctx context.Context, ref PRRef, up UpdatePR) error
+	// GetChecks returns the CI statuses and checks the host reports for the
+	// commit sha of ref's repository (X-31), at most MaxChecks of them, with
+	// the endpoint that answered in Checks.Strategy. Names and URLs are
+	// cleaned (NewCheck); a state the provider does not document is
+	// CheckNeutral. Nothing is built or run (R-1). It is read-only.
+	GetChecks(ctx context.Context, ref PRRef, sha string) (*Checks, error)
+	// GetFileAt returns the content of the file path at revision rev of
+	// ref's repository, capped at diff.max_file_bytes: a larger file is a
+	// too_large error, a path that does not exist at rev not_found. It
+	// uses the same request as GetDiff's content fetch. It is read-only.
+	GetFileAt(ctx context.Context, ref PRRef, path, rev string) ([]byte, error)
+	// ListDir returns the direct entries of directory dir at revision rev of
+	// ref's repository ("" is the root), at most MaxDirEntries of them
+	// (see FinishDirListing). A directory that does not exist at rev is
+	// not_found. It is read-only.
+	ListDir(ctx context.Context, ref PRRef, dir, rev string) (*DirListing, error)
 	// FileLineURL is pure: no I/O.
 	FileLineURL(ref PRRef, pr *PullRequest, path string, line int) string
 }

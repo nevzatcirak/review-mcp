@@ -24,7 +24,21 @@ type infoProvider struct {
 	threads []provider.Thread
 	listErr error
 
+	// checks and checksErr are GetChecks' answer; checkSHA is the commit
+	// asked for.
+	checks    *provider.Checks
+	checksErr error
+	checkSHA  string
+
 	gotOpts provider.ReviewStatusOptions
+}
+
+func (f *infoProvider) GetChecks(_ context.Context, _ provider.PRRef, sha string) (*provider.Checks, error) {
+	f.checkSHA = sha
+	if f.checks == nil && f.checksErr == nil {
+		return &provider.Checks{}, nil
+	}
+	return f.checks, f.checksErr
 }
 
 func (f *infoProvider) GetPullRequest(context.Context, provider.PRRef) (*provider.PullRequest, error) {
@@ -257,5 +271,68 @@ func TestCleanName(t *testing.T) {
 	}
 	if got := cleanName(long); len([]rune(got)) != maxNameRunes {
 		t.Errorf("long name has %d runes", len([]rune(got)))
+	}
+}
+
+// TestPRInfoToolCI: pr_info always reads the head commit's checks; the five
+// states, the order of the list, the head commit asked for and the line in
+// the markdown.
+func TestPRInfoToolCI(t *testing.T) {
+	ck := func(name string, st provider.CheckState) provider.Check {
+		return provider.Check{Name: name, State: st, URL: "https://ci.example.com/" + name}
+	}
+	for name, tc := range map[string]struct {
+		checks *provider.Checks
+		err    error
+		state  string
+		line   string
+	}{
+		"failing": {&provider.Checks{Items: []provider.Check{ck("build", provider.CheckSuccess), ck("tests", provider.CheckFailure), ck("lint", provider.CheckPending)}},
+			nil, review.CIFailing, "CI: 1 failing, 1 pending, 1 passing (failing: [tests](https://ci.example.com/tests))"},
+		"pending": {&provider.Checks{Items: []provider.Check{ck("build", provider.CheckSuccess), ck("lint", provider.CheckPending)}},
+			nil, review.CIPending, "CI: 0 failing, 1 pending, 1 passing"},
+		"passing": {&provider.Checks{Items: []provider.Check{ck("build", provider.CheckSuccess), ck("docs", provider.CheckSkipped)}},
+			nil, review.CIPassing, "CI: 0 failing, 0 pending, 2 passing"},
+		"none":       {&provider.Checks{}, nil, review.CINone, "CI: no checks reported"},
+		"unreadable": {nil, &provider.Error{Class: provider.ClassAuth, Status: 403, Hint: "SECRET-HINT"}, review.CIUnreadable, "CI status could not be read"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newInfoProvider()
+			f.checks, f.checksErr = tc.checks, tc.err
+			res, err := PRInfoTool(context.Background(), infoResolver{f}, testPRURL, nil)
+			if err != nil {
+				t.Fatalf("the checks failed the tool: %v", err)
+			}
+			if res.CI.State != tc.state || res.CI.Checks == nil || f.checkSHA != "0123456789abcdef0123" {
+				t.Errorf("ci = %+v, asked for %q", res.CI, f.checkSHA)
+			}
+			if tc.state == review.CIUnreadable && (res.CI.Note != review.NoteCIUnreadable || len(res.Notes) != 0) {
+				t.Errorf("note %q, notes %q", res.CI.Note, res.Notes)
+			}
+			md := RenderPRInfoMarkdown(res)
+			if !strings.Contains(md, "\n"+tc.line+"\n") || strings.Contains(md, "SECRET-HINT") {
+				t.Errorf("markdown lacks %q:\n%s", tc.line, md)
+			}
+			raw, _ := json.Marshal(res)
+			if !strings.Contains(string(raw), `"ci":{"state":"`+tc.state+`"`) || strings.Contains(string(raw), "SECRET-HINT") {
+				t.Errorf("json = %s", raw)
+			}
+		})
+	}
+}
+
+// TestPRInfoToolCIHostileName: a check name cannot change the markdown.
+func TestPRInfoToolCIHostileName(t *testing.T) {
+	f := newInfoProvider()
+	f.checks = &provider.Checks{Items: []provider.Check{{Name: "x](https://example.com/evil) <img src=x> **b**\n# h", State: provider.CheckFailure}}}
+	res, err := PRInfoTool(context.Background(), infoResolver{f}, testPRURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	md := RenderPRInfoMarkdown(res)
+	for _, live := range []string{" <img", "x](https://example.com/evil)", " **b**", "\n# h"} {
+		if strings.Contains(md, live) {
+			t.Errorf("%q is live in\n%s", live, md)
+		}
 	}
 }

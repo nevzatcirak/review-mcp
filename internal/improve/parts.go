@@ -153,7 +153,8 @@ func (pl *Plan) planParts(ctx context.Context, dIn diffpipe.Input, in PromptInpu
 // partsCoverage is the coverage of a run in parts (llmrun.PartsCoverage):
 // the parts' files in part order, then the files no part reviewed. failed
 // marks the parts whose suggestion call failed (nil: none). The repository
-// context summed over the parts is added.
+// context summed over the parts is added, and the project context (X-32),
+// which every part's prompt carries.
 func (pl *Plan) partsCoverage(failed []bool) Coverage {
 	covs := make([]Coverage, len(pl.parts))
 	for i, pt := range pl.parts {
@@ -163,6 +164,7 @@ func (pl *Plan) partsCoverage(failed []bool) Coverage {
 	if pl.repoCtx.Status != "" {
 		c.RepoContext = pl.repoCtx
 	}
+	c.Guidelines, c.FileTree = pl.proj.Coverage()
 	return c
 }
 

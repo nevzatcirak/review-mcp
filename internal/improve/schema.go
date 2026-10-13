@@ -1,5 +1,7 @@
 package improve
 
+import "github.com/nevzatcirak/review-mcp/internal/llmrun"
+
 // ResultSchema is the JSON schema (draft 2020-12) of Result, for the
 // pr_improve tool's MCP output schema (v2 spec §1.7). It is a plain map, as
 // review.ResultSchema and describe.ResultSchema are. Every property is
@@ -83,6 +85,8 @@ func ResultSchema() map[string]any {
 				"references": integer("uses shown in the prompts"),
 				"files":      integer("distinct files of the uses shown, summed over the parts"),
 			}, "status", "reason", "symbols", "references", "files"),
+			"guidelines": llmrun.GuidelinesSchema("the project guidelines read at the target branch (X-32); always present for pr_improve"),
+			"file_tree":  llmrun.FileTreeSchema("the listing of the directories the change touches, at the target branch (X-32); always present for pr_improve"),
 		}, "included", "clipped", "deleted_listed", "omitted", "skipped", "filtered", "partial", "reviewed_files",
 			"total_files", "not_reviewed_files", "model_calls", "failed_parts", "repo_context"),
 		"notes": strList("notes about failed parts, self-review failures and scores, dropped or unscored suggestions, duplicates, the total cap, the discussion, truncation, clipped or trimmed files and the re-ask"),

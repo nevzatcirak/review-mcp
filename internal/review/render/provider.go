@@ -63,6 +63,9 @@ func Provider(res *review.Result, caps provider.Capabilities) string {
 	if l := runLine(res); l != "" {
 		b.WriteString(l + "\n")
 	}
+	if l := CILine(res.CI); l != "" {
+		b.WriteString(l + "\n")
+	}
 	b.WriteString("\n")
 	if caps.GFM {
 		writeGFM(&b, res, &v)

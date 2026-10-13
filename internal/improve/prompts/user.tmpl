@@ -36,6 +36,17 @@ repoctx.Header and the fenced entries). As in pr_review, it follows the PR
 Info block and precedes the part line and the diff; without one nothing is
 rendered.
 
+Intentional deviation (X-32): upstream has no project guidelines and no
+file tree. The pipeline supplies pr_review's two blocks when they are on and
+not empty: .guidelines (projctx.GuidelinesHeader with the path, and the
+guidelines file read at the pull request's base revision, fenced and cut at
+a line boundary) and .file_tree (projctx.TreeHeader and the fenced listing
+of the directories the change touches, at the base revision). They follow
+the PR Info block, guidelines first, and precede the repository context, the
+part line and the diff, as in pr_review's prompt (pr_improve has no CI
+block, and its discussion block follows the diff); without them nothing is
+rendered.
+
 Intentional deviation (v2 spec §1.3, X-19): when the pull request is
 improved in several parts, each part's prompt gets one line (.part_header,
 the fixed sentence of PartHeader) right before the diff. With one part
@@ -60,6 +71,14 @@ PR Description:
 ======
 {{ trim .description }}
 ======
+{{- end }}
+{{- if .guidelines }}
+
+{{ .guidelines }}
+{{- end }}
+{{- if .file_tree }}
+
+{{ .file_tree }}
 {{- end }}
 {{- if .repo_context }}
 

@@ -35,8 +35,14 @@ type Result struct {
 	// clipped or trimmed files, the re-ask.
 	Notes    []string `json:"notes"`
 	Metadata Metadata `json:"metadata"`
+	// CI is the head commit's CI summary (X-31); nil, and omitted, when
+	// review.ci_status is off.
+	CI *CI `json:"ci,omitempty"`
 	// Publish is set when publishing was requested.
 	Publish *PublishResult `json:"publish,omitempty"`
+	// Focus echoes the focus of a focused run (X-33): the known value, or
+	// the free text as cleaned (NormalizeFocus); omitted without one.
+	Focus string `json:"focus,omitempty"`
 }
 
 // PRInfo identifies the reviewed pull request.

@@ -39,6 +39,11 @@ Changes from upstream (v2 spec §1.1, X-27):
   shows, not for the files the diff lists by name only because they were
   left out for its size; a suggestion for such a file is dropped anyway
   (v2 spec §1.6).
+- intentional deviation (X-32): when the user prompt carries the project
+  guidelines block or the file-tree block, one more guideline line says that
+  a suggestion may call a new file misplaced, or a change a break of a
+  stated convention, only when they show it; without either block nothing
+  is rendered.
 Kept verbatim: the role and task sentences, the guidelines, the
 CodeSuggestion and PRCodeSuggestions definitions (field descriptions
 included, apart from the sentence above), the example and the closing
@@ -66,6 +71,9 @@ Specific guidelines for generating code suggestions:
 - Be aware that your input consists only of partial code segments (PR diff code), not the complete codebase. Therefore, avoid making suggestions that might duplicate existing functionality, and refrain from questioning code elements (such as variable declarations or import statements) that may be defined elsewhere in the codebase.
 - Suggest changes only for files whose changes are shown in the diff; the diff may also list files by name only, left out because of its size: do not suggest changes for those.
 - When mentioning code elements (variables, names, or files) in your response, surround them with backticks (`). For example: "verify that `user_id` is..."
+{{- if or .guidelines .file_tree }}
+- A suggestion may say that a new file looks misplaced or that a change breaks a stated convention only when the project guidelines or the directory listing show it.
+{{- end }}
 {{- if .extra_instructions }}
 
 

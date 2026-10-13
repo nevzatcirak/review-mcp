@@ -40,6 +40,14 @@ type PRReviewArgs struct {
 	// InlineFindings is nil when the argument was not given; review.
 	// inline_findings then decides.
 	InlineFindings *bool
+	// Focus is the focus argument as given ("" when not given); Findings
+	// is nil when the findings argument was not given. SecurityConcerns and
+	// PerformanceConcerns are "" when not given. review.Args.Validated
+	// checks how they combine (X-33).
+	Focus               string
+	Findings            []review.SuppliedFinding
+	SecurityConcerns    string
+	PerformanceConcerns string
 }
 
 // Validate checks the optional arguments before any network call. It returns
@@ -85,6 +93,26 @@ func PreparePRReview(deps ReviewDeps, a PRReviewArgs) (*ReviewCall, error) {
 	if err := a.Validate(); err != nil {
 		return nil, err
 	}
+	args := review.Args{
+		PRURL:               a.PRURL,
+		ExtraInstructions:   a.ExtraInstructions,
+		OutputLanguage:      a.OutputLanguage,
+		Publish:             a.Publish,
+		Focus:               a.Focus,
+		Findings:            a.Findings,
+		SecurityConcerns:    a.SecurityConcerns,
+		PerformanceConcerns: a.PerformanceConcerns,
+	}
+	if a.MaxFindings != nil {
+		args.MaxFindings = *a.MaxFindings
+	}
+	// The modes of X-33 are checked before anything is built: a focused
+	// call with publish=true, or findings without it, is refused before any
+	// provider or model request.
+	args, err := args.Validated(deps.Config)
+	if err != nil {
+		return nil, err
+	}
 	client, err := deps.NewLLM(deps.Config, deps.Logger)
 	if err != nil {
 		return nil, err
@@ -94,15 +122,6 @@ func PreparePRReview(deps ReviewDeps, a PRReviewArgs) (*ReviewCall, error) {
 		return nil, err
 	}
 	deps.Resolver = resolver
-	args := review.Args{
-		PRURL:             a.PRURL,
-		ExtraInstructions: a.ExtraInstructions,
-		OutputLanguage:    a.OutputLanguage,
-		Publish:           a.Publish,
-	}
-	if a.MaxFindings != nil {
-		args.MaxFindings = *a.MaxFindings
-	}
 	args.InlineFindings = a.InlineFindings
 	// The options the call leaves unset come from the configuration; the
 	// persistent overview and the discussion budget have no tool argument.

@@ -74,6 +74,78 @@ type fakeProvider struct {
 	inlineThreads []provider.Thread
 	// skipped are files the provider reports as skipped (binary, too large).
 	skipped []provider.SkippedFile
+	// checks are the head commit's CI checks and checksErr fails GetChecks;
+	// checkCalls counts the calls and checkSHA is the commit asked for.
+	checks     *provider.Checks
+	checksErr  error
+	checkCalls int
+	checkSHA   string
+	// revs are the repository's files (path to content) at a revision (a
+	// SHA), which GetFileAt and ListDir serve (X-32); a revision not in it
+	// is unknown, so every path is not_found. reads records each call as
+	// "file <path>@<rev>" or "dir <dir>@<rev>", and readErr fails both.
+	revs    map[string]map[string]string
+	reads   []string
+	readErr error
+}
+
+func (f *fakeProvider) GetFileAt(_ context.Context, _ provider.PRRef, path, rev string) ([]byte, error) {
+	f.reads = append(f.reads, "file "+path+"@"+rev)
+	if f.readErr != nil {
+		return nil, f.readErr
+	}
+	c, ok := f.revs[rev][path]
+	if !ok {
+		return nil, &provider.Error{Class: provider.ClassNotFound, Status: 404}
+	}
+	return []byte(c), nil
+}
+
+func (f *fakeProvider) ListDir(_ context.Context, _ provider.PRRef, dir, rev string) (*provider.DirListing, error) {
+	f.reads = append(f.reads, "dir "+dir+"@"+rev)
+	if f.readErr != nil {
+		return nil, f.readErr
+	}
+	entries, ok := dirOf(f.revs[rev], dir)
+	if !ok {
+		return nil, &provider.Error{Class: provider.ClassNotFound, Status: 404}
+	}
+	return provider.FinishDirListing(entries, false), nil
+}
+
+// dirOf lists the direct entries of dir ("" for the root) of a tree given
+// as path to content; ok is false when no path is under dir.
+func dirOf(tree map[string]string, dir string) (entries []provider.DirEntry, ok bool) {
+	prefix := ""
+	if dir != "" {
+		prefix = dir + "/"
+	}
+	seen := map[string]bool{}
+	for p := range tree {
+		rest, found := strings.CutPrefix(p, prefix)
+		if !found || rest == "" {
+			continue
+		}
+		name, _, isDir := strings.Cut(rest, "/")
+		if !seen[name] {
+			seen[name] = true
+			entries = append(entries, provider.DirEntry{Name: name, Dir: isDir})
+		}
+	}
+	return entries, len(seen) > 0
+}
+
+func (f *fakeProvider) GetChecks(_ context.Context, _ provider.PRRef, sha string) (*provider.Checks, error) {
+	f.checkCalls++
+	f.checkSHA = sha
+	if f.checksErr != nil {
+		return nil, f.checksErr
+	}
+	if f.checks == nil {
+		return &provider.Checks{}, nil
+	}
+	c := *f.checks
+	return &c, nil
 }
 
 type edit struct{ id, body string }
@@ -286,6 +358,18 @@ func sampleFiles() []provider.FilePatch {
 	}
 }
 
+// sampleBaseTree is the repository at the base revision of sampleFiles'
+// pull request (X-32): the two changed Go files, an unchanged one, and no
+// guidelines file.
+func sampleBaseTree() map[string]string {
+	return map[string]string{
+		"README.md":     "# Demo\n",
+		"src/app.go":    numberedLines(1, 19, nil),
+		"src/util.go":   "a\nc\n",
+		"src/errors.go": "package src\n",
+	}
+}
+
 const goodAnswer = "```yaml\nreview:\n" +
 	"  estimated_effort_to_review: 2\n" +
 	"  relevant_tests: |\n    No\n" +
@@ -323,8 +407,9 @@ func newHarness(answers ...string) *harness {
 	h := &harness{logs: &bytes.Buffer{}}
 	h.prov = &fakeProvider{
 		pr: provider.PullRequest{Title: "Retry " + titleMarker, Description: "Adds a retry. " + descMarker,
-			SourceBranch: "feature/retry", HeadSHA: "abc"},
+			SourceBranch: "feature/retry", HeadSHA: "abc", BaseSHA: "base0"},
 		files: sampleFiles(),
+		revs:  map[string]map[string]string{"base0": sampleBaseTree()},
 		me:    provider.User{ID: "5", Name: "review-bot"},
 	}
 	h.resolver = &fakeResolver{p: h.prov}

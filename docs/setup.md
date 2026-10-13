@@ -99,6 +99,7 @@ Use a read-only token to start. `pr_review`, `pr_ask`, `pr_describe` and
 | Read and write: `publish=true`, `pr_comment_reply`, `pr_comment_create` | the read scopes plus the write scope |
 | `pr_improve` with `publish=true` | the same as `pr_review` with `publish=true`: comment write for the overview (Gitea `write:issue`) and the write scope for the inline comments (Gitea `write:repository`); see [Suggesting code changes](improve.md#permissions) |
 | `pr_describe` with `publish=true` and `publish_mode=description` (also `update_title`) | the read scopes plus write access to the pull request itself, not only to its comments (see the `PATCH` and `PUT` rows below) |
+| CI results (`pr_info`, and `pr_review` unless `review.ci_status` is false), the guidelines file and the file tree (`pr_review`, `pr_improve`) | Gitea and Bitbucket Server: nothing beyond the read scopes (the commit status or build status, and file contents at the target branch). GitHub: **Commit statuses: Read** and **Checks: Read** for the CI results (fine-grained token; a classic token's `repo` scope covers them), **Contents: Read** for the guidelines and the tree. See the endpoint tables below |
 | GitHub, any use | see [GitHub](#github) below: a fine-grained token with Pull requests, Contents and Metadata, or a classic `repo` / `public_repo` token |
 
 > **Every scope in this guide is unconfirmed.** They are derived from the API
@@ -131,6 +132,8 @@ Endpoints the Gitea provider calls (under `{base_url}/api/v1/repos/{owner}/{repo
 | `GET /pulls/{n}.diff` | the unified diff | `read:repository` | `internal/provider/gitea/diff.go` (`GetDiff`) |
 | `GET /pulls/{n}/files` | the list of changed files | `read:repository` | `internal/provider/gitea/diff.go` (`GetDiff`) |
 | `GET /raw/{path}?ref={sha}` | full file contents on both sides, for extra context | `read:repository` | `internal/provider/gitea/diff.go` (`rawPath`, `fetchSide`) |
+| `GET /commits/{sha}/status` | the CI results of the head commit (`pr_review`, `pr_info`): the combined commit status, paged | `read:repository` (verify at the 2F acceptance) | `internal/provider/gitea/reads.go` (`GetChecks`) |
+| `GET /raw/{path}?ref={base_sha}` and `GET /contents[/{dir}]?ref={base_sha}` | the guidelines file and the listing of the touched directories at the base revision (`pr_review`, `pr_improve`) | `read:repository` (verify at the 2F acceptance) | `internal/provider/gitea/reads.go` (`GetFileAt`, `ListDir`) |
 | `GET /pulls/{n}/reviews` and `GET /pulls/{n}/reviews/{id}/comments` | inline review comments (`pr_comments`, reply lookup); before posting inline comments, a check for a pending review of the token's user; after posting, the posted comments' links | `read:repository` | `internal/provider/gitea/comments.go` (`reviewComments`), `internal/provider/gitea/write.go` (`PostInlineComments`) |
 | `POST /pulls/{n}/reviews` | inline comments (`publish=true`, and `pr_comment_create` with `file` and `line`), posted as one review with event `COMMENT` on the head commit (one review per comment if that fails) | `write:repository` | `internal/provider/gitea/write.go` (`PostInlineComments`) |
 | `DELETE /pulls/{n}/reviews/{id}` | delete a pending review of the token's user that a failed post left behind | `write:repository` | `internal/provider/gitea/write.go` (`deletePending`) |
@@ -176,6 +179,8 @@ includes your context path):
 | `GET /rest/api/1.0/projects/{key}/repos/{slug}/commits?since=..&until=..` | ancestor walk fallback | read | `internal/provider/bitbucketserver/base.go` (`ancestorWalk`) |
 | `GET .../pull-requests/{id}/changes` | the list of changed files | read | `internal/provider/bitbucketserver/diff.go` (`GetDiff`) |
 | `GET /rest/api/1.0/projects/{key}/repos/{slug}/raw/{path}?at={sha}` | file contents on both sides; the patch is built from them | read | `internal/provider/bitbucketserver/diff.go` (`rawPath`, `fetchSide`) |
+| `GET /rest/api/latest/projects/{key}/repos/{slug}/commits/{sha}/builds`; on a 404 only, `GET /rest/build-status/1.0/commits/{sha}` | the CI results of the head commit (`pr_review`, `pr_info`): the build statuses, paged | read (verify at the 2F acceptance) | `internal/provider/bitbucketserver/reads.go` (`GetChecks`) |
+| `GET /rest/api/1.0/projects/{key}/repos/{slug}/raw/{path}?at={base_sha}` and `GET .../browse[/{dir}]?at={base_sha}` | the guidelines file and the listing of the touched directories at the base revision (`pr_review`, `pr_improve`) | read (verify at the 2F acceptance) | `internal/provider/bitbucketserver/reads.go` (`GetFileAt`, `ListDir`) |
 | `GET .../pull-requests/{id}/activities` | comment threads (`pr_comments`, reply lookup) | read | `internal/provider/bitbucketserver/comments.go` (`ListThreads`) |
 | `GET .../pull-requests/{id}` (again) and `GET .../pull-requests/{id}/merge` | `pr_info`: the reviewers with their status, and whether the pull request can be merged and why not (an open pull request only) | read | `internal/provider/bitbucketserver/status.go` (`GetReviewStatus`) |
 | `POST .../pull-requests/{id}/comments` | PR-level comment (`publish=true`, `pr_comment_create` without a file) | write | `internal/provider/bitbucketserver/bitbucketserver.go` (`PostComment`) |
@@ -208,9 +213,14 @@ personal access token (not an app or an OAuth flow). The full reference is
    - **Fine-grained token (recommended).** Choose the resource owner that
      owns the repository, select only the repositories you review, and under
      **Repository permissions** set **Pull requests** to *Read and write*,
-     **Contents** to *Read-only* and **Metadata** to *Read-only* (it is
+     **Contents** to *Read-only*, **Commit statuses** to *Read-only*,
+     **Checks** to *Read-only* and **Metadata** to *Read-only* (it is
      selected for you). For read-only use, *Read-only* on Pull requests is
-     enough.
+     enough. **Commit statuses** and **Checks** are needed only for the CI
+     results (`pr_info`, and `pr_review` unless `review.ci_status` is
+     false); with only one of them the CI results are partial with a note,
+     without both the CI state is `unreadable` with a note, and everything
+     else works.
    - **Classic token.** Select the scope `repo` (private repositories), or
      `public_repo` if you only use public repositories.
 2. If your organisation uses SAML single sign-on, authorise the token for it
@@ -228,6 +238,7 @@ personal access token (not an app or an OAuth flow). The full reference is
 |---|---|---|
 | Read only | fine-grained: Pull requests read, Contents read, Metadata read; classic: `repo` or `public_repo` | verify at the v2 acceptance (items Q1 to Q4) |
 | Read and write | fine-grained: Pull requests read and write, Contents read, Metadata read; classic: the same `repo` or `public_repo` | verify at the v2 acceptance (items Q1 to Q4) |
+| CI results (`pr_info`, `pr_review`) | fine-grained: Commit statuses read and Checks read (both: the read fails as a whole when one is missing); classic: the `repo` scope you already have covers them | verify at the 2F acceptance |
 | `pr_info` required approvals from classic branch protection (optional) | fine-grained: Administration read; classic: admin rights on the repository | without it the count comes from the rulesets, with a note |
 
 Endpoints the GitHub provider calls (under the API base; `{r}` is
@@ -239,6 +250,8 @@ Endpoints the GitHub provider calls (under the API base; `{r}` is
 | `GET {r}/compare/{base}...{head}` | the merge base (`github:merge_base`); on any failure the base revision of the pull request is used (`github:base_sha`) | Contents read | `internal/provider/github/github.go` |
 | `GET {r}/pulls/{n}/files` and `GET {r}/pulls/{n}/commits` | the changed files and their patches (at most 3000), the commit messages (at most 250), followed through the `Link` header | Pull requests read | `internal/provider/github/diff.go`, `github.go` |
 | `GET {r}/contents/{path}?ref={sha}` | the full file contents of both sides, for extra context, as raw content | Contents read | `internal/provider/github/diff.go` |
+| `GET {r}/commits/{sha}/check-runs` and `GET {r}/commits/{sha}/status` | the CI results of the head commit (`pr_review`, `pr_info`): the check runs and the combined commit status, followed through the `Link` header (at most 10 pages of 100 each), merged by name | Checks read (check runs), Commit statuses read (status); verify at the 2F acceptance | `internal/provider/github/reads.go` (`GetChecks`) |
+| `GET {r}/contents/{path}?ref={base_sha}` and `GET {r}/contents/{dir}?ref={base_sha}` | the guidelines file and the listing of the touched directories at the base revision (`pr_review`, `pr_improve`) | Contents read | `internal/provider/github/reads.go` (`GetFileAt`, `ListDir`) |
 | `GET {r}/issues/{n}/comments`, `GET {r}/pulls/{n}/comments`, `GET {r}/pulls/{n}/reviews` | `pr_comments`, reply lookup, `pr_info` | Pull requests read | `internal/provider/github/comments.go`, `status.go` |
 | `GET {r}/issues/comments/{id}`, `GET {r}/pulls/comments/{id}`, `GET {r}/pulls/{n}/reviews/{id}` | find the comment a reply or an edit refers to; read a comment and check its author before editing it | Pull requests read | `internal/provider/github/comments.go` (`locate`) |
 | `GET /user` | the token's own user | any token | `internal/provider/github/github.go` (`CurrentUser`) |

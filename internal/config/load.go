@@ -57,6 +57,9 @@ func LoadWith(src Source, opts LoadOptions) (*Config, *Report, error) {
 	}
 	l.loadSecrets()
 	l.warnUnknownEnv()
+	// A missing guidelines file is noted only when the paths were chosen by
+	// the user (X-32), so the pipelines need to know where they came from.
+	cfg.Review.GuidelinesPathsExplicit = rep.Sources["review.guidelines_paths"] != OriginDefault
 	l.validate()
 
 	if len(l.problems) > 0 {

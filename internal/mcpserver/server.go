@@ -105,12 +105,24 @@ func requestHeader(req *mcp.CallToolRequest) http.Header {
 // serverInfoDescription is the one-sentence tool description.
 const serverInfoDescription = "Reports the review-mcp version, enabled providers, and the effective non-secret configuration, including configuration problems."
 
-// New builds an MCP server with every tool registered. The transport is
+// serverInstructions are the server's initialize instructions: one line
+// naming the server, and the focused-review pattern of X-33 (spec 2F §4.3).
+// The server never fans out on its own; the client runs the focused
+// reviews.
+const serverInstructions = "review-mcp reviews, describes and discusses pull requests on Gitea, Bitbucket Server and GitHub " +
+	"with a configured LLM.\n\n" +
+	"For a thorough review, run pr_review with focus for several areas (for example security, architecture, " +
+	"performance and tests), in parallel if you can; merge the findings and drop duplicates; then call pr_review " +
+	"once with the merged findings and publish=true, which publishes them without another model call. Never " +
+	"publish from a focused run: pr_review refuses focus together with publish=true. The multi_perspective_review " +
+	"prompt gives these steps for one pull request."
+
+// New builds an MCP server with every tool and the prompt registered. The transport is
 // chosen by the caller, so a future HTTP mode can reuse it.
 func New(deps Deps) *mcp.Server {
 	s := mcp.NewServer(
 		&mcp.Implementation{Name: tools.ServerName, Version: version.Info().Version},
-		&mcp.ServerOptions{Logger: sdkLogger(deps.Logger, deps.Serve)},
+		&mcp.ServerOptions{Logger: sdkLogger(deps.Logger, deps.Serve), Instructions: serverInstructions},
 	)
 	if deps.Serve {
 		s.AddReceivingMiddleware(concurrencyGate(deps))
@@ -127,6 +139,7 @@ func New(deps Deps) *mcp.Server {
 	if deps.background() {
 		registerJobResult(s, deps)
 	}
+	registerMultiPerspectivePrompt(s)
 	return s
 }
 

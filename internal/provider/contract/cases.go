@@ -1008,7 +1008,8 @@ func (s *suite) fileLineURL(t *testing.T) {
 // call, in order.
 var failureCallNames = []string{
 	"GetPullRequest", "GetCommitMessages", "GetDiff", "ListThreads", "CurrentUser", "PostComment",
-	"ReplyToComment", "EditComment", "UpdatePullRequest", "PostInlineComments", "GetReviewStatus",
+	"ReplyToComment", "EditComment", "UpdatePullRequest", "GetChecks", "GetFileAt", "ListDir",
+	"PostInlineComments", "GetReviewStatus",
 }
 
 // errorCases: 401, 403, 404, 500 and a network failure map to the error
@@ -1061,6 +1062,9 @@ func (s *suite) checkFailures(t *testing.T, p provider.Provider, ref provider.PR
 		{"UpdatePullRequest", func() error {
 			return p.UpdatePullRequest(ctx, ref, provider.UpdatePR{Title: strPtr("A title."), Version: "0"})
 		}},
+		{"GetChecks", func() error { _, err := p.GetChecks(ctx, ref, spec.HeadSHA); return err }},
+		{"GetFileAt", func() error { _, err := p.GetFileAt(ctx, ref, pathModified, spec.BaseSHA); return err }},
+		{"ListDir", func() error { _, err := p.ListDir(ctx, ref, "src", spec.BaseSHA); return err }},
 	}
 	names := []string{}
 	for _, c := range calls {

@@ -160,6 +160,18 @@ re-fetchable copies. Entries of the pre-release layout
 (`<host>/<namespace>/<repo>`, without the `<base>` level) are neither listed
 nor swept; delete them by hand.
 
+### Guidelines and the file tree from the cache
+
+`pr_review` and `pr_improve` read the project's guidelines file and the listing
+of the touched directories at the target branch
+([Project guidelines and file tree](review.md#project-guidelines-and-file-tree)).
+When this run has already fetched the head and the cache holds the base commit,
+they are read from the cache with offline `git` commands only (no credential, no
+network, no filters or hooks), with the same rules and notes as through the API;
+otherwise through the provider's API. The base commit is never fetched for this.
+The fetch of the head is shallow, so in practice the API answers most of the
+time.
+
 ## Why not in serve mode
 
 A shared server would hold code fetched with one user's token, and another user
@@ -254,6 +266,7 @@ nothing is shown when repository context is off. The structured result has
 | `unsupported` | The repository cannot be fetched with `git` (no base URL, an unusable name or head). |
 | `budget` | The diff needs the room: the context window leaves none for the block. |
 | `nothing_to_review` | The diff is empty after filtering, so no model call and no context. |
+| `client_findings` | The call was a publish of findings supplied by the client (`pr_review` with `findings`); no prompt is sent, so nothing is read ([Focused reviews](review.md#focused-reviews-and-the-merged-publish)). |
 
 A review in parts is `used` when at least one part searched the repository, and
 a note names the parts that lack it; it is `skipped` when none did.

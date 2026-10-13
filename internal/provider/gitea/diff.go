@@ -102,12 +102,17 @@ func validRawPath(path string) bool {
 	return true
 }
 
-func rawPath(repo, path, sha string) string {
+// escapePath escapes every segment of a repository path.
+func escapePath(path string) string {
 	segs := strings.Split(path, "/")
 	for i, s := range segs {
 		segs[i] = url.PathEscape(s)
 	}
-	return repo + "/raw/" + strings.Join(segs, "/") + "?ref=" + url.QueryEscape(sha)
+	return strings.Join(segs, "/")
+}
+
+func rawPath(repo, path, sha string) string {
+	return repo + "/raw/" + escapePath(path) + "?ref=" + url.QueryEscape(sha)
 }
 
 // GetDiff implements provider.Provider.
@@ -235,11 +240,7 @@ func (p *Provider) fetchContent(ctx context.Context, repo string, t fetchTask) (
 	if ctx.Err() != nil {
 		return nil, provider.ContentFetchFailed
 	}
-	if t.sha == "" || !validRawPath(t.path) {
-		p.logger.Debug("gitea content fetch skipped: unusable path or revision", "path", t.path)
-		return nil, provider.ContentFetchFailed
-	}
-	data, _, err := p.client.Get(ctx, rawPath(repo, t.path, t.sha), p.maxFile, capKeyFile)
+	data, err := p.getRaw(ctx, repo, t.path, t.sha)
 	if err != nil {
 		var perr *provider.Error
 		if errors.As(err, &perr) && perr.Class == provider.ClassTooLarge {
@@ -250,6 +251,18 @@ func (p *Provider) fetchContent(ctx context.Context, repo string, t fetchTask) (
 	}
 	s := string(data)
 	return &s, provider.ContentFull
+}
+
+// getRaw reads the raw content of path at sha, capped at
+// diff.max_file_bytes. It is the one content request of GetDiff and
+// GetFileAt. An unusable path or revision is a protocol error, with no
+// request.
+func (p *Provider) getRaw(ctx context.Context, repo, path, sha string) ([]byte, error) {
+	if !provider.ValidRevision(sha) || !validRawPath(path) {
+		return nil, protocolErr("unusable path or revision")
+	}
+	data, _, err := p.client.Get(ctx, rawPath(repo, path, sha), p.maxFile, capKeyFile)
+	return data, err
 }
 
 func sideName(base bool) string {

@@ -37,6 +37,12 @@ type Traits struct {
 	// BaseStrategies lists the PullRequest.BaseStrategy values the provider
 	// documents (the provider.Base* constants). Required.
 	BaseStrategies []string
+	// CheckStrategies lists the Checks.Strategy values the provider
+	// documents (the provider.Checks* constants). Required.
+	CheckStrategies []string
+	// CheckStates lists the check states the provider's host can report;
+	// the checks cases serve only checks in these states. Nil means all six.
+	CheckStates []provider.CheckState
 	// OmitsNoNewlineMarker is true for a provider that builds patches from
 	// file contents and never emits "\ No newline at end of file" (Bitbucket
 	// Server, upstream parity). Consumers must not rely on the marker
@@ -68,6 +74,9 @@ func Run(t *testing.T, f Fixture) {
 	if len(tr.BaseStrategies) == 0 {
 		t.Fatal("the fixture declares no base strategies (Traits.BaseStrategies)")
 	}
+	if len(tr.CheckStrategies) == 0 {
+		t.Fatal("the fixture declares no check strategies (Traits.CheckStrategies)")
+	}
 	s := &suite{f: f, tr: tr}
 	cases := []struct {
 		name string
@@ -86,6 +95,9 @@ func Run(t *testing.T, f Fixture) {
 		{"review_status", s.reviewStatus},
 		{"file_line_url", s.fileLineURL},
 		{"update_pull_request", s.updatePullRequest},
+		{"checks", s.checks},
+		{"file_at", s.fileAt},
+		{"list_dir", s.listDir},
 		{"errors", s.errorCases},
 	}
 	for _, c := range cases {

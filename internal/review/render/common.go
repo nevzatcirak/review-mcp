@@ -276,3 +276,71 @@ func indentLines(s, indent string) string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+// Fixed texts of the CI line (X-31).
+const (
+	textCINone       = "CI: no checks reported"
+	textCIUnreadable = "CI status could not be read"
+	textCIIncomplete = "more checks exist than were read"
+	textCIPartial    = "only part of the CI results could be read with this token"
+	// ciListedFailing is the most failing checks the line names.
+	ciListedFailing = 5
+)
+
+// CILine is the renderer-built CI line of the overview and of pr_info
+// (X-31): "CI: N failing, M pending, K passing", with the failing checks
+// named after it, or one of two fixed sentences. Neutral and skipped checks
+// count as passing, as in the state "passing". A partial or truncated read
+// adds a fixed suffix (the partial one also to "no checks reported"). It
+// returns "" for a nil ci.
+// Check names are untrusted: each goes through mdutil.Inline (one line, no
+// markdown or HTML survives), and a link only through safeLink. It is plain
+// markdown without HTML, so it is the same for every provider and the
+// client.
+func CILine(ci *review.CI) string {
+	if ci == nil {
+		return ""
+	}
+	switch ci.State {
+	case review.CINone:
+		if ci.IsPartial() {
+			return textCINone + "; " + textCIPartial
+		}
+		return textCINone
+	case review.CIUnreadable:
+		return textCIUnreadable
+	}
+	line := "CI: " + strconv.Itoa(ci.Counts.Failing()) + " failing, " + strconv.Itoa(ci.Counts.Pending) +
+		" pending, " + strconv.Itoa(ci.Counts.Passing()) + " passing"
+	var names []string
+	for _, c := range ci.Checks {
+		if c.State != string(provider.CheckFailure) && c.State != string(provider.CheckError) {
+			continue
+		}
+		if len(names) == ciListedFailing {
+			break
+		}
+		name := mdutil.Inline(c.Name)
+		if name == "" {
+			name = "unnamed"
+		}
+		if l := safeLink(c.URL); l != "" {
+			name = "[" + name + "](" + l + ")"
+		}
+		names = append(names, name)
+	}
+	if len(names) > 0 {
+		line += " (failing: " + strings.Join(names, ", ")
+		if more := ci.Counts.Failing() - len(names); more > 0 {
+			line += " and " + strconv.Itoa(more) + " more"
+		}
+		line += ")"
+	}
+	if ci.IsPartial() {
+		line += "; " + textCIPartial
+	}
+	if ci.IsTruncated() {
+		line += "; " + textCIIncomplete
+	}
+	return line
+}

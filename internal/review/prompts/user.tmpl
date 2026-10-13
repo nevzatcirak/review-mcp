@@ -40,6 +40,33 @@ part reviews (or that no part reviews), ends its first line with a mark in
 parentheses: "(changed in this pull request; reviewed in part J)" or
 "(changed in this pull request; not reviewed)". The uses are read from the
 head commit, so they show the new version of that file. The block's fixed intro sentence says that such entries are reviewed in another part or not at all.
+
+Intentional deviation (X-31): upstream has no CI results. When review.ci_status
+is on and the head commit has checks, the pipeline supplies one block (.ci,
+already rendered: the fixed header of CIHeader and the failing and pending
+checks inside an adaptive code fence). It follows the discussion block and
+precedes the repository context; without one nothing is rendered, so the
+prompt is byte-identical to the one without the feature.
+
+Intentional deviation (X-32): upstream has no project guidelines and no
+file tree. When review.guidelines_paths names a file that exists at the
+pull request's base revision, the pipeline supplies .guidelines (the fixed
+header of projctx.GuidelinesHeader, with the path, and the file's text
+inside an adaptive code fence, cut at a line boundary to its budget); when
+review.file_tree is on, it supplies .file_tree (the fixed header of
+projctx.TreeHeader and the listing of the directories the change touches,
+at the base revision, inside an adaptive code fence). Both follow the CI
+block and precede the repository context, guidelines first; without them
+nothing is rendered, so the prompt is byte-identical to the one without the
+feature.
+
+Intentional deviation (X-33): upstream has no focused review. When a
+focused run's focus is a free text, the pipeline supplies .focus_block (the
+fixed header of FocusHeader and "Focus only on: <text>" inside an adaptive
+code fence). It follows the repository context and precedes the part line
+and the diff; a known focus value and no focus render nothing here, so the
+prompt is byte-identical to the one without the feature (the known values'
+sentences are in the system prompt).
 */}}
 
 
@@ -63,9 +90,25 @@ PR Description:
 
 {{ .discussion }}
 {{- end }}
+{{- if .ci }}
+
+{{ .ci }}
+{{- end }}
+{{- if .guidelines }}
+
+{{ .guidelines }}
+{{- end }}
+{{- if .file_tree }}
+
+{{ .file_tree }}
+{{- end }}
 {{- if .repo_context }}
 
 {{ .repo_context }}
+{{- end }}
+{{- if .focus_block }}
+
+{{ .focus_block }}
 {{- end }}
 {{- if .part_header }}
 

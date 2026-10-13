@@ -29,11 +29,31 @@ func TestReviewDuplicates(t *testing.T) {
 	contract.RunReviewDuplicates(t, ctFixture{})
 }
 
+// TestReviewCI runs pr_review's CI scenario (X-31) through this provider and
+// the contract fake.
+func TestReviewCI(t *testing.T) {
+	contract.RunReviewCI(t, ctFixture{})
+}
+
+// TestReviewProject runs the project-context scenario (X-32) of pr_review
+// and pr_improve through this provider and the contract fake.
+func TestReviewProject(t *testing.T) {
+	contract.RunReviewProject(t, ctFixture{})
+}
+
+// TestReviewFindings runs pr_review's publish of supplied findings (X-33)
+// through this provider and the contract fake.
+func TestReviewFindings(t *testing.T) {
+	contract.RunReviewFindings(t, ctFixture{})
+}
+
 const (
 	ctPrefix    = "/bitbucket" // context path
 	ctRepo      = "/rest/api/1.0/projects/PROJ/repos/demo"
 	ctPull      = ctRepo + "/pull-requests/7"
 	ctLatest    = "/rest/api/latest/projects/PROJ/repos/demo/pull-requests/7"
+	ctBuilds    = "/rest/api/latest/projects/PROJ/repos/demo/commits/" // + {sha}/builds
+	ctLegacy    = "/rest/build-status/1.0/commits/"                    // + {sha}
 	ctProps     = "/rest/api/1.0/application-properties"
 	ctTargetSHA = "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3" // head of the target branch
 	ctOlderSHA  = "d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4" // an older PR commit, for stale verdicts
@@ -47,6 +67,8 @@ func (ctFixture) Kind() provider.Kind { return provider.KindBitbucketServer }
 func (ctFixture) Traits() contract.Traits {
 	return contract.Traits{
 		BaseStrategies:       bitbucketserver.BaseStrategies(),
+		CheckStrategies:      bitbucketserver.CheckStrategies(),
+		CheckStates:          []provider.CheckState{provider.CheckSuccess, provider.CheckFailure, provider.CheckPending, provider.CheckNeutral},
 		OmitsNoNewlineMarker: true,
 	}
 }
@@ -268,6 +290,16 @@ func (b *ctBBS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ctJSON(w, http.StatusOK, map[string]any{"canMerge": true, "conflicted": false, "vetoes": []any{}})
 	case get && strings.HasPrefix(path, ctRepo+"/raw/"):
 		b.serveRaw(w, r, strings.TrimPrefix(path, ctRepo+"/raw/"))
+	case get && strings.HasPrefix(path, ctBuilds) && strings.HasSuffix(path, "/builds"):
+		if b.pr.Env.LegacyChecks {
+			contract.WriteError(w, http.StatusNotFound) // an older server: no such endpoint
+			return
+		}
+		b.serveBuilds(w, r, strings.TrimSuffix(strings.TrimPrefix(path, ctBuilds), "/builds"))
+	case get && strings.HasPrefix(path, ctLegacy):
+		b.serveBuilds(w, r, strings.TrimPrefix(path, ctLegacy))
+	case get && (path == ctRepo+"/browse" || strings.HasPrefix(path, ctRepo+"/browse/")):
+		b.serveBrowse(w, r, strings.TrimPrefix(strings.TrimPrefix(path, ctRepo+"/browse"), "/"))
 	case r.Method == http.MethodPost && path == ctPull+"/comments":
 		b.postComment(w, r)
 	case strings.HasPrefix(path, ctPull+"/comments/"):
@@ -338,18 +370,100 @@ func (b *ctBBS) serveRaw(w http.ResponseWriter, r *http.Request, escaped string)
 		contract.WriteError(w, http.StatusBadRequest)
 		return
 	}
-	sha := r.URL.Query().Get("at")
-	for _, f := range b.pr.Files {
-		switch {
-		case f.Type != provider.ChangeAdded && sha == b.pr.BaseSHA && p == f.BasePath():
-			_, _ = io.WriteString(w, f.Base)
-			return
-		case f.Type != provider.ChangeDeleted && sha == b.pr.HeadSHA && p == f.Path:
-			_, _ = io.WriteString(w, f.Head)
-			return
-		}
+	if content, ok := b.pr.FileAt(r.URL.Query().Get("at"), p); ok {
+		_, _ = io.WriteString(w, content) //nolint:gosec // test fake; the content is a fixed Spec fixture, not request input
+		return
 	}
 	contract.WriteError(w, http.StatusNotFound)
+}
+
+// ctBuildStates are the build states the fake serves for each check
+// state; ctUnknownState is one Bitbucket does not document.
+var ctBuildStates = map[provider.CheckState]string{
+	provider.CheckSuccess: "SUCCESSFUL", provider.CheckFailure: "FAILED", provider.CheckPending: "INPROGRESS",
+	provider.CheckNeutral: "UNKNOWN",
+}
+
+const ctUnknownState = "MYSTERY"
+
+// ctWindow returns the page of a start/limit resource that r asks for
+// (limit 25 when absent, as Bitbucket's default).
+func ctWindow(r *http.Request, values []any) map[string]any {
+	start, err := strconv.Atoi(r.URL.Query().Get("start"))
+	if err != nil || start < 0 {
+		start = 0
+	}
+	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil || limit < 1 {
+		limit = 25
+	}
+	start = min(start, len(values))
+	end := min(start+limit, len(values))
+	pg := map[string]any{"values": append([]any{}, values[start:end]...), "size": end - start, "start": start,
+		"limit": limit, "isLastPage": end == len(values)}
+	if end < len(values) {
+		pg["nextPageStart"] = end
+	}
+	return pg
+}
+
+// serveBuilds answers either build status list of the head commit; another
+// commit is unknown (404). A build without a name is named by its key.
+func (b *ctBBS) serveBuilds(w http.ResponseWriter, r *http.Request, sha string) {
+	if sha != b.pr.HeadSHA {
+		contract.WriteError(w, http.StatusNotFound)
+		return
+	}
+	var all []any
+	for i, c := range b.pr.Checks {
+		state, ok := ctBuildStates[c.State]
+		if c.Unknown {
+			state, ok = ctUnknownState, true
+		}
+		if !ok {
+			b.t.Errorf("check %q: state %q cannot be served", c.Name, c.State)
+		}
+		build := map[string]any{"state": state, "key": c.Name, "url": c.URL, "description": "synthetic",
+			"dateAdded": ctMillis(time.Date(2026, 1, 3, 0, 0, i, 0, time.UTC))}
+		if i%2 == 0 {
+			build["name"] = c.Name
+		}
+		all = append(all, build)
+	}
+	ctJSON(w, http.StatusOK, ctWindow(r, all))
+}
+
+// serveBrowse answers GET /browse/{dir}: a directory's children paged by
+// start and limit, a file's lines without children, and 404 for anything
+// else.
+func (b *ctBBS) serveBrowse(w http.ResponseWriter, r *http.Request, escaped string) {
+	p, err := url.PathUnescape(escaped)
+	if err != nil {
+		contract.WriteError(w, http.StatusBadRequest)
+		return
+	}
+	sha := r.URL.Query().Get("at")
+	if content, ok := b.pr.FileAt(sha, p); ok {
+		ctJSON(w, http.StatusOK, map[string]any{"lines": []any{map[string]any{"text": content}}, "start": 0,
+			"size": 1, "isLastPage": true})
+		return
+	}
+	entries, ok := b.pr.DirAt(sha, p)
+	if !ok {
+		contract.WriteError(w, http.StatusNotFound)
+		return
+	}
+	var children []any
+	for _, e := range entries {
+		typ := "FILE"
+		if e.Dir {
+			typ = "DIRECTORY"
+		}
+		children = append(children, map[string]any{"path": map[string]any{"components": []string{e.Name},
+			"name": e.Name, "toString": e.Name}, "type": typ})
+	}
+	ctJSON(w, http.StatusOK, map[string]any{"path": map[string]any{"toString": p}, "revision": sha,
+		"children": ctWindow(r, children)})
 }
 
 // postComment creates a general comment, a reply (parent) or an inline

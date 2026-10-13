@@ -39,6 +39,9 @@ func Client(res *review.Result) string {
 	}
 	b.WriteString("## PR Review\n\n")
 	b.WriteString(clientPRLine(&res.PR) + "\n")
+	if l := CILine(res.CI); l != "" {
+		b.WriteString(l + "\n")
+	}
 
 	// Short facts as a list; the security and performance texts are
 	// sections of their own.

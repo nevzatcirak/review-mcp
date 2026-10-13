@@ -452,7 +452,7 @@ func TestPRReviewToolDefinition(t *testing.T) {
 	if tl == nil {
 		t.Fatal("pr_review is not registered")
 	}
-	const want = "Reviews a pull request with the configured LLM and returns a structured review (key issues, effort, tests, security, performance) with code excerpts. Set publish=true to also post it: one overview comment that later runs edit in place, and the findings on changed lines as inline comments. The PR's title, description, existing comments and diff are sent to the configured LLM endpoint. If the result says the review is partial, tell the user how many files were not reviewed and never state that those files have no issues."
+	const want = "Reviews a pull request with the configured LLM and returns a structured review (key issues, effort, tests, security, performance) with code excerpts. Set publish=true to also post it: one overview comment that later runs edit in place, and the findings on changed lines as inline comments. The PR's title, description, existing comments and diff are sent to the configured LLM endpoint. For a thorough review, run it with focus for several areas without publish, merge the findings, then call it once with findings and publish=true, which publishes them without a model call; a focused run never publishes. If the result says the review is partial, tell the user how many files were not reviewed and never state that those files have no issues."
 	if tl.Description != want {
 		t.Errorf("description = %q", tl.Description)
 	}
@@ -477,7 +477,7 @@ func TestPRReviewToolDefinition(t *testing.T) {
 		}
 	}
 	sort.Strings(props)
-	if got := strings.Join(props, ","); got != "extra_instructions,inline_findings,max_findings,output_language,pr_url,publish,wait_seconds" {
+	if got := strings.Join(props, ","); got != "extra_instructions,findings,focus,inline_findings,max_findings,output_language,performance_concerns,pr_url,publish,security_concerns,wait_seconds" {
 		t.Errorf("properties = %s", got)
 	}
 	if strings.Join(in.Required, ",") != "pr_url" {

@@ -45,6 +45,57 @@ type Coverage struct {
 	// RepoContext says whether repository context (RC-9) went into the
 	// prompt, and how much.
 	RepoContext RepoContext `json:"repo_context"`
+
+	// Guidelines and FileTree say whether the project's guidelines and the
+	// listing of the touched directories (X-32) went into the prompt.
+	// pr_review and pr_improve always set them; the other tools leave them
+	// nil, and they are omitted.
+	Guidelines *Guidelines `json:"guidelines,omitempty"`
+	FileTree   *FileTree   `json:"file_tree,omitempty"`
+}
+
+// Values of Guidelines.Status and FileTree.Status (X-32). Not every value
+// applies to both.
+const (
+	// ProjectOff: turned off by the configuration; nothing was read.
+	ProjectOff = "off"
+	// ProjectUsed: in the prompt in full.
+	ProjectUsed = "used"
+	// ProjectCut: in the prompt, shortened to its token budget or to make
+	// room for the diff.
+	ProjectCut = "cut"
+	// ProjectLeftOut: read, but not in the prompt: not even its first line
+	// fitted, or the diff needed the room.
+	ProjectLeftOut = "left_out"
+	// ProjectNotFound (guidelines): none of the configured paths exists at
+	// the base revision.
+	ProjectNotFound = "not_found"
+	// ProjectEmpty (guidelines): the file exists but holds no text.
+	ProjectEmpty = "empty"
+	// ProjectTooLarge (guidelines): the file is larger than
+	// diff.max_file_bytes.
+	ProjectTooLarge = "too_large"
+	// ProjectUnreadable: the file, or every directory, could not be read
+	// (any error class, or a guidelines file that is not text).
+	ProjectUnreadable = "unreadable"
+)
+
+// Guidelines is coverage.guidelines (X-32): the guidelines file read at the
+// base revision, what happened to it and the tokens of its prompt block.
+type Guidelines struct {
+	// Path is the configured path that was found ("" when none was).
+	Path   string `json:"path"`
+	Status string `json:"status"`
+	// Tokens is the estimate of the block in the prompt (header and fence
+	// included); 0 when it is not in the prompt.
+	Tokens int `json:"tokens"`
+}
+
+// FileTree is coverage.file_tree (X-32): how many of the touched
+// directories the prompt lists, and the status of the listing.
+type FileTree struct {
+	Directories int    `json:"directories"`
+	Status      string `json:"status"`
 }
 
 // Values of RepoContext.Status.
@@ -330,4 +381,31 @@ func trimDeletedListed(c *Coverage, lines []string, kept int) {
 	}
 	c.DeletedListed = NonNil(stay)
 	c.Omitted.Deleted = NonNil(append(cut, c.Omitted.Deleted...))
+}
+
+// GuidelinesSchema is the JSON schema of coverage.guidelines (X-32) under
+// the description desc, for the tools' output schemas. Every property is
+// required within the object.
+func GuidelinesSchema(desc string) map[string]any {
+	return map[string]any{"type": "object", "description": desc, "additionalProperties": false,
+		"required": []any{"path", "status", "tokens"},
+		"properties": map[string]any{
+			"path": map[string]any{"type": "string", "description": "the configured path that was found at the target branch; empty when none was"},
+			"status": map[string]any{"type": "string", "enum": []any{ProjectOff, ProjectUsed, ProjectCut, ProjectLeftOut,
+				ProjectNotFound, ProjectEmpty, ProjectTooLarge, ProjectUnreadable},
+				"description": "off: turned off (review.guidelines_paths empty or review.max_guidelines_tokens 0); used: in the prompt in full; cut: in the prompt, cut at a line boundary to its budget or for the diff; left_out: read but not in the prompt; not_found: no configured path exists at the target branch; empty: the file holds no text; too_large: larger than diff.max_file_bytes; unreadable: the file could not be read or is not text"},
+			"tokens": map[string]any{"type": "integer", "description": "estimated tokens of the guidelines block in the prompt; 0 when it is not in the prompt"},
+		}}
+}
+
+// FileTreeSchema is the JSON schema of coverage.file_tree (X-32) under the
+// description desc.
+func FileTreeSchema(desc string) map[string]any {
+	return map[string]any{"type": "object", "description": desc, "additionalProperties": false,
+		"required": []any{"directories", "status"},
+		"properties": map[string]any{
+			"directories": map[string]any{"type": "integer", "description": "touched directories the listing in the prompt shows"},
+			"status": map[string]any{"type": "string", "enum": []any{ProjectOff, ProjectUsed, ProjectCut, ProjectLeftOut, ProjectUnreadable},
+				"description": "off: turned off (review.file_tree false or review.max_tree_tokens 0); used: in the prompt in full; cut: in the prompt, cut to review.max_tree_tokens; left_out: not in the prompt (nothing fitted, or the diff needed the room); unreadable: no touched directory could be listed at the target branch"},
+		}}
 }

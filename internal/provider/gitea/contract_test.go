@@ -30,6 +30,24 @@ func TestReviewDuplicates(t *testing.T) {
 	contract.RunReviewDuplicates(t, ctFixture{})
 }
 
+// TestReviewCI runs pr_review's CI scenario (X-31) through this provider and
+// the contract fake.
+func TestReviewCI(t *testing.T) {
+	contract.RunReviewCI(t, ctFixture{})
+}
+
+// TestReviewProject runs the project-context scenario (X-32) of pr_review
+// and pr_improve through this provider and the contract fake.
+func TestReviewProject(t *testing.T) {
+	contract.RunReviewProject(t, ctFixture{})
+}
+
+// TestReviewFindings runs pr_review's publish of supplied findings (X-33)
+// through this provider and the contract fake.
+func TestReviewFindings(t *testing.T) {
+	contract.RunReviewFindings(t, ctFixture{})
+}
+
 const (
 	ctWeb     = "https://your-gitea.example"
 	ctRepo    = "/api/v1/repos/octo/demo"
@@ -47,7 +65,10 @@ func (ctFixture) Kind() provider.Kind { return provider.KindGitea }
 
 func (ctFixture) Traits() contract.Traits {
 	return contract.Traits{
-		BaseStrategies: gitea.BaseStrategies(),
+		BaseStrategies:  gitea.BaseStrategies(),
+		CheckStrategies: gitea.CheckStrategies(),
+		CheckStates: []provider.CheckState{provider.CheckSuccess, provider.CheckFailure, provider.CheckPending,
+			provider.CheckNeutral, provider.CheckError},
 	}
 }
 
@@ -286,6 +307,10 @@ func (g *ctGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ctPaged[any](w, r, nil)
 	case get && strings.HasPrefix(path, ctRepo+"/raw/"):
 		g.serveRaw(w, r, strings.TrimPrefix(path, ctRepo+"/raw/"))
+	case get && strings.HasPrefix(path, ctRepo+"/commits/") && strings.HasSuffix(path, "/status"):
+		g.serveStatus(w, r, strings.TrimSuffix(strings.TrimPrefix(path, ctRepo+"/commits/"), "/status"))
+	case get && (path == ctRepo+"/contents" || strings.HasPrefix(path, ctRepo+"/contents/")):
+		g.serveContents(w, r, strings.TrimPrefix(strings.TrimPrefix(path, ctRepo+"/contents"), "/"))
 	case path == ctRepo+"/issues/7/comments":
 		g.serveIssueComments(w, r)
 	case strings.HasPrefix(path, ctRepo+"/issues/comments/"):
@@ -340,18 +365,89 @@ func (g *ctGitea) serveRaw(w http.ResponseWriter, r *http.Request, escaped strin
 		contract.WriteError(w, http.StatusBadRequest)
 		return
 	}
-	sha := r.URL.Query().Get("ref")
-	for _, f := range g.pr.Files {
-		switch {
-		case f.Type != provider.ChangeAdded && sha == g.pr.BaseSHA && p == f.BasePath():
-			_, _ = io.WriteString(w, f.Base)
-			return
-		case f.Type != provider.ChangeDeleted && sha == g.pr.HeadSHA && p == f.Path:
-			_, _ = io.WriteString(w, f.Head)
-			return
-		}
+	if content, ok := g.pr.FileAt(r.URL.Query().Get("ref"), p); ok {
+		_, _ = io.WriteString(w, content) //nolint:gosec // test fake; the content is a fixed Spec fixture, not request input
+		return
 	}
 	contract.WriteError(w, http.StatusNotFound)
+}
+
+// ctStates are the commit status states the fake serves for each check
+// state; ctUnknownState is one Gitea does not document.
+var ctStates = map[provider.CheckState]string{
+	provider.CheckSuccess: "success", provider.CheckFailure: "failure", provider.CheckPending: "pending",
+	provider.CheckNeutral: "warning", provider.CheckError: "error",
+}
+
+const ctUnknownState = "mystery"
+
+// serveStatus answers the combined status of the head commit, paged by
+// page and limit like Gitea; another commit is unknown (404).
+func (g *ctGitea) serveStatus(w http.ResponseWriter, r *http.Request, sha string) {
+	if sha != g.pr.HeadSHA {
+		contract.WriteError(w, http.StatusNotFound)
+		return
+	}
+	var all []any
+	for i, c := range g.pr.Checks {
+		state, ok := ctStates[c.State]
+		if c.Unknown {
+			state, ok = ctUnknownState, true
+		}
+		if !ok {
+			g.t.Errorf("check %q: state %q cannot be served", c.Name, c.State)
+		}
+		all = append(all, map[string]any{"id": i + 1, "context": c.Name, "status": state, "target_url": c.URL,
+			"description": "synthetic"})
+	}
+	page := ctWindow(r, all)
+	ctJSON(w, http.StatusOK, map[string]any{"state": "pending", "sha": sha, "total_count": len(all), "statuses": page})
+}
+
+// ctWindow returns the page of items that the page and limit parameters
+// of r ask for (limit 50 when absent).
+func ctWindow(r *http.Request, items []any) []any {
+	page, err := strconv.Atoi(r.URL.Query().Get("page"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil || limit < 1 {
+		limit = 50
+	}
+	start := min((page-1)*limit, len(items))
+	end := min(start+limit, len(items))
+	return append([]any{}, items[start:end]...)
+}
+
+// serveContents answers GET /contents/{dir}: a directory's entries as one
+// array, a file as an object, and 404 for anything else.
+func (g *ctGitea) serveContents(w http.ResponseWriter, r *http.Request, escaped string) {
+	p, err := url.PathUnescape(escaped)
+	if err != nil {
+		contract.WriteError(w, http.StatusBadRequest)
+		return
+	}
+	sha := r.URL.Query().Get("ref")
+	if content, ok := g.pr.FileAt(sha, p); ok {
+		ctJSON(w, http.StatusOK, map[string]any{"name": p[strings.LastIndex(p, "/")+1:], "path": p, "type": "file",
+			"size": len(content)})
+		return
+	}
+	entries, ok := g.pr.DirAt(sha, p)
+	if !ok {
+		contract.WriteError(w, http.StatusNotFound)
+		return
+	}
+	out := []any{}
+	for _, e := range entries {
+		typ := "file"
+		if e.Dir {
+			typ = "dir"
+		}
+		out = append(out, map[string]any{"name": e.Name, "path": strings.TrimPrefix(p+"/"+e.Name, "/"), "type": typ})
+	}
+	ctJSON(w, http.StatusOK, out)
 }
 
 func (g *ctGitea) serveIssueComments(w http.ResponseWriter, r *http.Request) {

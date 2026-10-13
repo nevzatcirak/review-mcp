@@ -346,6 +346,106 @@ fails with the first part's error sentence, as a review in one call does.
 | A finding was posted again at a place that has a comment | That comment's thread is **outdated** (the code under it changed), or it is not by the token's user, or it has no finding marker, or it sits on the old path of a renamed file. These never suppress a finding. On Gitea and Bitbucket Server only the first line of an earlier range comment is known. |
 | A finding was not posted, and you want it | Delete the earlier comment and run again. Resolving it is not enough, a resolved thread still counts; only an outdated thread lets a finding at the same place through. |
 
+## CI, guidelines and file-tree notes
+
+`pr_review` (and `pr_improve` for the guidelines and the tree) never fails
+because the CI results, the guidelines file or the directory listing cannot be
+used: each is a fixed note, a `coverage` status and the run goes on. The
+sentences are fixed and never carry the cause; the cause is only in the debug
+log as an error class (`REVIEW_MCP_LOG_LEVEL=debug`). See
+[CI results](review.md#ci-results) and
+[Project guidelines and file tree](review.md#project-guidelines-and-file-tree).
+
+### CI
+
+| Sentence | Where | Cause and what to do |
+|---|---|---|
+| The CI results of the head commit could not be read. | `ci.note` (`ci.state` is `unreadable`); the overview line is "CI status could not be read" | Reading the head commit's statuses or checks failed, for any reason. On GitHub the token needs **Commit statuses: Read** and **Checks: Read**; with only one of them the read is partial (next row), with neither it is `unreadable`. On Gitea and Bitbucket Server the read access to the repository is enough, so check the token and the server ([Token scopes](#token-scopes)). `pr_info` shows the same sentence. The debug log line `ci: checks not read` names the error class. |
+| Only part of the CI results could be read with this token (check runs or commit statuses). | `ci.note`; the overview line ends with "; only part of the CI results could be read with this token" | GitHub only: the token may read the check runs but not the commit statuses, or the reverse (one list answered 401, 403 or 404). `state` and the counts cover the list that was read, so a failing check in the other list is not seen. Give a fine-grained token both **Checks: Read** and **Commit statuses: Read** ([Token scopes](#token-scopes)); the debug log line `github checks: ... not readable` names which list and the error class. |
+| The host reported more CI checks than could be read; the counts and the list are incomplete. | `ci.note`; the overview line ends with "; more checks exist than were read" | The commit has more than 500 checks. The counts and `state` cover what was read, so a failing check among the unread ones is not seen. Nothing to change in review-mcp; look at the CI page. |
+| The CI results were left out of the prompt to stay within the CI token budget. | `notes` | The CI block did not fit `review.max_ci_tokens`, or the context window left no room for the diff beside it (the CI block is the last optional block to go). The `ci` object and the overview line are unaffected. Raise `review.max_ci_tokens`, or use a larger `llm.context_window`. |
+| `CI: no checks reported` (overview line, `ci.state` `none`) | overview | The host has no statuses or checks for the head commit yet (CI not started, not configured, or reporting on another commit). Not an error. |
+
+### Guidelines
+
+| Sentence | Cause and what to do |
+|---|---|
+| None of the guidelines files in review.guidelines_paths exists at the target branch; the review ran without project guidelines. | You set `review.guidelines_paths` and none of the paths exists at the revision the diff is computed against (the target branch side, never the pull request's head; a file that only the pull request adds is not used). Merge the file to the target branch first, or fix the path. With the default paths this case is silent. |
+| The project guidelines file at the target branch is larger than diff.max_file_bytes and was not used. | The first path that exists is too large; the next path is not tried. Shorten the file, or raise `diff.max_file_bytes`. |
+| The project guidelines file could not be read from the target branch and was not used. | The read failed (a token without read access to the repository contents, a server error), or the file is not text (it holds a NUL byte), or no base revision was available. Check the token ([Token scopes](#token-scopes)); the debug log names the error class. |
+| The project guidelines were cut at a line boundary to stay within review.max_guidelines_tokens. | The file is longer than the budget; the model got the first lines and was told that the rules go on. Raise `review.max_guidelines_tokens`, or move the important rules to the top. |
+| The project guidelines were left out: not even their first line fits review.max_guidelines_tokens. | The budget is smaller than the header and one line. Raise `review.max_guidelines_tokens`. |
+| The project guidelines were cut further to make room for the diff. | The diff did not fit beside the guidelines; they were cut (halved) until it did. Use a larger `llm.context_window`, or accept it: the diff wins. |
+| The project guidelines were left out of the prompt to make room for the diff. | As above, and nothing of the guidelines was left. |
+
+### File tree
+
+| Sentence | Cause and what to do |
+|---|---|
+| The directories this change touches could not be listed at the target branch. | No touched directory could be listed (token without read access to the contents, a server error, or no base revision). `coverage.file_tree.status` is `unreadable`. Check the token ([Token scopes](#token-scopes)). |
+| Some directories this change touches could not be listed at the target branch. | Some directories could not be listed; the block marks each with `(could not be listed)`, and after the first failure no further directory is requested (the same cause would fail them). Check the token and the debug log. |
+| The file tree lists the 20 directories with the most changed files; 1 more directory was not listed. (plural: "...; N more directories were not listed.") | More than 20 directories hold changed files; only the 20 with the most changed files are listed. Not an error. |
+| The listing of the directories this change touches was left out of the prompt to make room for the diff. | The diff did not fit beside the listing; the tree goes first (before the guidelines). Use a larger `llm.context_window`. |
+
+A listing cut to `review.max_tree_tokens` has no note: `coverage.file_tree.status`
+is `cut` and the block ends with "(The listing is cut here to fit the prompt.)".
+`coverage.guidelines.status` and `coverage.file_tree.status` list the outcomes
+([Coverage of the guidelines and the tree](review.md#coverage-of-the-guidelines-and-the-tree)).
+
+### Configuration problems
+
+An invalid value makes the configuration invalid at startup; `server_info` lists
+the problems (the position, never the value of a path):
+
+| Problem | What to do |
+|---|---|
+| review.max_ci_tokens: -1 must not be negative (0 turns the CI block off) | Use 0 or a positive number (the number shown is yours). |
+| review.max_guidelines_tokens: -1 must not be negative (0 turns the guidelines off) | Same. |
+| review.max_tree_tokens: -1 must not be negative (0 turns the file tree off) | Same. |
+| review.guidelines_paths: 11 paths, at most 10 are allowed | List at most 10 paths. |
+| review.guidelines_paths[0]: must not be empty / longer than 512 bytes / must be relative to the repository root (no leading "/") / must use "/" as the separator / must not contain control characters / must not contain an empty segment ("//" or a trailing "/") / must not contain "." or ".." segments | `[0]` is the position of the path in the list (counting from 0). Fix that path. In the environment the list is comma-separated, so an empty item between commas is an empty path. |
+
+## Focus and findings refusals
+
+`pr_review` checks the combination of `focus`, `findings`, `publish`,
+`security_concerns` and `performance_concerns` before it builds anything. A
+refusal is one of these fixed sentences (class `invalid_argument`); nothing was
+sent to the provider or to the model. They are checked in this order.
+
+| Sentence | Cause and what to do |
+|---|---|
+| focus must be one of security, architecture, performance, ux or tests, or a description of 1 to 200 characters without line breaks or control characters | `focus` is blank after trimming, longer than 200 characters, or holds a line break, a control character or a bidirectional formatting character. Use a known value, or a one-line description. |
+| findings cannot be combined with focus; call pr_review with findings and publish=true, without focus | `findings` is the merged result of focused runs, not a focused run. Drop `focus`. |
+| a focused review does not publish; merge the findings and call pr_review with findings and publish=true | `focus` with `publish=true`. Run the focused reviews without `publish`, merge their findings, then publish once with `findings` ([Focused reviews](review.md#focused-reviews-and-the-merged-publish)). |
+| findings are only used to publish; call pr_review with findings and publish=true | `findings` (also an empty list) without `publish=true`. Add `publish=true`, or drop `findings` for a normal review. |
+| security_concerns and performance_concerns are only used with findings and publish=true | A concerns text without `findings`. Drop it, or send it with `findings`. |
+| security_concerns and performance_concerns must be at most 5000 characters each | Shorten the text. |
+| findings must hold at most 20 items (twice review.max_total_findings); merge repeats before publishing | More items than twice the call's effective `review.max_total_findings` (20 with the defaults; the number in the sentence is the limit of your call). Merge duplicates in the client, or raise `review.max_total_findings`. |
+
+### Notes of a findings publish
+
+| Sentence | Cause and what to do |
+|---|---|
+| These findings were supplied by the client (merged from focused reviews); no model was called for this publish. | Always present on a findings publish. Not a problem. |
+| 1 supplied finding was dropped: a finding needs a changed file of the diff, positive lines that do not end before they start, a header and a description that are neither empty nor too long, and a valid focus when it has one. (plural: "N supplied findings were dropped: ...") | The item's `relevant_file` is not the new path of a file in the diff (or the file is filtered by your ignore rules), `start_line` is not positive or `end_line` is before it, `issue_header` is empty or over 200 characters, `issue_content` is empty or over 5000, or the item's `focus` is invalid. Check the paths against the diff (`pr_review` results carry them in `relevant_file`) and send the findings as the focused runs returned them. |
+| 1 supplied finding repeated an earlier one at the same place with the same header and was merged into it. (plural: "N supplied findings repeated an earlier one at the same place with the same header and were merged into it.") | Two items had the same file, the same lines and the same header apart from case and white space; the first was kept. Not a problem. |
+| N further findings were not shown because of review.max_total_findings. | More findings than the cap; the rest were not published ([Large pull requests](review.md#large-pull-requests)). Raise `review.max_total_findings`. |
+
+A finding that is already on the pull request is skipped as a duplicate as for
+any publish (see [Findings and suggestions skipped as
+duplicates](#findings-and-suggestions-skipped-as-duplicates)); a second merged
+publish adds nothing new.
+
+## `multi_perspective_review` argument errors
+
+The MCP prompt answers a bad argument with a JSON-RPC `InvalidParams` error and
+one of these fixed messages (the value is never echoed):
+
+| Message | Cause and what to do |
+|---|---|
+| pr_url must be the http or https URL of a pull request, without credentials | `pr_url` is missing, longer than 2048 bytes, not an absolute `http` or `https` URL with a host, or it carries credentials (`user:password@`). Pass the pull request's page URL. |
+| focuses must be a comma-separated list of security, architecture, performance, ux and tests | `focuses` holds a value that is not one of the five (free text is not accepted here; use it with `pr_review`'s `focus`), or no value at all. Leave `focuses` out for the default `security,architecture,performance,tests`. |
+
 ## `pr_info` required_approvals notes
 
 For GitHub see [GitHub](#github) below: the notes differ and the two sources
@@ -495,6 +595,7 @@ itself is unaffected. The reasons you will meet most:
 | `sha_mismatch` | A push changed the pull request head while it was fetched; run again. |
 | `budget` | The diff leaves no room in the context window. Use a larger window, or accept that the diff wins. With `review.max_chunks` above 1 the room is reserved up front instead, and a part may be added. |
 | `nothing_to_review` | Nothing was left to review after filtering. |
+| `client_findings` | The call was a [publish of findings supplied by the client](review.md#focused-reviews-and-the-merged-publish); no prompt is sent, so no repository context is read. Not a problem. |
 
 The full list is in [Repository context](repo-context.md#reading-the-result).
 `review-mcp diag review <PR_URL> --repo-context=on --dry-run` shows the
@@ -541,6 +642,7 @@ setting to check may follow.
 | the pull request diff does not fit the configured context window | `diff_does_not_fit` | Raise `llm.context_window`, or narrow the PR. Nothing was sent to the model. Applies to `pr_review`, `pr_ask`, `pr_describe` and `pr_improve`. |
 | the model's answer could not be parsed as a review, also after one retry | `review_unparseable` | Try again, or use a model that follows YAML output instructions. |
 | output_language must be a locale code such as en-US or tr-TR / max_findings must be an integer from 1 to 20 / wait_seconds must be an integer from 0 to 600 | (argument) | Fix the argument; nothing was sent anywhere. |
+| the `focus` and `findings` sentences, for example "a focused review does not publish; merge the findings and call pr_review with findings and publish=true" | `invalid_argument` | See [Focus and findings refusals](#focus-and-findings-refusals); nothing was sent anywhere. |
 
 If the configuration is invalid, `pr_review` returns "review-mcp configuration
 is invalid; call server_info for the list of problems" and sends nothing to
@@ -701,6 +803,7 @@ changes](improve.md) for how scoring, verification and publishing work.
 | N files were included only in part (clipped) to fit the context window. | The model saw only the beginning of these files; suggestions for lines further down cannot exist. Raise the diff budget as in [The review says partial](#the-review-says-partial). |
 | The existing PR discussion could not be read; suggestions may repeat it. | The comment threads or the token's own user could not be read (`read:user` on Gitea), so the discussion block is empty. The run went on; a suggestion that people already raised may come again. Check the token scopes ([Token scopes](#token-scopes)). |
 | N discussion threads were left out of the prompt to stay within the discussion token budget. (singular: "1 discussion thread was left out of the prompt to stay within the discussion token budget.") | The discussion is bigger than `review.max_discussion_tokens`; the newest threads were kept. Raise the key, or accept that older threads were not shown. |
+| The guidelines and file-tree sentences ("None of the guidelines files in review.guidelines_paths exists at the target branch; ...", "The project guidelines were cut ...", "The directories this change touches could not be listed at the target branch." and the others) | The same as in `pr_review`: see [CI, guidelines and file-tree notes](#ci-guidelines-and-file-tree-notes). |
 | N suggestions without a file, a summary, or the existing or improved code were dropped. (singular: "1 suggestion without a file, a summary, or the existing or improved code was dropped.") | The model left a required field out of those entries. Nothing to fix on your side; a model that follows the output format better drops fewer. |
 | N suggestions for a file that was not in the diff shown to the model were dropped. (singular: "1 suggestion for a file that was not in the diff shown to the model was dropped.") | The model named a file its call was not shown with content: another part's file, a file left out, a deleted file, or a path it invented. They are dropped, never posted. |
 | N suggestions whose improved code is the same as the existing code were dropped (no change). (singular: "1 suggestion whose improved code is the same as the existing code was dropped (no change).") | The improvement changed nothing but white space. |
@@ -867,6 +970,13 @@ table also covers the configuration, argument and serve-mode errors.
 | the model's answer could not be parsed as code suggestions, also after one retry; try again, or check that llm.model follows the YAML output instructions | `improve_unparseable` | Retry, or use a model that follows YAML output instructions (`pr_improve`). A failed self-review call is not this error; it leaves the suggestions unscored ([`pr_improve`](#pr_improve)). |
 | output_language must be a locale code such as en-US or tr-TR | argument | Fix `output_language` (`pr_review`, `pr_ask`, `pr_describe`, `pr_improve`). |
 | max_findings must be an integer from 1 to 20 | argument | Fix `max_findings` (`pr_review`). |
+| focus must be one of security, architecture, performance, ux or tests, or a description of 1 to 200 characters without line breaks or control characters | `invalid_argument` | Fix `focus` (`pr_review`). |
+| findings cannot be combined with focus; call pr_review with findings and publish=true, without focus | `invalid_argument` | Drop `focus` or `findings` (`pr_review`). |
+| a focused review does not publish; merge the findings and call pr_review with findings and publish=true | `invalid_argument` | Drop `publish`, or merge the findings and send them as `findings` ([Focus and findings refusals](#focus-and-findings-refusals)). |
+| findings are only used to publish; call pr_review with findings and publish=true | `invalid_argument` | Add `publish=true`, or drop `findings`. |
+| security_concerns and performance_concerns are only used with findings and publish=true | `invalid_argument` | Send them with `findings`, or drop them. |
+| security_concerns and performance_concerns must be at most 5000 characters each | `invalid_argument` | Shorten the text. |
+| findings must hold at most N items (twice review.max_total_findings); merge repeats before publishing | `invalid_argument` | Merge duplicates, or raise `review.max_total_findings`. |
 | question must not be empty | argument | Pass a non-blank `question` (`pr_ask`). |
 | question is too long: at most 8000 characters are allowed | argument | Shorten the question. |
 | publish_mode must be comment or description | argument | Fix `publish_mode` (`pr_describe`). |
@@ -925,13 +1035,22 @@ A3) has verified them.
   and the description edit), Contents (read) and Metadata (read), or a classic
   token with `repo` (`public_repo` for public repositories). Administration
   (read) is optional and only lets `pr_info` read classic branch protection.
-  See [GitHub](github.md#token).
+  The CI results (`pr_info`, and `pr_review` unless `review.ci_status` is
+  false) also need **Commit statuses** (read) and **Checks** (read); with only
+  one of them the CI results are partial with a note, without both the CI
+  state is `unreadable` with a note, and the rest still works. A
+  classic token's `repo` scope covers them. See [GitHub](github.md#token).
 - **Bitbucket Server / Data Center:** an HTTP access token with repository
   read permission, plus write permission only for comments and for
   `pr_describe` with `publish_mode=description`, which updates the pull
   request (`pr_improve` with `publish=true` needs comment write, like
   `pr_review`). The token is sent
   as `Authorization: Bearer ...`; basic authentication is not supported.
+- **CI results, guidelines and file tree:** on Gitea and Bitbucket Server the
+  read access above is enough (the commit status or build status of the head
+  commit, the guidelines file and the directory listings at the target
+  branch). On GitHub the guidelines and the listings need Contents (read); the
+  CI results need the two permissions named under GitHub.
 
 Which call fails tells you which scope is missing: if `diag pr` works but
 `diag comment` fails with `authentication failed`, the token is valid but

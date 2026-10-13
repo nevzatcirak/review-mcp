@@ -64,6 +64,15 @@
       "symbols": 0,
       "references": 0,
       "files": 0
+    },
+    "guidelines": {
+      "path": "",
+      "status": "not_found",
+      "tokens": 0
+    },
+    "file_tree": {
+      "directories": 1,
+      "status": "used"
     }
   },
   "notes": [
@@ -74,7 +83,7 @@
     "context_window": 32000,
     "prompt_tokens": 3053,
     "diff_tokens": 162,
-    "request_tokens": 1862,
+    "request_tokens": 1939,
     "fast_path": true,
     "llm_calls": 2,
     "self_review_calls": 1,

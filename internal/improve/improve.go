@@ -4,15 +4,17 @@
 // score them.
 //
 // It runs the same fetch, filter, budget and prepare steps as pr_review,
-// with the numbered diff, the existing-discussion block (X-13) and, when
-// context.repo.enabled is set, the repository context (X-22). A diff that
-// leaves files out is improved in parts (X-19). Every call with a diff (the
-// one call, or each part) is followed by one self-review call on the same
-// diff and that call's suggestions; suggestions scoring below
-// improve.min_score are dropped with a note, and a failed self-review keeps
-// the suggestions unscored. The suggestions of every part are ranked
-// together (score descending, the unscored last), deduplicated by their
-// X-13 fingerprint and capped at improve.max_suggestions.
+// with the numbered diff, the existing-discussion block (X-13), the
+// project's guidelines and the touched directories read at the base
+// revision (X-32) and, when context.repo.enabled is set, the repository
+// context (X-22). A diff that leaves files out is improved in parts (X-19).
+// Every call with a diff (the one call, or each part) is followed by one
+// self-review call on the same diff and that call's suggestions;
+// suggestions scoring below improve.min_score are dropped with a note, and
+// a failed self-review keeps the suggestions unscored. The suggestions of
+// every part are ranked together (score descending, the unscored last),
+// deduplicated by their X-13 fingerprint and capped at
+// improve.max_suggestions.
 //
 // The kept suggestions are verified against the head file (v2 spec §2,
 // Y-10): the quoted code must be at the self-review's lines, or uniquely
@@ -43,6 +45,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
+	"github.com/nevzatcirak/review-mcp/internal/projctx"
 	"github.com/nevzatcirak/review-mcp/internal/prompt"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/repoctx"
@@ -200,6 +203,9 @@ type Plan struct {
 	minScore int
 	maxTotal int
 	log      *slog.Logger
+	// proj is the project context (X-32), whose coverage a run in parts
+	// carries too.
+	proj *projctx.Context
 }
 
 // part is one suggestion call and its self-review.
@@ -317,6 +323,11 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// The PR's discussion (X-13), budgeted by review.max_discussion_tokens;
 	// a failure never fails the run.
 	disc, discNotes := pl.readDiscussion(ctx, cfg.Review.MaxDiscussionTokens, factor)
+	// The project's guidelines and the listing of the directories the change
+	// touches (X-32), read at the base revision the diff used, exactly as
+	// pr_review reads them; a failed read never fails the run.
+	proj := projctx.ReadFor(ctx, cfg, p, ref, pr, d, rcs, log)
+	pl.proj = proj
 
 	in := PromptInput{
 		Language:       language,
@@ -326,6 +337,8 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		TargetBranch:   pr.TargetBranch,
 		Description:    tokens.ClipDescription(pr.Description, cfg.Diff.MaxDescriptionTokens, factor),
 		Discussion:     disc.Block,
+		Guidelines:     proj.Guidelines(),
+		FileTree:       proj.Tree(),
 		MaxSuggestions: cfg.Improve.MaxSuggestionsPerPart,
 	}
 	budget := tokens.Budget{
@@ -339,6 +352,28 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		return nil, err
 	}
 	budget.PromptTokens = promptTokens
+	// Without room for the diff the optional blocks give way in pr_review's
+	// order: the file tree, then the guidelines (cut at a line boundary by
+	// what is missing, until none is left), then the discussion. The blocks
+	// of X-32 give way again when the prepared diff does not fit beside
+	// them (below).
+	remeasure := func() error {
+		promptTokens, err = diffPromptTokens(in, budget, 0)
+		budget.PromptTokens = promptTokens
+		return err
+	}
+	if budget.RequireCapacity() != nil && proj.DropTree() {
+		in.FileTree = ""
+		if err := remeasure(); err != nil {
+			return nil, err
+		}
+	}
+	for budget.RequireCapacity() != nil && proj.CutGuidelines(1-budget.SoftLimit()) {
+		in.Guidelines = proj.Guidelines()
+		if err := remeasure(); err != nil {
+			return nil, err
+		}
+	}
 	if budget.RequireCapacity() != nil && in.Discussion != "" {
 		// The discussion is optional: a context window too small for it
 		// still reviews the diff, without it (as pr_review).
@@ -378,6 +413,30 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		reserve = 0
 		prep, err = prepare(0)
 	}
+	// A diff that does not fit beside the blocks of X-32 makes them give
+	// way, the file tree first, then the guidelines halved, as in
+	// pr_review: only when the diff would fit without them.
+	oneCall := maxChunks <= 1
+	if projctx.DiffDoesNotFit(prep, err, oneCall) && proj.HasBlocks() {
+		bare := in
+		bare.Guidelines, bare.FileTree = "", ""
+		bareTokens, serr := diffPromptTokens(bare, budget, 0)
+		if serr != nil {
+			return nil, serr
+		}
+		probe := dIn
+		probe.Budget.PromptTokens = bareTokens
+		if bp, berr := diffpipe.Prepare(probe); !projctx.DiffDoesNotFit(bp, berr, oneCall) {
+			for projctx.DiffDoesNotFit(prep, err, oneCall) && proj.Shrink() {
+				in.Guidelines, in.FileTree = proj.Guidelines(), proj.Tree()
+				if serr := remeasure(); serr != nil {
+					return nil, serr
+				}
+				base, dIn.Budget = budget, budget
+				prep, err = prepare(reserve)
+			}
+		}
+	}
 	if err != nil {
 		if errors.Is(err, tokens.ErrDoesNotFit) {
 			return nil, llmrun.DoesNotFit(err)
@@ -401,6 +460,8 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	if disc.Omitted > 0 {
 		res.Notes = append(res.Notes, noteDiscussionLeftOut(disc.Omitted))
 	}
+	res.Notes = append(res.Notes, proj.Notes()...)
+	res.Coverage.Guidelines, res.Coverage.FileTree = proj.Coverage()
 	log.Debug("improve: diff prepared", "url", logging.RedactURL(ref.URL), "files", len(d.Files),
 		"provider_skipped", len(d.Skipped), "included", len(prep.Included), "clipped", len(prep.Clipped),
 		"fast_path", prep.FastPath, "prompt_tokens", promptTokens, "diff_tokens", prep.Tokens,
@@ -442,6 +503,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			budget = base
 			pl.Budget = budget
 			res.Coverage, res.Metadata.DiffTokens, res.Metadata.FastPath = llmrun.BuildCoverage(prep, flt), prep.Tokens, prep.FastPath
+			res.Coverage.Guidelines, res.Coverage.FileTree = proj.Coverage()
 			if llmrun.LeavesFilesOut(prep) {
 				if ok, err = pl.planParts(ctx, dIn, in, maxChunks, rcs, 0, types); err != nil {
 					return nil, err

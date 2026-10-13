@@ -68,7 +68,7 @@ a service account of its own.
 
 | Token type | What to grant |
 |---|---|
-| **Fine-grained** (recommended) | Resource owner: the user or organisation that owns the repository. Repository access: only the repositories you review. Repository permissions: **Pull requests: Read and write**, **Contents: Read**, **Metadata: Read** (selected automatically). |
+| **Fine-grained** (recommended) | Resource owner: the user or organisation that owns the repository. Repository access: only the repositories you review. Repository permissions: **Pull requests: Read and write**, **Contents: Read**, **Commit statuses: Read**, **Checks: Read**, **Metadata: Read** (selected automatically). |
 | **Classic** | `repo` for private repositories, or `public_repo` for public ones only. |
 
 Read-only use needs only the read side: with a fine-grained token, **Pull
@@ -79,6 +79,8 @@ classic scope) is needed only for `publish=true`, `pr_comment_reply` and
 | Use | Needs |
 |---|---|
 | `pr_review`, `pr_ask`, `pr_describe`, `pr_improve` with `publish=false`, `pr_comments`, `pr_info` | Pull requests: read; Contents: read (file contents, the merge base and the repository context); Metadata: read |
+| The CI results of the head commit: `pr_info`, and `pr_review` unless `review.ci_status` is false | Commit statuses: read and Checks: read (fine-grained). Both are needed: the check runs need Checks, the legacy statuses need Commit statuses. With only one of them the other list is still read and `ci` carries the note "Only part of the CI results could be read with this token (check runs or commit statuses)."; with neither, `ci` is `unreadable` with a note. A classic token's `repo` scope covers them. Everything else keeps working without them |
+| The guidelines file and the file tree of `pr_review` and `pr_improve` | Contents: read (they are read at the target branch) |
 | `publish=true`, `pr_comment_reply`, `pr_comment_create` | the same, with Pull requests: write |
 | `pr_describe` with `publish_mode=description` (and `update_title`) | Pull requests: write (it edits the pull request itself) |
 | `pr_info` required approvals from classic branch protection | Administration: read (fine-grained) or admin rights (classic). Optional: without it the count falls back to the rulesets, with a note (see [`pr_info`](#pr_info)) |
@@ -372,6 +374,22 @@ adds:
   give `blocked`. The state itself is never shown, only the fixed texts.
 - **Commits.** A pull request with more than 250 commits gets the commits note
   above.
+- **CI results.** `ci` is read from the check runs
+  (`GET .../commits/{sha}/check-runs`) and the combined commit status
+  (`GET .../commits/{sha}/status`), both followed through the `Link` header (at
+  most 10 pages of 100 each, so at most 500 per list) and merged by name; a
+  check run wins over a status of the same name. A run that is queued,
+  in progress, waiting or requested is `pending`; a completed run is its
+  `conclusion` (`cancelled` is `error`, `timed_out` is `failure`,
+  `action_required` is `pending`, `stale` and unknown values are `neutral`).
+  The permissions are Checks read and Commit statuses read (see
+  [Token](#token)). When exactly one of the two lists fails with `auth` or
+  `not_found` (a token with only one of the two permissions), the other list
+  is used: `ci` keeps the state of the checks that were read and gets the note
+  "Only part of the CI results could be read with this token (check runs or
+  commit statuses).", and the overview line ends with "; only part of the CI
+  results could be read with this token". Both lists failing, or either
+  failing with any other class, is `unreadable` with a note.
 
 ## The description edit
 

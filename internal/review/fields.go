@@ -126,6 +126,9 @@ type KeyIssue struct {
 	// (one of the Inline* values); empty when inline findings were not
 	// considered.
 	InlineStatus string `json:"inline_status,omitempty"`
+	// Focus is the focus a client gave a supplied finding of a merged
+	// publish (X-33), cleaned as the focus argument is; empty otherwise.
+	Focus string `json:"focus,omitempty"`
 }
 
 // InlineStatus values: the counts of InlineSummary, per finding.
@@ -226,6 +229,7 @@ var keyIssueExtraSchema = map[string]map[string]any{
 		"it repeats when inline_status is skipped_duplicate"},
 	"inline_status": {"type": "string", "enum": []any{InlinePosted, InlineSkippedDuplicate, InlineUnanchorable, InlineFailed},
 		"description": "what happened to the finding in an inline publish; absent when inline findings were not considered"},
+	"focus": {"type": "string", "description": "the focus the client gave this finding in a publish of merged findings; absent otherwise"},
 }
 
 // fields is the review descriptor table, in upstream order (X-4), with the

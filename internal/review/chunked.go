@@ -206,7 +206,8 @@ func leftOut(o diffpipe.Omitted) bool { return len(o.Added)+len(o.Modified)+len(
 // llmrun.PartsCoverage, shared with pr_describe): the parts' files in part
 // order, then the files no part reviewed. failed marks the parts whose model
 // call failed (nil: none); their files are Skipped with reason
-// model_call_failed. The repository context summed over the parts is added.
+// model_call_failed. The repository context summed over the parts is added,
+// and the project context (X-32), which every part's prompt carries.
 func (pl *Plan) partsCoverage(failed []bool) Coverage {
 	covs := make([]Coverage, len(pl.parts))
 	for i, pt := range pl.parts {
@@ -216,6 +217,7 @@ func (pl *Plan) partsCoverage(failed []bool) Coverage {
 	if pl.repoCtx.Status != "" {
 		c.RepoContext = pl.repoCtx
 	}
+	c.Guidelines, c.FileTree = pl.proj.Coverage()
 	return c
 }
 

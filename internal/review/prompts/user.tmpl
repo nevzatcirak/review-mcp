@@ -47,6 +47,18 @@ already rendered: the fixed header of CIHeader and the failing and pending
 checks inside an adaptive code fence). It follows the discussion block and
 precedes the repository context; without one nothing is rendered, so the
 prompt is byte-identical to the one without the feature.
+
+Intentional deviation (X-32): upstream has no project guidelines and no
+file tree. When review.guidelines_paths names a file that exists at the
+pull request's base revision, the pipeline supplies .guidelines (the fixed
+header of projctx.GuidelinesHeader, with the path, and the file's text
+inside an adaptive code fence, cut at a line boundary to its budget); when
+review.file_tree is on, it supplies .file_tree (the fixed header of
+projctx.TreeHeader and the listing of the directories the change touches,
+at the base revision, inside an adaptive code fence). Both follow the CI
+block and precede the repository context, guidelines first; without them
+nothing is rendered, so the prompt is byte-identical to the one without the
+feature.
 */}}
 
 
@@ -73,6 +85,14 @@ PR Description:
 {{- if .ci }}
 
 {{ .ci }}
+{{- end }}
+{{- if .guidelines }}
+
+{{ .guidelines }}
+{{- end }}
+{{- if .file_tree }}
+
+{{ .file_tree }}
 {{- end }}
 {{- if .repo_context }}
 

@@ -2,11 +2,14 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"net/url"
 	"path/filepath"
 	"regexp"
 	"regexp/syntax"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/bmatcuk/doublestar/v4"
 
@@ -53,6 +56,10 @@ func (l *loader) validate() {
 	if !l.bad["review.max_ci_tokens"] && c.Review.MaxCITokens < 0 {
 		l.problem("review.max_ci_tokens: %d must not be negative (0 turns the CI block off)", c.Review.MaxCITokens)
 	}
+	l.validateGuidelines()
+	if !l.bad["review.max_tree_tokens"] && c.Review.MaxTreeTokens < 0 {
+		l.problem("review.max_tree_tokens: %d must not be negative (0 turns the file tree off)", c.Review.MaxTreeTokens)
+	}
 	if !l.bad["review.max_chunks"] && (c.Review.MaxChunks < MinMaxChunks || c.Review.MaxChunks > MaxMaxChunks) {
 		l.problem("review.max_chunks: %d is out of range (%d-%d)", c.Review.MaxChunks, MinMaxChunks, MaxMaxChunks)
 	}
@@ -65,6 +72,62 @@ func (l *loader) validate() {
 	if l.mode == ModeServe {
 		l.validateServe()
 	}
+}
+
+// Bounds of review.guidelines_paths (X-32).
+const (
+	// MaxGuidelinesPaths is the most candidate paths.
+	MaxGuidelinesPaths = 10
+	// MaxGuidelinesPathBytes is the longest candidate path.
+	MaxGuidelinesPathBytes = 512
+)
+
+// validateGuidelines checks review.guidelines_paths and
+// review.max_guidelines_tokens. A path is relative to the repository root:
+// not empty, at most MaxGuidelinesPathBytes, no leading "/", no backslash,
+// no control character, and no empty, "." or ".." segment (so no trailing
+// "/" either). The index is reported, not the value.
+func (l *loader) validateGuidelines() {
+	r := &l.cfg.Review
+	if !l.bad["review.max_guidelines_tokens"] && r.MaxGuidelinesTokens < 0 {
+		l.problem("review.max_guidelines_tokens: %d must not be negative (0 turns the guidelines off)", r.MaxGuidelinesTokens)
+	}
+	if l.bad["review.guidelines_paths"] {
+		return
+	}
+	if len(r.GuidelinesPaths) > MaxGuidelinesPaths {
+		l.problem("review.guidelines_paths: %d paths, at most %d are allowed", len(r.GuidelinesPaths), MaxGuidelinesPaths)
+	}
+	for i, p := range r.GuidelinesPaths {
+		if reason := guidelinesPathProblem(p); reason != "" {
+			l.problem("review.guidelines_paths[%d]: %s", i, reason)
+		}
+	}
+}
+
+// guidelinesPathProblem returns why p is not a valid guidelines path, or "".
+func guidelinesPathProblem(p string) string {
+	switch {
+	case p == "":
+		return "must not be empty"
+	case len(p) > MaxGuidelinesPathBytes:
+		return fmt.Sprintf("longer than %d bytes", MaxGuidelinesPathBytes)
+	case strings.HasPrefix(p, "/"):
+		return "must be relative to the repository root (no leading \"/\")"
+	case strings.ContainsRune(p, '\\'):
+		return "must use \"/\" as the separator"
+	case !utf8.ValidString(p) || strings.ContainsFunc(p, unicode.IsControl):
+		return "must not contain control characters"
+	}
+	for _, seg := range strings.Split(p, "/") {
+		switch seg {
+		case "":
+			return "must not contain an empty segment (\"//\" or a trailing \"/\")"
+		case ".", "..":
+			return "must not contain \".\" or \"..\" segments"
+		}
+	}
+	return ""
 }
 
 // Bounds of review.max_chunks and review.max_total_findings (X-19).

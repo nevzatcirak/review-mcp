@@ -68,6 +68,11 @@ type PromptInput struct {
 	// and the fenced threads); empty omits it. It is third-party text, and
 	// part of the scaffolding the diff budget reserves.
 	Discussion string
+	// Guidelines and FileTree are the rendered project guidelines and
+	// file-tree blocks (projctx, X-32), as pr_review's; empty omits each.
+	// They are repository text, and part of the scaffolding.
+	Guidelines string
+	FileTree   string
 	// RepoContext is the rendered repository-context block (repoctx); empty
 	// omits it.
 	RepoContext string
@@ -102,6 +107,8 @@ func (in *PromptInput) vars() map[string]any {
 		"target_branch":      in.TargetBranch,
 		"description":        in.Description,
 		"discussion":         in.Discussion,
+		"guidelines":         in.Guidelines,
+		"file_tree":          in.FileTree,
 		"repo_context":       in.RepoContext,
 		"part_header":        in.PartHeader,
 		"diff":               in.Diff,

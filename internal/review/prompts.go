@@ -54,6 +54,13 @@ type PromptInput struct {
 	// pending checks, see CIBlock); empty omits it. It is third-party text,
 	// and part of the scaffolding.
 	CI string
+	// Guidelines is the rendered guidelines block (projctx.GuidelinesHeader
+	// and the fenced guidelines read at the base revision); FileTree the
+	// rendered file-tree block (projctx.TreeHeader and the fenced listing of
+	// the touched directories). Empty omits each. They are repository text
+	// (X-32), and part of the scaffolding.
+	Guidelines string
+	FileTree   string
 	// RepoContext is the rendered repository-context block (repoctx.Header
 	// and the fenced uses of the changed symbols, see repoctx.Render); empty
 	// omits it. It is repository text, and part of the scaffolding.
@@ -86,6 +93,8 @@ func (in *PromptInput) vars() map[string]any {
 		"description":        in.Description,
 		"discussion":         in.Discussion,
 		"ci":                 in.CI,
+		"guidelines":         in.Guidelines,
+		"file_tree":          in.FileTree,
 		"repo_context":       in.RepoContext,
 		"part_header":        in.PartHeader,
 		"diff":               in.Diff,

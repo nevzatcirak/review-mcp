@@ -46,6 +46,9 @@ func addLeaves(t *testing.T, out map[string]leaf, prefix, name string, sv reflec
 		if jk := ff.Tag.Get("json"); jk != tk {
 			t.Errorf("%s.%s: json tag %q differs from toml tag %q", name, ff.Name, jk, tk)
 		}
+		if tk == "-" {
+			continue // derived by Load, not a key (Review.GuidelinesPathsExplicit)
+		}
 		if ff.Type.Kind() == reflect.Struct {
 			addLeaves(t, out, prefix+"."+tk, name+"."+ff.Name, sv.Field(j))
 			continue

@@ -154,6 +154,25 @@ type Review struct {
 	// MaxCITokens is the token budget of the CI block of the prompt (X-31);
 	// 0 turns the block off.
 	MaxCITokens int `toml:"max_ci_tokens" json:"max_ci_tokens"`
+	// GuidelinesPaths are the candidate paths of the project's guidelines
+	// file, relative to the repository root; pr_review and pr_improve read
+	// the first one that exists at the pull request's base revision (X-32).
+	// An empty list turns the guidelines off.
+	GuidelinesPaths []string `toml:"guidelines_paths" json:"guidelines_paths"`
+	// GuidelinesPathsExplicit is true when review.guidelines_paths was set
+	// in the configuration file or the environment rather than left at its
+	// default: only then is a missing guidelines file worth a note. Load
+	// sets it from the Report; it is not a configuration key.
+	GuidelinesPathsExplicit bool `toml:"-" json:"-"`
+	// MaxGuidelinesTokens is the token budget of the guidelines block of
+	// the prompt (X-32); 0 turns the guidelines off.
+	MaxGuidelinesTokens int `toml:"max_guidelines_tokens" json:"max_guidelines_tokens"`
+	// FileTree lists the directories the change touches, at the base
+	// revision, for pr_review and pr_improve (X-32).
+	FileTree bool `toml:"file_tree" json:"file_tree"`
+	// MaxTreeTokens is the token budget of the file-tree block of the
+	// prompt (X-32); 0 turns the block off.
+	MaxTreeTokens int `toml:"max_tree_tokens" json:"max_tree_tokens"`
 	// MaxChunks is the most model calls ("parts") one review makes when the
 	// prepared diff does not hold every reviewable file (X-19); 1 turns
 	// chunking off.
@@ -257,6 +276,10 @@ func Defaults() *Config {
 			MaxDiscussionTokens:   1500,
 			CIStatus:              true,
 			MaxCITokens:           200,
+			GuidelinesPaths:       []string{".review-mcp/guidelines.md", "CONTRIBUTING.md"},
+			MaxGuidelinesTokens:   1500,
+			FileTree:              true,
+			MaxTreeTokens:         600,
 			MaxChunks:             8,
 			MaxTotalFindings:      10,
 		},

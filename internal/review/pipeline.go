@@ -14,6 +14,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
+	"github.com/nevzatcirak/review-mcp/internal/projctx"
 	"github.com/nevzatcirak/review-mcp/internal/prompt"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/repoctx"
@@ -197,7 +198,10 @@ type Plan struct {
 	repoCtx llmrun.RepoContext
 	// RepoReport is the repository-context detail for diag review
 	// --dry-run; nil when repository context is off.
-	RepoReport  *repoctx.Report
+	RepoReport *repoctx.Report
+	// proj is the project context (X-32), whose coverage a review in parts
+	// carries too.
+	proj        *projctx.Context
 	ref         provider.PRRef
 	p           provider.Provider
 	pr          *provider.PullRequest
@@ -366,6 +370,13 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		ciBlock, ciLeft = CIBlock(ci, cfg.Review.MaxCITokens, factor)
 	}
 
+	// The project's guidelines and the listing of the directories the change
+	// touches (X-32), read at the base revision the diff used, so that the
+	// pull request cannot rewrite the rules it is judged by. A failed read
+	// is a status and a note, never a failed review.
+	proj := projctx.ReadFor(ctx, cfg, p, ref, pr, d, rcs, log)
+	pl.proj = proj
+
 	// Step 3: description.
 	in := PromptInput{
 		Toggles:           toggles,
@@ -377,6 +388,8 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		Description:       tokens.ClipDescription(pr.Description, cfg.Diff.MaxDescriptionTokens, factor),
 		Discussion:        disc.Block,
 		CI:                ciBlock,
+		Guidelines:        proj.Guidelines(),
+		FileTree:          proj.Tree(),
 		Date:              prompt.Date(deps.Clock),
 	}
 
@@ -391,6 +404,30 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		PromptTokens:    promptTokens,
 		Factor:          factor,
 		MaxDiffTokens:   tokens.Cap(cfg.Diff.MaxTokens),
+	}
+	// When the scaffolding leaves no room for the diff, the optional blocks
+	// give way in a fixed order: the file tree, then the guidelines (cut at
+	// a line boundary by what is missing, until none is left), then the
+	// discussion, then the CI results. The blocks of X-32 go first, so
+	// that the discussion and the CI block keep the room they had before.
+	// The blocks of X-32 give way again, in the same order, when the diff
+	// prepared below does not fit beside them (step 5).
+	remeasure := func() error {
+		promptTokens, err = ScaffoldingTokens(in, factor)
+		budget.PromptTokens = promptTokens
+		return err
+	}
+	if budget.RequireCapacity() != nil && proj.DropTree() {
+		in.FileTree = ""
+		if err := remeasure(); err != nil {
+			return nil, err
+		}
+	}
+	for budget.RequireCapacity() != nil && proj.CutGuidelines(1-budget.SoftLimit()) {
+		in.Guidelines = proj.Guidelines()
+		if err := remeasure(); err != nil {
+			return nil, err
+		}
 	}
 	if budget.RequireCapacity() != nil && in.Discussion != "" {
 		// The discussion is optional: a context window too small for it
@@ -438,6 +475,32 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		reserve = 0
 		prep, err = prepare(0)
 	}
+	// A diff that does not fit beside the blocks of X-32 (it cannot be
+	// prepared, a file is clipped, or a review in one call leaves files
+	// out) makes them give way in the same order: the file tree, then the
+	// guidelines, halved until the diff fits. Only when the diff would fit
+	// without them, so that they never go for nothing.
+	oneCall := maxChunks <= 1
+	if projctx.DiffDoesNotFit(prep, err, oneCall) && proj.HasBlocks() {
+		bare := in
+		bare.Guidelines, bare.FileTree = "", ""
+		bareTokens, serr := ScaffoldingTokens(bare, factor)
+		if serr != nil {
+			return nil, serr
+		}
+		probe := dIn
+		probe.Budget.PromptTokens = bareTokens
+		if bp, berr := diffpipe.Prepare(probe); !projctx.DiffDoesNotFit(bp, berr, oneCall) {
+			for projctx.DiffDoesNotFit(prep, err, oneCall) && proj.Shrink() {
+				in.Guidelines, in.FileTree = proj.Guidelines(), proj.Tree()
+				if serr := remeasure(); serr != nil {
+					return nil, serr
+				}
+				base, dIn.Budget = budget, budget
+				prep, err = prepare(reserve)
+			}
+		}
+	}
 	if err != nil {
 		if errors.Is(err, tokens.ErrDoesNotFit) {
 			return nil, doesNotFit(err)
@@ -470,6 +533,8 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	if ciLeft {
 		res.Notes = append(res.Notes, NoteCILeftOut)
 	}
+	res.Notes = append(res.Notes, proj.Notes()...)
+	res.Coverage.Guidelines, res.Coverage.FileTree = proj.Coverage()
 	for _, f := range enabledFields(toggles) {
 		res.EnabledFields = append(res.EnabledFields, f.key)
 	}
@@ -514,6 +579,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			budget = base
 			pl.Budget = budget
 			res.Coverage, res.Metadata.DiffTokens, res.Metadata.FastPath = buildCoverage(prep, flt), prep.Tokens, prep.FastPath
+			res.Coverage.Guidelines, res.Coverage.FileTree = proj.Coverage()
 			if leavesFilesOut(prep) {
 				if ok, err = pl.planParts(ctx, dIn, in, maxChunks, rcs, 0); err != nil {
 					return nil, err

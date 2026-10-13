@@ -45,6 +45,11 @@ func TestDefaultsAppliedWhenNothingSet(t *testing.T) {
 		{"review.max_discussion_tokens", cfg.Review.MaxDiscussionTokens, 1500},
 		{"review.ci_status", cfg.Review.CIStatus, true},
 		{"review.max_ci_tokens", cfg.Review.MaxCITokens, 200},
+		{"review.guidelines_paths", cfg.Review.GuidelinesPaths, []string{".review-mcp/guidelines.md", "CONTRIBUTING.md"}},
+		{"review.guidelines_paths explicit", cfg.Review.GuidelinesPathsExplicit, false},
+		{"review.max_guidelines_tokens", cfg.Review.MaxGuidelinesTokens, 1500},
+		{"review.file_tree", cfg.Review.FileTree, true},
+		{"review.max_tree_tokens", cfg.Review.MaxTreeTokens, 600},
 		{"review.max_chunks", cfg.Review.MaxChunks, 8},
 		{"review.max_total_findings", cfg.Review.MaxTotalFindings, 10},
 		{"ask.extra_instructions", cfg.Ask.ExtraInstructions, ""},
@@ -224,6 +229,22 @@ func TestFileEmptyListOverridesDefault(t *testing.T) {
 	}
 }
 
+// TestGuidelinesPathsExplicit: review.guidelines_paths counts as configured
+// explicitly when the file or the environment sets it, also to the default
+// value, and not when it is left at the default (X-32).
+func TestGuidelinesPathsExplicit(t *testing.T) {
+	file := "[review]\nguidelines_paths = [\".review-mcp/guidelines.md\", \"CONTRIBUTING.md\"]\n"
+	cfg, rep := mustLoad(t, memSrc(envWith(map[string]string{"REVIEW_MCP_CONFIG": "/c.toml"}), map[string]string{"/c.toml": file}))
+	if !cfg.Review.GuidelinesPathsExplicit || rep.Sources["review.guidelines_paths"] != OriginFile {
+		t.Errorf("set in the file: explicit = %v, source %q", cfg.Review.GuidelinesPathsExplicit, rep.Sources["review.guidelines_paths"])
+	}
+	file = "[review]\nmax_guidelines_tokens = 100\n"
+	cfg, _ = mustLoad(t, memSrc(envWith(map[string]string{"REVIEW_MCP_CONFIG": "/c.toml"}), map[string]string{"/c.toml": file}))
+	if cfg.Review.GuidelinesPathsExplicit {
+		t.Error("left at the default: must not count as explicit")
+	}
+}
+
 func TestFileErrors(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -349,6 +370,15 @@ func TestEnvParsingStrict(t *testing.T) {
 		{"REVIEW_MCP_REVIEW_CI_STATUS", "false", func(c *Config) bool { return !c.Review.CIStatus }},
 		{"REVIEW_MCP_REVIEW_MAX_CI_TOKENS", "0", func(c *Config) bool { return c.Review.MaxCITokens == 0 }},
 		{"REVIEW_MCP_REVIEW_MAX_CI_TOKENS", "350", func(c *Config) bool { return c.Review.MaxCITokens == 350 }},
+		{"REVIEW_MCP_REVIEW_GUIDELINES_PATHS", " docs/rules.md , CONTRIBUTING.md ", func(c *Config) bool {
+			return reflect.DeepEqual(c.Review.GuidelinesPaths, []string{"docs/rules.md", "CONTRIBUTING.md"}) && c.Review.GuidelinesPathsExplicit
+		}},
+		{"REVIEW_MCP_REVIEW_GUIDELINES_PATHS", "", func(c *Config) bool {
+			return c.Review.GuidelinesPaths != nil && len(c.Review.GuidelinesPaths) == 0 && c.Review.GuidelinesPathsExplicit
+		}},
+		{"REVIEW_MCP_REVIEW_MAX_GUIDELINES_TOKENS", "0", func(c *Config) bool { return c.Review.MaxGuidelinesTokens == 0 }},
+		{"REVIEW_MCP_REVIEW_FILE_TREE", "false", func(c *Config) bool { return !c.Review.FileTree }},
+		{"REVIEW_MCP_REVIEW_MAX_TREE_TOKENS", "900", func(c *Config) bool { return c.Review.MaxTreeTokens == 900 }},
 		{"REVIEW_MCP_REVIEW_MAX_CHUNKS", "1", func(c *Config) bool { return c.Review.MaxChunks == 1 }},
 		{"REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS", "25", func(c *Config) bool { return c.Review.MaxTotalFindings == 25 }},
 		{"REVIEW_MCP_CONTEXT_REPO_ENABLED", "true", func(c *Config) bool { return c.Context.Repo.Enabled }},
@@ -390,6 +420,18 @@ func TestEnvParsingStrict(t *testing.T) {
 		{"REVIEW_MCP_REVIEW_CI_STATUS", "no", "REVIEW_MCP_REVIEW_CI_STATUS: invalid value \"no\" (expected a boolean"},
 		{"REVIEW_MCP_REVIEW_MAX_CI_TOKENS", "1.5k", "REVIEW_MCP_REVIEW_MAX_CI_TOKENS: invalid value"},
 		{"REVIEW_MCP_REVIEW_MAX_CI_TOKENS", "-1", "review.max_ci_tokens: -1 must not be negative"},
+		{"REVIEW_MCP_REVIEW_GUIDELINES_PATHS", "a.md,,b.md", "REVIEW_MCP_REVIEW_GUIDELINES_PATHS: empty item at position 2"},
+		{"REVIEW_MCP_REVIEW_GUIDELINES_PATHS", "/etc/rules.md", "review.guidelines_paths[0]: must be relative to the repository root"},
+		{"REVIEW_MCP_REVIEW_GUIDELINES_PATHS", "docs/../../x.md", "review.guidelines_paths[0]: must not contain \".\" or \"..\" segments"},
+		{"REVIEW_MCP_REVIEW_GUIDELINES_PATHS", "ok.md,./x.md", "review.guidelines_paths[1]: must not contain \".\" or \"..\" segments"},
+		{"REVIEW_MCP_REVIEW_GUIDELINES_PATHS", "docs/", "review.guidelines_paths[0]: must not contain an empty segment"},
+		{"REVIEW_MCP_REVIEW_GUIDELINES_PATHS", "docs\\rules.md", "review.guidelines_paths[0]: must use \"/\" as the separator"},
+		{"REVIEW_MCP_REVIEW_GUIDELINES_PATHS", "a\tb.md", "review.guidelines_paths[0]: must not contain control characters"},
+		{"REVIEW_MCP_REVIEW_GUIDELINES_PATHS", strings.Repeat("a", 513), "review.guidelines_paths[0]: longer than 512 bytes"},
+		{"REVIEW_MCP_REVIEW_GUIDELINES_PATHS", "a,b,c,d,e,f,g,h,i,j,k", "review.guidelines_paths: 11 paths, at most 10 are allowed"},
+		{"REVIEW_MCP_REVIEW_MAX_GUIDELINES_TOKENS", "-1", "review.max_guidelines_tokens: -1 must not be negative"},
+		{"REVIEW_MCP_REVIEW_FILE_TREE", "yes", "REVIEW_MCP_REVIEW_FILE_TREE: invalid value \"yes\" (expected a boolean"},
+		{"REVIEW_MCP_REVIEW_MAX_TREE_TOKENS", "-1", "review.max_tree_tokens: -1 must not be negative"},
 		{"REVIEW_MCP_REVIEW_MAX_CHUNKS", "eight", "REVIEW_MCP_REVIEW_MAX_CHUNKS: invalid value"},
 		{"REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS", "1.5", "REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS: invalid value"},
 		{"REVIEW_MCP_LLM_MODEL", "", "REVIEW_MCP_LLM_MODEL is set but empty"},

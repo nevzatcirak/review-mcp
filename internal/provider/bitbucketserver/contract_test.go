@@ -35,6 +35,12 @@ func TestReviewCI(t *testing.T) {
 	contract.RunReviewCI(t, ctFixture{})
 }
 
+// TestReviewProject runs the project-context scenario (X-32) of pr_review
+// and pr_improve through this provider and the contract fake.
+func TestReviewProject(t *testing.T) {
+	contract.RunReviewProject(t, ctFixture{})
+}
+
 const (
 	ctPrefix    = "/bitbucket" // context path
 	ctRepo      = "/rest/api/1.0/projects/PROJ/repos/demo"

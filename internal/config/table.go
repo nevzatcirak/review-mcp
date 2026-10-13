@@ -87,6 +87,10 @@ var table = []entry{
 	{"review.max_discussion_tokens", "REVIEW_MCP_REVIEW_MAX_DISCUSSION_TOKENS", func(c *Config) any { return &c.Review.MaxDiscussionTokens }},
 	{"review.ci_status", "REVIEW_MCP_REVIEW_CI_STATUS", func(c *Config) any { return &c.Review.CIStatus }},
 	{"review.max_ci_tokens", "REVIEW_MCP_REVIEW_MAX_CI_TOKENS", func(c *Config) any { return &c.Review.MaxCITokens }},
+	{"review.guidelines_paths", "REVIEW_MCP_REVIEW_GUIDELINES_PATHS", func(c *Config) any { return &c.Review.GuidelinesPaths }},
+	{"review.max_guidelines_tokens", "REVIEW_MCP_REVIEW_MAX_GUIDELINES_TOKENS", func(c *Config) any { return &c.Review.MaxGuidelinesTokens }},
+	{"review.file_tree", "REVIEW_MCP_REVIEW_FILE_TREE", func(c *Config) any { return &c.Review.FileTree }},
+	{"review.max_tree_tokens", "REVIEW_MCP_REVIEW_MAX_TREE_TOKENS", func(c *Config) any { return &c.Review.MaxTreeTokens }},
 	{"review.max_chunks", "REVIEW_MCP_REVIEW_MAX_CHUNKS", func(c *Config) any { return &c.Review.MaxChunks }},
 	{"review.max_total_findings", "REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS", func(c *Config) any { return &c.Review.MaxTotalFindings }},
 

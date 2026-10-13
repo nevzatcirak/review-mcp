@@ -1,5 +1,7 @@
 package review
 
+import "github.com/nevzatcirak/review-mcp/internal/llmrun"
+
 // ResultSchema is the JSON schema (draft 2020-12) of Result, for the
 // pr_review tool's MCP output schema (DQ-6; WP-PR-4e attaches it). The
 // review part comes from the descriptor table (ReviewSchema).
@@ -63,6 +65,8 @@ func ResultSchema() map[string]any {
 				"references": integer("uses of those symbols shown to the model"),
 				"files":      integer("distinct files among the shown uses (summed over the parts of a review in parts)"),
 			}, "status", "reason", "symbols", "references", "files"),
+			"guidelines": llmrun.GuidelinesSchema("the project guidelines read at the target branch (X-32); always present"),
+			"file_tree":  llmrun.FileTreeSchema("the listing of the directories the change touches, at the target branch (X-32); always present"),
 		}, "included", "clipped", "deleted_listed", "omitted", "skipped", "filtered", "partial", "reviewed_files",
 			"total_files", "not_reviewed_files", "model_calls", "failed_parts", "repo_context"),
 		"notes": strList("notes about truncation, dropped findings, clipped or trimmed files and the re-ask"),

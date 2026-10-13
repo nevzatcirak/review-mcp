@@ -156,27 +156,13 @@ func (r *Runner) Grep(ctx context.Context, c Checkout, q Query) (Result, error) 
 		return res, err
 	}
 	sha := strings.ToLower(c.HeadSHA)
-	if !shaRE.MatchString(sha) || c.GitDir == "" {
+	if !shaRE.MatchString(sha) {
 		return res, fail(ReasonUnsupported)
 	}
-	probe := gitProbe(r.opts.GitPath)
-	if !probe.ok() {
-		return res, fail(ReasonGitUnavailable)
-	}
-	root, err := r.openRoot(false)
+	g, err := r.openCheckout(c)
 	if err != nil {
-		return res, fail(ReasonCache)
+		return res, err
 	}
-	entry := filepath.Dir(c.GitDir)
-	rel, relErr := filepath.Rel(root, entry)
-	if !within(root, entry) || relErr != nil || filepath.Base(c.GitDir) != gitDirName || !realDirs(root, rel) {
-		return res, fail(ReasonCache)
-	}
-	if fi, err := os.Lstat(c.GitDir); err != nil || !fi.IsDir() {
-		return res, fail(ReasonCache)
-	}
-	// Tell the LRU sweep this entry is in use; best effort.
-	_ = touch(filepath.Join(entry, markerName))
 
 	maxHits := q.MaxHitsPerSymbol
 	if maxHits <= 0 {
@@ -194,7 +180,6 @@ func (r *Runner) Grep(ctx context.Context, c Checkout, q Query) (Result, error) 
 
 	total, cancel := context.WithTimeout(ctx, grepTotalTimeout)
 	defer cancel()
-	g := &gitRun{path: probe.path, gitDir: c.GitDir, dir: entry, home: homeDir(root)}
 	s := &searcher{g: g, sha: sha, q: q, exclude: toSet(q.Exclude)}
 
 	missing, err := s.missingFiles(total)
@@ -260,6 +245,36 @@ func (r *Runner) Grep(ctx context.Context, c Checkout, q Query) (Result, error) 
 	}
 	res.Files = len(files)
 	return res, nil
+}
+
+// openCheckout checks that c is a repository of this runner's cache (a
+// "git" directory of an entry under the cache root, reached without a
+// symbolic link) and returns the runner of its offline reads. The entry is
+// marked as used for the LRU sweep (best effort). Every failure is an
+// *Error: unsupported, git_unavailable or cache_unusable.
+func (r *Runner) openCheckout(c Checkout) (*gitRun, error) {
+	if c.GitDir == "" {
+		return nil, fail(ReasonUnsupported)
+	}
+	probe := gitProbe(r.opts.GitPath)
+	if !probe.ok() {
+		return nil, fail(ReasonGitUnavailable)
+	}
+	root, err := r.openRoot(false)
+	if err != nil {
+		return nil, fail(ReasonCache)
+	}
+	entry := filepath.Dir(c.GitDir)
+	rel, relErr := filepath.Rel(root, entry)
+	if !within(root, entry) || relErr != nil || filepath.Base(c.GitDir) != gitDirName || !realDirs(root, rel) {
+		return nil, fail(ReasonCache)
+	}
+	if fi, err := os.Lstat(c.GitDir); err != nil || !fi.IsDir() {
+		return nil, fail(ReasonCache)
+	}
+	// Tell the LRU sweep this entry is in use; best effort.
+	_ = touch(filepath.Join(entry, markerName))
+	return &gitRun{path: probe.path, gitDir: c.GitDir, dir: entry, home: homeDir(root)}, nil
 }
 
 // usableSymbol reports whether a name can be passed to git as one pattern:

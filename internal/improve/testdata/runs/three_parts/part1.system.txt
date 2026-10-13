@@ -51,6 +51,7 @@ Specific guidelines for generating code suggestions:
 - Be aware that your input consists only of partial code segments (PR diff code), not the complete codebase. Therefore, avoid making suggestions that might duplicate existing functionality, and refrain from questioning code elements (such as variable declarations or import statements) that may be defined elsewhere in the codebase.
 - Suggest changes only for files whose changes are shown in the diff; the diff may also list files by name only, left out because of its size: do not suggest changes for those.
 - When mentioning code elements (variables, names, or files) in your response, surround them with backticks (`). For example: "verify that `user_id` is..."
+- A suggestion may say that a new file looks misplaced or that a change breaks a stated convention only when the project guidelines or the directory listing show it.
 
 
 The output must be a YAML object equivalent to type $PRCodeSuggestions, according to the following Pydantic definitions:

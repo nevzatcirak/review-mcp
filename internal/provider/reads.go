@@ -37,6 +37,17 @@ const (
 	maxCheckURLBytes = 2048
 )
 
+// ContentFetchConcurrency bounds the parallel file-content requests of one
+// call: every provider's GetDiff fetches contents with at most this many
+// requests in flight, and so does every other caller that reads many files
+// through GetFileAt (the change detection of X-36).
+//
+// DESIGN-QUESTION (WP-7c DQ-5): each provider had its own unexported
+// fetchConcurrency of 4; the change detection reuses the bound, so it is
+// exported here and the providers refer to it (no behaviour change).
+// Recommendation: keep one constant.
+const ContentFetchConcurrency = 4
+
 // Check strategies reported in Checks.Strategy: which endpoint (or
 // endpoints) answered GetChecks.
 const (

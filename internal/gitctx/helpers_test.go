@@ -84,6 +84,10 @@ type fakeBehavior struct {
 	GrepStderr  string `json:"grep_stderr"`
 	GrepSleepMS int    `json:"grep_sleep_ms"`
 	RevListOut  string `json:"revlist_out"`
+	// What "git diff" prints, exits with and writes to stderr (X-36).
+	DiffOut    string `json:"diff_out"`
+	DiffExit   int    `json:"diff_exit"`
+	DiffStderr string `json:"diff_stderr"`
 }
 
 // fakeCall is one recorded invocation of the fake git.

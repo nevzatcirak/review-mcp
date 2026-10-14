@@ -24,7 +24,7 @@ const (
 	apiPrefix = "/api/v1"
 	pageLimit = 50
 	// fetchConcurrency bounds parallel raw-content requests.
-	fetchConcurrency = 4
+	fetchConcurrency = provider.ContentFetchConcurrency
 
 	capKeyDiff = "diff.max_diff_bytes"
 	capKeyFile = "diff.max_file_bytes"

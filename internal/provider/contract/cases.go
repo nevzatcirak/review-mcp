@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/review/anchor"
 )
 
 type suite struct {
@@ -795,10 +796,17 @@ func (s *suite) updatePullRequest(t *testing.T) {
 // too, and listed at its last line with Thread.StartLine its first line by
 // a provider with Traits.InlineRanges, at its first line with StartLine 0 by
 // any other.
+//
+// The anchorable items are placed on the provider's own diff by
+// anchor.Resolve, as pr_review and pr_comment_create place them, so they
+// carry InlineComment.OldLine for the context lines: a provider that places
+// a comment on an unchanged line by both of its numbers needs it (GitLab),
+// every other provider must post the same items unchanged with it set.
 func (s *suite) inline(t *testing.T) {
 	spec := samplePR()
 	p, ref, _ := s.serve(t, spec)
 	pr := mustPR(t, p, ref)
+	fp := mustDiff(t, p, ref).files[pathModified]
 	var f *File
 	for i := range spec.Files {
 		if spec.Files[i].Path == pathModified {
@@ -825,11 +833,30 @@ func (s *suite) inline(t *testing.T) {
 	if lines[added-1] == "" || lines[added+1] == "" {
 		t.Fatalf("the sample hunk has no new-side lines around line %d", added)
 	}
+	at := func(start, end int, body string) provider.InlineComment {
+		t.Helper()
+		a, ok := anchor.Resolve(fp, start, end)
+		if !ok {
+			t.Fatalf("lines %d-%d of %s do not resolve on the provider's diff", start, end, pathModified)
+		}
+		return a.Comment(body)
+	}
+	ctxLine := pick(provider.LineContext)
 	items := []provider.InlineComment{
-		{Path: f.Path, Line: added, LineType: provider.LineAdded, Body: "On the added line."},
-		{Path: f.Path, Line: pick(provider.LineContext), LineType: provider.LineContext, Body: "On a context line."},
+		at(added, added, "On the added line."),
+		at(ctxLine, ctxLine, "On a context line."),
 		{Path: f.Path, Line: outside, LineType: provider.LineContext, Body: "Outside the hunks."},
-		{Path: f.Path, Line: added - 1, EndLine: added + 1, LineType: lines[added-1], Body: "On a range of lines."},
+		at(added-1, added+1, "On a range of lines."),
+	}
+	for i, want := range []provider.InlineComment{
+		{Path: f.Path, Line: added, LineType: provider.LineAdded},
+		{Path: f.Path, Line: ctxLine, LineType: provider.LineContext},
+		{Path: f.Path, Line: outside, LineType: provider.LineContext},
+		{Path: f.Path, Line: added - 1, EndLine: added + 1, LineType: lines[added-1]},
+	} {
+		if it := items[i]; it.Path != want.Path || it.Line != want.Line || it.EndLine != want.EndLine || it.LineType != want.LineType {
+			t.Fatalf("item %d resolved to %+v, want %+v", i, it, want)
+		}
 	}
 	res, err := p.PostInlineComments(t.Context(), ref, pr, items)
 	if err != nil {

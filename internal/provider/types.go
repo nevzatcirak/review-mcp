@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Kind identifies a provider implementation. The string values are shared
@@ -285,6 +287,18 @@ const (
 // 8e5a929). Lines are split at "\n" and at "\r"; a body that starts with "/"
 // is covered too. Without QuickActions body is returned unchanged.
 //
+// One refinement keeps native suggestion blocks exact (X-35): inside a
+// fenced code block whose info string is "suggestion" or
+// "suggestion:-N+M" (a fence of three or more backticks or tildes after at
+// most three spaces, closed by a fence of the same character that is at
+// least as long), a line gets the space only when it could be a quick
+// action (QuickActionLine: "/" followed by a letter, a digit or "_"). A
+// line such as "// comment" or "/* ... */" is left as it is there. Outside
+// such blocks every line that starts with "/" gets the space, exactly as
+// SanitizeQuickActions does. The refinement only ever spares a line that
+// cannot run a quick action, so it does not depend on how the host parses
+// code blocks.
+//
 // It is the one place where published bodies are sanitised: pr_review (the
 // overview and the inline comments), pr_comment_create, pr_comment_reply,
 // pr_ask and pr_describe all publish through it.
@@ -292,7 +306,162 @@ func SanitizeBody(caps Capabilities, body string) string {
 	if !caps.QuickActions {
 		return body
 	}
-	return SanitizeQuickActions(body)
+	return sanitizeSuggestionAware(body)
+}
+
+// QuickActionLine reports whether line could run a quick action: it starts
+// with "/" followed by a letter, a digit or "_". A line such as "//", "/*"
+// or "/" alone cannot. It is the rule SanitizeBody applies inside a
+// suggestion block, and the test a suggestion's code must pass before it is
+// published as a native block on a provider with QuickActions.
+func QuickActionLine(line string) bool {
+	if len(line) < 2 || line[0] != '/' {
+		return false
+	}
+	r, _ := utf8.DecodeRuneInString(line[1:])
+	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
+// HasQuickActionLine reports whether any line of s (split at "\r\n", "\r"
+// and "\n") is a QuickActionLine.
+func HasQuickActionLine(s string) bool {
+	for _, l := range splitLines(s) {
+		if QuickActionLine(l.text) {
+			return true
+		}
+	}
+	return false
+}
+
+// mdLine is one line of a body and the line ending that follows it ("" for
+// the last line).
+type mdLine struct{ text, end string }
+
+// splitLines splits s into lines at "\r\n", "\r" and "\n", the line
+// endings of CommonMark. Joining text and end of every line gives s back.
+func splitLines(s string) []mdLine {
+	var out []mdLine
+	for {
+		i := strings.IndexAny(s, "\r\n")
+		if i < 0 {
+			return append(out, mdLine{text: s})
+		}
+		end := s[i : i+1]
+		if s[i] == '\r' && i+1 < len(s) && s[i+1] == '\n' {
+			end = "\r\n"
+		}
+		out = append(out, mdLine{text: s[:i], end: end})
+		s = s[i+len(end):]
+	}
+}
+
+// codeFence is an open fenced code block: its fence character and length,
+// and whether its info string makes it a suggestion block.
+type codeFence struct {
+	char       byte
+	n          int
+	suggestion bool
+}
+
+// fenceRun returns the fence character and the length of the run of it
+// that starts line after at most three spaces, and the rest of the line;
+// n is 0 when the line does not start with a run of three or more
+// backticks or tildes.
+func fenceRun(line string) (char byte, n int, rest string) {
+	i := 0
+	for i < len(line) && i < 3 && line[i] == ' ' {
+		i++
+	}
+	if i >= len(line) || (line[i] != '`' && line[i] != '~') {
+		return 0, 0, ""
+	}
+	char = line[i]
+	j := i
+	for j < len(line) && line[j] == char {
+		j++
+	}
+	if j-i < 3 {
+		return 0, 0, ""
+	}
+	return char, j - i, line[j:]
+}
+
+// openFence reports the fenced code block line opens, if any. A backtick
+// fence's info string must not contain a backtick (CommonMark).
+func openFence(line string) (codeFence, bool) {
+	char, n, rest := fenceRun(line)
+	if n == 0 || (char == '`' && strings.IndexByte(rest, '`') >= 0) {
+		return codeFence{}, false
+	}
+	return codeFence{char: char, n: n, suggestion: suggestionInfo(strings.Trim(rest, " \t"))}, true
+}
+
+// closes reports whether line closes f: a run of f's character at least as
+// long, after at most three spaces, followed by spaces or tabs only.
+func (f codeFence) closes(line string) bool {
+	char, n, rest := fenceRun(line)
+	return char == f.char && n >= f.n && strings.Trim(rest, " \t") == ""
+}
+
+// suggestionInfo reports whether info is "suggestion" or
+// "suggestion:-N+M" with N and M made of ASCII digits.
+func suggestionInfo(info string) bool {
+	if info == "suggestion" {
+		return true
+	}
+	rest, ok := strings.CutPrefix(info, "suggestion:-")
+	if !ok {
+		return false
+	}
+	n, m, ok := strings.Cut(rest, "+")
+	return ok && asciiDigits(n) && asciiDigits(m)
+}
+
+func asciiDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// sanitizeSuggestionAware is SanitizeBody's rule with QuickActions set: a
+// space in front of every line that starts with "/", except inside a
+// suggestion block, where only a QuickActionLine gets it. Fenced blocks of
+// any other info string are tracked too, so that a fence-like line inside
+// one is content, as in CommonMark; their lines are sanitised as every
+// line outside a suggestion block is.
+func sanitizeSuggestionAware(body string) string {
+	var b strings.Builder
+	b.Grow(len(body) + 8)
+	var open *codeFence
+	for _, l := range splitLines(body) {
+		text := l.text
+		switch {
+		case open != nil && open.closes(text):
+			open = nil
+		case open != nil && open.suggestion:
+			if QuickActionLine(text) {
+				text = " " + text
+			}
+		default:
+			if open == nil {
+				if f, ok := openFence(text); ok {
+					open = &f
+				}
+			}
+			if strings.HasPrefix(text, "/") {
+				text = " " + text
+			}
+		}
+		b.WriteString(text)
+		b.WriteString(l.end)
+	}
+	return b.String()
 }
 
 // SanitizeQuickActions puts a space in front of every line of s that starts
@@ -413,7 +582,14 @@ type InlineComment struct {
 	EndLine int
 	// LineType is the type of Line.
 	LineType LineType
-	Body     string
+	// OldLine is the old-side line number of Line when Line is a context
+	// line (the unchanged line's number in the base file), and 0 for an
+	// added line. It is filled where LineType is computed, from the same
+	// hunk. A provider that places a comment on an unchanged line by both
+	// of its numbers uses it (GitLab's old_line and new_line); the others
+	// ignore it.
+	OldLine int
+	Body    string
 }
 
 // InlineReason says why an inline comment was or was not posted.

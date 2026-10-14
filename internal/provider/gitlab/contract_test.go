@@ -26,10 +26,21 @@ import (
 
 // TestContract runs the provider contract suite against a fake GitLab API
 // v4 under a context path, serving each contract.Spec from a project in a
-// nested group. The read path is WP-6a; the cases of the later work
-// packages are declared pending.
+// nested group. The cases of WP-6d are declared pending.
 func TestContract(t *testing.T) {
 	contract.Run(t, ctFixture{})
+}
+
+// TestReviewDuplicates runs the pr_review duplicate scenario (X-29)
+// through this provider and the contract fake.
+func TestReviewDuplicates(t *testing.T) {
+	contract.RunReviewDuplicates(t, ctFixture{})
+}
+
+// TestReviewFindings runs the merged-publish scenario (X-33) through this
+// provider and the contract fake.
+func TestReviewFindings(t *testing.T) {
+	contract.RunReviewFindings(t, ctFixture{})
 }
 
 // TestReviewProject runs the project-context scenario (X-32) of pr_review
@@ -81,6 +92,16 @@ type ctFixture struct {
 	// of one system note ("added 1 commit"). Neither is part of the
 	// contract Specs, which need every general thread resolvable.
 	individual, systemNote bool
+	// strayLine makes an inline post on that new-side line create a general
+	// note (GitLab could not place it), written by strayAuthor when set and
+	// by the token user otherwise; strayDeleteStatus answers the delete of
+	// a note with that error status.
+	strayLine         int
+	strayAuthor       *contract.User
+	strayDeleteStatus int
+	// objectErrors sends a refused position's errors as an object
+	// ({"message": {"line_code": [...]}}) instead of a Ruby hash string.
+	objectErrors bool
 }
 
 func (ctFixture) Kind() provider.Kind { return provider.KindGitLab }
@@ -90,14 +111,12 @@ func (ctFixture) Traits() contract.Traits {
 		BaseStrategies:  BaseStrategies(),
 		CheckStrategies: CheckStrategies(),
 		Pending: map[string]string{
-			"inline_anchoring":          "WP-6c",
-			"review_status":             "WP-6d",
-			"update_pull_request":       "WP-6d",
-			"checks":                    "WP-6d",
-			"errors/PostInlineComments": "WP-6c",
-			"errors/UpdatePullRequest":  "WP-6d",
-			"errors/GetReviewStatus":    "WP-6d",
-			"errors/GetChecks":          "WP-6d",
+			"review_status":            "WP-6d",
+			"update_pull_request":      "WP-6d",
+			"checks":                   "WP-6d",
+			"errors/UpdatePullRequest": "WP-6d",
+			"errors/GetReviewStatus":   "WP-6d",
+			"errors/GetChecks":         "WP-6d",
 		},
 	}
 }
@@ -154,6 +173,10 @@ type ctGitLab struct {
 	nextID int64
 	// writes are the bodies of the notes written, in order.
 	writes []string
+	// positions are the positions of the inline posts, in order; deleted
+	// the ids of the notes deleted.
+	positions []ctPositionIn
+	deleted   []int64
 }
 
 func ctUser(u contract.User) map[string]any {
@@ -291,7 +314,7 @@ func (g *ctGitLab) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		contract.WriteError(w, http.StatusUnauthorized)
 		return
 	}
-	if g.serveComments(w, r, path) {
+	if g.serveInline(w, r, path) || g.serveComments(w, r, path) {
 		return
 	}
 	if r.Method != http.MethodGet {

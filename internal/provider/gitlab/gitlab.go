@@ -12,8 +12,8 @@
 // revision from diff_refs, the diff with contents, the commit messages, the
 // token's user, files and directory listings at a revision; and the
 // discussions (WP-6b, comments.go): threads, replies, edits and general
-// comments. Inline discussions (WP-6c), and pr_info, description edits and
-// CI (WP-6d) are pending (pending.go).
+// comments; and the inline discussions (WP-6c, inline.go). pr_info,
+// description edits and CI (WP-6d) are pending (pending.go).
 package gitlab
 
 import (
@@ -211,12 +211,15 @@ func (*Provider) Kind() provider.Kind { return provider.KindGitLab }
 // Capabilities implements provider.Provider. GitLab renders GFM with tables
 // and has labels, and a published line that starts with "/" can run a
 // quick action, so every published body is slash-sanitised (X-35). Both
-// kinds of discussion can be resolved. Inline comments and suggestion
-// blocks (WP-6c) and description edits (WP-6d) are not set until those
-// packages land.
+// kinds of discussion can be resolved. Inline comments are discussions on
+// one line (inline.go), and a native suggestion block sits on that line
+// and says how many lines below it it replaces ("suggestion:-0+N",
+// SuggestionStyleOffset). Description edits (WP-6d) are not set until that
+// package lands.
 func (*Provider) Capabilities() provider.Capabilities {
 	return provider.Capabilities{
-		GFM: true, MarkdownTables: true, Labels: true, QuickActions: true,
+		GFM: true, MarkdownTables: true, Labels: true, InlineComments: true,
+		SuggestionBlocks: true, SuggestionStyle: provider.SuggestionStyleOffset, QuickActions: true,
 		InlineThreadResolution: true, GeneralThreadResolution: true,
 	}
 }

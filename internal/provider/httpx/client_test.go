@@ -402,3 +402,45 @@ func TestNoLeakInLogsOrErrors(t *testing.T) {
 		}
 	}
 }
+
+// TestErrorProbe: the probe of a request sees the status and the first
+// bytes of a non-2xx body and only its answer comes back; the body is not
+// returned, the error carries none of it, and a 2xx response or a request
+// without a probe never calls it.
+func TestErrorProbe(t *testing.T) {
+	const marker = "PROBE-BODY-MARKER-41d9"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/ok" {
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"message":"` + marker + `"}` + strings.Repeat(" ", 8<<10)))
+	}))
+	defer srv.Close()
+	c := newClient(t, srv.URL, nil)
+	var calls int
+	var seen []byte
+	probe := func(status int, body []byte) bool {
+		calls++
+		seen = append([]byte(nil), body...)
+		return status == http.StatusBadRequest && bytes.Contains(body, []byte(marker))
+	}
+	r, err := c.DoRequest(context.Background(), Request{Method: http.MethodPost, PathAndQuery: "/bad", MaxBytes: 100, ErrorProbe: probe})
+	if !errors.Is(err, provider.ErrProtocol) || !r.ErrorProbed || r.Data != nil || calls != 1 {
+		t.Fatalf("err %v, probed %v, data %q, calls %d", err, r.ErrorProbed, r.Data, calls)
+	}
+	if strings.Contains(err.Error(), marker) {
+		t.Errorf("the error carries the body: %q", err)
+	}
+	if len(seen) != drainBytes {
+		t.Errorf("the probe saw %d bytes, want the first %d", len(seen), drainBytes)
+	}
+	r, err = c.DoRequest(context.Background(), Request{Method: http.MethodPost, PathAndQuery: "/bad", MaxBytes: 100})
+	if err == nil || r.ErrorProbed {
+		t.Errorf("without a probe: err %v, probed %v", err, r.ErrorProbed)
+	}
+	if _, err := c.DoRequest(context.Background(), Request{PathAndQuery: "/ok", MaxBytes: 100, ErrorProbe: probe}); err != nil || calls != 1 {
+		t.Errorf("a 2xx response: err %v, probe calls %d", err, calls)
+	}
+}

@@ -9,6 +9,7 @@ package contract
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -114,8 +115,14 @@ type dupRunner struct {
 
 func (d *dupRunner) run(t *testing.T, fs ...dupFinding) *review.Result {
 	t.Helper()
+	return d.runAnswer(t, dupAnswer(fs...))
+}
+
+// runAnswer runs pr_review with publish and the model answer answer.
+func (d *dupRunner) runAnswer(t *testing.T, answer string) *review.Result {
+	t.Helper()
 	d.llm.mu.Lock()
-	d.llm.answer = dupAnswer(fs...)
+	d.llm.answer = answer
 	d.llm.mu.Unlock()
 	cfg := config.Defaults()
 	cfg.LLM.BaseURL, cfg.LLM.Model, cfg.LLM.ContextWindow = "https://llm.example.com/v1", "test-model", 32000
@@ -190,7 +197,9 @@ func checkFinding(t *testing.T, name string, ki *review.KeyIssue, status, url st
 // finding on the place of review-mcp's own finding comment is not posted
 // again and links to that comment; an outdated own comment and anyone
 // else's comment with a copied marker do not count; a resolved own comment
-// does. Each case serves its own pull request.
+// does. A finding's line that could run a quick action is published
+// sanitised exactly when the provider has QuickActions (quick_action_line).
+// Each case serves its own pull request.
 func RunReviewDuplicates(t *testing.T, f Fixture) {
 	t.Helper()
 	var tr Traits
@@ -256,6 +265,42 @@ func RunReviewDuplicates(t *testing.T, f Fixture) {
 		checkFinding(t, fmt.Sprintf("resolved own thread (Resolved %v)", fmtBoolPtr(resolvedThread.Resolved)), &k[2],
 			review.InlineSkippedDuplicate, resolvedURL)
 		checkFinding(t, "free line", &k[3], review.InlinePosted, "")
+	})
+
+	// quick_action_line (X-35, architect request DQ-b2): a finding whose
+	// text has a line "/close" reaches the host through review.Run and the
+	// real renderers as " /close" on a provider with QuickActions, and as
+	// written ("/close") on any other: the sanitising follows the
+	// capability end to end, and a provider without quick actions publishes
+	// the text unchanged.
+	t.Run("quick_action_line", func(t *testing.T) {
+		d := serve(t, dupPR(false))
+		res := d.runAnswer(t, "```yaml\nreview:\n  estimated_effort_to_review: 1\n  key_issues_to_review:\n"+
+			"    - relevant_file: "+pathDup+"\n      issue_header: Not ready\n      issue_content: |\n"+
+			"        Please do not merge this yet.\n        /close\n      start_line: 5\n      end_line: 5\n```\n")
+		checkSummary(t, res, review.InlineSummary{Posted: 1})
+		threads, err := d.p.ListThreads(t.Context(), d.ref)
+		if err != nil {
+			t.Fatalf("ListThreads: %v", err)
+		}
+		var body string
+		for _, th := range threads {
+			if th.Kind == provider.ThreadInline && len(th.Comments) > 0 && strings.Contains(th.Comments[0].Body, "Please do not merge this yet.") {
+				body = th.Comments[0].Body
+			}
+		}
+		if body == "" {
+			t.Fatalf("the finding is not on the host")
+		}
+		lines := strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
+		want, not := "/close", " /close"
+		if d.p.Capabilities().QuickActions {
+			want, not = " /close", "/close"
+		}
+		if !slices.Contains(lines, want) || slices.Contains(lines, not) {
+			t.Errorf("QuickActions %v: the finding's line reached the host as %q, want %q:\n%s",
+				d.p.Capabilities().QuickActions, lines, want, body)
+		}
 	})
 
 	// range_start: an own comment on a range covers every line of it where

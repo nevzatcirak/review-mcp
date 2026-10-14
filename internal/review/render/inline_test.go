@@ -79,3 +79,27 @@ func TestOverviewLinksInlineComments(t *testing.T) {
 		}
 	}
 }
+
+// TestInlineHandWrittenSuggestionFenceSanitised (X-35): a finding is not a
+// suggestion. When the model's text holds a hand-written suggestion fence
+// with a quick action, the published finding has no line that could run
+// it: the renderer escapes the fence's backticks (so it is no fence on the
+// host), and the line is sanitised like any line outside a suggestion
+// block. The sanitiser's own handling of such a fence when it does reach a
+// body unescaped (a client's comment body) is TestSanitizeBodyHandWrittenFence
+// and the tools test of pr_comment_create.
+func TestInlineHandWrittenSuggestionFenceSanitised(t *testing.T) {
+	caps := provider.Capabilities{GFM: true, MarkdownTables: true, Labels: true, InlineComments: true,
+		SuggestionBlocks: true, SuggestionStyle: provider.SuggestionStyleOffset, QuickActions: true}
+	ki := &review.KeyIssue{RelevantFile: "src/app.go", IssueHeader: "Merge it",
+		IssueContent: "Apply this:\n```suggestion\n/merge\n// keep\n```", StartLine: 3, EndLine: 3}
+	got := provider.SanitizeBody(caps, Inline(ki, caps))
+	if !strings.Contains(got, "\n /merge\n") {
+		t.Errorf("the quick action of the hand-written fence was not sanitised:\n%s", got)
+	}
+	for _, l := range strings.Split(got, "\n") {
+		if provider.QuickActionLine(l) {
+			t.Errorf("published line %q could run a quick action", l)
+		}
+	}
+}

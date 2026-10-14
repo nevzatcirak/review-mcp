@@ -113,7 +113,8 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 
 // request is one call of the API: a GET unless method is set. body, when
 // set, is sent as JSON. accept overrides the client's Accept
-// (application/json) when set.
+// (application/json) when set. probe, when set, is the
+// httpx.Request.ErrorProbe of the request.
 type request struct {
 	method   string
 	body     []byte
@@ -121,6 +122,7 @@ type request struct {
 	maxBytes int64
 	capKey   string
 	accept   string
+	probe    func(status int, body []byte) bool
 }
 
 // do performs r. When the answer is a rate limit whose reset is known, at
@@ -156,7 +158,8 @@ func (p *Provider) fitsDeadline(ctx context.Context, d time.Duration) bool {
 }
 
 func (p *Provider) send(ctx context.Context, r request) (*httpx.Response, error) {
-	hr := httpx.Request{Method: http.MethodGet, PathAndQuery: r.path, MaxBytes: r.maxBytes, CapKey: r.capKey, Accept: r.accept}
+	hr := httpx.Request{Method: http.MethodGet, PathAndQuery: r.path, MaxBytes: r.maxBytes, CapKey: r.capKey, Accept: r.accept,
+		ErrorProbe: r.probe}
 	if r.method != "" {
 		hr.Method = r.method
 	}

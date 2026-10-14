@@ -284,16 +284,27 @@ type Request struct {
 	// whose Hint is CapKey.
 	MaxBytes int64
 	CapKey   string
+	// ErrorProbe, when set, is called with the status and the first bytes
+	// (at most 4 KiB, the part read anyway to drain the connection) of a
+	// non-2xx response's body, and its answer is Response.ErrorProbed. It
+	// lets a caller tell one fixed kind of refusal from another without
+	// ever holding the server's text: the bytes are not kept and never
+	// returned, and only the yes-or-no answer leaves this package. A probe
+	// must not retain or log them.
+	ErrorProbe func(status int, body []byte) bool
 }
 
 // Response is what DoRequest received. Data is set for a 2xx response only.
 // Status and Header are set whenever a response was received, also for a
 // non-2xx status, so that a caller can read headers such as a rate-limit
 // reset; the body of a non-2xx response is discarded and never returned.
+// ErrorProbed is the answer of Request.ErrorProbe for a non-2xx response
+// (false without a probe).
 type Response struct {
-	Data   []byte
-	Status int
-	Header http.Header
+	Data        []byte
+	Status      int
+	Header      http.Header
+	ErrorProbed bool
 }
 
 // DoRequest performs r on BaseURL+r.PathAndQuery. It is Do with a per-request
@@ -388,6 +399,10 @@ func (c *Client) send(ctx context.Context, r Request) (*Response, error) {
 			if e := c.classify(status, resp.Header); e != nil {
 				perr = e
 			}
+		}
+		if r.ErrorProbe != nil {
+			head, _ := io.ReadAll(io.LimitReader(resp.Body, drainBytes))
+			out.ErrorProbed = r.ErrorProbe(status, head)
 		}
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, drainBytes))
 		logDone(string(perr.Class))

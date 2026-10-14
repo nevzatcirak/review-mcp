@@ -43,6 +43,20 @@ type Result struct {
 	// Focus echoes the focus of a focused run (X-33): the known value, or
 	// the free text as cleaned (NormalizeFocus); omitted without one.
 	Focus string `json:"focus,omitempty"`
+	// Reviewed is the commit record of the overview (X-36). It is not part
+	// of the tool result: the renderers show it and the publish writes it.
+	Reviewed ReviewedCommit `json:"-"`
+}
+
+// ReviewedCommit is the head commit a run reviewed, as the overview records
+// it (X-36). An empty SHA records nothing.
+type ReviewedCommit struct {
+	// SHA is the recorded commit: the run's head, or for a merged publish
+	// (X-33) the one the previous overview recorded.
+	SHA string
+	// Since is the commit an incremental run continues from; "" for a full
+	// review. Nothing sets it before WP-7d.
+	Since string
 }
 
 // PRInfo identifies the reviewed pull request.

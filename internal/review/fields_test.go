@@ -419,6 +419,9 @@ func jsonKeys(t *testing.T, typ reflect.Type) []string {
 			continue // not in the JSON
 		}
 		name, _, _ := strings.Cut(typ.Field(i).Tag.Get("json"), ",")
+		if name == "-" {
+			continue // not in the JSON
+		}
 		out = append(out, name)
 	}
 	sort.Strings(out)

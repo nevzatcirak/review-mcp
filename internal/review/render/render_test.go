@@ -191,6 +191,7 @@ func fixtures() map[string]*review.Result {
 	}
 	for _, r := range all {
 		r.Metadata.ReviewedAt = "2026-10-06T09:30:15Z"
+		r.Reviewed.SHA = r.PR.HeadSHA
 	}
 	return all
 }
@@ -566,5 +567,46 @@ func TestProviderName(t *testing.T) {
 		if got := providerName(kind); got != want {
 			t.Errorf("providerName(%q) = %q, want %q", kind, got, want)
 		}
+	}
+}
+
+// TestReviewedLine (X-36): the footer line is built from the recorded
+// commits only, in short form, and ends the overview in every profile; the
+// incremental form names the commit the run continues from.
+func TestReviewedLine(t *testing.T) {
+	const head = "abc123def4567890abc123def4567890abc123de"
+	const since = "def5678abc123def4567890abc123def4567890"
+	for name, tc := range map[string]struct {
+		rec  review.ReviewedCommit
+		want string
+	}{
+		"full":                {review.ReviewedCommit{SHA: head}, "Reviewed commit: `abc123d`"},
+		"upper case":          {review.ReviewedCommit{SHA: "ABC123DEF4567890ABC123DEF4567890ABC123DE"}, "Reviewed commit: `abc123d`"},
+		"incremental":         {review.ReviewedCommit{SHA: head, Since: since}, "Reviewed commit: `abc123d` (changes since `def5678`)"},
+		"since is not a sha":  {review.ReviewedCommit{SHA: head, Since: "main"}, "Reviewed commit: `abc123d`"},
+		"nothing recorded":    {review.ReviewedCommit{}, ""},
+		"since alone":         {review.ReviewedCommit{Since: since}, ""},
+		"not a commit id":     {review.ReviewedCommit{SHA: "`x`\n## injected"}, ""},
+		"markdown in the sha": {review.ReviewedCommit{SHA: "abc1234`](http://evil.example)"}, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			res := &review.Result{PR: basePR(), EnabledFields: allKeys, Coverage: baseCoverage(), Notes: []string{"a note"},
+				Reviewed: tc.rec, Review: &review.Review{KeyIssuesToReview: []review.KeyIssue{}}}
+			if got := ReviewedLine(res); got != tc.want {
+				t.Errorf("ReviewedLine = %q, want %q", got, tc.want)
+			}
+			for profile, out := range map[string]string{"client": Client(res), "gitea": Provider(res, capsGitea),
+				"bitbucket": Provider(res, capsBB)} {
+				if tc.want == "" {
+					if strings.Contains(out, "Reviewed commit") {
+						t.Errorf("%s shows a reviewed commit:\n%s", profile, out)
+					}
+					continue
+				}
+				if !strings.HasSuffix(out, "\n\n"+tc.want+"\n") {
+					t.Errorf("%s does not end with %q:\n%s", profile, tc.want, out)
+				}
+			}
+		})
 	}
 }

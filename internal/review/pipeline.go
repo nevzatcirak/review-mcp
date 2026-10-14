@@ -542,6 +542,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	res := &Result{
 		PR: PRInfo{Kind: string(ref.Kind), URL: logging.RedactURL(ref.URL), Number: ref.Number, Title: pr.Title,
 			HeadSHA: pr.HeadSHA},
+		Reviewed:      ReviewedCommit{SHA: ValidReviewedSHA(pr.HeadSHA)},
 		Coverage:      buildCoverage(prep, flt),
 		Notes:         []string{},
 		EnabledFields: []string{},

@@ -47,3 +47,5 @@ Skipped: `binary` (1):
 Filtered: `lockfile_or_minified` (1):
 
 - `go.sum`
+
+Reviewed commit: `abc123d`

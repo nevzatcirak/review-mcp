@@ -155,6 +155,23 @@ func runLine(res *review.Result) string {
 	return "Reviewed " + strings.Join(parts, " ") + "."
 }
 
+// ReviewedLine is the footer line of the overview (X-36): "Reviewed commit:
+// `abc1234`", and for an incremental run "Reviewed commit: `abc1234`
+// (changes since `def5678`)". It is built here from the recorded commit
+// ids only, never from model text, and shows what the hidden reviewed-commit
+// line records; "" when no commit is recorded.
+func ReviewedLine(res *review.Result) string {
+	sha := shortSHA(res.Reviewed.SHA)
+	if sha == "" {
+		return ""
+	}
+	line := "Reviewed commit: `" + sha + "`"
+	if since := shortSHA(res.Reviewed.Since); since != "" {
+		line += " (changes since `" + since + "`)"
+	}
+	return line
+}
+
 // shortSHA is the first 7 characters of a hexadecimal commit id, or ""
 // when sha is not one (it is then not shown).
 func shortSHA(sha string) string {

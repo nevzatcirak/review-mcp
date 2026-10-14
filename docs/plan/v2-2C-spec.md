@@ -128,7 +128,7 @@ Commit: `feat(gitlab): add pr_info, description edits, CI status and repository 
   - **Q3** (owner's go-ahead) `pr_review` with `publish=true` on a throwaway merge request: inline discussions on an added and a context line; a second run posts nothing new (X-29); after a push that moves the commented line away, the old note counts as outdated.
   - **Q4** `pr_improve` with `publish=true`: a native suggestion applies cleanly with "Apply suggestion"; a suggestion whose code starts with `//` stays native; the overview and comments contain no executed quick action (nothing in the merge request's system notes).
   - **Q5** `pr_describe` in description mode: author text unchanged; with an author line `/label ~probe` in the description the call is refused.
-  - **Q5b** Column-0 assumption of every sanitiser: post (with `pr_comment_create`) a note whose lines are ` /label ~probe` (one leading space) and `    /label ~probe` (four spaces); the label is not added. If GitLab runs either, stop: the sanitiser rule must change before rc.6.
+  - **Q5b** Column-0 assumption of every sanitiser: post (with `pr_comment_create`) a note whose lines are ` /label ~probe` (one leading space) and `    /label ~probe` (four spaces); the label is not added. If GitLab runs either, stop: rc.6 is not promoted to 2.0.0, and the sanitiser rule changes first in a fix release candidate (settled DQ-e1).
   - **Q6** CI: with a `.gitlab-ci.yml` that has one passing job, one failing job and one `allow_failure` job, the overview CI line and `pr_info.ci` match the pipeline page.
   - **Q7** Guidelines at base and the file tree (X-32) as on GitHub.
 - Not verifiable on gitlab.com Free: required approvals greater than 0 (Premium), merged-results pipelines; recorded as not verified.

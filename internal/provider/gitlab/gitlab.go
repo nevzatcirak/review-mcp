@@ -10,9 +10,10 @@
 //
 // This package holds the read path (WP-6a): merge request metadata, the base
 // revision from diff_refs, the diff with contents, the commit messages, the
-// token's user, files and directory listings at a revision. Comments and
-// threads (WP-6b), inline discussions (WP-6c), and pr_info, description
-// edits and CI (WP-6d) are pending (pending.go).
+// token's user, files and directory listings at a revision; and the
+// discussions (WP-6b, comments.go): threads, replies, edits and general
+// comments. Inline discussions (WP-6c), and pr_info, description edits and
+// CI (WP-6d) are pending (pending.go).
 package gitlab
 
 import (
@@ -209,11 +210,15 @@ func (*Provider) Kind() provider.Kind { return provider.KindGitLab }
 
 // Capabilities implements provider.Provider. GitLab renders GFM with tables
 // and has labels, and a published line that starts with "/" can run a
-// quick action, so every published body is slash-sanitised (X-35). Inline
-// comments and suggestion blocks (WP-6c), thread resolution (WP-6b) and
-// description edits (WP-6d) are not set until those packages land.
+// quick action, so every published body is slash-sanitised (X-35). Both
+// kinds of discussion can be resolved. Inline comments and suggestion
+// blocks (WP-6c) and description edits (WP-6d) are not set until those
+// packages land.
 func (*Provider) Capabilities() provider.Capabilities {
-	return provider.Capabilities{GFM: true, MarkdownTables: true, Labels: true, QuickActions: true}
+	return provider.Capabilities{
+		GFM: true, MarkdownTables: true, Labels: true, QuickActions: true,
+		InlineThreadResolution: true, GeneralThreadResolution: true,
+	}
 }
 
 // BaseStrategies returns the provider.PullRequest.BaseStrategy values this

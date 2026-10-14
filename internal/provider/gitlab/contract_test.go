@@ -76,6 +76,11 @@ type ctFixture struct {
 	// limitFirst answers the first merge request read with 429 and
 	// Retry-After: 3.
 	limitFirst bool
+	// individual serves the general threads that are not resolved as
+	// individual notes (not resolvable), and systemNote adds a discussion
+	// of one system note ("added 1 commit"). Neither is part of the
+	// contract Specs, which need every general thread resolvable.
+	individual, systemNote bool
 }
 
 func (ctFixture) Kind() provider.Kind { return provider.KindGitLab }
@@ -85,19 +90,10 @@ func (ctFixture) Traits() contract.Traits {
 		BaseStrategies:  BaseStrategies(),
 		CheckStrategies: CheckStrategies(),
 		Pending: map[string]string{
-			"capabilities":              "WP-6b",
-			"threads":                   "WP-6b",
-			"reply_in_thread":           "WP-6b",
-			"general_reply":             "WP-6b",
-			"edit_ownership":            "WP-6b",
 			"inline_anchoring":          "WP-6c",
 			"review_status":             "WP-6d",
 			"update_pull_request":       "WP-6d",
 			"checks":                    "WP-6d",
-			"errors/ListThreads":        "WP-6b",
-			"errors/PostComment":        "WP-6b",
-			"errors/ReplyToComment":     "WP-6b",
-			"errors/EditComment":        "WP-6b",
 			"errors/PostInlineComments": "WP-6c",
 			"errors/UpdatePullRequest":  "WP-6d",
 			"errors/GetReviewStatus":    "WP-6d",
@@ -151,6 +147,13 @@ type ctGitLab struct {
 	// with empty diff_refs (GitLab fills them asynchronously).
 	mrReads int
 	limited bool
+
+	// discs are the discussions, built from the Spec on the first request
+	// and changed by the writes; nextID numbers the notes written.
+	discs  []*ctDisc
+	nextID int64
+	// writes are the bodies of the notes written, in order.
+	writes []string
 }
 
 func ctUser(u contract.User) map[string]any {
@@ -286,6 +289,9 @@ func (g *ctGitLab) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.EscapedPath()
 	if !g.checkHeaders(r) {
 		contract.WriteError(w, http.StatusUnauthorized)
+		return
+	}
+	if g.serveComments(w, r, path) {
 		return
 	}
 	if r.Method != http.MethodGet {

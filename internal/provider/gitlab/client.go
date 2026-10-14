@@ -1,6 +1,7 @@
 package gitlab
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -110,9 +111,12 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// request is one GET of the API. accept overrides the client's Accept
+// request is one call of the API: a GET unless method is set. body, when
+// set, is sent as JSON. accept overrides the client's Accept
 // (application/json) when set.
 type request struct {
+	method   string
+	body     []byte
 	path     string
 	maxBytes int64
 	capKey   string
@@ -153,6 +157,12 @@ func (p *Provider) fitsDeadline(ctx context.Context, d time.Duration) bool {
 
 func (p *Provider) send(ctx context.Context, r request) (*httpx.Response, error) {
 	hr := httpx.Request{Method: http.MethodGet, PathAndQuery: r.path, MaxBytes: r.maxBytes, CapKey: r.capKey, Accept: r.accept}
+	if r.method != "" {
+		hr.Method = r.method
+	}
+	if r.body != nil {
+		hr.Body, hr.ContentType = bytes.NewReader(r.body), mediaJSON
+	}
 	if hr.MaxBytes <= 0 {
 		hr.MaxBytes, hr.CapKey = httpx.MaxJSONBytes, httpx.JSONCapKey
 	}
@@ -167,6 +177,27 @@ func (p *Provider) getJSON(ctx context.Context, path string, out any) error {
 	}
 	// The decoder error is deliberately not propagated: syntax errors quote
 	// bytes of the (untrusted) response.
+	if err := json.Unmarshal(resp.Data, out); err != nil {
+		return protocolErr("response is not valid JSON of the expected shape")
+	}
+	return nil
+}
+
+// sendJSON sends in as a JSON body with method and decodes the JSON
+// response into out (nil: the response is ignored). A rate-limited request
+// was not processed, so it may be repeated once by do.
+func (p *Provider) sendJSON(ctx context.Context, method, path string, in, out any) error {
+	b, err := json.Marshal(in)
+	if err != nil {
+		return protocolErr("request body could not be encoded")
+	}
+	resp, err := p.do(ctx, request{method: method, path: path, body: b})
+	if err != nil {
+		return err
+	}
+	if out == nil {
+		return nil
+	}
 	if err := json.Unmarshal(resp.Data, out); err != nil {
 		return protocolErr("response is not valid JSON of the expected shape")
 	}

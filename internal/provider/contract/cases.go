@@ -319,6 +319,20 @@ func (s *suite) fileLimit(t *testing.T) {
 	})
 }
 
+// commitMessages: every provider returns the commit messages oldest first,
+// whatever order its host lists them in.
+func (s *suite) commitMessages(t *testing.T) {
+	spec := samplePR()
+	p, ref, _ := s.serve(t, spec)
+	got, err := p.GetCommitMessages(t.Context(), ref)
+	if err != nil {
+		t.Fatalf("GetCommitMessages: %v", err)
+	}
+	if !slices.Equal(got, spec.Commits) {
+		t.Errorf("commit messages = %q, want oldest first %q", got, spec.Commits)
+	}
+}
+
 // listingLimit: a host that stops listing changed files gives a diff marked
 // Incomplete, with a note, and the coverage over it is partial though every
 // listed file is reviewed. A complete listing is never marked.

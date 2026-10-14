@@ -260,6 +260,15 @@ func ctPaged(w http.ResponseWriter, r *http.Request, values []any) {
 	ctJSON(w, http.StatusOK, map[string]any{"values": values, "size": len(values), "start": 0, "isLastPage": true})
 }
 
+// commitsJSON lists the commits newest first, as Bitbucket Server does.
+func (b *ctBBS) commitsJSON() []any {
+	var out []any
+	for i := len(b.pr.Commits) - 1; i >= 0; i-- {
+		out = append(out, map[string]any{"id": strings.Repeat(strconv.Itoa(i%10), 40), "message": b.pr.Commits[i]})
+	}
+	return out
+}
+
 func (b *ctBBS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path, ok := strings.CutPrefix(r.URL.EscapedPath(), ctPrefix)
 	if r.Header.Get("Authorization") != "Bearer "+b.pr.Env.Token || !ok {
@@ -286,7 +295,7 @@ func (b *ctBBS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case get && path == ctPull+"/activities":
 		ctPaged(w, r, b.activitiesJSON())
 	case get && path == ctPull+"/commits":
-		ctPaged(w, r, nil)
+		ctPaged(w, r, b.commitsJSON())
 	case get && path == ctPull+"/merge":
 		ctJSON(w, http.StatusOK, map[string]any{"canMerge": true, "conflicted": false, "vetoes": []any{}})
 	case get && strings.HasPrefix(path, ctRepo+"/raw/"):

@@ -289,6 +289,15 @@ func (g *ctGitHub) prJSON() map[string]any {
 	}
 }
 
+// commitsJSON lists the commits oldest first, as GitHub does.
+func (g *ctGitHub) commitsJSON() []any {
+	var out []any
+	for i, m := range g.pr.Commits {
+		out = append(out, map[string]any{"sha": strings.Repeat(strconv.Itoa(i%10), 40), "commit": map[string]any{"message": m}})
+	}
+	return out
+}
+
 // ctStatus is GitHub's status word of a change type.
 var ctStatus = map[provider.ChangeType]string{
 	provider.ChangeAdded: "added", provider.ChangeDeleted: "removed",
@@ -429,7 +438,7 @@ func (g *ctGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case path == ctPull+"/files" || path == ctRepoByID+"/pulls/7/files":
 		g.ctPage(w, r, g.filesJSON(), ctRepoByID+"/pulls/7/files")
 	case path == ctPull+"/commits" || path == ctRepoByID+"/pulls/7/commits":
-		g.ctPage(w, r, nil, ctRepoByID+"/pulls/7/commits")
+		g.ctPage(w, r, g.commitsJSON(), ctRepoByID+"/pulls/7/commits")
 	case contents:
 		g.serveContents(w, r, strings.TrimPrefix(strings.TrimPrefix(path, ctRepo+"/contents"), "/"))
 	case strings.HasSuffix(path, "/check-runs"), strings.HasSuffix(path, "/status"):

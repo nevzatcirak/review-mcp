@@ -39,6 +39,9 @@ type Spec struct {
 	// Checks are the CI statuses and checks the host reports for HeadSHA.
 	// Any other commit has none: the host does not know it.
 	Checks []Check
+	// Commits are the messages of the pull request's commits, oldest first;
+	// a fixture serves them in the host's own order.
+	Commits []string
 	// Unchanged are files the pull request does not touch: they exist with
 	// the same content at BaseSHA and HeadSHA, next to Files (see TreeAt).
 	Unchanged []RepoFile
@@ -334,6 +337,8 @@ func samplePR() Spec {
 				{ID: idGeneralOwn, Author: tokenUser, Body: "Automated summary of the pull request.", Created: at(0)},
 			}},
 		},
+		Commits: []string{"Add the greeting", "Rename the package\n\nThe name now matches its directory.",
+			"Handle a missing newline", "Drop the old helper", "Fix the greeting"},
 		Checks:    sampleChecks(),
 		Unchanged: sampleUnchanged(),
 		TokenUser: tokenUser,

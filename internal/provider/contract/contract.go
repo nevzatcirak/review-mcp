@@ -98,6 +98,7 @@ func Run(t *testing.T, f Fixture) {
 		{"capabilities", s.capabilities},
 		{"metadata", s.metadata},
 		{"file_list", s.fileList},
+		{"commit_messages", s.commitMessages},
 		{"file_limit", s.fileLimit},
 		{"listing_limit", s.listingLimit},
 		{"hunks_and_content", s.hunksAndContent},

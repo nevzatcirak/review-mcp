@@ -84,9 +84,6 @@ type ctFixture struct {
 	// diffLimit serves changes_count with a "+": GitLab stopped listing
 	// the changed files at its diff limit.
 	diffLimit bool
-	// commits are the merge request's commit messages, oldest first; the
-	// fake lists them newest first, as GitLab does.
-	commits []string
 	// modeOnly are paths whose diff entry changes the file mode (b_mode
 	// 100755) and nothing else.
 	modeOnly map[string]bool
@@ -295,8 +292,8 @@ func (g *ctGitLab) diffsJSON() []any {
 // commitsJSON lists the commits newest first.
 func (g *ctGitLab) commitsJSON() []any {
 	out := []any{}
-	for i := len(g.fx.commits) - 1; i >= 0; i-- {
-		msg := g.fx.commits[i]
+	for i := len(g.pr.Commits) - 1; i >= 0; i-- {
+		msg := g.pr.Commits[i]
 		out = append(out, map[string]any{"id": strings.Repeat(strconv.Itoa(i%10), 40), "title": strings.SplitN(msg, "\n", 2)[0],
 			"message": msg})
 	}
@@ -532,7 +529,9 @@ func TestContractDiffLimit(t *testing.T) {
 // pages; GetCommitMessages returns them oldest first. [canary]
 func TestContractCommitOrder(t *testing.T) {
 	want := []string{"first commit", "second commit\n\nwith a body", "third commit", "fourth commit", "fifth commit"}
-	p, ref, _, _ := ctFixture{commits: want}.serve(t, ctSpec(ctModified))
+	spec := ctSpec(ctModified)
+	spec.Commits = want
+	p, ref, _, _ := ctFixture{}.serve(t, spec)
 	got, err := p.GetCommitMessages(t.Context(), ref)
 	if err != nil {
 		t.Fatalf("GetCommitMessages: %v", err)

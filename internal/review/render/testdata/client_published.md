@@ -77,3 +77,5 @@ Filtered: `lockfile_or_minified` (1):
 
 - 1 finding could not be placed on a changed line and is listed in the overview only.
 - 1 finding was already posted on this PR and was not repeated.
+
+Reviewed commit: `abc123d`

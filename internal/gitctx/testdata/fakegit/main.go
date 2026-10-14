@@ -31,6 +31,14 @@ type behavior struct {
 	GrepStderr  string `json:"grep_stderr"`
 	GrepSleepMS int    `json:"grep_sleep_ms"`
 	RevListOut  string `json:"revlist_out"`
+	// Change detection (X-36): what "diff" prints, exits with and writes to
+	// stderr.
+	DiffOut    string `json:"diff_out"`
+	DiffExit   int    `json:"diff_exit"`
+	DiffStderr string `json:"diff_stderr"`
+	// What "ls-tree" prints and exits with (X-36); empty prints nothing.
+	LsTreeOut  string `json:"lstree_out"`
+	LsTreeExit int    `json:"lstree_exit"`
 }
 
 type call struct {
@@ -101,6 +109,13 @@ func run() int {
 		_, _ = os.Stderr.WriteString(beh.GrepStderr)
 		_, _ = os.Stdout.WriteString(beh.GrepOut)
 		return beh.GrepExit
+	case "diff":
+		_, _ = os.Stderr.WriteString(beh.DiffStderr)
+		_, _ = os.Stdout.WriteString(beh.DiffOut)
+		return beh.DiffExit
+	case "ls-tree":
+		_, _ = os.Stdout.WriteString(beh.LsTreeOut)
+		return beh.LsTreeExit
 	case "rev-list":
 		_, _ = os.Stdout.WriteString(beh.RevListOut)
 	case "rev-parse":

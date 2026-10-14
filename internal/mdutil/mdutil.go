@@ -204,17 +204,34 @@ func InlineKeepingCodeSpans(s string) string {
 	return EscapeKeepingCodeSpans(strings.TrimSpace(s), Escape)
 }
 
+// EscapeHTMLKeepingCodeSpans is EscapeKeepingCodeSpans for text inside an
+// HTML element that does not render markdown (the <summary> of a collapsible
+// block): the text between spans is escaped with html.EscapeString, and each
+// well-formed code span (X-30) becomes <code>content</code> with the content
+// escaped the same way.
+func EscapeHTMLKeepingCodeSpans(s string) string {
+	return escapeLines(s, html.EscapeString, false, func(content string) string {
+		return "<code>" + html.EscapeString(content) + "</code>"
+	})
+}
+
 func escapeKeepingCodeSpans(s string, esc func(string) string, cell bool) string {
+	return escapeLines(s, esc, cell, CodeSpan)
+}
+
+// escapeLines escapes s line by line with esc and writes each code span
+// through span, which gets its content after CommonMark's space stripping.
+func escapeLines(s string, esc func(string) string, cell bool, span func(string) string) string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\r", "\n")
 	lines := strings.Split(s, "\n")
 	for i, line := range lines {
-		lines[i] = escapeLineKeepingCodeSpans(line, esc, cell)
+		lines[i] = escapeLineKeepingCodeSpans(line, esc, cell, span)
 	}
 	return strings.Join(lines, "\n")
 }
 
-func escapeLineKeepingCodeSpans(line string, esc func(string) string, cell bool) string {
+func escapeLineKeepingCodeSpans(line string, esc func(string) string, cell bool, span func(string) string) string {
 	var b strings.Builder
 	text := 0 // start of the text not yet written
 	for i := 0; i < len(line); {
@@ -238,11 +255,11 @@ func escapeLineKeepingCodeSpans(line string, esc func(string) string, cell bool)
 		if stripsSpace(content) {
 			content = content[1 : len(content)-1]
 		}
-		span := CodeSpan(content)
+		out := span(content)
 		if cell {
-			span = strings.ReplaceAll(span, "|", `\|`)
+			out = strings.ReplaceAll(out, "|", `\|`)
 		}
-		b.WriteString(span)
+		b.WriteString(out)
 		text, i = closeEnd, closeEnd
 	}
 	if text == 0 {

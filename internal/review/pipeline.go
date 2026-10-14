@@ -18,6 +18,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/prompt"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/repoctx"
+	"github.com/nevzatcirak/review-mcp/internal/review/incremental"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 	"github.com/nevzatcirak/review-mcp/internal/yamlrepair"
 )
@@ -134,6 +135,13 @@ type Args struct {
 	// merged publish; "" leaves the field absent. They need Findings.
 	SecurityConcerns    string
 	PerformanceConcerns string
+	// Incremental replaces review.incremental for the call when not nil
+	// (X-36): review only the files that changed since the last review.
+	// It is not filled by WithConfigDefaults: Prepare reads the
+	// configuration itself, because only an explicit true asks for the note
+	// of a pull request without an earlier review. A merged publish
+	// (Findings) ignores it.
+	Incremental *bool
 }
 
 // WithConfigDefaults returns a with every option the call left unset (nil,
@@ -194,6 +202,11 @@ type Plan struct {
 	// Empty reports that nothing reviewable is left after filtering, so no
 	// model call is made (step 5).
 	Empty bool
+	// Unchanged reports an incremental run with nothing to review (X-36):
+	// the last review recorded the current head, or no listed file changed
+	// since it. Empty is set too, so every caller that skips the model for
+	// an empty plan skips it here; Run also publishes nothing.
+	Unchanged bool
 
 	// parts are the model calls of the review, in order: one for a review
 	// in one call, N for a review in parts (X-19). Each has its prepared
@@ -275,6 +288,11 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 		// the model's answer, and no model is called.
 		return pl.publishSupplied(ctx, deps, args), nil
 	}
+	if pl.Unchanged {
+		// Nothing changed since the last review (X-36): no model call, and
+		// nothing is posted or edited, even with publish.
+		return pl.Result, nil
+	}
 	res := pl.Result
 	if pl.Empty {
 		// Nothing to review: no LLM call (P3 review, 3d DESIGN-QUESTION 4).
@@ -351,6 +369,33 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		return nil, err
 	}
 
+	// The plan is built here so that the incremental lookup below shares the
+	// run's one read of the threads and of the token's user with the
+	// discussion and the publish.
+	pl := &Plan{ref: ref, p: p, pr: pr, d: d, toggles: toggles, maxFindings: maxFindings, log: log, flt: flt,
+		maxTotal: config.EffectiveMaxTotalFindings(cfg.Review, maxFindings)}
+	supplied := args.Findings != nil
+
+	// An incremental review (X-36) continues from the commit the last
+	// review recorded in review-mcp's own overview. Without one the review
+	// is full. When it is the current head, nothing changed: the run ends
+	// here, before anything is fetched for the prompt.
+	inc := fullIncremental(d)
+	var incNotes []string
+	last := ""
+	if on, explicit := incrementalWanted(cfg, args); on {
+		last, incNotes = pl.lastReviewed(ctx, explicit)
+		if last != "" && last == ValidReviewedSHA(pr.HeadSHA) {
+			all := incremental.Result{Files: make([]incremental.File, len(d.Files))}
+			for i, f := range d.Files {
+				all.Files[i] = incremental.File{Path: f.Path, OldPath: f.OldPath, State: incremental.Unchanged}
+			}
+			rd, _ := reduceDiff(d, all)
+			inc = &Incremental{Mode: IncrementalUnchanged, Since: last, UnchangedFiles: len(d.Files)}
+			return pl.unchangedPlan(ctx, deps, args, window, rd, inc, noteNothingChanged(last)), nil
+		}
+	}
+
 	// Repository context (X-22): the session is opened here and the head is
 	// fetched now (its own progress stage) when the diff defines a symbol to
 	// look for. With review.max_chunks > 1 the block's budget is reserved up
@@ -361,24 +406,55 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// A merged publish (Args.Findings, X-33) sends no prompt, so nothing
 	// that only feeds the prompt is fetched: no repository context and no
 	// project context.
-	supplied := args.Findings != nil
 	var rcs *repoctx.Session
-	reserve := 0
+	fetched := false
 	if cfg.Context.Repo.Enabled && !supplied {
 		rcs = repoctx.Open(cfg, deps.RepoContext, ref, p, pr.HeadSHA, d.Files, d.Skipped, flt, log)
 		if len(rcs.Symbols(d.Files)) > 0 {
 			progress(deps, StageRepoContext)
-			if rcs.Ready(ctx) == "" && maxChunks > 1 {
-				reserve = rcs.Settings().MaxTokens
-			}
+			fetched = rcs.Ready(ctx) == ""
 		}
+	}
+
+	// The files that changed since the last review (WP-7c). From here on the
+	// diff holds only them, each with its whole patch; the unchanged files
+	// are skipped with their own reason, which the coverage lists and does
+	// not count as lost. X-19 parts, X-29 duplicates, X-31 and X-32 work on
+	// the reduced diff unchanged; the file tree lists the directories of the
+	// changed files only (treeDiff).
+	treeDiff := d
+	if last != "" {
+		r, err := pl.detectChanges(ctx, cfg, d, rcs, last)
+		if err != nil {
+			return nil, err
+		}
+		changed, unchanged := r.Counts()
+		switch {
+		case r.Full:
+			incNotes = append(incNotes, r.Notes...)
+		case changed == 0 && unchanged > 0:
+			rd, _ := reduceDiff(d, r)
+			inc = &Incremental{Mode: IncrementalUnchanged, Since: last, Strategy: r.Strategy, UnchangedFiles: unchanged}
+			return pl.unchangedPlan(ctx, deps, args, window, rd, inc, noteNoFileChanged(last)), nil
+		default:
+			rd, paths := reduceDiff(d, r)
+			inc = &Incremental{Mode: IncrementalChanged, Since: last, Strategy: r.Strategy, ChangedFiles: changed,
+				UnchangedFiles: unchanged}
+			d, treeDiff = rd, withoutUnchanged(rd)
+			pl.d = d
+			rcs.Narrow(d.Files, paths)
+		}
+		log.Debug("review: changes since the last review", "mode", inc.Mode, "strategy", r.Strategy,
+			"changed", changed, "unchanged", unchanged)
+	}
+	reserve := 0
+	if fetched && maxChunks > 1 && len(rcs.Symbols(d.Files)) > 0 {
+		reserve = rcs.Settings().MaxTokens
 	}
 	progress(deps, StagePreparingDiff)
 
 	// The PR's discussion, for the prompt and for the duplicate check; a
 	// failure never fails the review.
-	pl := &Plan{ref: ref, p: p, pr: pr, d: d, toggles: toggles, maxFindings: maxFindings, log: log, flt: flt,
-		maxTotal: config.EffectiveMaxTotalFindings(cfg.Review, maxFindings)}
 	maxDisc := DefaultMaxDiscussionTokens
 	if args.MaxDiscussionTokens != nil {
 		maxDisc = *args.MaxDiscussionTokens
@@ -403,7 +479,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	if supplied {
 		proj = projctx.Read(ctx, nil, "", projctx.Settings{}, nil, nil, factor, log)
 	} else {
-		proj = projctx.ReadFor(ctx, cfg, p, ref, pr, d, rcs, log)
+		proj = projctx.ReadFor(ctx, cfg, p, ref, pr, treeDiff, rcs, log)
 	}
 	pl.proj = proj
 
@@ -421,6 +497,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		Guidelines:        proj.Guidelines(),
 		FileTree:          proj.Tree(),
 		Focus:             args.Focus,
+		Incremental:       inc.Mode == IncrementalChanged,
 		Date:              prompt.Date(deps.Clock),
 	}
 
@@ -495,7 +572,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	if reserve > 0 && withReserve(reserve).RequireCapacity() != nil {
 		reserve = 0
 	}
-	dIn := diffpipe.Input{Files: d.Files, Skipped: d.Skipped, Mode: diffpipe.ModeNumbered, Budget: base, Diff: cfg.Diff}
+	dIn := diffpipe.Input{Files: d.Files, Skipped: d.Skipped, Incomplete: d.Incomplete, Mode: diffpipe.ModeNumbered, Budget: base, Diff: cfg.Diff}
 	prepare := func(r int) (*diffpipe.Prepared, error) {
 		in := dIn
 		in.Budget = withReserve(r)
@@ -542,6 +619,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	res := &Result{
 		PR: PRInfo{Kind: string(ref.Kind), URL: logging.RedactURL(ref.URL), Number: ref.Number, Title: pr.Title,
 			HeadSHA: pr.HeadSHA},
+		Reviewed:      ReviewedCommit{SHA: ValidReviewedSHA(pr.HeadSHA), Since: inc.Since},
 		Coverage:      buildCoverage(prep, flt),
 		Notes:         []string{},
 		EnabledFields: []string{},
@@ -552,11 +630,13 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			// of its findings the discussion made it drop.
 			AlreadyDiscussed: disc.Included,
 		},
-		Focus: args.Focus,
+		Focus:       args.Focus,
+		Incremental: inc,
 	}
 	// Changed files the provider could not list at all (GitHub lists at
 	// most 3000) are named by its fixed note.
 	res.Notes = append(res.Notes, d.Notes...)
+	res.Notes = append(res.Notes, incNotes...)
 	res.Notes = append(res.Notes, discNotes...)
 	if disc.Omitted > 0 {
 		res.Notes = append(res.Notes, noteDiscussionLeftOut(disc.Omitted))

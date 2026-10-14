@@ -83,8 +83,23 @@ func publish(ctx context.Context, deps Deps, args Args, pl *Plan) {
 	var render func(provider.Capabilities) string
 	if deps.RenderProvider != nil {
 		render = func(caps provider.Capabilities) string {
-			return withOverviewMarker(deps.RenderProvider(res, caps))
+			return withReviewedMarker(deps.RenderProvider(res, caps), res.Reviewed.SHA)
 		}
+	}
+
+	if args.Findings != nil {
+		// A merged publish (X-33) reviewed no head itself: the commit record
+		// is carried over from the overview found below, or stays empty.
+		res.Reviewed = ReviewedCommit{}
+	} else if res.Coverage.Tally().Partial {
+		// DESIGN-QUESTION (WP-7d DQ-3): a partial review (X-18) records no
+		// commit. An incremental run skips every file whose content did not
+		// change since the recorded commit; had that review left a file out
+		// (the budget, a failed part, a provider skip), the file would be
+		// skipped as "unchanged" ever after without any model having seen
+		// it. Without a record the next incremental run is a full review.
+		// Recommendation: keep.
+		res.Reviewed = ReviewedCommit{}
 	}
 
 	inlineOn := inlineEnabled(deps, args)
@@ -110,6 +125,13 @@ func publish(ctx context.Context, deps Deps, args Args, pl *Plan) {
 		case found != nil:
 			if found.older > 0 {
 				res.Notes = append(res.Notes, noteOlderOverviews(found.older))
+			}
+			if args.Findings != nil {
+				// The client's focused runs may have reviewed an older head;
+				// recording the current one would let an incremental run skip
+				// files no model saw (X-36). Also written to a replacement
+				// overview when the edit fails.
+				res.Reviewed.SHA = found.reviewed
 			}
 			editOverview(ctx, log, pl, found, items, sum, render)
 			return

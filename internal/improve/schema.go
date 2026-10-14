@@ -76,6 +76,7 @@ func ResultSchema() map[string]any {
 			"reviewed_files":     integer("files reviewed: included plus deleted_listed"),
 			"total_files":        integer("changed files except those filtered on purpose (and binary or empty-diff files): reviewed_files + not_reviewed_files"),
 			"not_reviewed_files": integer("changed files that were not reviewed: omitted, clipped, skipped for size or limit, unreadable, too large for a part of their own, or in a part whose model call failed"),
+			"unchanged_files":    integer("incremental review count of pr_review (X-36): pr_improve is never incremental, so this is always absent"),
 			"model_calls":        integer("suggestion calls with a diff (X-19): 1 for a run in one call, N for a run in N parts, 0 without a model call; re-asks and the self-review calls are not counted"),
 			"failed_parts":       integer("parts whose suggestion call failed; their files are skipped with reason model_call_failed"),
 			"repo_context": object("repository context in the suggestion prompts (RC-9)", map[string]any{

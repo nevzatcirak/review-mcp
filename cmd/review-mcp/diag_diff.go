@@ -228,7 +228,7 @@ func diagDiff(ctx context.Context, cfg *config.Config, logger *slog.Logger, prUR
 		MaxDiffTokens:   tokens.Cap(cfg.Diff.MaxTokens),
 	}
 	prep, err := diffpipe.Prepare(diffpipe.Input{
-		Files: d.Files, Skipped: d.Skipped, Mode: mode, Budget: budget, Diff: cfg.Diff,
+		Files: d.Files, Skipped: d.Skipped, Incomplete: d.Incomplete, Mode: mode, Budget: budget, Diff: cfg.Diff,
 	})
 	if err != nil {
 		if errors.Is(err, tokens.ErrDoesNotFit) {

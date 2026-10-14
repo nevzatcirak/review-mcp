@@ -71,6 +71,10 @@ type PromptInput struct {
 	// adds the free-text sentence there and its fenced block (FocusHeader)
 	// to the user prompt.
 	Focus string
+	// Incremental marks an incremental run (X-36), whose diff holds only
+	// the files that changed since the last review: the system prompt
+	// carries IncrementalSentence. False renders as before.
+	Incremental bool
 	// Date is the prompt date (prompt.Date).
 	Date string
 	// PartHeader is the part line of a review in several parts (PartHeader);
@@ -104,9 +108,19 @@ func (in *PromptInput) vars() map[string]any {
 		"repo_context":       in.RepoContext,
 		"focus":              focusInstruction(in.Focus),
 		"focus_block":        focusBlock(in.Focus),
+		"incremental":        incrementalInstruction(in.Incremental),
 		"part_header":        in.PartHeader,
 		"diff":               in.Diff,
 	}
+}
+
+// incrementalInstruction is the system prompt's sentence of an incremental
+// run, "" otherwise.
+func incrementalInstruction(on bool) string {
+	if on {
+		return IncrementalSentence
+	}
+	return ""
 }
 
 // PartHeader is the line the user prompt carries before the diff when a

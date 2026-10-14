@@ -155,6 +155,34 @@ func runLine(res *review.Result) string {
 	return "Reviewed " + strings.Join(parts, " ") + "."
 }
 
+// ReviewedLine is the footer line of the overview (X-36): "Reviewed commit:
+// `abc1234`", and for an incremental run "Reviewed commit: `abc1234`
+// (changes since `def5678`)". It is built here from the recorded commit
+// ids only, never from model text, and shows what the hidden reviewed-commit
+// line records; "" when no commit is recorded.
+func ReviewedLine(res *review.Result) string {
+	sha := shortSHA(res.Reviewed.SHA)
+	if sha == "" {
+		return ""
+	}
+	line := "Reviewed commit: `" + sha + "`"
+	if since := shortSHA(res.Reviewed.Since); since != "" {
+		line += " (changes since `" + since + "`)"
+	}
+	return line
+}
+
+// writeCoverage writes the coverage section (llmrender.Coverage); an
+// incremental run (X-36) adds "N files reviewed, M unchanged since the last
+// review" and lists its unchanged files apart (llmrender.IncrementalCoverage).
+func writeCoverage(b *strings.Builder, heading string, res *review.Result) {
+	if inc := res.Incremental; inc != nil && inc.Mode != review.IncrementalFull {
+		llmrender.IncrementalCoverage(b, heading, &res.Coverage)
+		return
+	}
+	llmrender.Coverage(b, heading, &res.Coverage)
+}
+
 // shortSHA is the first 7 characters of a hexadecimal commit id, or ""
 // when sha is not one (it is then not shown).
 func shortSHA(sha string) string {

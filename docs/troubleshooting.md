@@ -439,6 +439,29 @@ any publish (see [Findings and suggestions skipped as
 duplicates](#findings-and-suggestions-skipped-as-duplicates)); a second merged
 publish adds nothing new.
 
+## Incremental review notes
+
+`pr_review` with [incremental review](review.md#incremental-review)
+(`review.incremental` or `incremental=true`) adds one of these fixed sentences
+to the notes when it does not do what you asked. `incremental.mode` in the
+result says what happened: `full`, `incremental` or `unchanged`.
+
+| Sentence | Cause and what to do |
+|---|---|
+| No earlier review by review-mcp was found on this pull request, so the whole pull request was reviewed. | You passed `incremental=true`, but the pull request has no overview of review-mcp with a recorded commit: no review was published yet (publish one with `publish=true`), the overview was written by an earlier version, it was deleted, or the token user is not the one who published it (only the token's own overview is read). The review is full (`mode` `full`). Not added when only `review.incremental` is set, because a first review is then the normal case. A [partial review](review.md#partial-reviews) records no commit, so after one the next run says this too. |
+| Nothing changed since the last review (commit `abc1234`); nothing was reviewed. | The recorded commit is the current head. The model was not called and nothing was posted or edited, even with `publish=true` (`mode` `unchanged`, `metadata.llm_calls` 0). Not a problem. Push a commit, or run without `incremental` to review the whole pull request again. |
+| No file of the pull request changed since the last review (commit `abc1234`); nothing was reviewed. | The head moved, but every file has the content it had at the recorded commit (a rebase, a force-push, an amended message, a reverted change). The model was not called and nothing was posted (`mode` `unchanged`). Not a problem. |
+| The commit of the last review is no longer available, so the whole pull request was reviewed. | The recorded commit cannot be found any more, typically after a force-push and garbage collection on the host. The review is full (`mode` `full`) and its overview records the new head, so the next incremental run works. |
+| The last review could not be compared with the current head, so the whole pull request was reviewed. | The comparison could not be made: the overview or the token's user could not be read, the recorded commit could not be read for another reason (a provider error, a rate limit, a timeout), or the head commit id was not a full id. The review is full. Check the provider's reachability ([Check connectivity](#check-connectivity-with-diag-pr)) and run again. |
+| The pull request has more than N files, so it was not compared with the last review and was reviewed in full. | The pull request lists more than `review.incremental_max_files` files (default 300; N is your value) and the API strategy compares at most that many. Raise `review.incremental_max_files` (up to 5000), or accept the full review. The limit does not apply when `git:diff` finds the changes ([the strategies](review.md#how-the-changed-files-are-found)). |
+
+Two things are not notes. The result's `incremental.strategy` is `git:diff`
+only when [repository context](repo-context.md) is on, this run fetched the
+head and the cache still holds the recorded commit; otherwise it is
+`api:contents`, which gives the same answer with more requests. And a review
+that is partial has no "Reviewed commit" line: it records nothing, so the next
+incremental run is a full review ([why](review.md#the-record-of-the-last-review)).
+
 ## `multi_perspective_review` argument errors
 
 The MCP prompt answers a bad argument with a JSON-RPC `InvalidParams` error and

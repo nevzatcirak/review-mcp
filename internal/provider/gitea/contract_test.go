@@ -48,6 +48,12 @@ func TestReviewFindings(t *testing.T) {
 	contract.RunReviewFindings(t, ctFixture{})
 }
 
+// TestReviewIncremental runs pr_review's incremental scenario (X-36)
+// through this provider and the contract fake.
+func TestReviewIncremental(t *testing.T) {
+	contract.RunReviewIncremental(t, ctFixture{})
+}
+
 const (
 	ctWeb     = "https://your-gitea.example"
 	ctRepo    = "/api/v1/repos/octo/demo"
@@ -69,6 +75,7 @@ func (ctFixture) Traits() contract.Traits {
 		CheckStrategies: gitea.CheckStrategies(),
 		CheckStates: []provider.CheckState{provider.CheckSuccess, provider.CheckFailure, provider.CheckPending,
 			provider.CheckNeutral, provider.CheckError},
+		NoListingLimit: true,
 	}
 }
 
@@ -282,6 +289,15 @@ func ctPaged[T any](w http.ResponseWriter, r *http.Request, items []T) {
 	ctJSON(w, http.StatusOK, items)
 }
 
+// commitsJSON lists the commits newest first, as Gitea does.
+func (g *ctGitea) commitsJSON() []any {
+	var out []any
+	for i := len(g.pr.Commits) - 1; i >= 0; i-- {
+		out = append(out, map[string]any{"sha": strings.Repeat(strconv.Itoa(i%10), 40), "commit": map[string]any{"message": g.pr.Commits[i]}})
+	}
+	return out
+}
+
 func (g *ctGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Authorization") != "token "+g.pr.Env.Token {
 		g.t.Errorf("request %s %s: unexpected Authorization header shape", r.Method, r.URL.EscapedPath())
@@ -303,7 +319,9 @@ func (g *ctGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, g.diff())
 	case get && path == ctPull+"/files":
 		ctPaged(w, r, g.filesJSON())
-	case get && path == ctPull+"/commits", get && path == ctRepo+"/branch_protections":
+	case get && path == ctPull+"/commits":
+		ctPaged(w, r, g.commitsJSON())
+	case get && path == ctRepo+"/branch_protections":
 		ctPaged[any](w, r, nil)
 	case get && strings.HasPrefix(path, ctRepo+"/raw/"):
 		g.serveRaw(w, r, strings.TrimPrefix(path, ctRepo+"/raw/"))

@@ -51,7 +51,7 @@ const (
 	maxListedFiles = 3000
 
 	// fetchConcurrency bounds parallel content requests.
-	fetchConcurrency = 4
+	fetchConcurrency = provider.ContentFetchConcurrency
 
 	capKeyFile = "diff.max_file_bytes"
 )

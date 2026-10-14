@@ -84,6 +84,9 @@ type Input struct {
 	// (a filtered or provider-skipped one stays where it is). Empty keeps
 	// the ranking unchanged.
 	Pinned []string
+	// Incomplete is Diff.Incomplete: the provider did not list every
+	// changed file. Prepare copies it to Prepared.Incomplete.
+	Incomplete bool
 }
 
 // Omitted lists the files left out of the diff body, by change type, in
@@ -146,6 +149,8 @@ type Prepared struct {
 	// Skipped holds Input.Skipped followed by the files Prepare could not
 	// render (SkipEmptyDiff, SkipUnparseablePatch), in input order.
 	Skipped []provider.SkippedFile
+	// Incomplete is Input.Incomplete, kept for the coverage.
+	Incomplete bool
 }
 
 // Prepare assembles the diff for one call. It returns an error wrapping
@@ -232,6 +237,7 @@ func prepareRanked(in Input, c *counter, langOrder []string) (*Prepared, error) 
 		return nil, err
 	}
 	p.Skipped = append([]provider.SkippedFile(nil), in.Skipped...)
+	p.Incomplete = in.Incomplete
 	for _, f := range files {
 		if f.skip != "" {
 			p.Skipped = append(p.Skipped, provider.SkippedFile{Path: f.fp.Path, Reason: f.skip})

@@ -64,6 +64,11 @@ type Traits struct {
 	// hold on such a host; a trait (not a skip) keeps the rest of the case
 	// running.
 	NoStaleReviews bool
+	// NoListingLimit is true for a provider whose host lists every changed
+	// file however many there are (Gitea, Bitbucket Server): Env.ListLimit
+	// has no effect, and the listing_limit case checks only that a complete
+	// listing is not marked Incomplete.
+	NoListingLimit bool
 }
 
 // Declarer is implemented by a Fixture that declares Traits.
@@ -93,7 +98,9 @@ func Run(t *testing.T, f Fixture) {
 		{"capabilities", s.capabilities},
 		{"metadata", s.metadata},
 		{"file_list", s.fileList},
+		{"commit_messages", s.commitMessages},
 		{"file_limit", s.fileLimit},
+		{"listing_limit", s.listingLimit},
 		{"hunks_and_content", s.hunksAndContent},
 		{"threads", s.threads},
 		{"reply_in_thread", s.reply},

@@ -99,6 +99,8 @@ var table = []entry{
 	{"review.max_tree_tokens", "REVIEW_MCP_REVIEW_MAX_TREE_TOKENS", func(c *Config) any { return &c.Review.MaxTreeTokens }},
 	{"review.max_chunks", "REVIEW_MCP_REVIEW_MAX_CHUNKS", func(c *Config) any { return &c.Review.MaxChunks }},
 	{"review.max_total_findings", "REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS", func(c *Config) any { return &c.Review.MaxTotalFindings }},
+	{"review.incremental", "REVIEW_MCP_REVIEW_INCREMENTAL", func(c *Config) any { return &c.Review.Incremental }},
+	{"review.incremental_max_files", "REVIEW_MCP_REVIEW_INCREMENTAL_MAX_FILES", func(c *Config) any { return &c.Review.IncrementalMaxFiles }},
 
 	{"ask.extra_instructions", "REVIEW_MCP_ASK_EXTRA_INSTRUCTIONS", func(c *Config) any { return &c.Ask.ExtraInstructions }},
 

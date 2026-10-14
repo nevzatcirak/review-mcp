@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 )
@@ -106,6 +107,19 @@ func fixtures() map[string]*review.Result {
 			},
 		},
 	}
+	// codeSpanHeader has code spans in the header of a finding: a collapsible
+	// GFM header shows them as <code>, with their content escaped (X-30); a
+	// lone backtick stays text.
+	codeSpanHeader := &review.Result{
+		PR: basePR(), EnabledFields: []string{review.KeyKeyIssues}, Coverage: baseCoverage(), Notes: []string{},
+		Review: &review.Review{KeyIssuesToReview: []review.KeyIssue{
+			{
+				RelevantFile: "cmd/app/main.go", IssueHeader: "Unbounded `retry<T>()` loop & a lone ` tick",
+				IssueContent: "The `retry` loop never stops.", StartLine: 10, EndLine: 12,
+				Snippet: "for {\n\ttry()\n}",
+			},
+		}},
+	}
 	many := baseCoverage()
 	for i := range 55 {
 		many.Omitted.Modified = append(many.Omitted.Modified, fmt.Sprintf("pkg/mod%02d/file.go", i))
@@ -174,10 +188,11 @@ func fixtures() map[string]*review.Result {
 	all := map[string]*review.Result{
 		"all_fields": allFields, "no_findings": noFindings, "no_snippet": noSnippet,
 		"non_english": nonEnglish, "coverage_many": coverageMany, "published": published,
-		"complete": complete,
+		"complete": complete, "code_span_header": codeSpanHeader,
 	}
 	for _, r := range all {
 		r.Metadata.ReviewedAt = "2026-10-06T09:30:15Z"
+		r.Reviewed.SHA = r.PR.HeadSHA
 	}
 	return all
 }
@@ -553,5 +568,86 @@ func TestProviderName(t *testing.T) {
 		if got := providerName(kind); got != want {
 			t.Errorf("providerName(%q) = %q, want %q", kind, got, want)
 		}
+	}
+}
+
+// TestReviewedLine (X-36): the footer line is built from the recorded
+// commits only, in short form, and ends the overview in every profile; the
+// incremental form names the commit the run continues from.
+func TestReviewedLine(t *testing.T) {
+	const head = "abc123def4567890abc123def4567890abc123de"
+	const since = "def5678abc123def4567890abc123def4567890"
+	for name, tc := range map[string]struct {
+		rec  review.ReviewedCommit
+		want string
+	}{
+		"full":                {review.ReviewedCommit{SHA: head}, "Reviewed commit: `abc123d`"},
+		"upper case":          {review.ReviewedCommit{SHA: "ABC123DEF4567890ABC123DEF4567890ABC123DE"}, "Reviewed commit: `abc123d`"},
+		"incremental":         {review.ReviewedCommit{SHA: head, Since: since}, "Reviewed commit: `abc123d` (changes since `def5678`)"},
+		"since is not a sha":  {review.ReviewedCommit{SHA: head, Since: "main"}, "Reviewed commit: `abc123d`"},
+		"nothing recorded":    {review.ReviewedCommit{}, ""},
+		"since alone":         {review.ReviewedCommit{Since: since}, ""},
+		"not a commit id":     {review.ReviewedCommit{SHA: "`x`\n## injected"}, ""},
+		"markdown in the sha": {review.ReviewedCommit{SHA: "abc1234`](http://evil.example)"}, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			res := &review.Result{PR: basePR(), EnabledFields: allKeys, Coverage: baseCoverage(), Notes: []string{"a note"},
+				Reviewed: tc.rec, Review: &review.Review{KeyIssuesToReview: []review.KeyIssue{}}}
+			if got := ReviewedLine(res); got != tc.want {
+				t.Errorf("ReviewedLine = %q, want %q", got, tc.want)
+			}
+			for profile, out := range map[string]string{"client": Client(res), "gitea": Provider(res, capsGitea),
+				"bitbucket": Provider(res, capsBB)} {
+				if tc.want == "" {
+					if strings.Contains(out, "Reviewed commit") {
+						t.Errorf("%s shows a reviewed commit:\n%s", profile, out)
+					}
+					continue
+				}
+				if !strings.HasSuffix(out, "\n\n"+tc.want+"\n") {
+					t.Errorf("%s does not end with %q:\n%s", profile, tc.want, out)
+				}
+			}
+		})
+	}
+}
+
+// TestIncrementalCoverage (X-36): an incremental run's coverage section, in
+// every profile, says "N files reviewed, M unchanged since the last review",
+// lists the unchanged files in a group of their own and does not count them
+// as omitted; the overview's footer names the commit it continues from. A
+// full run renders as before.
+func TestIncrementalCoverage(t *testing.T) {
+	const since = "def5678abc123def4567890abc123def4567890"
+	cov := review.Coverage{
+		Included: []string{"cmd/app/main.go"}, Clipped: []string{}, DeletedListed: []string{},
+		Omitted: review.OmittedFiles{Added: []string{}, Modified: []string{}, Deleted: []string{}},
+		Skipped: []review.SkippedFile{{Path: "internal/same.go", Reason: llmrun.SkipUnchangedSinceReview},
+			{Path: "internal/also_same.go", Reason: llmrun.SkipUnchangedSinceReview}},
+		Filtered: []review.SkippedFile{},
+	}
+	cov.Finalize()
+	res := &review.Result{PR: basePR(), EnabledFields: allKeys, Coverage: cov, Notes: []string{},
+		Review:      &review.Review{KeyIssuesToReview: []review.KeyIssue{}},
+		Reviewed:    review.ReviewedCommit{SHA: basePR().HeadSHA, Since: since},
+		Incremental: &review.Incremental{Mode: review.IncrementalChanged, Since: since, ChangedFiles: 1, UnchangedFiles: 2}}
+	for profile, out := range map[string]string{"client": Client(res), "gitea": Provider(res, capsGitea),
+		"bitbucket": Provider(res, capsBB)} {
+		for _, want := range []string{
+			"- Included: 1 file\n- Omitted: 0 files\n- 1 file reviewed, 2 unchanged since the last review\n",
+			"\nUnchanged since the last review (2):\n\n- `internal/same.go`\n- `internal/also_same.go`\n",
+			"(changes since `def5678`)",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("%s lacks %q:\n%s", profile, want, out)
+			}
+		}
+		if strings.Contains(out, "Partial review") || strings.Contains(out, "Skipped: ") {
+			t.Errorf("%s counts the unchanged files as lost:\n%s", profile, out)
+		}
+	}
+	res.Incremental = &review.Incremental{Mode: review.IncrementalFull, ChangedFiles: 1}
+	if out := Client(res); strings.Contains(out, "unchanged since the last review\n") {
+		t.Errorf("a full run shows the incremental line:\n%s", out)
 	}
 }

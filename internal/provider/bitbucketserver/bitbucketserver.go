@@ -35,7 +35,7 @@ const (
 	// fetchConcurrency bounds parallel file processing; each worker issues
 	// its raw-content requests sequentially, so at most this many requests
 	// are in flight.
-	fetchConcurrency = 4
+	fetchConcurrency = provider.ContentFetchConcurrency
 
 	// minMajorVersion is the oldest supported server major version (DQ-20).
 	minMajorVersion = 7

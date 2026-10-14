@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
-	"github.com/nevzatcirak/review-mcp/internal/patch"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/review/anchor"
 )
 
 // OverviewMarker is the last line of the overview comment (v2 spec §3, Y-11):
@@ -324,7 +324,7 @@ func (pl *Plan) readComments(ctx context.Context) ([]provider.Thread, provider.U
 // On a provider with a native suggestion style the comment carries a
 // suggestion block only when all three hold (design §5, Y-11): the
 // suggestion is verified, its range is on new-side lines of one hunk
-// (anchorFor), and its improved code could be re-indented to the real lines
+// (anchor.ResolveExact), and its improved code could be re-indented to the real lines
 // (blockCode). The renderer then gets a copy of the suggestion with the
 // re-indented code; otherwise it gets caps without a suggestion style and
 // renders the diff block. On a provider with QuickActions a fourth must
@@ -345,12 +345,13 @@ func (pl *Plan) planInline(render InlineRenderer, posted map[string]string, unch
 		if !s.Verified || s.StartLine == nil || s.EndLine == nil {
 			continue
 		}
-		a, ok := anchorFor(pl.files[s.File], *s.StartLine, *s.EndLine)
+		an, ok := anchor.ResolveExact(pl.files[s.File], *s.StartLine, *s.EndLine)
 		if !ok {
 			sum.Unanchorable++
 			s.Anchor = &Anchor{Status: AnchorUnanchorable}
 			continue
 		}
+		a := an.Comment("")
 		fp := SuggestionFingerprint(s)
 		if unchecked {
 			sum.Failed++
@@ -402,68 +403,6 @@ func postedURL(posted map[string]string, keys ...string) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-// anchorFor places the head-side range start to end of fp on the provider's
-// own hunks (FilePatch.Patch as GetDiff returned it, never the extended
-// context of the prompt: a server accepts inline comments only on lines of
-// its own diff). It succeeds only when every line of the range is a new-side
-// line (added or context) of one single hunk, so that a suggestion block
-// replaces exactly those lines. The comment sits on the first line of the
-// range and, for a range of several lines, covers it to its last
-// (InlineComment.EndLine; a provider without ranges ignores it). It fails for a nil, deleted or binary file, a range that is not
-// positive or whose end is before its start, an unparsable patch, and a
-// range that leaves a hunk or reaches into the gap between two hunks.
-// Malformed pseudo-hunks are never anchors. The returned comment has no
-// body.
-func anchorFor(fp *provider.FilePatch, start, end int) (provider.InlineComment, bool) {
-	if fp == nil || fp.Binary || fp.Type == provider.ChangeDeleted || start < 1 || end < start {
-		return provider.InlineComment{}, false
-	}
-	hunks, err := patch.ParseHunks(fp.Patch)
-	if err != nil {
-		return provider.InlineComment{}, false
-	}
-	for _, h := range hunks {
-		if h.Malformed() {
-			continue
-		}
-		covered, typ := 0, provider.LineType("")
-		n := h.NewStart
-		for _, l := range h.Lines {
-			if l.Op != '+' && l.Op != ' ' {
-				continue
-			}
-			if n >= start && n <= end {
-				covered++
-				if n == start {
-					typ = provider.LineContext
-					if l.Op == '+' {
-						typ = provider.LineAdded
-					}
-				}
-			}
-			n++
-		}
-		if covered != end-start+1 {
-			continue
-		}
-		c := provider.InlineComment{Path: fp.Path, Line: start, LineType: typ}
-		if typ == provider.LineContext {
-			// DESIGN-QUESTION WP-6c DQ-c1: LineType is also computed in
-			// anchor.Resolve; the old-side line comes from the one shared
-			// helper, so only the line type logic stays in two places.
-			c.OldLine = h.OldLineOf(start)
-		}
-		if end > start {
-			c.EndLine = end
-		}
-		if fp.Type == provider.ChangeRenamed {
-			c.OldPath = fp.OldPath
-		}
-		return c, true
-	}
-	return provider.InlineComment{}, false
 }
 
 // editOverview publishes over the overview found on the PR: the inline

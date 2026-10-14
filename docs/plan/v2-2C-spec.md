@@ -137,8 +137,8 @@ Commit: `docs: document the GitLab provider`
 
 ## 6. Backlog created by this spec
 - A cross-provider `Diff.Incomplete` flag, honoured by coverage, for hosts that stop listing changed files (GitLab's diff limit, GitHub's 3000 files).
-- A cross-provider `commit_messages` contract case (order, oldest first).
+- ~~A cross-provider `commit_messages` contract case (order, oldest first).~~ Done in v2.1 (WP-7a).
 - GitLab batched review (draft notes + bulk publish) to send one notification per run.
 - Merged-results, merge-train and fork pipelines in `GetChecks`.
 - Multi-line anchors on GitLab (`line_range`) if a client needs them.
-- Merge `improve.anchorFor` into `internal/review/anchor` so the line type is computed in one place (WP-6c DQ-c1).
+- ~~Merge `improve.anchorFor` into `internal/review/anchor` so the line type is computed in one place (WP-6c DQ-c1).~~ Done in v2.1 (WP-7a): `anchor.ResolveExact`.

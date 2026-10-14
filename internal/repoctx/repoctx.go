@@ -210,6 +210,52 @@ func (s *Session) AtRevision(ctx context.Context, rev string, maxBytes int) *Rev
 	return &RevisionReader{tr: tr, co: s.co, rev: rev, maxBytes: maxBytes}
 }
 
+// ChangeReader compares two commits the cache holds, offline (X-36, the
+// git strategy of the incremental review). *gitctx.Runner implements it, and
+// it has the method set of incremental.Local.
+type ChangeReader interface {
+	HasCommit(ctx context.Context, c gitctx.Checkout, rev string) bool
+	ChangedPaths(ctx context.Context, c gitctx.Checkout, from, to string) ([]string, error)
+	ListPaths(ctx context.Context, c gitctx.Checkout, rev string) ([]string, error)
+}
+
+var _ ChangeReader = (*gitctx.Runner)(nil)
+
+// Changes returns the cache's comparer and the checkout of this session, or
+// ok false. Like AtRevision it never fetches: ok is true only when this
+// session already fetched the pull request head without error and the
+// backend can compare commits. Whether the cache holds a given commit is
+// the caller's question (ChangeReader.HasCommit). Only git plumbing runs,
+// offline (R-1).
+func (s *Session) Changes() (cr ChangeReader, co gitctx.Checkout, ok bool) {
+	if s == nil || !s.fetched.Load() {
+		return nil, gitctx.Checkout{}, false
+	}
+	cr, ok = s.backend.(ChangeReader)
+	if !ok {
+		return nil, gitctx.Checkout{}, false
+	}
+	return cr, s.co, true
+}
+
+// Narrow makes files the pull request files of a review in one call that
+// only part of the pull request reaches: an incremental review (X-36), whose
+// prompt carries only the files that changed since the last review. Their
+// paths are excluded from the search, as Open excludes every file of the
+// pull request, and a use in a file of notReviewed (the files the review
+// leaves out as unchanged) is shown, marked MarkNotReviewed, like a use in a
+// file the provider skipped. Call it before the first Find; a nil session is
+// left alone.
+func (s *Session) Narrow(files []provider.FilePatch, notReviewed []string) {
+	if s == nil {
+		return
+	}
+	s.exclude = gitctx.ChangedPaths(files)
+	for _, p := range notReviewed {
+		s.marks[p] = MarkNotReviewed
+	}
+}
+
 // Scope narrows a search to one prompt of a review in parts (X-19): the
 // files whose diff is in the prompt are excluded (they are in it already),
 // and the other files of the pull request are searched like any file and

@@ -51,6 +51,12 @@ func TestReviewFindings(t *testing.T) {
 	contract.RunReviewFindings(t, ctFixture{})
 }
 
+// TestReviewIncremental runs pr_review's incremental scenario (X-36)
+// through this provider and the contract fake.
+func TestReviewIncremental(t *testing.T) {
+	contract.RunReviewIncremental(t, ctFixture{})
+}
+
 const (
 	// ctAPI is the API prefix the provider derives for a GHES web base.
 	ctAPI  = "/api/v3"
@@ -289,6 +295,15 @@ func (g *ctGitHub) prJSON() map[string]any {
 	}
 }
 
+// commitsJSON lists the commits oldest first, as GitHub does.
+func (g *ctGitHub) commitsJSON() []any {
+	var out []any
+	for i, m := range g.pr.Commits {
+		out = append(out, map[string]any{"sha": strings.Repeat(strconv.Itoa(i%10), 40), "commit": map[string]any{"message": m}})
+	}
+	return out
+}
+
 // ctStatus is GitHub's status word of a change type.
 var ctStatus = map[provider.ChangeType]string{
 	provider.ChangeAdded: "added", provider.ChangeDeleted: "removed",
@@ -301,7 +316,11 @@ var ctStatus = map[provider.ChangeType]string{
 // the patch of a diff too large to show).
 func (g *ctGitHub) filesJSON() []any {
 	var out []any
-	for _, f := range g.pr.Files {
+	files := g.pr.Files
+	if n := g.pr.Env.ListLimit; n > 0 && n < len(files) {
+		files = files[:n] // the host stops listing; changed_files still counts every file
+	}
+	for _, f := range files {
 		add, del := 0, 0
 		for _, l := range strings.Split(f.Hunks, "\n") {
 			switch {
@@ -425,7 +444,7 @@ func (g *ctGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case path == ctPull+"/files" || path == ctRepoByID+"/pulls/7/files":
 		g.ctPage(w, r, g.filesJSON(), ctRepoByID+"/pulls/7/files")
 	case path == ctPull+"/commits" || path == ctRepoByID+"/pulls/7/commits":
-		g.ctPage(w, r, nil, ctRepoByID+"/pulls/7/commits")
+		g.ctPage(w, r, g.commitsJSON(), ctRepoByID+"/pulls/7/commits")
 	case contents:
 		g.serveContents(w, r, strings.TrimPrefix(strings.TrimPrefix(path, ctRepo+"/contents"), "/"))
 	case strings.HasSuffix(path, "/check-runs"), strings.HasSuffix(path, "/status"):

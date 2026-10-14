@@ -30,6 +30,9 @@ func WithMarker(body, marker string) string {
 // MarkedComment is a comment of ours on the PR that carries a marker.
 type MarkedComment struct {
 	ID, URL string
+	// Body is the comment's text, for a caller that reads more than the
+	// marker from it (pr_review's reviewed-commit line).
+	Body string
 	// Older counts the other comments of ours with the marker, which are
 	// left unchanged.
 	Older int
@@ -62,7 +65,7 @@ func FindMarked(threads []provider.Thread, me provider.User, marker string) *Mar
 	if newest == nil {
 		return nil
 	}
-	return &MarkedComment{ID: newest.ID, URL: newest.URL, Older: n - 1}
+	return &MarkedComment{ID: newest.ID, URL: newest.URL, Body: newest.Body, Older: n - 1}
 }
 
 // NewerComment reports whether a was created after b; equal times fall back

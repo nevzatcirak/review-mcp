@@ -47,6 +47,8 @@ func TestValidationRules(t *testing.T) {
 		{"max findings high", map[string]string{"REVIEW_MCP_REVIEW_MAX_FINDINGS": "21"}, "review.max_findings"},
 		{"max chunks low", map[string]string{"REVIEW_MCP_REVIEW_MAX_CHUNKS": "0"}, "review.max_chunks: 0 is out of range (1-32)"},
 		{"max chunks high", map[string]string{"REVIEW_MCP_REVIEW_MAX_CHUNKS": "33"}, "review.max_chunks: 33 is out of range (1-32)"},
+		{"incremental max files low", map[string]string{"REVIEW_MCP_REVIEW_INCREMENTAL_MAX_FILES": "0"}, "review.incremental_max_files: 0 is out of range (1-5000)"},
+		{"incremental max files high", map[string]string{"REVIEW_MCP_REVIEW_INCREMENTAL_MAX_FILES": "5001"}, "review.incremental_max_files: 5001 is out of range (1-5000)"},
 		{"max total findings low", map[string]string{"REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS": "0"}, "review.max_total_findings: 0 is out of range (1-50)"},
 		{"max total findings high", map[string]string{"REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS": "51"}, "review.max_total_findings: 51 is out of range (1-50)"},
 		{"max total findings below max findings", map[string]string{"REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS": "4", "REVIEW_MCP_REVIEW_MAX_FINDINGS": "5"},
@@ -131,6 +133,7 @@ func TestValidationBoundariesAccepted(t *testing.T) {
 		"REVIEW_MCP_REVIEW_MAX_FINDINGS":              "20",
 		"REVIEW_MCP_REVIEW_MAX_CHUNKS":                "32",
 		"REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS":        "50",
+		"REVIEW_MCP_REVIEW_INCREMENTAL_MAX_FILES":     "5000",
 		"REVIEW_MCP_IMPROVE_MAX_SUGGESTIONS":          "30",
 		"REVIEW_MCP_IMPROVE_MAX_SUGGESTIONS_PER_PART": "10",
 		"REVIEW_MCP_IMPROVE_MIN_SCORE":                "10",
@@ -141,6 +144,7 @@ func TestValidationBoundariesAccepted(t *testing.T) {
 	mustLoad(t, MemSource{Env: env})
 	// The lower bounds of the chunking keys; max_total_findings may equal
 	// max_findings.
+	mustLoad(t, MemSource{Env: envWith(map[string]string{"REVIEW_MCP_REVIEW_INCREMENTAL_MAX_FILES": "1"})})
 	mustLoad(t, MemSource{Env: envWith(map[string]string{"REVIEW_MCP_REVIEW_MAX_CHUNKS": "1",
 		"REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS": "3", "REVIEW_MCP_REVIEW_MAX_FINDINGS": "3"})})
 	// With its default (10), max_total_findings does not reject a

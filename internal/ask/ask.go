@@ -296,7 +296,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// reviews in parts.
 	pinned := PinnedFiles(question, d.Files)
 	prep, err := diffpipe.Prepare(diffpipe.Input{
-		Files: d.Files, Skipped: d.Skipped, Mode: diffpipe.ModePlain, Budget: budget, Diff: cfg.Diff,
+		Files: d.Files, Skipped: d.Skipped, Incomplete: d.Incomplete, Mode: diffpipe.ModePlain, Budget: budget, Diff: cfg.Diff,
 		Pinned: pinned,
 	})
 	if err != nil {

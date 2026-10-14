@@ -44,6 +44,7 @@ type prReviewInput struct {
 	Findings            []prReviewFinding `json:"findings,omitempty" jsonschema:"publish these findings instead of calling the model: the merged and de-duplicated findings of focused runs, in the shape of review.key_issues_to_review. Needs publish=true and no focus; at most twice review.max_total_findings items. Items whose file is not in the diff or whose lines are not positive are dropped with a note, exact repeats are merged, and the list is capped at review.max_total_findings"`
 	SecurityConcerns    string            `json:"security_concerns,omitempty" jsonschema:"with findings, the overview's security concerns text (No when there are none), for example from a focused security run; at most 5000 characters"`
 	PerformanceConcerns string            `json:"performance_concerns,omitempty" jsonschema:"with findings, the overview's performance concerns text (No when there are none), for example from a focused performance run; at most 5000 characters"`
+	Incremental         *bool             `json:"incremental,omitempty" jsonschema:"review only the files whose content changed since the last review review-mcp published on this pull request; when nothing changed, the model is not called and nothing is posted. Without an earlier review the whole pull request is reviewed. Ignored with findings; replaces review.incremental for this call"`
 }
 
 // prReviewFinding is one item of the findings argument (X-33).
@@ -68,6 +69,14 @@ func suppliedFindings(in []prReviewFinding) []review.SuppliedFinding {
 			IssueHeader: f.IssueHeader, IssueContent: f.IssueContent, Focus: f.Focus}
 	}
 	return out
+}
+
+// incrementalMode is the result's incremental mode for the log (X-36).
+func incrementalMode(res *review.Result) string {
+	if res.Incremental == nil {
+		return ""
+	}
+	return res.Incremental.Mode
 }
 
 // progressTotal is the number of stages of a review or an answer.
@@ -161,6 +170,7 @@ func registerPRReview(s *mcp.Server, deps Deps) {
 			MaxFindings: in.MaxFindings, Publish: in.Publish, InlineFindings: in.InlineFindings,
 			Focus: in.Focus, Findings: suppliedFindings(in.Findings),
 			SecurityConcerns: in.SecurityConcerns, PerformanceConcerns: in.PerformanceConcerns,
+			Incremental: in.Incremental,
 		})
 		wait := 0
 		if err == nil && deps.background() {
@@ -183,7 +193,8 @@ func registerPRReview(s *mcp.Server, deps Deps) {
 			// prompts or PR content.
 			log.Debug("pr_review", "url", res.PR.URL, "findings", len(res.Review.KeyIssuesToReview),
 				"llm_calls", res.Metadata.LLMCalls, "notes", len(res.Notes), "published", res.Publish != nil && res.Publish.Published,
-				"focused", res.Focus != "", "supplied_findings", in.Findings != nil)
+				"focused", res.Focus != "", "supplied_findings", in.Findings != nil,
+				"incremental", incrementalMode(res))
 			return jobOutcome{text: text, out: *res}, nil
 		})
 	})

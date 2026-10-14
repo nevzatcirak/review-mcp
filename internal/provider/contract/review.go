@@ -85,16 +85,26 @@ func dupAnswer(fs ...dupFinding) string {
 	return b.String()
 }
 
-// cannedLLM answers the model calls of one review with answer.
+// cannedLLM answers the model calls of one review with answer and records
+// the user prompts.
 type cannedLLM struct {
 	mu     sync.Mutex
 	answer string
+	users  []string
 }
 
-func (c *cannedLLM) Complete(context.Context, string, string) (*llm.Response, error) {
+func (c *cannedLLM) Complete(_ context.Context, _, user string) (*llm.Response, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.users = append(c.users, user)
 	return &llm.Response{Content: c.answer}, nil
+}
+
+// prompts returns the user prompts of the calls so far.
+func (c *cannedLLM) prompts() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.users)
 }
 
 type fixedResolver struct {
@@ -300,6 +310,26 @@ func RunReviewDuplicates(t *testing.T, f Fixture) {
 		if !slices.Contains(lines, want) || slices.Contains(lines, not) {
 			t.Errorf("QuickActions %v: the finding's line reached the host as %q, want %q:\n%s",
 				d.p.Capabilities().QuickActions, lines, want, body)
+		}
+	})
+
+	// reviewed_commit (X-36): the overview ends with the hidden line of the
+	// head commit above the marker, written to a new overview and again to
+	// the same one when it is edited in place, and it comes back from the
+	// host as written.
+	t.Run("reviewed_commit", func(t *testing.T) {
+		pr := dupPR(false)
+		d := serve(t, pr)
+		want := "[//]: # (review-mcp:reviewed:" + pr.HeadSHA + ")\n" + review.OverviewMarker
+		for _, run := range []string{"first", "second"} {
+			res := d.run(t, dupFinding{"Unchecked value", "The value on this line is never checked.", 14, 14})
+			if res.Reviewed.SHA != pr.HeadSHA {
+				t.Errorf("%s run: the result records %q, want %q", run, res.Reviewed.SHA, pr.HeadSHA)
+			}
+			body := strings.TrimRight(strings.ReplaceAll(d.overview(t), "\r\n", "\n"), " \t\n")
+			if !strings.HasSuffix(body, "\n"+want) {
+				t.Errorf("%s run: the overview does not end with the reviewed line and the marker:\n%s", run, body)
+			}
 		}
 	})
 

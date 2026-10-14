@@ -75,8 +75,11 @@ func Provider(res *review.Result, caps provider.Capabilities) string {
 	trimmed := strings.TrimRight(b.String(), "\n") + "\n"
 	b.Reset()
 	b.WriteString(trimmed)
-	llmrender.Coverage(&b, "### "+emojiCoverage+" "+textCoverage, &res.Coverage)
+	writeCoverage(&b, "### "+emojiCoverage+" "+textCoverage, res)
 	llmrender.Notes(&b, "### "+emojiNotes+" "+textNotes, res.Notes)
+	if l := ReviewedLine(res); l != "" {
+		b.WriteString("\n" + l + "\n")
+	}
 	return b.String()
 }
 
@@ -144,7 +147,7 @@ func gfmRow(b *strings.Builder, emoji, label, value string) {
 // finding has no inline comment) and whose body is the content, the
 // snippet and the snippet note.
 func gfmIssue(n int, i *review.KeyIssue) string {
-	head := "<strong>" + html.EscapeString(issueHeader(i.IssueHeader)) + "</strong>"
+	head := "<strong>" + mdutil.EscapeHTMLKeepingCodeSpans(issueHeader(i.IssueHeader)) + "</strong>"
 	if l := findingLink(i); l != "" {
 		head = "<a href='" + html.EscapeString(l) + "'>" + head + "</a>"
 	}

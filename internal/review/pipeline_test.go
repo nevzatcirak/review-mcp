@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -87,9 +88,14 @@ type fakeProvider struct {
 	revs    map[string]map[string]string
 	reads   []string
 	readErr error
+	// readMu guards reads: the change detection of an incremental review
+	// (X-36) reads files concurrently.
+	readMu sync.Mutex
 }
 
 func (f *fakeProvider) GetFileAt(_ context.Context, _ provider.PRRef, path, rev string) ([]byte, error) {
+	f.readMu.Lock()
+	defer f.readMu.Unlock()
 	f.reads = append(f.reads, "file "+path+"@"+rev)
 	if f.readErr != nil {
 		return nil, f.readErr
@@ -102,6 +108,8 @@ func (f *fakeProvider) GetFileAt(_ context.Context, _ provider.PRRef, path, rev 
 }
 
 func (f *fakeProvider) ListDir(_ context.Context, _ provider.PRRef, dir, rev string) (*provider.DirListing, error) {
+	f.readMu.Lock()
+	defer f.readMu.Unlock()
 	f.reads = append(f.reads, "dir "+dir+"@"+rev)
 	if f.readErr != nil {
 		return nil, f.readErr

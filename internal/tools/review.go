@@ -48,6 +48,9 @@ type PRReviewArgs struct {
 	Findings            []review.SuppliedFinding
 	SecurityConcerns    string
 	PerformanceConcerns string
+	// Incremental is nil when the argument was not given; review.
+	// incremental then decides (X-36).
+	Incremental *bool
 }
 
 // Validate checks the optional arguments before any network call. It returns
@@ -102,6 +105,7 @@ func PreparePRReview(deps ReviewDeps, a PRReviewArgs) (*ReviewCall, error) {
 		Findings:            a.Findings,
 		SecurityConcerns:    a.SecurityConcerns,
 		PerformanceConcerns: a.PerformanceConcerns,
+		Incremental:         a.Incremental,
 	}
 	if a.MaxFindings != nil {
 		args.MaxFindings = *a.MaxFindings

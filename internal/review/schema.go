@@ -50,12 +50,13 @@ func ResultSchema() map[string]any {
 				"modified": strList("modified and renamed files"),
 				"deleted":  strList("deleted files whose names were not sent either"),
 			}, "added", "modified", "deleted"),
-			"skipped":            skipped("files skipped for other reasons (binary, limits, fetch failures, empty or unparseable diffs, too_large, model_call_failed)"),
+			"skipped":            skipped("files skipped for other reasons (binary, limits, fetch failures, empty or unparseable diffs, too_large, model_call_failed, unchanged_since_review)"),
 			"filtered":           skipped("files excluded by the ignore rules, with the matching rule"),
 			"partial":            boolean("true when at least one reviewable changed file was not fully reviewed: omitted, clipped, skipped by the provider for size or limit, or unreadable (X-18); files filtered on purpose do not count"),
 			"reviewed_files":     integer("changed files whose diff was sent in full, plus deleted files listed by name"),
 			"total_files":        integer("changed files except those filtered on purpose (and binary or empty-diff files): reviewed_files + not_reviewed_files"),
 			"not_reviewed_files": integer("changed files the model did not fully see: omitted, clipped, skipped for size or limit, unreadable, too large for a part of their own, or in a part whose model call failed"),
+			"unchanged_files":    integer("files of an incremental review skipped because their content did not change since the last review (skipped with reason unchanged_since_review, X-36); they are outside reviewed_files, not_reviewed_files and total_files and never make the review partial; absent when 0"),
 			"model_calls":        integer("parts sent to the model (X-19): 1 for a review in one call, N for a review in N parts, 0 without a model call; re-asks are not counted"),
 			"failed_parts":       integer("parts whose model call failed; their files are skipped with reason model_call_failed and are not reviewed"),
 			"repo_context": object("repository context in the prompt (RC-9)", map[string]any{
@@ -89,7 +90,15 @@ func ResultSchema() map[string]any {
 		"ci": CISchema(),
 		"focus": str("the focus of a focused run (X-33): security, architecture, performance, ux, tests or the " +
 			"cleaned free text; absent without one"),
-		"publish": object("publishing outcome; present when publish was requested", map[string]any{
+		"incremental": object("whether the whole pull request or only the files that changed since the last review were reviewed (X-36); always set by pr_review", map[string]any{
+			"mode": map[string]any{"type": "string", "enum": []any{IncrementalFull, IncrementalChanged, IncrementalUnchanged},
+				"description": "full: the whole pull request was reviewed; incremental: only the files that changed since the last review; unchanged: nothing changed since the last review, so nothing was reviewed, the model was not called and nothing was published"},
+			"since":           str("the head commit the last review recorded, which this run continued from; absent for a full review"),
+			"strategy":        str("how the changed files were found: git:diff (repository context cache) or api:contents (the provider's API); empty when no comparison was used"),
+			"changed_files":   integer("listed files of the diff treated as changed and reviewed (all of them in a full review)"),
+			"unchanged_files": integer("listed files skipped as unchanged since the last review"),
+		}, "mode", "strategy", "changed_files", "unchanged_files"),
+		"publish": object("publishing outcome; present when publish was requested, except when nothing changed since the last review (incremental.mode unchanged), which publishes nothing", map[string]any{
 			"published":  boolean("whether the overview was posted or updated"),
 			"comment_id": str("id of the overview comment"),
 			"url":        str("URL of the overview comment"),

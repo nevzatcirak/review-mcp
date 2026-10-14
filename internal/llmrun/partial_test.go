@@ -132,6 +132,20 @@ func TestCoverageClippedAloneIsPartial(t *testing.T) {
 	}
 }
 
+// TestCoverageIncompleteListingIsPartial: a host that did not list every
+// changed file makes the coverage partial though every listed file was
+// reviewed, also over parts, and does not change the counts.
+func TestCoverageIncompleteListingIsPartial(t *testing.T) {
+	c := BuildCoverage(&diffpipe.Prepared{Included: []string{"a.go"}, Incomplete: true}, nil)
+	if !c.Partial || c.ReviewedFiles != 1 || c.NotReviewedFiles != 0 || c.TotalFiles != 1 {
+		t.Errorf("incomplete listing: %+v", c)
+	}
+	pc := PartsCoverage(&diffpipe.Chunks{Incomplete: true}, []Coverage{{Included: []string{"a.go"}}}, nil, nil)
+	if !pc.Partial || pc.NotReviewedFiles != 0 {
+		t.Errorf("incomplete listing over parts: %+v", pc)
+	}
+}
+
 // TestCoverageFilteredOnlyIsComplete: files excluded on purpose (and files
 // with nothing to review) do not make a result partial.
 func TestCoverageFilteredOnlyIsComplete(t *testing.T) {
@@ -212,5 +226,28 @@ func TestPartialNotes(t *testing.T) {
 	}
 	if strings.Contains(NoteLargerWindow, "diff.max_tokens") || !strings.Contains(NoteRaiseLimit, "diff.max_tokens") {
 		t.Error("only the cap hint may name diff.max_tokens")
+	}
+}
+
+// TestUnchangedSinceReviewIsNotLost (X-36): files an incremental review
+// skipped as unchanged since the last review do not make the coverage
+// partial, are outside the reviewed, not-reviewed and total counts, get no
+// partial note, and are counted in unchanged_files (absent from the JSON
+// when 0).
+func TestUnchangedSinceReviewIsNotLost(t *testing.T) {
+	c := BuildCoverage(&diffpipe.Prepared{Included: []string{"a.go"}, Skipped: []provider.SkippedFile{
+		{Path: "same.go", Reason: SkipUnchangedSinceReview},
+		{Path: "also_same.go", Reason: SkipUnchangedSinceReview},
+	}}, nil)
+	if c.Partial || c.ReviewedFiles != 1 || c.NotReviewedFiles != 0 || c.TotalFiles != 1 || c.UnchangedFiles != 2 {
+		t.Errorf("coverage: partial %v, reviewed %d, not reviewed %d, total %d, unchanged %d",
+			c.Partial, c.ReviewedFiles, c.NotReviewedFiles, c.TotalFiles, c.UnchangedFiles)
+	}
+	if notes := PartialNotes(&c, tokens.Budget{}); len(notes) != 0 {
+		t.Errorf("notes %q", notes)
+	}
+	out, err := json.Marshal(BuildCoverage(prepared(), nil))
+	if err != nil || strings.Contains(string(out), "unchanged_files") {
+		t.Errorf("a coverage without unchanged files carries the count: %s (%v)", out, err)
 	}
 }

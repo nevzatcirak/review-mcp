@@ -23,7 +23,7 @@ import (
 // (too_large), then the files of failed parts. ModelCalls is len(covs) and
 // FailedParts the failed count; RepoContext is left off for the caller.
 func PartsCoverage(ch *diffpipe.Chunks, covs []Coverage, failed []bool, f *filter.Filter) Coverage {
-	c := BuildCoverage(&diffpipe.Prepared{Skipped: ch.Skipped}, f)
+	c := BuildCoverage(&diffpipe.Prepared{Skipped: ch.Skipped, Incomplete: ch.Incomplete}, f)
 	var lost []SkippedFile
 	for i, pc := range covs {
 		if failed != nil && failed[i] {

@@ -189,10 +189,12 @@ func (p *Provider) GetDiff(ctx context.Context, ref provider.PRRef, pr *provider
 
 	out := &provider.Diff{BaseStrategy: pr.BaseStrategy}
 	if pr.ChangedFilesAtLeast {
+		out.Incomplete = true
 		out.Notes = append(out.Notes, NoteDiffLimit)
 		p.logger.Debug("gitlab diff limit reached", "listed", len(diffs), "changes_count_at_least", pr.ChangedFiles)
 	}
 	if truncated {
+		out.Incomplete = true
 		out.Notes = append(out.Notes, NoteDiffPageCap)
 		p.logger.Debug("gitlab diff list cut at the page cap", "pages", diffsPageCap)
 	}

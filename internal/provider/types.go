@@ -210,6 +210,10 @@ type Diff struct {
 	// lists at most 3000 files of a pull request; GitLab stops at its diff
 	// limit). Nil for a complete listing.
 	Notes []string
+	// Incomplete is true when the host stopped listing changed files, so
+	// that some files are in neither Files nor Skipped; Notes then says so.
+	// Coverage counts such a diff as partial. False for a complete listing.
+	Incomplete bool
 }
 
 // DiffOptions tunes GetDiff. When Include is non-nil, a file for which it

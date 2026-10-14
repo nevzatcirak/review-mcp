@@ -39,9 +39,16 @@ type Spec struct {
 	// Checks are the CI statuses and checks the host reports for HeadSHA.
 	// Any other commit has none: the host does not know it.
 	Checks []Check
+	// Commits are the messages of the pull request's commits, oldest first;
+	// a fixture serves them in the host's own order.
+	Commits []string
 	// Unchanged are files the pull request does not touch: they exist with
 	// the same content at BaseSHA and HeadSHA, next to Files (see TreeAt).
 	Unchanged []RepoFile
+	// Revisions are earlier commits the host still knows, by SHA, each its
+	// whole tree (path to content): the commit of an earlier review that an
+	// incremental review compares with (X-36). See TreeAt.
+	Revisions map[string]map[string]string
 	// Env is the harness side of the Spec: not pull request data.
 	Env Env
 }
@@ -190,6 +197,11 @@ type Env struct {
 	// MaxFiles and MaxFileBytes are the provider's diff limits
 	// (diff.max_files_full_content and diff.max_file_bytes).
 	MaxFiles, MaxFileBytes int
+	// ListLimit, when positive, makes the host stop listing changed files
+	// after the first ListLimit of Files, the way GitHub and GitLab do at
+	// their limits: the host still says that more files exist. A fixture
+	// of a host that never stops listing ignores it (Traits.NoListingLimit).
+	ListLimit int
 	// Failure, when set, makes every request fail (see StartServer).
 	Failure Failure
 	// LegacyChecks makes the host an older server whose current checks
@@ -329,6 +341,8 @@ func samplePR() Spec {
 				{ID: idGeneralOwn, Author: tokenUser, Body: "Automated summary of the pull request.", Created: at(0)},
 			}},
 		},
+		Commits: []string{"Add the greeting", "Rename the package\n\nThe name now matches its directory.",
+			"Handle a missing newline", "Drop the old helper", "Fix the greeting"},
 		Checks:    sampleChecks(),
 		Unchanged: sampleUnchanged(),
 		TokenUser: tokenUser,

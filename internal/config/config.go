@@ -202,6 +202,14 @@ type Review struct {
 	// MaxTotalFindings caps the findings of a review after the parts are
 	// merged (X-19); each part still asks for at most MaxFindings.
 	MaxTotalFindings int `toml:"max_total_findings" json:"max_total_findings"`
+	// Incremental reviews only the files of the pull request whose content
+	// changed since the last review review-mcp published on it (X-36);
+	// pr_review's incremental argument replaces it for a call.
+	Incremental bool `toml:"incremental" json:"incremental"`
+	// IncrementalMaxFiles is the most files the change detection of an
+	// incremental review compares through the provider's API (X-36); a
+	// pull request with more files is reviewed in full, with a note.
+	IncrementalMaxFiles int `toml:"incremental_max_files" json:"incremental_max_files"`
 }
 
 // Ask configures the pr_ask tool.
@@ -304,6 +312,7 @@ func Defaults() *Config {
 			MaxTreeTokens:         600,
 			MaxChunks:             8,
 			MaxTotalFindings:      10,
+			IncrementalMaxFiles:   300,
 		},
 		Improve: Improve{
 			MaxSuggestions:        8,

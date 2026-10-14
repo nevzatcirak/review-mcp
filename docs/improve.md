@@ -14,7 +14,7 @@ inline comment on each verified suggestion (see [Publishing](#publishing)).
 
 | Argument | Required | Meaning |
 |---|---|---|
-| `pr_url` | yes | The pull request URL, on a configured Gitea, Bitbucket Server or GitHub host. |
+| `pr_url` | yes | The pull request URL, on a configured Gitea, Bitbucket Server, GitHub or GitLab host. |
 | `output_language` | no | Locale code for the suggestion text, such as `en-US` or `tr-TR`; replaces `output.language`. Same format as the config key. It applies to every model call of the run, the self-review calls included. |
 | `publish` | no | `true` writes the overview and the inline comments to the pull request. Default `false`. |
 | `wait_seconds` | no | How long the call waits for the result before it answers with a `job_id`, 0 to 600; replaces `llm.wait_seconds` (default 45). stdio only; see [Slow endpoints](#slow-endpoints). |
@@ -543,8 +543,11 @@ review text: the model's text is escaped (markdown control characters, no raw
 HTML on Bitbucket Server, the bullet markers kept), the code stays inside
 fences longer than any run of backticks in it, links are used only when they are
 absolute `http` or `https` URLs, and on a provider where a line that starts
-with `/` runs a quick action, such a line gets a leading space (none of Gitea,
-Bitbucket Server and GitHub runs such actions, so today this changes nothing). Model text
+with `/` runs a quick action, such a line gets a leading space (GitLab does; Gitea,
+Bitbucket Server and GitHub do not, so there this changes nothing). Inside a native
+suggestion block only a line that could really be a command gets the space, and
+such a suggestion is not posted as a block at all (see
+[GitLab](gitlab.md#quick-action-safety)). Model text
 cannot form a marker line. The backticks the prompt asks for therefore show as
 literal backticks in a published comment, as they do in a published review.
 
@@ -623,12 +626,14 @@ the score ("Label: possible issue · Score: 9 of 10"); the model's explanation;
 then the change:
 
 - On a provider with the `SuggestionBlocks` capability, which today is
-  **GitHub**, a **native suggestion block** that holds the improved code and
+  **GitHub** and **GitLab**, a **native suggestion block** that holds the improved code and
   replaces the verified range when someone applies it (GitHub's **Commit
-  suggestion** button). The capability names the syntax of the block: on GitHub
+  suggestion** button, GitLab's **Apply suggestion**). The capability names the syntax of the block: on GitHub
   the comment covers the lines `start_line` to `line` and the block replaces
-  exactly those lines (the "range" style); a provider whose block is written
-  with a line offset in its info string (GitLab, later) uses the "offset" style.
+  exactly those lines (the "range" style); on GitLab the comment sits on the
+  first line and the info string says how many lines below it the block
+  replaces, `suggestion:-0+N` (the "offset" style; a block of one line is a
+  plain `suggestion`).
   A block is used only when the improved code can be put onto the **real
   indentation** of the lines it replaces. The model quotes `existing_code` and may
   drop its indentation; review-mcp compares the real lines (the head file's, or
@@ -644,9 +649,17 @@ then the change:
     removed from the middle of it) posts the fenced `diff` block instead. A
     wrongly indented block is never posted.
 
+  On a provider that runs quick actions (GitLab) a fourth condition holds: no
+  line of the improved code could be a quick action (`/` at column 0 followed
+  by a letter, a digit or an underscore; `//` and `/*` lines are fine).
+  Otherwise the diff block is posted and the comment says why, in a paragraph
+  above its marker: "Note: a line of the suggested code starts with a slash
+  command, so it is shown as a diff."
+
   The suggestion's own `improved_code` in the result is never changed. See also
-  [GitHub](github.md#native-suggestion-blocks).
-- Otherwise, which is **Gitea and Bitbucket Server** (and GitHub when the block
+  [GitHub](github.md#native-suggestion-blocks) and
+  [GitLab](gitlab.md#native-suggestion-blocks).
+- Otherwise, which is **Gitea and Bitbucket Server** (and GitHub and GitLab when the block
   is not safe), a fenced `diff` block: every
   line of `existing_code` with a leading `-`, then every line of `improved_code`
   with a leading `+`. It is a reading aid, not an applicable suggestion: copy
@@ -664,6 +677,10 @@ of its own; the comment of a range covers the whole range (`start_line` to
 `line`), which is what the suggestion block replaces. If GitHub refuses the
 review as a whole (422), each comment is posted alone; a refused one is
 unanchorable. See [GitHub](github.md#publishing-one-review-per-run).
+GitLab: one discussion per suggestion (`POST .../discussions`), anchored on the
+first line of the range; a `400` for the position is unanchorable, and a
+general note that GitLab creates instead of an inline one is deleted at once
+(the stray-note guard). See [GitLab](gitlab.md#publishing-one-discussion-per-finding).
 
 ### No repeated suggestions
 
@@ -788,9 +805,10 @@ runs review-mcp must be able to:
 | Gitea | write access to issues (`write:issue`): post and edit PR comments | write access to the repository (`write:repository`): post a review |
 | Bitbucket Server | repository write permission: post and edit comments | repository write permission: post comments with an anchor |
 | GitHub | Pull requests write (fine-grained) or `repo` / `public_repo` (classic): post and edit comments | the same: post a review with comments |
+| GitLab | `api` scope (personal access token) or the Developer role (project or group access token): post and edit notes | the same: post discussions |
 
 Reading needs only a read token (`read:repository`, `read:issue` and
-`read:user` on Gitea, repository read on Bitbucket Server, Pull requests read on GitHub). `read:user` is also
+`read:user` on Gitea, repository read on Bitbucket Server, Pull requests read on GitHub, `read_api` or Reporter on GitLab). `read:user` is also
 what lets review-mcp tell its own comments from other people's, for the
 discussion block and the duplicate check, so a token without it gets "The
 existing PR discussion could not be read; suggestions may repeat it." and, with

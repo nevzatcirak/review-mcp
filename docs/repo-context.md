@@ -192,8 +192,10 @@ context.repo.enabled: repository context is not available in serve mode (cached 
   `protocol.allow=never` alone blocks lazy fetches, which is tested.
 - The provider must serve the pull request ref over HTTP(S): Gitea
   `refs/pull/<n>/head`, Bitbucket Server `refs/pull-requests/<n>/from`,
-  GitHub `refs/pull/<n>/head`. The GitHub clone address is
-  `{github.base_url}/{owner}/{repo}.git` (the web base, never the API base).
+  GitHub `refs/pull/<n>/head`, GitLab `refs/merge-requests/<n>/head`. The
+  GitHub clone address is `{github.base_url}/{owner}/{repo}.git` (the web base,
+  never the API base). The GitLab one is `{gitlab.base_url}/{full path}.git`:
+  the web base with its context path and every group of the project's path.
 
 ## Security
 
@@ -206,7 +208,11 @@ context.repo.enabled: repository context is not available in serve mode (cached 
   that worked is remembered for the process. On GitHub the first scheme is HTTP
   Basic with the fixed user `x-access-token` and the token as the password
   (GitHub does not accept a bare Bearer token for git over HTTPS); `Bearer` is
-  tried once after a 401. See [GitHub](github.md#repository-context).
+  tried once after a 401. See [GitHub](github.md#repository-context). On
+  GitLab the only scheme is HTTP Basic with the fixed user `oauth2` and the
+  token as the password; there is no second attempt and no identity lookup. The
+  token needs `read_repository` (a personal access token) or the Reporter role
+  (a project or group access token). See [GitLab](gitlab.md#repository-context).
 - **A fresh environment.** Every `git` process gets an allowlisted
   environment (`PATH`, `SYSTEMROOT` on Windows, the proxy variables, `LANG=C`,
   git's prompts disabled), never a copy of yours, which may hold other tokens.

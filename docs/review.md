@@ -11,7 +11,7 @@ edit in place, and an inline comment on each changed line a finding is about
 
 | Argument | Required | Meaning |
 |---|---|---|
-| `pr_url` | yes | The pull request URL, on a configured Gitea, Bitbucket Server or GitHub host. |
+| `pr_url` | yes | The pull request URL, on a configured Gitea, Bitbucket Server, GitHub or GitLab host. |
 | `extra_instructions` | no | Extra guidance for the model for this call; replaces `review.extra_instructions`. An empty value means "not given". |
 | `output_language` | no | Locale code for the review text, such as `en-US` or `tr-TR`; replaces `output.language`. Same format as the config key. |
 | `max_findings` | no | The most key issues to return, 1 to 20; replaces `review.max_findings` (default 3). |

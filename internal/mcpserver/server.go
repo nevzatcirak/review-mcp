@@ -109,7 +109,7 @@ const serverInfoDescription = "Reports the review-mcp version, enabled providers
 // naming the server, and the focused-review pattern of X-33 (spec 2F §4.3).
 // The server never fans out on its own; the client runs the focused
 // reviews.
-const serverInstructions = "review-mcp reviews, describes and discusses pull requests on Gitea, Bitbucket Server and GitHub " +
+const serverInstructions = "review-mcp reviews, describes and discusses pull requests on Gitea, Bitbucket Server, GitHub and GitLab " +
 	"with a configured LLM.\n\n" +
 	"For a thorough review, run pr_review with focus for several areas (for example security, architecture, " +
 	"performance and tests), in parallel if you can; merge the findings and drop duplicates; then call pr_review " +

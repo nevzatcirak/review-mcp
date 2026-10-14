@@ -9,7 +9,7 @@ posts the question and the answer as one PR-level comment.
 
 | Argument | Required | Meaning |
 |---|---|---|
-| `pr_url` | yes | The pull request URL, on a configured Gitea, Bitbucket Server or GitHub host. |
+| `pr_url` | yes | The pull request URL, on a configured Gitea, Bitbucket Server, GitHub or GitLab host. |
 | `question` | yes | The question, at most 8000 characters (counted in characters, not bytes). Surrounding whitespace is ignored. |
 | `extra_instructions` | no | Extra guidance for the model for this call; replaces `ask.extra_instructions` (`REVIEW_MCP_ASK_EXTRA_INSTRUCTIONS`). An empty value means "not given". |
 | `output_language` | no | Locale code for the answer, such as `en-US` or `tr-TR`; replaces `output.language`. Same format as the config key. |
@@ -185,7 +185,9 @@ and your question are free text, the published comment puts a space in front
 of every line that would start with `/`, including the first line and lines
 after a carriage return, as PR-Agent does. The comment therefore shows
 ` /close` instead of triggering anything. The text returned to your client is
-not changed.
+not changed. GitLab is the provider that runs such lines today; `pr_ask`
+applies the rule on every provider, so the published comment does not depend on
+which one you use.
 
 A failure to post never discards the answer: the result carries the answer and
 a `publish` object with `published: false` and the reason. Publishing is not

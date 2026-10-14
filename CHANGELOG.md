@@ -5,6 +5,163 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-rc.6] - Unreleased
+
+Sixth v2 release candidate, built on 2.0.0-rc.5 (the npm dist-tag `next`;
+`latest` moves only at 2.0.0), and the last release candidate before 2.0.0.
+Phase 2C, the GitLab provider: the same tools on gitlab.com and on self-managed
+GitLab 16.0 or newer, over the REST API v4. Nothing in the tools or in the
+configuration of the other providers is removed or renamed; a client that does
+not use GitLab gets the same calls as in rc.5, apart from the shared changes
+listed under Changed. Everything here is tested against fake servers only (and a
+real `git` for the repository context); the live acceptance (spec 2C §5) is
+still to be done, on a personal project on gitlab.com (Free tier), and the
+token scopes below are unconfirmed until then. What cannot be checked on the Free
+tier at all is listed in the checklist.
+
+### Added
+
+- GitLab provider (X-34): gitlab.com and self-managed GitLab 16.0 or newer, with
+  a personal, project or group access token (sent as `PRIVATE-TOKEN`). Every
+  tool works: `pr_review`, `pr_ask`, `pr_describe`, `pr_improve`, `pr_comments`,
+  `pr_comment_reply`, `pr_comment_create` and `pr_info`. Guide:
+  [GitLab](docs/gitlab.md).
+  - Configuration: `gitlab.base_url` (`REVIEW_MCP_GITLAB_BASE_URL`; the web
+    base, with a context path if the instance has one, **no default**; the API
+    base is always `{base}/api/v4`), the secret `REVIEW_MCP_GITLAB_TOKEN`,
+    `gitlab.ca_cert` and `gitlab.insecure_skip_verify`, and the serve-mode
+    header `X-Review-MCP-GitLab-Token`. `server_info` lists the provider; the
+    "no provider enabled" problem names all four bases.
+  - Merge request URLs: `{base}/{namespace...}/{project}/-/merge_requests/{iid}`
+    with nested groups and an optional `/diffs`, `/commits` or `/pipelines`;
+    only the `/-/` form is accepted. The project id is the URL-encoded full
+    path.
+  - Token: `read_api` to read and `api` to publish (plus `read_repository` for
+    the repository context) for a personal access token; the role Reporter to
+    read and Developer to publish for a project or group access token.
+  - Reads: the diff from `GET .../diffs` against `diff_refs.base_sha` (base
+    strategy `gitlab:diff_refs`), contents and file reads from the raw
+    endpoint, the commits (oldest first), the tree (keyset paging), all
+    followed through the `Link` header. A diff that is "not ready" (empty
+    `diff_refs`, or a head GitLab has not processed) is read once more after
+    2 seconds, then fails with "the merge request's diff is not ready yet; try
+    again in a moment". An endpoint that answers 404 on a merge request that can
+    be read is `unsupported_version` ("GitLab 16.0 or newer is required").
+  - Limits, as fixed notes: "GitLab did not list every changed file (its diff
+    limit was reached); the files it left out are not reviewed." and
+    "review-mcp reads at most 4000 changed files of a merge request; the files
+    GitLab listed after them are not reviewed."
+  - Rate limits: a `429`, or a `403` with `RateLimit-Remaining: 0`, is
+    `rate_limited` with the reset time (UTC); one wait of at most 60 seconds,
+    never a retry loop.
+  - Comments: discussions as threads (system notes left out), resolved state
+    (both resolution flags), outdated notes (`position.head_sha` is not the
+    current head), replies always in the thread, edits with the author check
+    before any write, links `{web_url}#note_{id}`.
+  - Inline findings and suggestions: one discussion per comment, with the
+    position from `diff_refs` (`old_line` and `new_line` for a context line); a
+    `400` for the position is `unanchorable`; a `201` that is not a `DiffNote`
+    is deleted at once (the note just created, after an author check) and is
+    `unanchorable`, with a fixed sentence; a range is anchored on its first line.
+    Native suggestion blocks (`suggestion:-0+N`).
+  - Quick-action safety (X-35), below.
+  - `pr_info`: reviewers from `/reviewers` (a requested reviewer listed in
+    `approved_by` is reported approved, except one who requested changes),
+    approvers who are not reviewers, `approvals_required` (with the note "no
+    approval rule applies to this merge request" for 0), and the merge status
+    from `detailed_merge_status` (a table in
+    [Pull request status](docs/pr-info.md#gitlab)), with the new blocker
+    "unresolved discussions must be resolved".
+  - CI: the commit statuses of the head commit (the latest per name; strategy
+    `gitlab:commit_statuses`). Merged-results, merge-train and fork pipelines
+    are not read.
+  - `pr_describe` with `publish_mode=description` (and `update_title`): `PUT`
+    with only the title and the description, the re-read rule of Gitea; the
+    draft prefixes `Draft:`, `[Draft]` and `(Draft)` are kept or removed as
+    `WIP:` is.
+  - Repository context: clone `{base}/{full path}.git`, ref
+    `refs/merge-requests/{iid}/head`, HTTP Basic with the user `oauth2`.
+- Quick-action safety on GitLab (X-35). GitLab runs a line that starts with `/`
+  in a comment or a description. Every published body stays sanitised (a space in
+  front of such a line at column 0); in addition:
+  - inside a native suggestion block only a line that could be a command (`/`
+    followed by a letter, a digit or `_`) gets the space, so `// comment` and
+    `/* ... */` lines stay as they are;
+  - a suggestion whose code has such a line is shown as the diff block, with the
+    paragraph "Note: a line of the suggested code starts with a slash command,
+    so it is shown as a diff.";
+  - `pr_describe` in description mode is refused, before any write, when the
+    author's text outside review-mcp's region has such a line (after up to three
+    spaces): "the description has a line GitLab could run as a quick action;
+    publish in comment mode instead";
+  - all of it rests on GitLab running a quick action only at column 0, which the
+    live check Q5b verifies.
+
+### Changed
+
+- `SanitizeBody` is suggestion-aware (above). Outside a suggestion fence its
+  output is byte-identical to `SanitizeQuickActions`, and a provider without the
+  quick-action capability gets the body unchanged. `pr_ask` still sanitises its
+  published text on every provider.
+- `InlineComment` gains `OldLine` (the old-side line of a context line, 0 for an
+  added line), filled where the line type is computed; the other providers ignore
+  it. A negative `OldLine`, or one on an added line, is refused.
+- The draft-prefix list of `pr_describe` (`update_title`) is shared by every
+  provider: `WIP:`, `[WIP]`, `Draft:`, `[Draft]` and `(Draft)`, in any case. A
+  prefix is only added back when the current title has it and the pull request is
+  a draft; a generated title loses a leading prefix of the list.
+- New blocker text "unresolved discussions must be resolved" and new note "no
+  approval rule applies to this merge request" in `pr_info`.
+- Repository context gains a new Basic scheme, the fixed user `oauth2` with the
+  token as the password (GitLab); the token still reaches `git` only through the
+  environment of the one process.
+- The tool descriptions and `server_info` name GitLab where they listed the
+  providers, and so do the server's `initialize` instructions.
+- Contract suite: `inline_anchoring` builds its items with `OldLine`, a
+  `quick_action_line` case runs for all four providers, and `Traits.NoStaleReviews`
+  covers a provider that reports no commit per approval.
+- The documentation: [GitLab](docs/gitlab.md), [Setup](docs/setup.md#gitlab),
+  [Pull request status](docs/pr-info.md#gitlab), [Repository
+  context](docs/repo-context.md), [Describing pull
+  requests](docs/describe.md), [Suggesting code changes](docs/improve.md),
+  [Serve mode](docs/serve.md), [Troubleshooting](docs/troubleshooting.md#gitlab)
+  (every new note, hint and refusal) and the decisions X-34 and X-35.
+
+### Acceptance checklist
+
+The live acceptance runs after rc.6 is published, by the owner, on gitlab.com in
+a project under `group/subgroup/` (Free tier). Nothing is published to a merge
+request without the owner's go-ahead. Q1 to Q7 are the spec's items (2C §5); the
+other lines are open questions collected while building. Tick each item when it
+holds; write down the real answer when it does not.
+
+- [ ] **Q1** `diag pr` and `diag comments` on a merge request with a rename, a deletion and a new file in a nested directory: the files and threads match the UI, and the base strategy is `gitlab:diff_refs`.
+  - [ ] A binary file: the shape of its `diff` entry in `GET .../diffs` (empty string, or `Binary files ...`), and that it is skipped as `binary`.
+  - [ ] The raw file request with `Accept: */*` (`GET .../repository/files/{path}/raw`) answers with the contents (a wrong guess would turn every content fetch into `fetch_failed`).
+- [ ] **Q2** `pr_info` on an open and a merged merge request: reviewers, `approvals_required`, the blocker for a draft and for an unresolved thread (with "All threads must be resolved" enabled in the project).
+  - [ ] The reviewer states on the server (`unreviewed`, `review_started`, `reviewed`, `approved`, `requested_changes`, as 16.x and the latest version report them) and what `pr_info` shows for each.
+  - [ ] An approver's state: a requested reviewer who approved is reported `approved` whatever `/reviewers` says (DQ-d2), and one who requested changes keeps `changes_requested`.
+  - [ ] `approvals_required` on the Free tier: `0` (the note "no approval rule applies to this merge request") or absent ("not readable with this token").
+- [ ] **Q3** (owner's go-ahead) `pr_review` with `publish=true` on a throwaway merge request: inline discussions on an added and on a context line; a second run posts nothing new (X-29); after a push that moves the commented line away, the old note counts as outdated.
+  - [ ] The `400` body GitLab sends for a bad position (an object with `line_code`/`position`, or the string form), so that the unused form can be dropped.
+  - [ ] Whether a `201` can ever be a note that is not a `DiffNote` (the stray-note guard), and what a context line sent with `new_line` alone gives (a `400` or a general note).
+  - [ ] `DELETE` of an own note with a project access token and with a group access token (the guard needs it).
+  - [ ] `position.head_sha` of a `DiffNote` moves forward on a push when the line can still be traced (what "outdated" rests on).
+  - [ ] A reply to an individual (non-discussion) note turns it into a thread.
+  - [ ] `GET .../notes/{id}` works for a `DiffNote` (the edit path reads the note first).
+  - [ ] The posted-note URL, `{web_url}#note_{id}`, opens the note in the UI.
+- [ ] **Q4** `pr_improve` with `publish=true`: a native suggestion applies cleanly with **Apply suggestion**; a suggestion whose code starts with `//` stays native; the overview and the comments contain no executed quick action (nothing in the merge request's system notes).
+  - [ ] `suggestion:-0+N` (a block of several lines) applies cleanly and replaces exactly N+1 lines.
+- [ ] **Q5** `pr_describe` in description mode: the author's text is unchanged; with an author line `/label ~probe` in the description the call is refused ("the description has a line GitLab could run as a quick action; publish in comment mode instead").
+  - [ ] A description line with one to three leading spaces is refused too; whether GitLab runs a line with four spaces or a tab in a description (the refusal does not cover it) is read from Q5b.
+- [ ] **Q5b** The column-0 assumption of every sanitiser: post (with `pr_comment_create`) a note whose lines are ` /label ~probe` (one leading space) and `    /label ~probe` (four spaces); the label is not added. If GitLab runs either, stop: the sanitiser rule must change before rc.6 is promoted to 2.0.0.
+- [ ] **Q6** CI: with a `.gitlab-ci.yml` that has one passing job, one failing job and one `allow_failure` job, the overview CI line and `pr_info.ci` match the pipeline page.
+  - [ ] `GET .../repository/commits/{sha}/statuses` answers with the latest status per name, with `allow_failure` set on the right job.
+- [ ] **Q7** The guidelines file at the base revision and the file tree (X-32) as on GitHub.
+  - [ ] The tree request for a path that is a file (not a directory): what GitLab answers (an empty tree is assumed) and that the call ends with "the path is not a directory".
+- [ ] **Q-repo** Repository context (`context.repo.enabled=true`): `git` fetches `refs/merge-requests/{iid}/head` with the Basic user `oauth2`, with a personal access token (`read_repository`) and with a project access token.
+- [ ] **Not verifiable on gitlab.com Free** (record as not verified): required approvals greater than 0 (Premium), merged-results and merge-train pipelines, pipelines of a fork's project, a self-managed instance behind a proxy or with an `external_url` that differs from `gitlab.base_url`, and a GitLab version older than the current one (16.x reviewer states).
+
 ## [2.0.0-rc.5]
 
 Fifth v2 release candidate, built on 2.0.0-rc.4 (the npm dist-tag `next`;

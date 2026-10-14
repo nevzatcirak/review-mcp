@@ -76,6 +76,8 @@ code must not anticipate them beyond the seams named here.
 | X-31 | CI and check status (v2 rc.5, Y-22; WP-5a, WP-5b) | `pr_review` and `pr_info` read the statuses and checks the repository's own CI reported for the head commit (Gitea commit status, Bitbucket Server build statuses with a 404 fallback, GitHub check runs plus commit statuses) through the new `GetChecks`; the result gets `ci` (`state` passing/failing/pending/none/unreadable, counts, at most 20 checks); the model gets failing and pending checks as a fenced, budgeted data block (`review.max_ci_tokens`); the overview gets a renderer-built CI line; a failed read is `unreadable` with a fixed note, never a failed tool; nothing is built or run (R-1) | Implemented; DESIGN-QUESTIONs settled on PR #23 (architect) |
 | X-32 | Project guidelines and file tree (v2 rc.5, Y-23; WP-5a, WP-5c) | `pr_review` and `pr_improve` give the model the first existing path of `review.guidelines_paths` and a listing of the directories the change touches, both read at the **base** revision (new `GetFileAt` and `ListDir`; from the X-22 cache when it holds the base commit), as fenced untrusted data under fixed headers; the tree is dropped first, then the guidelines are cut; `coverage` gains `guidelines` and `file_tree` | Implemented; DESIGN-QUESTIONs settled on PR #23 (architect) |
 | X-33 | Focused reviews and the merged publish (v2 rc.5, Y-24; WP-5d) | `pr_review` gains `focus` (a focused run never publishes) and `findings` (+ `security_concerns`, `performance_concerns`): publish findings a client merged, with no model call and through the normal publish (X-29, X-30); the client is told how through the MCP `instructions`, the tool description and the `multi_perspective_review` prompt; the server never fans out | Implemented; DESIGN-QUESTIONs settled on PR #23 (architect) |
+| X-34 | GitLab provider (v2 rc.6, Y-17 to Y-21; WP-6a to WP-6e) | gitlab.com and self-managed GitLab 16.0 or newer over REST API v4 with a personal, project or group access token (`PRIVATE-TOKEN`) and no assumed host (`gitlab.base_url` has no default and may carry a context path; the API base is always `{base}/api/v4`); nested groups; the diff from `GET .../diffs` against `diff_refs.base_sha` (`gitlab:diff_refs`), one revision for diff, contents and positions; resolvable discussions; inline findings as one discussion each with a stray-note guard; native suggestion blocks (`suggestion:-0+N`); `pr_info` from `/reviewers`, `/approvals` and `detailed_merge_status`; CI from the head commit's commit statuses; description edit with the draft-title prefixes; repository context with Basic `oauth2` | Implemented; DESIGN-QUESTIONs settled on PR #25 (architect) |
+| X-35 | Quick-action safety on GitLab (v2 rc.6; WP-6c, WP-6d) | Every published body stays slash-sanitised on a provider with `QuickActions`, with one refinement for native suggestion blocks (inside a `suggestion` fence only a line that could be a command, `/` plus a letter, digit or underscore, gets the space) and one refusal for description edits (a line the author wrote that could run as a quick action refuses description mode before any write); a suggestion whose code has such a line is shown as the diff block with a fixed paragraph. The rule never depends on how GitLab parses code blocks; the column-0 assumption is checked live (Q5b) | Implemented; DESIGN-QUESTIONs settled on PR #25 (architect) |
 
 ---
 
@@ -672,6 +674,62 @@ implementation must do or must not do).
   - WP-5d DQ-10: the prompt's `pr_url` has its query and fragment stripped and credentials refused, so the message never echoes secrets.
 - **Consequences:** the `pr_review` input schema gains `focus`, `findings`, `security_concerns`, `performance_concerns`; the tool description changes (its pinned test was updated). Not verified: how Claude Code and opencode handle server instructions and prompts, and a real merged publish (spec §5, item 3).
 
+#### X-34 — GitLab provider (added v2 rc.6; WP-6a to WP-6e)
+- **Origin:** owner request (design note `docs/design/v2-design.md` §6, Y-17 to Y-21; spec `docs/plan/v2-2C-spec.md`): the same tools on gitlab.com and self-managed GitLab, over the provider contract (X-24) and the capabilities (X-25), with no change to the other providers' behaviour. Guide: `docs/gitlab.md`.
+- **Amendments to the design note (owner defaults, approved 2026-10-14):**
+  - **Minimum GitLab 16.0** (released 2023-05; every 15.x release is out of maintenance). `GET .../diffs` is the only diff source (the `/changes` fallback is dropped); `detailed_merge_status` and `draft` are always present. A `404` after the merge request itself was read is `unsupported_version` with the hint "GitLab 16.0 or newer is required".
+  - **Inline findings are individual discussions**, one request per finding. GitLab's batched review (draft notes plus bulk publish) is not used in rc.6 (one notification instead of several); it is in the v2.1 backlog.
+  - **CI reads the commit statuses of the head commit** in the merge request's project. Merged-results and merge-train pipelines (Premium) and pipelines that ran in a fork's project are not read; they are in the backlog.
+- **Decision:**
+  - **Configuration (Y-17).** `gitlab.base_url` (the web base, may include a context path, no default), `gitlab.token` (secret), `gitlab.ca_cert`, `gitlab.insecure_skip_verify`, `REVIEW_MCP_GITLAB_*`, serve header `X-Review-MCP-GitLab-Token`. No separate API setting.
+  - **Resolver and HTTP.** `{base}/{namespace...}/{project}/-/merge_requests/{iid}`, optionally `/diffs`, `/commits` or `/pipelines`; at least one namespace segment; only the `/-/` form; `%2F`, `.`, `..` and empty segments refused. The project id is the URL-encoded full path and stays encoded on the wire. Paging through `Link` only (diffs 40 pages, commits 10, tree keyset). `429`, and `403` with `RateLimit-Remaining: 0`, are `rate_limited` with the reset in the hint; one wait of at most 60 s.
+  - **Base and diff (Y-18).** `diff_refs.base_sha` (`gitlab:diff_refs`); the head is always `diff_refs.head_sha`; empty `diff_refs`, or a merge request `sha` that differs from it, is "not ready" (one retry after 2 s, then `upstream` with a fixed hint). Binary, `too_large`, `collapsed`, rename and mode-only shapes as in `docs/gitlab.md`. `changes_count` ending in `+` and the 4000-file cap are `Diff.Notes` entries.
+  - **Comments (Y-19, X-29).** Discussions, system notes left out, note ids as ids, both resolution flags true, a `DiffNote` outdated when its `position.head_sha` is not the current head, replies always in thread, edit with the author check before any write, comment links `{web_url}#note_{id}`.
+  - **Inline writes.** One `POST .../discussions` per item with a text position (`old_line` and `new_line` for a context line; new `InlineComment.OldLine`, provider-neutral); a `400` naming the position or `line_code` is `unanchorable`; a `201` that is not a `DiffNote` is deleted at once (only the note just created, only after the author check) and is `unanchorable`; a range is anchored on one line.
+  - **`pr_info` (Y-20).** Reviewers from `/reviewers`, approvers from `/approvals`, required approvals from `approvals_required`, the merge status from `detailed_merge_status` (the table in `docs/pr-info.md`); new `BlockerDiscussions` and `NoteNoApprovalRule`.
+  - **Description edit and repository context (Y-21).** `PUT .../merge_requests/{iid}` with `title`/`description` only and the re-read concurrency rule; the draft-prefix list gains `Draft:`, `[Draft]` and `(Draft)`. Clone `{base}/{full path}.git`, ref `refs/merge-requests/{iid}/head`, HTTP Basic `oauth2:<token>` through `http.extraHeader` (new scheme; X-22 rules unchanged).
+  - **Not supported:** GraphQL, resolving a discussion, approving, batched reviews, `line_range` anchors, merged-results/merge-train/fork pipelines, GitLab before 16.0.
+- **DESIGN-QUESTIONs (settled on PR #25 (architect)):**
+  - WP-6a DQ-1: `Traits.Pending` (contract cases of later packages) accepted; entries removed as the packages landed, the field itself removed in WP-6d.
+  - WP-6a DQ-2: any other `403` is `auth`; there is no `forbidden` class (spec amended).
+  - WP-6a DQ-3: the `changes_count` "N+" case is a `Diff.Notes` entry (the GitHub 3000-file path); a cross-provider `Diff.Incomplete` flag is backlog.
+  - WP-6a DQ-4: GitLab-only tests on the contract fake for commit order, the diff limit and the shapes; a cross-provider `commit_messages` case is backlog.
+  - WP-6a DQ-5: new provider-neutral fields `PullRequest.StartSHA`, `PullRequest.ChangedFilesAtLeast` and the strategy `ChecksGitLabCommitStatuses`.
+  - WP-6a DQ-6: **replaced by the architect review** (fix `1f83eb1`): `HeadSHA` is always `diff_refs.head_sha`; a differing `sha` means "not ready", with the one 2 s retry.
+  - WP-6a DQ-7: `versionCheck` only for `/diffs`; for `/reviewers` the spec's fallback applies (no version error).
+  - WP-6a DQ-8: the diff page-cap note (40 pages) approved; commits (10 pages) without a note.
+  - WP-6a DQ-9: an empty tree below the root is "the path is not a directory"; confirm in Q7.
+  - WP-6a DQ-10: **changed by the architect review** (fix `1f83eb1`): the raw file request sends `Accept: */*` instead of `application/json`; every JSON request keeps `application/json`.
+  - WP-6a DQ-11: every note ends with a period (`NoteDiffLimit` and `NoteDiffPageCap` gained one).
+  - WP-6a DQ-12: binary detection (extension rule for an empty diff; a diff that starts with `Binary files `; otherwise `fetch_failed`); confirm in Q1.
+  - WP-6b DQ-b1: `ListThreads` calls `GetPullRequest` (so `pr_comments` can fail with the "not ready" hint for a few seconds after a push); the web base for posted notes was replaced by `web_url` in WP-6d (DQ-c7).
+  - WP-6b DQ-b2: the `/close` check as a GitLab test; the provider-neutral subtest through `review.Run` (`quick_action_line`) was done in WP-6c.
+  - WP-6b DQ-b3: resolvable general threads in the shared fake, with GitLab-only knobs for individual and system notes.
+  - WP-6c DQ-c1: one `Hunk.OldLineOf` helper; the line type is still computed in two places (`anchor.Resolve`, `improve.anchorFor`); merging them is backlog.
+  - WP-6c DQ-c2: both shapes of the `400` body are recognised (an object, and a string naming `line_code`); Q3 records the real one, after which the unused form can go.
+  - WP-6c DQ-c3: a `PullRequest` without `StartSHA` or `BaseSHA` is read again; a moved head is `conflict` with "the merge request's head changed; read it again".
+  - WP-6c DQ-c4: the fallback reason is published as a paragraph in the comment, above the marker (spec amended).
+  - WP-6c DQ-c5: the hand-written-fence test lives at the sanitiser and on the raw `pr_comment_create` path; through the finding path the renderer already escapes the backticks, so that test asserts the end state (spec amended).
+  - WP-6c DQ-c6: the stray-note sentences and the `OldLine` validation approved; the column-0 quick-action check is consistent with the existing sanitiser, so the design rests on GitLab running only column-0 commands; live check Q5b added.
+  - WP-6c DQ-c7: every comment URL (post, reply, inline) uses the merge request's `web_url`, with the web base only as a fallback when it is empty; done in WP-6d.
+  - WP-6d DQ-d1: when `/approvals` is unreadable the partial reviewer list is kept, without an extra note (`required_approvals` already carries "not readable with this token").
+  - WP-6d DQ-d2: **decided differently from the report:** a requested reviewer who appears in `approved_by` is reported approved whatever `/reviewers` says, except `requested_changes` (older 16.x servers report only `unreviewed` and `reviewed`); fix `00fbc84`. Q2 confirms it.
+  - WP-6d DQ-d3: `Traits.NoStaleReviews` in the contract instead of a skip (GitLab reports no commit per approval).
+  - WP-6d DQ-d4: description mode is refused as a whole, title-only runs included (the spec rule; a refusal is cheap).
+  - Also settled in the reviews: the shared draft-prefix list (`WIP:`, `[WIP]`, `Draft:`, `[Draft]`, `(Draft)`) serves every provider; `oauth2` Basic is the only repository scheme, without an identity lookup (Q-repo confirms it with a personal and a project token); `Traits.Pending` removed.
+- **Consequences:** every `docs/*.md` page that lists providers names GitLab; `NOTICE` is unchanged (nothing was adapted from another project). Not verified on a real host: everything in the live acceptance (spec §5, Q1 to Q7 and Q5b, and the items listed in the rc.6 entry of the CHANGELOG), on gitlab.com Free; required approvals above 0 and merged-results pipelines cannot be checked there at all.
+
+#### X-35 — Quick-action safety on GitLab (added v2 rc.6; WP-6c, WP-6d)
+- **Origin:** GitLab runs a line that starts with `/` in a comment or a description as a quick action (`/close`, `/label`). The `QuickActions` capability (X-25) already sanitised published bodies; GitLab is the first provider where it is true, and two cases of X-35 needed more than the capability: native suggestion blocks (sanitising would change the code the block applies) and description edits (the author's text cannot be sanitised).
+- **Decision:**
+  - **Every published body stays slash-sanitised** on a provider with `QuickActions` (`provider.SanitizeBody`), at column 0. `SanitizeQuickActions` (the unconditional `pr_ask` sanitiser) and every provider without the capability are unchanged.
+  - **`SanitizeBody` is suggestion-aware.** Inside a fence whose info string is `suggestion` or `suggestion:-N+M` (three or more backticks or tildes, up to three spaces of indent, closed by the same character at least as long) a line gets the space only when it could be a quick action (`QuickActionLine`: `/` plus a letter, a digit or `_`); `//` and `/*` lines stay. Outside such fences the output equals `SanitizeQuickActions` (property test). The refinement only spares lines that cannot be commands, so its safety does not depend on fence parsing.
+  - **Fallback.** When the suggested code of a `pr_improve` suggestion has a line that could be a quick action, the suggestion is shown as the diff block and the comment carries "Note: a line of the suggested code starts with a slash command, so it is shown as a diff."
+  - **Description refusal.** On a provider with `QuickActions`, a line of the text outside review-mcp's region that could be a quick action (after up to three spaces; the same `QuickActionLine` on the trimmed line) refuses description mode before any write with "the description has a line GitLab could run as a quick action; publish in comment mode instead", on every re-read, title-only runs included (WP-6d DQ-d4).
+  - **Column-0 assumption.** All sanitisers look at column 0. The live check Q5b (a note with ` /label ~probe` and `    /label ~probe`) verifies that GitLab does not run an indented line; if it does, the rule changes first and rc.6 is not promoted to 2.0.0 before it does (the check runs after rc.6 is published; the spec says "before rc.6", see the rc.6 CHANGELOG entry).
+- **DESIGN-QUESTIONs:** settled with X-34 (WP-6c DQ-c4 to c6, WP-6d DQ-d4).
+- **Consequences:** `provider.QuickActionLine` and `provider.HasQuickActionLine` are shared; the contract gained `RunReviewDuplicates/quick_action_line` for all four providers. Not verified live: Q4, Q5 and Q5b.
+
 **Confirmed from 9a (v1.1 spec §0):** binary and empty-diff files stay outside `total_files` (9a DESIGN-QUESTION 2), as the X-18 mapping says.
 
 ---
@@ -687,6 +745,7 @@ Secrets are environment-only (in `serve` mode, credentials come from request hea
 | — | `REVIEW_MCP_GITEA_TOKEN` | — | **Secret**, required iff Gitea enabled |
 | — | `REVIEW_MCP_BITBUCKET_SERVER_TOKEN` | — | **Secret**, required iff Bitbucket Server enabled |
 | — | `REVIEW_MCP_GITHUB_TOKEN` | — | **Secret**, required iff GitHub enabled (X-28); in serve mode the header `X-Review-MCP-GitHub-Token` |
+| — | `REVIEW_MCP_GITLAB_TOKEN` | — | **Secret**, required iff GitLab enabled (X-34); in serve mode the header `X-Review-MCP-GitLab-Token` |
 | `llm.base_url` | `REVIEW_MCP_LLM_BASE_URL` | — | Required |
 | `llm.model` | `REVIEW_MCP_LLM_MODEL` | — | Required |
 | `llm.context_window` | `REVIEW_MCP_LLM_CONTEXT_WINDOW` | — | Optional, ≥ 4096 when set; unset means resolved from the endpoint (DQ-3, X-15) |
@@ -709,6 +768,9 @@ Secrets are environment-only (in `serve` mode, credentials come from request hea
 | `github.api_url` | `REVIEW_MCP_GITHUB_API_URL` | derived | X-28; `https://api.github.com` for exactly `https://github.com`, else `{base_url}/api/v3`; refused without `github.base_url` |
 | `github.ca_cert` | `REVIEW_MCP_GITHUB_CA_CERT` | — | X-28 |
 | `github.insecure_skip_verify` | `REVIEW_MCP_GITHUB_INSECURE_SKIP_VERIFY` | false | Startup warning when true |
+| `gitlab.base_url` | `REVIEW_MCP_GITLAB_BASE_URL` | — | Enables GitLab; the web base, may include a context path, **no default** (X-2, X-34); the API base is always `{base_url}/api/v4` |
+| `gitlab.ca_cert` | `REVIEW_MCP_GITLAB_CA_CERT` | — | X-34 |
+| `gitlab.insecure_skip_verify` | `REVIEW_MCP_GITLAB_INSECURE_SKIP_VERIFY` | false | Startup warning when true |
 | `output.language` | `REVIEW_MCP_OUTPUT_LANGUAGE` | `en-US` | Locale code |
 | `diff.extra_lines_before` | `REVIEW_MCP_DIFF_EXTRA_LINES_BEFORE` | 5 | Capped at 10 |
 | `diff.extra_lines_after` | `REVIEW_MCP_DIFF_EXTRA_LINES_AFTER` | 1 | Capped at 10 |

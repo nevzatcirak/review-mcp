@@ -1012,7 +1012,8 @@ The result always carries `incremental`, with the `mode`:
 The other fields of `incremental`: `since` (the recorded commit the run
 continued from; absent for `full`), `strategy` (`git:diff`, `api:contents` or
 empty), `changed_files` (the listed files the run treats as changed; all of
-them for `full`) and `unchanged_files`. The coverage gains
+them for `full`), `unchanged_files` and `carried_findings` (see
+[What is carried forward](#what-is-carried-forward)). The coverage gains
 `coverage.unchanged_files`; the unchanged files are in `coverage.skipped`
 with the reason `unchanged_since_review`, outside `reviewed_files`,
 `not_reviewed_files` and `total_files`, and they never make the review
@@ -1044,15 +1045,61 @@ reviewed. A `focus` run may be incremental (it never publishes, so it never
 writes a record). A `findings` publish makes no model call and compares
 nothing: it ignores `incremental` and carries the record over.
 
-### What is not carried forward
+### What is carried forward
 
-An incremental overview does not repeat earlier findings. It says which
-commit it continues from and how many files it skipped, and the overview is
-edited in place as always, so an earlier finding that was only in the overview
-(it had no inline comment, for example because its line could not be
-anchored) is no longer listed. Earlier inline comments are not touched: they
-stay on the pull request, and a finding already posted at the same place is
-still not posted again (see [No repeated findings](#no-repeated-findings)).
+The overview is edited in place as always, so it lists only what the last run
+put there. Earlier **inline comments** are not touched: they stay on the pull
+request, the coverage section of an incremental overview says so ("Inline
+comments of earlier reviews stay on the pull request."), and a finding already
+posted at the same place is still not posted again (see
+[No repeated findings](#no-repeated-findings)).
+
+A finding that had **no inline comment** was listed in the overview only:
+inline findings were off, its line could not be anchored, or its inline
+comment failed. So that an incremental run does not lose it, every overview
+that records a reviewed commit also records each of these findings in a
+hidden **held line**, directly above the reviewed-commit line:
+`[//]: # (review-mcp:held:<payload>)`, where the payload is base64url
+(without padding) of a small JSON object with the file, the lines, the header,
+the description and the commit of the review that produced the finding. The
+header is cut to 200 bytes and the description to 800 (ending in "…"), and
+the held lines of one overview total at most 12,000 bytes; findings that do
+not fit get no line, and the note "N findings listed in this overview only
+will not be carried forward to a later incremental review." says so. A
+partial review records no commit, so it writes no held lines either (the next
+run is full anyway).
+
+An incremental run (mode `incremental`) reads the held lines of review-mcp's
+own overview only, and only from the lines directly above the reviewed-commit
+line; a held line anywhere else, or in anyone else's comment, is never read,
+and a line of the model's text that looks like one is written with a
+backslash before its `[`. Then:
+
+- a finding of a file the run skipped as unchanged since the last review is
+  **carried forward**: it is listed after the new findings with "(from the
+  review of `abc1234`, listed here only)", links to its file line, and keeps
+  the commit of the review that produced it. The model does not see it, it is
+  never posted inline and never counted as a duplicate, and it gets a held
+  line again, so it survives further incremental runs while its file stays
+  unchanged. In the result it carries `carried_from` (the full commit id),
+  `incremental.carried_findings` counts them, and the note "N findings of
+  earlier reviews on unchanged files are carried forward; they were not
+  reviewed again." is added;
+- a finding of a file that changed is **dropped**: the file is reviewed again,
+  and the new review replaces it. So is a finding of a file that is no longer
+  in the pull request, or that is deleted.
+
+A full run carries nothing (it reviews every file again), and an `unchanged`
+run publishes nothing, so the overview keeps its held lines. A merged
+`findings` publish records its own overview-only findings, with the commit it
+carries over; it does not carry the found overview's held lines, since the
+client's findings replace the overview's.
+
+In mode `incremental` the "nothing found" statements speak of the reviewed
+files only ("No key issues found in the reviewed files", and the same for
+security and performance concerns), as for a partial review: the run did not
+look at the unchanged files again. The key-issues statement appears only when
+the list, carried findings included, is empty.
 
 ### How the changed files are found
 

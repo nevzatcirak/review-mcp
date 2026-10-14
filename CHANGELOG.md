@@ -5,6 +5,41 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Planned as `2.1.0-rc.2`. Closes the gap the rc.1 acceptance found in
+incremental review (Q1/Q2): a finding listed in the overview only disappeared
+when the next incremental run edited the overview.
+
+### Added
+
+- Carried findings (X-36, WP-7f). Guide:
+  [What is carried forward](docs/review.md#what-is-carried-forward).
+  - Every overview that records a reviewed commit also records each finding it
+    lists without an inline comment (inline off, not on a changed line, inline
+    failed) in a hidden held line above the reviewed-commit line. Header and
+    description are capped at 200 and 800 bytes, the held lines at 12,000
+    bytes; a note counts findings that do not fit.
+  - An incremental review lists the recorded findings of files that did not
+    change since the last review again, after the new ones, with "(from the
+    review of `abc1234`, listed here only)". The model does not see them and
+    they are never posted inline. Findings of changed, removed or deleted
+    files are dropped. Result: `carried_from` on each such key issue,
+    `incremental.carried_findings`, and a note.
+
+### Fixed
+
+- An incremental overview said "No major issues detected" and "No security
+  concerns identified" about files it did not review again. In mode
+  `incremental` the "nothing found" statements now speak of the reviewed
+  files only, as for a partial review.
+- The incremental overview now says, in its coverage section, "Inline comments
+  of earlier reviews stay on the pull request." (spec §0 item 3; missing in
+  rc.1).
+- Any line of the rendered overview that looks like a review-mcp marker line
+  (not only a reviewed-commit line) is written with a backslash before its
+  `[`, so model text cannot forge a record.
+
 ## [2.1.0-rc.1]
 
 First v2.1 release candidate, built on 2.0.0 (the npm dist-tag `next`; `latest`

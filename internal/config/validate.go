@@ -64,6 +64,11 @@ func (l *loader) validate() {
 		l.problem("review.max_chunks: %d is out of range (%d-%d)", c.Review.MaxChunks, MinMaxChunks, MaxMaxChunks)
 	}
 	l.validateMaxTotalFindings()
+	if !l.bad["review.incremental_max_files"] &&
+		(c.Review.IncrementalMaxFiles < MinIncrementalMaxFiles || c.Review.IncrementalMaxFiles > MaxIncrementalMaxFiles) {
+		l.problem("review.incremental_max_files: %d is out of range (%d-%d)", c.Review.IncrementalMaxFiles,
+			MinIncrementalMaxFiles, MaxIncrementalMaxFiles)
+	}
 	l.validateImprove()
 	l.validateContextRepo()
 	if _, err := logging.ParseLevel(c.Log.Level); err != nil {
@@ -136,6 +141,12 @@ const (
 	MaxMaxChunks        = 32
 	MaxMaxTotalFindings = 50
 	maxFindingsUpper    = 20
+)
+
+// Bounds of review.incremental_max_files (X-36).
+const (
+	MinIncrementalMaxFiles = 1
+	MaxIncrementalMaxFiles = 5000
 )
 
 // validateMaxTotalFindings checks review.max_total_findings: at most

@@ -477,7 +477,7 @@ func TestPRReviewToolDefinition(t *testing.T) {
 		}
 	}
 	sort.Strings(props)
-	if got := strings.Join(props, ","); got != "extra_instructions,findings,focus,inline_findings,max_findings,output_language,performance_concerns,pr_url,publish,security_concerns,wait_seconds" {
+	if got := strings.Join(props, ","); got != "extra_instructions,findings,focus,incremental,inline_findings,max_findings,output_language,performance_concerns,pr_url,publish,security_concerns,wait_seconds" {
 		t.Errorf("properties = %s", got)
 	}
 	if strings.Join(in.Required, ",") != "pr_url" {
@@ -539,6 +539,36 @@ func TestPRReviewCall(t *testing.T) {
 	for _, b := range g.recorded() {
 		if strings.Contains(b, "PR Review") {
 			t.Error("a comment was posted without publish")
+		}
+	}
+}
+
+// TestPRReviewIncrementalArgument: the incremental argument reaches the
+// pipeline and replaces review.incremental for the call (X-36): without an
+// earlier review the review is full, and only incremental=true adds the
+// note; the result always carries incremental.
+func TestPRReviewIncrementalArgument(t *testing.T) {
+	g, l := newFakeGiteaHost(t), newFakeLLMHost(t, 200, goodAnswer)
+	cs := connect(t, realDeps(reviewEnv(g, l), nil))
+	for _, tc := range []struct {
+		args map[string]any
+		note bool
+	}{
+		{map[string]any{"pr_url": reviewPRURL(g), "incremental": true}, true},
+		{map[string]any{"pr_url": reviewPRURL(g), "incremental": false}, false},
+		{map[string]any{"pr_url": reviewPRURL(g)}, false},
+	} {
+		res := callTool(t, cs, "pr_review", tc.args)
+		if res.IsError {
+			t.Fatalf("tool error: %s", textOf(t, res))
+		}
+		var got review.Result
+		decodeStructured(t, res, &got)
+		if got.Incremental == nil || got.Incremental.Mode != review.IncrementalFull {
+			t.Errorf("%v: incremental = %+v", tc.args, got.Incremental)
+		}
+		if has := slices.Contains(got.Notes, review.NoteNoEarlierReview); has != tc.note {
+			t.Errorf("%v: notes %q", tc.args, got.Notes)
 		}
 	}
 }

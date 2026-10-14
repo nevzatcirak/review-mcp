@@ -74,7 +74,7 @@ func Client(res *review.Result) string {
 		writeClientIssues(&b, v.issues, v.noIssues())
 	}
 	writePublishSummary(&b, res.Publish)
-	llmrender.Coverage(&b, "### "+textCoverage, &res.Coverage)
+	writeCoverage(&b, "### "+textCoverage, res)
 	llmrender.Notes(&b, "### "+textNotes, res.Notes)
 	if l := ReviewedLine(res); l != "" {
 		b.WriteString("\n" + l + "\n")

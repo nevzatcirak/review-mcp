@@ -27,6 +27,10 @@ Changes from upstream (spec P4 §4.2):
   sentence of the known focus value, or the free-text sentence that points at
   the user prompt's focus block, each followed by the sentence that only
   findings in that area are reported; without a focus nothing is rendered;
+- intentional deviation (X-36): an incremental run (only the files that
+  changed since the last review are in the diff) gets one more bullet after
+  the notes on the diff format, the fixed sentence of spec v2.1 §4 item 3;
+  without it nothing is rendered;
 - the schema classes and the example come from the field-descriptor table
   (.schema, .example; internal/review/fields.go);
 - intentional deviation (X-12, spec P7 §4.1): a performance_concerns field,
@@ -84,6 +88,9 @@ The format we will use to present the PR code diff:
 - When quoting variables, names or file paths from the code, use backticks (`) instead of single quote (').
 - Note that you only see changed code segments (diff hunks in a PR), not the entire codebase. Avoid suggestions that might duplicate existing functionality or questioning code elements (like variables declarations or import statements) that may be defined elsewhere in the codebase.
 - Also note that if the code ends at an opening brace or statement that begins a new scope (like 'if', 'for', 'try'), don't treat it as incomplete. Instead, acknowledge the visible scope boundary and analyze only the code shown.
+{{- if .incremental }}
+- {{ .incremental }}
+{{- end }}
 
 Determining what to flag:
 {{- if .focus }}

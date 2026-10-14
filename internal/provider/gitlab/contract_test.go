@@ -56,6 +56,12 @@ func TestReviewProject(t *testing.T) {
 	contract.RunReviewProject(t, ctFixture{})
 }
 
+// TestReviewIncremental runs pr_review's incremental scenario (X-36)
+// through this provider and the contract fake.
+func TestReviewIncremental(t *testing.T) {
+	contract.RunReviewIncremental(t, ctFixture{})
+}
+
 const (
 	// ctContext is the context path of the fake's web base; the API base
 	// is {origin}{ctContext}/api/v4.

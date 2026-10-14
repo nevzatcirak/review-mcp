@@ -48,6 +48,12 @@ func TestReviewFindings(t *testing.T) {
 	contract.RunReviewFindings(t, ctFixture{})
 }
 
+// TestReviewIncremental runs pr_review's incremental scenario (X-36)
+// through this provider and the contract fake.
+func TestReviewIncremental(t *testing.T) {
+	contract.RunReviewIncremental(t, ctFixture{})
+}
+
 const (
 	ctWeb     = "https://your-gitea.example"
 	ctRepo    = "/api/v1/repos/octo/demo"

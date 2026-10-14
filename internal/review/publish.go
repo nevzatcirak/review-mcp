@@ -91,6 +91,15 @@ func publish(ctx context.Context, deps Deps, args Args, pl *Plan) {
 		// A merged publish (X-33) reviewed no head itself: the commit record
 		// is carried over from the overview found below, or stays empty.
 		res.Reviewed = ReviewedCommit{}
+	} else if res.Coverage.Tally().Partial {
+		// DESIGN-QUESTION (WP-7d DQ-3): a partial review (X-18) records no
+		// commit. An incremental run skips every file whose content did not
+		// change since the recorded commit; had that review left a file out
+		// (the budget, a failed part, a provider skip), the file would be
+		// skipped as "unchanged" ever after without any model having seen
+		// it. Without a record the next incremental run is a full review.
+		// Recommendation: keep.
+		res.Reviewed = ReviewedCommit{}
 	}
 
 	inlineOn := inlineEnabled(deps, args)

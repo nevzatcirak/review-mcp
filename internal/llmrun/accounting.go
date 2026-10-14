@@ -32,6 +32,12 @@ type Coverage struct {
 	ReviewedFiles    int  `json:"reviewed_files"`
 	TotalFiles       int  `json:"total_files"`
 	NotReviewedFiles int  `json:"not_reviewed_files"`
+	// UnchangedFiles counts the files of an incremental pr_review (X-36)
+	// skipped because their content did not change since the last review
+	// (Skipped with reason SkipUnchangedSinceReview). They are outside the
+	// three counts above, like binary files: they were reviewed before.
+	// Only pr_review sets it, and it is omitted when 0.
+	UnchangedFiles int `json:"unchanged_files,omitempty"`
 
 	// incomplete is Diff.Incomplete: the host did not list every changed
 	// file, so the lists above miss some. It makes Partial true and is not
@@ -148,6 +154,12 @@ func (r RepoContext) MarshalJSON() ([]byte, error) {
 // reviewed.
 const SkipModelCallFailed = "model_call_failed"
 
+// SkipUnchangedSinceReview is the skip reason of a file an incremental
+// pr_review did not send to the model because its content is the same as at
+// the commit of the last review (X-36). It does not make a result partial:
+// that review covered it.
+const SkipUnchangedSinceReview = "unchanged_since_review"
+
 // Tally is the X-18 summary of a Coverage. Every changed file is in exactly
 // one of these places, and the mapping of the existing categories is:
 //
@@ -169,6 +181,9 @@ const SkipModelCallFailed = "model_call_failed"
 //   - Skipped as binary or as an empty diff (a pure rename, a mode change):
 //     outside the count, like Filtered. There is no text change to review,
 //     so nothing was lost; the coverage section still lists them.
+//   - Skipped as unchanged since the last review (unchanged_since_review,
+//     X-36): outside the count, and counted in Unchanged instead. The last
+//     review covered the same content, so nothing was lost.
 //   - Filtered (ignore rules, generated files): outside the count. They
 //     were excluded on purpose, and X-3 lists them with the rule.
 //
@@ -178,6 +193,9 @@ const SkipModelCallFailed = "model_call_failed"
 type Tally struct {
 	Partial                           bool
 	Reviewed, NotReviewed, TotalFiles int
+	// Unchanged counts the files skipped as unchanged since the last
+	// review; they are in none of the counts above.
+	Unchanged int
 }
 
 // Tally computes the X-18 summary from the file lists.
@@ -188,7 +206,10 @@ func (c *Coverage) Tally() Tally {
 			len(c.Omitted.Deleted),
 	}
 	for _, s := range c.Skipped {
-		if skipLosesReviewableFile(s.Reason) {
+		switch {
+		case s.Reason == SkipUnchangedSinceReview:
+			t.Unchanged++
+		case skipLosesReviewableFile(s.Reason):
 			t.NotReviewed++
 		}
 	}
@@ -201,7 +222,7 @@ func (c *Coverage) Tally() Tally {
 // reviewable changes was lost (see Tally). Unknown reasons count as lost.
 func skipLosesReviewableFile(reason string) bool {
 	switch reason {
-	case provider.SkipBinary, diffpipe.SkipEmptyDiff:
+	case provider.SkipBinary, diffpipe.SkipEmptyDiff, SkipUnchangedSinceReview:
 		return false
 	}
 	return true
@@ -212,6 +233,7 @@ func skipLosesReviewableFile(reason string) bool {
 func (c *Coverage) Finalize() {
 	t := c.Tally()
 	c.Partial, c.ReviewedFiles, c.TotalFiles, c.NotReviewedFiles = t.Partial, t.Reviewed, t.TotalFiles, t.NotReviewed
+	c.UnchangedFiles = t.Unchanged
 }
 
 // OmittedFiles are the files left out of the diff for budget, by change

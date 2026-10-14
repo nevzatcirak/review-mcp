@@ -85,16 +85,26 @@ func dupAnswer(fs ...dupFinding) string {
 	return b.String()
 }
 
-// cannedLLM answers the model calls of one review with answer.
+// cannedLLM answers the model calls of one review with answer and records
+// the user prompts.
 type cannedLLM struct {
 	mu     sync.Mutex
 	answer string
+	users  []string
 }
 
-func (c *cannedLLM) Complete(context.Context, string, string) (*llm.Response, error) {
+func (c *cannedLLM) Complete(_ context.Context, _, user string) (*llm.Response, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.users = append(c.users, user)
 	return &llm.Response{Content: c.answer}, nil
+}
+
+// prompts returns the user prompts of the calls so far.
+func (c *cannedLLM) prompts() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.users)
 }
 
 type fixedResolver struct {

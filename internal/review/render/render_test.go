@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 )
@@ -608,5 +609,45 @@ func TestReviewedLine(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestIncrementalCoverage (X-36): an incremental run's coverage section, in
+// every profile, says "N files reviewed, M unchanged since the last review",
+// lists the unchanged files in a group of their own and does not count them
+// as omitted; the overview's footer names the commit it continues from. A
+// full run renders as before.
+func TestIncrementalCoverage(t *testing.T) {
+	const since = "def5678abc123def4567890abc123def4567890"
+	cov := review.Coverage{
+		Included: []string{"cmd/app/main.go"}, Clipped: []string{}, DeletedListed: []string{},
+		Omitted: review.OmittedFiles{Added: []string{}, Modified: []string{}, Deleted: []string{}},
+		Skipped: []review.SkippedFile{{Path: "internal/same.go", Reason: llmrun.SkipUnchangedSinceReview},
+			{Path: "internal/also_same.go", Reason: llmrun.SkipUnchangedSinceReview}},
+		Filtered: []review.SkippedFile{},
+	}
+	cov.Finalize()
+	res := &review.Result{PR: basePR(), EnabledFields: allKeys, Coverage: cov, Notes: []string{},
+		Review:      &review.Review{KeyIssuesToReview: []review.KeyIssue{}},
+		Reviewed:    review.ReviewedCommit{SHA: basePR().HeadSHA, Since: since},
+		Incremental: &review.Incremental{Mode: review.IncrementalChanged, Since: since, ChangedFiles: 1, UnchangedFiles: 2}}
+	for profile, out := range map[string]string{"client": Client(res), "gitea": Provider(res, capsGitea),
+		"bitbucket": Provider(res, capsBB)} {
+		for _, want := range []string{
+			"- Included: 1 file\n- Omitted: 0 files\n- 1 file reviewed, 2 unchanged since the last review\n",
+			"\nUnchanged since the last review (2):\n\n- `internal/same.go`\n- `internal/also_same.go`\n",
+			"(changes since `def5678`)",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("%s lacks %q:\n%s", profile, want, out)
+			}
+		}
+		if strings.Contains(out, "Partial review") || strings.Contains(out, "Skipped: ") {
+			t.Errorf("%s counts the unchanged files as lost:\n%s", profile, out)
+		}
+	}
+	res.Incremental = &review.Incremental{Mode: review.IncrementalFull, ChangedFiles: 1}
+	if out := Client(res); strings.Contains(out, "unchanged since the last review\n") {
+		t.Errorf("a full run shows the incremental line:\n%s", out)
 	}
 }

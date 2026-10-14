@@ -3,6 +3,7 @@ package contract
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -68,8 +69,12 @@ func sampleUnchanged() []RepoFile {
 // TreeAt returns the files of the repository at revision sha, path to
 // content: the Unchanged files and, at BaseSHA, every changed file that
 // exists there (at its BasePath) or, at HeadSHA, every changed file that
-// exists there. Any other revision is unknown to the host: nil.
+// exists there. A revision of Revisions is that tree. Any other revision
+// is unknown to the host: nil.
 func (s *Spec) TreeAt(sha string) map[string]string {
+	if tree, ok := s.Revisions[sha]; ok && sha != s.BaseSHA && sha != s.HeadSHA {
+		return maps.Clone(tree)
+	}
 	if sha != s.BaseSHA && sha != s.HeadSHA {
 		return nil
 	}

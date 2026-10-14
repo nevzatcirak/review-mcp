@@ -45,6 +45,10 @@ type Spec struct {
 	// Unchanged are files the pull request does not touch: they exist with
 	// the same content at BaseSHA and HeadSHA, next to Files (see TreeAt).
 	Unchanged []RepoFile
+	// Revisions are earlier commits the host still knows, by SHA, each its
+	// whole tree (path to content): the commit of an earlier review that an
+	// incremental review compares with (X-36). See TreeAt.
+	Revisions map[string]map[string]string
 	// Env is the harness side of the Spec: not pull request data.
 	Env Env
 }

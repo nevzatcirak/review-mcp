@@ -105,3 +105,30 @@ func TestEmptyDescriptionOmitsBlock(t *testing.T) {
 		t.Errorf("description not trimmed: %q", p.User)
 	}
 }
+
+// TestIncrementalSentence (X-36): an incremental run's system prompt is the
+// full run's with exactly one more line, the fixed sentence, after the notes
+// on the diff format; the user prompt is the same. A full run's prompts
+// carry nothing of it (the goldens pin them byte for byte).
+func TestIncrementalSentence(t *testing.T) {
+	full, err := RenderPrompts(sampleInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := sampleInput()
+	in.Incremental = true
+	inc, err := RenderPrompts(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := "\n- " + IncrementalSentence
+	if strings.Count(inc.System, IncrementalSentence) != 1 || strings.Replace(inc.System, line, "", 1) != full.System {
+		t.Errorf("the incremental system prompt is not the full one plus the sentence:\n%s", inc.System)
+	}
+	if i, j := strings.Index(inc.System, line), strings.Index(inc.System, "Determining what to flag:"); i < 0 || i > j {
+		t.Errorf("the sentence is not among the diff notes (at %d, flag section at %d)", i, j)
+	}
+	if inc.User != full.User || strings.Contains(full.System, IncrementalSentence) {
+		t.Error("the user prompt differs, or a full run carries the sentence")
+	}
+}

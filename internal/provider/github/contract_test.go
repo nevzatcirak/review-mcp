@@ -51,6 +51,12 @@ func TestReviewFindings(t *testing.T) {
 	contract.RunReviewFindings(t, ctFixture{})
 }
 
+// TestReviewIncremental runs pr_review's incremental scenario (X-36)
+// through this provider and the contract fake.
+func TestReviewIncremental(t *testing.T) {
+	contract.RunReviewIncremental(t, ctFixture{})
+}
+
 const (
 	// ctAPI is the API prefix the provider derives for a GHES web base.
 	ctAPI  = "/api/v3"

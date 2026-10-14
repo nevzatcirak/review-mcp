@@ -252,3 +252,66 @@ func TestSessionFetchesOnceAndOnlyWhenNeeded(t *testing.T) {
 		t.Errorf("no base URL: %+v", f)
 	}
 }
+
+// comparingBackend is a fakeBackend that can also compare commits
+// (ChangeReader).
+type comparingBackend struct{ fakeBackend }
+
+func (*comparingBackend) HasCommit(context.Context, gitctx.Checkout, string) bool { return true }
+func (*comparingBackend) ChangedPaths(context.Context, gitctx.Checkout, string, string) ([]string, error) {
+	return nil, nil
+}
+func (*comparingBackend) ListPaths(context.Context, gitctx.Checkout, string) ([]string, error) {
+	return nil, nil
+}
+
+// TestChangesNeverFetches (X-36): the comparer is handed out only after this
+// session fetched the head without error, and only by a backend that can
+// compare; asking never fetches.
+func TestChangesNeverFetches(t *testing.T) {
+	cb := &comparingBackend{}
+	s := sessionOf(cb)
+	if _, _, ok := s.Changes(); ok || cb.ensures != 0 {
+		t.Fatalf("before the fetch: ok %v, ensures %d", ok, cb.ensures)
+	}
+	if r := s.Ready(context.Background()); r != "" {
+		t.Fatal(r)
+	}
+	if cr, co, ok := s.Changes(); !ok || cr == nil || co.GitDir != "/cache/x.git" || cb.ensures != 1 {
+		t.Errorf("after the fetch: ok %v, checkout %+v, ensures %d", ok, co, cb.ensures)
+	}
+	plain := sessionOf(&fakeBackend{})
+	_ = plain.Ready(context.Background())
+	if _, _, ok := plain.Changes(); ok {
+		t.Error("a backend that cannot compare was handed out")
+	}
+	failed := sessionOf(&comparingBackend{fakeBackend{ensureErr: &gitctx.Error{Reason: gitctx.ReasonTimeout}}})
+	_ = failed.Ready(context.Background())
+	if _, _, ok := failed.Changes(); ok {
+		t.Error("a failed fetch was handed out")
+	}
+	var none *Session
+	if _, _, ok := none.Changes(); ok {
+		t.Error("a nil session was handed out")
+	}
+}
+
+// TestNarrow (X-36): after Narrow the search of a review in one call
+// excludes only the given files, and a use in a file left out as unchanged
+// is shown marked as not reviewed.
+func TestNarrow(t *testing.T) {
+	fb := &fakeBackend{hits: map[string][]gitctx.Hit{"Alpha": {{Symbol: "Alpha", Path: "b.go", Line: 4, Snippet: "Alpha()"}}}}
+	s := sessionOf(fb)
+	a := []provider.FilePatch{goFile("a.go", "func Alpha() {}")}
+	s.Narrow(a, []string{"b.go"})
+	out := s.Attach(context.Background(), a, nil, tokens.Budget{ContextWindow: 32000, Factor: 1},
+		100, false, func(string) (bool, error) { return false, nil })
+	if ex := fb.queries[0].Exclude; len(ex) != 1 || ex[0] != "a.go" {
+		t.Errorf("exclude = %v", ex)
+	}
+	if !strings.Contains(out.Block, "[b.go:4] uses Alpha ("+MarkNotReviewed+")") {
+		t.Errorf("block:\n%s", out.Block)
+	}
+	var none *Session
+	none.Narrow(a, nil)
+}

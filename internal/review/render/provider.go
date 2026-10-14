@@ -75,7 +75,7 @@ func Provider(res *review.Result, caps provider.Capabilities) string {
 	trimmed := strings.TrimRight(b.String(), "\n") + "\n"
 	b.Reset()
 	b.WriteString(trimmed)
-	llmrender.Coverage(&b, "### "+emojiCoverage+" "+textCoverage, &res.Coverage)
+	writeCoverage(&b, "### "+emojiCoverage+" "+textCoverage, res)
 	llmrender.Notes(&b, "### "+emojiNotes+" "+textNotes, res.Notes)
 	if l := ReviewedLine(res); l != "" {
 		b.WriteString("\n" + l + "\n")

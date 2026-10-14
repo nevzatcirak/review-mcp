@@ -29,6 +29,9 @@ const (
 	// by design and whose names the model was shown (X-20); they count as
 	// reviewed.
 	textDeletedListed = "Deleted (listed by name)"
+	// textUnchanged heads the files an incremental review skipped because
+	// they did not change since the last review (X-36).
+	textUnchanged = "Unchanged since the last review"
 )
 
 // PartialBanner returns the X-18 banner of a partial result, or "" for a
@@ -98,20 +101,39 @@ type coverageGroup struct {
 // listed across all groups; the rest are counted ("and N more").
 // Everything is plain markdown (no HTML).
 func Coverage(b *strings.Builder, heading string, c *llmrun.Coverage) {
-	coverage(b, heading, c, "Reviewed")
+	coverage(b, heading, c, "Reviewed", false)
+}
+
+// IncrementalCoverage is Coverage for an incremental pr_review (X-36): one
+// more line, "N files reviewed, M unchanged since the last review", and the
+// unchanged files are listed in a group of their own instead of being
+// counted as omitted.
+func IncrementalCoverage(b *strings.Builder, heading string, c *llmrun.Coverage) {
+	coverage(b, heading, c, "Reviewed", true)
 }
 
 // DescribeCoverage is Coverage for pr_describe: the line of a description
 // in N > 1 parts reads "Described in N model calls." (the reduce call is not
 // counted, as model_calls does not count it).
 func DescribeCoverage(b *strings.Builder, heading string, c *llmrun.Coverage) {
-	coverage(b, heading, c, "Described")
+	coverage(b, heading, c, "Described", false)
 }
 
-func coverage(b *strings.Builder, heading string, c *llmrun.Coverage, verb string) {
+func coverage(b *strings.Builder, heading string, c *llmrun.Coverage, verb string, incremental bool) {
+	t := c.Tally()
 	included := len(c.Included) + len(c.Clipped)
 	budget := len(c.Omitted.Added) + len(c.Omitted.Modified) + len(c.Omitted.Deleted)
-	omitted := budget + len(c.Skipped) + len(c.Filtered)
+	// Files unchanged since the last review were not left out of this
+	// review; they have their own line and group.
+	var skipped, unchanged []llmrun.SkippedFile
+	for _, f := range c.Skipped {
+		if f.Reason == llmrun.SkipUnchangedSinceReview {
+			unchanged = append(unchanged, f)
+		} else {
+			skipped = append(skipped, f)
+		}
+	}
+	omitted := budget + len(skipped) + len(c.Filtered)
 
 	b.WriteString("\n" + heading + "\n\n")
 	b.WriteString("- Included: " + strconv.Itoa(included) + " " + plural(included))
@@ -122,6 +144,10 @@ func coverage(b *strings.Builder, heading string, c *llmrun.Coverage, verb strin
 		b.WriteString("\n- " + textDeletedListed + ": " + strconv.Itoa(n) + " " + plural(n))
 	}
 	b.WriteString("\n- Omitted: " + strconv.Itoa(omitted) + " " + plural(omitted) + "\n")
+	if incremental {
+		b.WriteString("- " + count(t.Reviewed, "file", "files") + " reviewed, " + strconv.Itoa(len(unchanged)) +
+			" unchanged since the last review\n")
+	}
 	if c.ModelCalls > 1 {
 		// A review in parts (X-19, RC-13) says how many calls it used.
 		b.WriteString("- " + verb + " in " + strconv.Itoa(c.ModelCalls) + " model calls.\n")
@@ -138,8 +164,15 @@ func coverage(b *strings.Builder, heading string, c *llmrun.Coverage, verb strin
 	groups = appendGroup(groups, reasonBudgetAdded, c.Omitted.Added)
 	groups = appendGroup(groups, reasonBudgetMod, c.Omitted.Modified)
 	groups = appendGroup(groups, reasonBudgetDel, c.Omitted.Deleted)
-	groups = append(groups, byReason("Skipped", c.Skipped)...)
+	groups = append(groups, byReason("Skipped", skipped)...)
 	groups = append(groups, byReason("Filtered", c.Filtered)...)
+	if len(unchanged) > 0 {
+		paths := make([]string, len(unchanged))
+		for i, f := range unchanged {
+			paths[i] = f.Path
+		}
+		groups = append(groups, coverageGroup{textUnchanged, paths})
+	}
 
 	left, unlisted := MaxListedFiles, 0
 	for _, g := range groups {

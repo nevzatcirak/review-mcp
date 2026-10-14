@@ -172,6 +172,17 @@ func ReviewedLine(res *review.Result) string {
 	return line
 }
 
+// writeCoverage writes the coverage section (llmrender.Coverage); an
+// incremental run (X-36) adds "N files reviewed, M unchanged since the last
+// review" and lists its unchanged files apart (llmrender.IncrementalCoverage).
+func writeCoverage(b *strings.Builder, heading string, res *review.Result) {
+	if inc := res.Incremental; inc != nil && inc.Mode != review.IncrementalFull {
+		llmrender.IncrementalCoverage(b, heading, &res.Coverage)
+		return
+	}
+	llmrender.Coverage(b, heading, &res.Coverage)
+}
+
 // shortSHA is the first 7 characters of a hexadecimal commit id, or ""
 // when sha is not one (it is then not shown).
 func shortSHA(sha string) string {

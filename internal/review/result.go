@@ -43,6 +43,11 @@ type Result struct {
 	// Focus echoes the focus of a focused run (X-33): the known value, or
 	// the free text as cleaned (NormalizeFocus); omitted without one.
 	Focus string `json:"focus,omitempty"`
+	// Incremental says whether the run reviewed the whole pull request or
+	// only the files that changed since the last review (X-36). Run always
+	// sets it; it is a pointer so that the shared JSON form of a result
+	// built elsewhere omits it.
+	Incremental *Incremental `json:"incremental,omitempty"`
 	// Reviewed is the commit record of the overview (X-36). It is not part
 	// of the tool result: the renderers show it and the publish writes it.
 	Reviewed ReviewedCommit `json:"-"`
@@ -54,8 +59,8 @@ type ReviewedCommit struct {
 	// SHA is the recorded commit: the run's head, or for a merged publish
 	// (X-33) the one the previous overview recorded.
 	SHA string
-	// Since is the commit an incremental run continues from; "" for a full
-	// review. Nothing sets it before WP-7d.
+	// Since is the commit an incremental run continues from
+	// (Incremental.Since); "" for a full review.
 	Since string
 }
 

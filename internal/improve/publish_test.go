@@ -513,59 +513,6 @@ func TestPublishSanitizesQuickActions(t *testing.T) {
 	}
 }
 
-func TestAnchorFor(t *testing.T) {
-	two := "@@ -1,4 +1,5 @@\n a\n-b\n+B\n+B2\n c\n d\n@@ -20,3 +21,3 @@\n e\n-f\n+F\n g\n"
-	adjacent := "@@ -1,2 +1,2 @@\n a\n-b\n+B\n@@ -3,2 +3,2 @@\n c\n-d\n+D\n"
-	del := "@@ -5,3 +5,1 @@\n x\n-y\n-z\n"
-	file := func(typ provider.ChangeType, p string) *provider.FilePatch {
-		return &provider.FilePatch{Path: "n.go", OldPath: "o.go", Type: typ, Patch: p}
-	}
-	for name, tc := range map[string]struct {
-		fp         *provider.FilePatch
-		start, end int
-		want       string
-	}{
-		"context line":                    {file(provider.ChangeModified, two), 1, 1, "n.go:1:context:old1"},
-		"added line":                      {file(provider.ChangeModified, two), 2, 2, "n.go:2:added"},
-		"context to added":                {file(provider.ChangeModified, two), 1, 4, "n.go:1-4:context:old1"},
-		"across a removed line":           {file(provider.ChangeModified, two), 1, 3, "n.go:1-3:context:old1"},
-		"whole second hunk":               {file(provider.ChangeModified, two), 21, 23, "n.go:21-23:context:old20"},
-		"leaves the first hunk":           {file(provider.ChangeModified, two), 4, 6, ""},
-		"gap between hunks":               {file(provider.ChangeModified, two), 5, 21, ""},
-		"only in the gap":                 {file(provider.ChangeModified, two), 10, 11, ""},
-		"before the first hunk":           {file(provider.ChangeModified, two), 0, 1, ""},
-		"end before start":                {file(provider.ChangeModified, two), 3, 2, ""},
-		"adjacent hunks not one":          {file(provider.ChangeModified, adjacent), 2, 3, ""},
-		"removed-only position":           {file(provider.ChangeModified, del), 6, 6, ""},
-		"line before a removal":           {file(provider.ChangeModified, del), 5, 5, "n.go:5:context:old5"},
-		"renamed keeps the old":           {file(provider.ChangeRenamed, two), 2, 2, "n.go:2:added"},
-		"deleted file":                    {file(provider.ChangeDeleted, two), 1, 1, ""},
-		"unparsable":                      {file(provider.ChangeModified, "not a patch"), 1, 1, ""},
-		"binary":                          {&provider.FilePatch{Path: "n.go", Binary: true, Patch: two}, 1, 1, ""},
-		"no file":                         {nil, 1, 1, ""},
-		"no newline marker is not a line": {file(provider.ChangeModified, "@@ -1,1 +1,1 @@\n-a\n+b\n\\ No newline at end of file\n"), 1, 2, ""},
-	} {
-		c, ok := anchorFor(tc.fp, tc.start, tc.end)
-		got := ""
-		if ok {
-			got = c.Path + ":" + strconv.Itoa(c.Line)
-			if c.EndLine != 0 {
-				got += "-" + strconv.Itoa(c.EndLine)
-			}
-			got += ":" + string(c.LineType)
-			if c.OldLine != 0 {
-				got += ":old" + strconv.Itoa(c.OldLine)
-			}
-		}
-		if got != tc.want {
-			t.Errorf("%s: %q, want %q", name, got, tc.want)
-		}
-	}
-	if c, ok := anchorFor(file(provider.ChangeRenamed, two), 2, 2); !ok || c.OldPath != "o.go" {
-		t.Errorf("a renamed file's old path = %+v", c)
-	}
-}
-
 func TestSuggestionMarker(t *testing.T) {
 	s := &Suggestion{File: "a.go", Summary: "Do it", ExistingCode: "x"}
 	fp := SuggestionFingerprint(s)

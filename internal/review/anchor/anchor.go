@@ -80,12 +80,8 @@ func Resolve(file *provider.FilePatch, start, end int) (Anchor, bool) {
 				}
 				run = n
 				if line == 0 || n < line {
-					// DESIGN-QUESTION WP-6c DQ-c1: improve.anchorFor computes
-					// the line type too; both take OldLine from h.OldLineOf.
-					line, typ, old = n, provider.LineContext, h.OldLineOf(n)
-					if l.Op == '+' {
-						typ, old = provider.LineAdded, 0
-					}
+					line = n
+					typ, old = lineTypeAt(h, n, l.Op)
 				}
 			}
 			n++
@@ -105,4 +101,64 @@ func Resolve(file *provider.FilePatch, start, end int) (Anchor, bool) {
 		a.OldPath = file.OldPath
 	}
 	return a, true
+}
+
+// ResolveExact returns the anchor of the head-side range start to end of
+// file, for a caller that replaces exactly those lines (a suggestion block):
+// it succeeds only when every line of the range is a new-side line (added or
+// context) of one single hunk. The anchor is at start and, for a range of
+// several lines, covers it to end (EndLine). It reports false, with a zero
+// Anchor, when the file is nil, deleted or binary, when the range is not
+// positive or ends before it starts, when the patch cannot be parsed, and
+// when the range leaves a hunk or reaches into the gap between two hunks.
+// Malformed pseudo-hunks are never anchors.
+func ResolveExact(file *provider.FilePatch, start, end int) (Anchor, bool) {
+	if file == nil || file.Binary || file.Type == provider.ChangeDeleted || start < 1 || end < start {
+		return Anchor{}, false
+	}
+	hunks, err := patch.ParseHunks(file.Patch)
+	if err != nil {
+		return Anchor{}, false
+	}
+	for _, h := range hunks {
+		if h.Malformed() {
+			continue
+		}
+		covered, typ, old := 0, provider.LineType(""), 0
+		n := h.NewStart
+		for _, l := range h.Lines {
+			if l.Op != '+' && l.Op != ' ' {
+				continue
+			}
+			if n >= start && n <= end {
+				covered++
+				if n == start {
+					typ, old = lineTypeAt(h, n, l.Op)
+				}
+			}
+			n++
+		}
+		if covered != end-start+1 {
+			continue
+		}
+		a := Anchor{Path: file.Path, Line: start, LineType: typ, OldLine: old}
+		if end > start {
+			a.EndLine = end
+		}
+		if file.Type == provider.ChangeRenamed {
+			a.OldPath = file.OldPath
+		}
+		return a, true
+	}
+	return Anchor{}, false
+}
+
+// lineTypeAt returns the line type and the old-side line number of the
+// new-side line n of h, whose line has the operation op ('+' or ' '): the one
+// place where both resolvers decide them.
+func lineTypeAt(h patch.Hunk, n int, op byte) (provider.LineType, int) {
+	if op == '+' {
+		return provider.LineAdded, 0
+	}
+	return provider.LineContext, h.OldLineOf(n)
 }

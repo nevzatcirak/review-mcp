@@ -12,7 +12,7 @@ end of the pull request description (see [Publishing](#publishing)).
 
 | Argument | Required | Meaning |
 |---|---|---|
-| `pr_url` | yes | The pull request URL, on a configured Gitea, Bitbucket Server or GitHub host. |
+| `pr_url` | yes | The pull request URL, on a configured Gitea, Bitbucket Server, GitHub or GitLab host. |
 | `output_language` | no | Locale code for the description text, such as `en-US` or `tr-TR`; replaces `output.language`. Same format as the config key. It applies to every model call of the run, the summary call of a [large pull request](#large-pull-requests) included. |
 | `publish` | no | `true` writes the description to the pull request. Default `false`. |
 | `publish_mode` | no | Where `publish` writes: `comment` (the default) or `description`. |
@@ -350,8 +350,8 @@ the marker lines below. The backticks the prompt asks for therefore show as
 literal backticks in a published description, as they do in a published review.
 On a provider where a line that starts with `/` runs a quick action, every
 published line that starts with `/` gets a leading space (the same rule as
-`pr_ask`); none of Gitea, Bitbucket Server and GitHub runs such actions, so today this
-changes nothing.
+`pr_ask`). GitLab is the provider that runs them (Gitea, Bitbucket Server and
+GitHub do not, so there this changes nothing); see [GitLab](gitlab.md#quick-action-safety).
 
 ### Comment mode
 
@@ -453,6 +453,25 @@ not report its `WORK_IN_PROGRESS_PREFIXES` setting, so a pull request that is a
 draft through another prefix loses it when the title is replaced. Bitbucket
 Server keeps the draft state as a flag; the title is replaced as it is.
 
+On GitLab a draft is a title prefix as well: `Draft:`, `[Draft]` and `(Draft)`
+(and `WIP:` and `[WIP]`), in any case. The same two rules apply with the whole
+list: a generated title loses such a prefix, and a draft merge request keeps
+its own prefix, exactly as written, in front of the generated title. The one
+list serves every provider; on a host where the draft state is a flag, the
+rules only shorten a generated title that starts with the word.
+
+**The quick-action refusal (GitLab).** GitLab runs a quick action (`/label ~x`,
+`/close`) written in a description when the description is updated, and
+review-mcp never changes the author's text. So on GitLab, when the text
+**outside** review-mcp's region has a line that could run one (`/` followed by
+a letter, a digit or an underscore, after up to three spaces), description mode
+is refused before any write, also when it would only change the title, and
+`publish.error` is "the description has a line GitLab could run as a quick
+action; publish in comment mode instead". The check runs on every re-read.
+Use `publish_mode=comment`, or remove the line. Comment mode, and Gitea,
+Bitbucket Server and GitHub, are unaffected. See
+[GitLab](gitlab.md#quick-action-safety).
+
 **Concurrent edits.** A person may edit the description while a description is
 being generated. review-mcp never overwrites such an edit:
 
@@ -466,7 +485,7 @@ being generated. review-mcp never overwrites such an edit:
    outcome is "The pull request description changed while it was being
    updated; nothing was written." Run again.
 
-Gitea and GitHub have no version on a pull request, so an edit that lands
+Gitea, GitHub and GitLab have no version on a pull request, so an edit that lands
 between the re-read and the write, a window of one request, cannot be detected
 there.
 
@@ -512,6 +531,7 @@ that runs review-mcp must be able to:
 | Gitea | write access to issues (`write:issue`): post and edit PR comments | write access to the repository (`write:repository`): edit the pull request |
 | Bitbucket Server | repository write permission: post and edit comments | repository write permission: update the pull request |
 | GitHub | Pull requests write (fine-grained) or `repo` / `public_repo` (classic): post and edit comments | the same: edit the pull request (a partial `PATCH` of the title and the body) |
+| GitLab | `api` scope (personal access token) or the Developer role (project or group access token): post and edit notes | the same: edit the merge request (a partial `PUT` of the title and the description) |
 
 All scopes are unconfirmed until the in-use acceptance has checked them; see
 [Token scopes](troubleshooting.md#token-scopes) and the endpoints in the

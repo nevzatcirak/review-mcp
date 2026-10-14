@@ -55,7 +55,8 @@ func ValidateUpdatePR(up UpdatePR) error {
 // ValidateInlineComments checks the items of Provider.PostInlineComments.
 // Providers call it before any request is sent. Every item needs a path (and
 // an old path, when set) without control characters, a positive line, an
-// end line that is 0 or not before the line, the line type added or context, and a body that is not empty or
+// end line that is 0 or not before the line, the line type added or context, an old line that is
+// not negative and is 0 for an added line, and a body that is not empty or
 // whitespace-only. The first invalid item gives a protocol error with a
 // fixed hint; the item's content is never part of the error.
 func ValidateInlineComments(items []InlineComment) error {
@@ -70,6 +71,8 @@ func ValidateInlineComments(items []InlineComment) error {
 			return &Error{Class: ClassProtocol, Hint: "invalid inline comment line range"}
 		case it.LineType != LineAdded && it.LineType != LineContext:
 			return &Error{Class: ClassProtocol, Hint: "invalid inline comment line type"}
+		case it.OldLine < 0 || (it.OldLine != 0 && it.LineType == LineAdded):
+			return &Error{Class: ClassProtocol, Hint: "invalid inline comment old line"}
 		case strings.TrimSpace(it.Body) == "":
 			return &Error{Class: ClassProtocol, Hint: "empty body"}
 		}

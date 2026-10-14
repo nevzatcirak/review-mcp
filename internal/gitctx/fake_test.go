@@ -57,6 +57,7 @@ func TestTokenNeverInArgv(t *testing.T) {
 		{"gitea", giteaRepo("https://your-gitea.example"), "Authorization: token " + testToken},
 		{"bitbucket", bbsRepo("https://bitbucket.example.com"), "Authorization: Bearer " + testToken},
 		{"github", githubRepo("https://github.example.com"), "Authorization: " + basicOf("x-access-token", testToken)},
+		{"gitlab", gitlabRepo("https://gitlab.example.com"), "Authorization: " + basicOf("oauth2", testToken)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -70,7 +71,8 @@ func TestTokenNeverInArgv(t *testing.T) {
 			if len(fetches) != 1 {
 				t.Fatalf("%d fetches, want 1 (calls: %v)", len(fetches), calls)
 			}
-			secrets := []string{testToken, strings.TrimPrefix(basicOf("x-access-token", testToken), "Basic ")}
+			secrets := []string{testToken, strings.TrimPrefix(basicOf("x-access-token", testToken), "Basic "),
+				strings.TrimPrefix(basicOf("oauth2", testToken), "Basic ")}
 			for _, c := range calls {
 				for i, a := range c.Args {
 					for _, sec := range secrets {
@@ -460,7 +462,7 @@ func TestUnsupportedInput(t *testing.T) {
 		{"no number", giteaRepo("https://your-gitea.example"), PR{HeadSHA: fakeSHA}},
 		{"short sha", giteaRepo("https://your-gitea.example"), PR{Number: 7, HeadSHA: "abc123"}},
 		{"option-like sha", giteaRepo("https://your-gitea.example"), PR{Number: 7, HeadSHA: "--upload-pack=x"}},
-		{"unknown kind", Repo{Kind: "gitlab", BaseURL: "https://your-gitea.example", Namespace: "o", Name: "r"}, PR{Number: 7, HeadSHA: fakeSHA}},
+		{"unknown kind", Repo{Kind: "mercurial-host", BaseURL: "https://your-gitea.example", Namespace: "o", Name: "r"}, PR{Number: 7, HeadSHA: fakeSHA}},
 	}
 	for _, tc := range bad {
 		_, err := r.Ensure(context.Background(), tc.repo, tc.pr)

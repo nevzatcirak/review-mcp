@@ -78,14 +78,14 @@ func TestCheckNamesTheHeader(t *testing.T) {
 }
 
 func TestSecrets(t *testing.T) {
-	h := hdr(HeaderGiteaToken, "g", HeaderBitbucketServerToken, "b", HeaderGitHubToken, "h", HeaderLLMAPIKey, "k")
+	h := hdr(HeaderGiteaToken, "g", HeaderBitbucketServerToken, "b", HeaderGitHubToken, "h", HeaderGitLabToken, "l", HeaderLLMAPIKey, "k")
 	access := config.NewSecret("acc")
 	s, err := Secrets(h, false, config.NewSecret("server-key"), access)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if s.GiteaToken.Reveal() != "g" || s.BitbucketServerToken.Reveal() != "b" || s.GitHubToken.Reveal() != "h" ||
-		s.LLMAPIKey.Reveal() != "k" || s.ServeAccessToken.Reveal() != "acc" {
+		s.GitLabToken.Reveal() != "l" || s.LLMAPIKey.Reveal() != "k" || s.ServeAccessToken.Reveal() != "acc" {
 		t.Errorf("header source: %+v", s)
 	}
 	s, err = Secrets(h, true, config.NewSecret("server-key"), access)
@@ -103,6 +103,9 @@ func TestSecrets(t *testing.T) {
 	if _, err := Secrets(hdr(HeaderGitHubToken, "\x01"), true, config.NewSecret("k"), access); err == nil || err.Error() != "malformed credential header: X-Review-MCP-GitHub-Token" {
 		t.Errorf("malformed github header: %v", err)
 	}
+	if _, err := Secrets(hdr(HeaderGitLabToken, "\x01"), true, config.NewSecret("k"), access); err == nil || err.Error() != "malformed credential header: X-Review-MCP-GitLab-Token" {
+		t.Errorf("malformed gitlab header: %v", err)
+	}
 	s, err = Secrets(nil, false, config.Secret{}, config.Secret{})
 	if err != nil || s.GiteaToken.IsSet() || s.LLMAPIKey.IsSet() {
 		t.Errorf("nil header: %v", err)
@@ -111,7 +114,8 @@ func TestSecrets(t *testing.T) {
 
 func TestPresence(t *testing.T) {
 	p := Presence(hdr(HeaderGiteaToken, marker, HeaderLLMAPIKey, " ", HeaderBitbucketServerToken, "\x01", HeaderAuthorization, "Bearer "+marker))
-	want := map[string]string{HeaderGiteaToken: "set", HeaderLLMAPIKey: "unset", HeaderBitbucketServerToken: "malformed", HeaderGitHubToken: "unset", HeaderAuthorization: "set"}
+	want := map[string]string{HeaderGiteaToken: "set", HeaderLLMAPIKey: "unset", HeaderBitbucketServerToken: "malformed", HeaderGitHubToken: "unset", HeaderGitLabToken: "unset",
+		HeaderAuthorization: "set"}
 	for k, v := range want {
 		if p[k] != v {
 			t.Errorf("%s = %q, want %q", k, p[k], v)

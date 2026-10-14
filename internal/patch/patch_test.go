@@ -395,3 +395,22 @@ func TestFetchFailedWithPatchRendersPatch(t *testing.T) {
 		}
 	}
 }
+
+// TestOldLineOf: a context line's old-side number, counting removed lines
+// on the old side and added lines on the new side only; 0 for an added
+// line, a line outside the hunk and a malformed pseudo-hunk.
+func TestOldLineOf(t *testing.T) {
+	hunks, err := ParseHunks("@@ -10,5 +20,5 @@\n a\n-b\n-c\n+B\n d\n+E\n e\n\\ No newline at end of file\n@@@ -1 +1 @@@\n x\n")
+	if err != nil || len(hunks) != 2 {
+		t.Fatalf("ParseHunks: %d hunks, %v", len(hunks), err)
+	}
+	h := hunks[0]
+	for newLine, want := range map[int]int{19: 0, 20: 10, 21: 0, 22: 13, 23: 0, 24: 14, 25: 0} {
+		if got := h.OldLineOf(newLine); got != want {
+			t.Errorf("OldLineOf(%d) = %d, want %d", newLine, got, want)
+		}
+	}
+	if got := hunks[1].OldLineOf(1); got != 0 {
+		t.Errorf("malformed pseudo-hunk: OldLineOf(1) = %d, want 0", got)
+	}
+}

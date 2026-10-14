@@ -4,8 +4,8 @@
 brings AI-powered pull-request tools to any MCP client, such as Claude Code and
 opencode. It reviews a pull request with `pr_review`, answers questions about
 one with `pr_ask`, describes one with `pr_describe`, suggests code changes for one with `pr_improve`, and reads, answers and writes comments on pull requests. It targets Gitea,
-Bitbucket Server (Data Center) and GitHub (github.com and GitHub Enterprise
-Server), and works with any OpenAI-compatible LLM endpoint. Identity is per user: provider
+Bitbucket Server (Data Center), GitHub (github.com and GitHub Enterprise
+Server) and GitLab (gitlab.com and self-managed, 16.0 or newer), and works with any OpenAI-compatible LLM endpoint. Identity is per user: provider
 tokens and the LLM API key come from the MCP client configuration (as
 environment variables over stdio, the default, or as HTTP headers in `serve`
 mode), are never logged and are never persisted. There is no telemetry and there
@@ -90,6 +90,24 @@ dist-tag `latest`; release candidates of the next version under `next`. See the
    }
    ```
 
+   **GitLab.** The GitLab base URL has no default; it is the web address of
+   your GitLab (`https://gitlab.com` for the public product, your own address
+   for a self-managed instance, with its context path if it has one). The API
+   address is always `{base}/api/v4`. GitLab 16.0 or newer is required. The
+   token is a personal, project or group access token (`api` to publish,
+   `read_api` to read; plus `read_repository` for the repository context); see
+   [GitLab](docs/gitlab.md):
+
+   ```json
+   "environment": {
+     "REVIEW_MCP_LLM_BASE_URL": "https://llm.example.com/v1",
+     "REVIEW_MCP_LLM_MODEL": "your-model-name",
+     "REVIEW_MCP_LLM_API_KEY": "{env:REVIEW_MCP_LLM_API_KEY}",
+     "REVIEW_MCP_GITLAB_BASE_URL": "https://gitlab.example.com",
+     "REVIEW_MCP_GITLAB_TOKEN": "{env:REVIEW_MCP_GITLAB_TOKEN}"
+   }
+   ```
+
    **Local or slow model.** For a locally hosted OpenAI-compatible server
    (for example `http://localhost:8080/v1`):
 
@@ -167,12 +185,12 @@ except `job_result`).
 | `server_info` | Version, enabled providers and the effective non-secret configuration; secrets show only as set or unset. |
 | `pr_comments` | Lists a pull request's comment threads. |
 | `pr_info` | Which branch a pull request merges into and who has reviewed or approved it: human reviewers with their states, approval counts, required approvals and merge status where the provider exposes them. review-mcp's own reviews and comments are reported separately and never count as approvals. Also reports the CI results of the head commit (`ci`: state, counts and the failing checks), read from the provider; nothing is built or run. Read-only, no LLM call; see [Pull request status](docs/pr-info.md). |
-| `pr_comment_reply` | Replies to a pull request comment (inside the thread on Bitbucket Server, and on GitHub for an inline comment; as a quoting PR-level comment on Gitea, and on GitHub for a general comment). |
+| `pr_comment_reply` | Replies to a pull request comment (inside the thread on Bitbucket Server and GitLab, and on GitHub for an inline comment; as a quoting PR-level comment on Gitea, and on GitHub for a general comment). |
 | `pr_comment_create` | Posts a new comment on a pull request, PR-level or on a changed line (`file` and `line`). A line outside the diff is refused, never posted at PR level instead. |
 | `pr_review` | Reviews a pull request with your LLM. The title, description, existing comments and diff are sent to your LLM endpoint. Optionally publishes the review: one overview comment, edited in place on later runs, and inline comments on the changed lines. The model is also given the head commit's CI results (failing and pending checks, and a CI line in the overview), the project's guidelines file (`.review-mcp/guidelines.md`, else `CONTRIBUTING.md`) and a listing of the directories the change touches, both read at the target branch so a pull request cannot rewrite its own rules. `focus` (`security`, `architecture`, `performance`, `ux`, `tests` or free text) reviews one area and never publishes; the findings of several focused reviews are merged by the client and published once with `findings` and `publish=true`, without another model call (the `multi_perspective_review` prompt describes the steps). See [Reviewing pull requests](docs/review.md). |
 | `pr_ask` | Answers a free-text question about a pull request, grounded in its title, description and diff. Optionally publishes the question and answer as a PR comment. |
 | `pr_describe` | Describes a pull request with your LLM: a title, the change types, a short summary and a walkthrough of the changed files. The title, description, branch names, commit messages and diff are sent to your LLM endpoint. By default it only reads; `publish=true` writes to the pull request, either one comment that later runs edit in place or a marked region at the end of the description (the author's text is never changed), and `update_title=true` also replaces the title. Files the model did not describe are listed, never padded in. See [Describing pull requests](docs/describe.md). |
-| `pr_improve` | Suggests code changes for a pull request with your LLM: for each suggestion the existing and the improved code, a label and a score from 0 to 10 given by a second, self-review model call; suggestions below `improve.min_score` are dropped and counted, never silently lost. Each suggestion is checked against the head version of the file before it is called anchored; ones that cannot be are marked, not hidden. The title, description, branch names, existing comments and diff are sent to your LLM endpoint, with the project's guidelines file and the listing of the touched directories read at the target branch, as for `pr_review`. By default it only reads; `publish=true` writes to the pull request: one overview comment that later runs edit in place, and an inline comment on each verified suggestion that is on changed lines of one hunk (not repeated on later runs), with the change as a native suggestion block on GitHub and as a diff block on Gitea and Bitbucket Server. See [Suggesting code changes](docs/improve.md). |
+| `pr_improve` | Suggests code changes for a pull request with your LLM: for each suggestion the existing and the improved code, a label and a score from 0 to 10 given by a second, self-review model call; suggestions below `improve.min_score` are dropped and counted, never silently lost. Each suggestion is checked against the head version of the file before it is called anchored; ones that cannot be are marked, not hidden. The title, description, branch names, existing comments and diff are sent to your LLM endpoint, with the project's guidelines file and the listing of the touched directories read at the target branch, as for `pr_review`. By default it only reads; `publish=true` writes to the pull request: one overview comment that later runs edit in place, and an inline comment on each verified suggestion that is on changed lines of one hunk (not repeated on later runs), with the change as a native suggestion block on GitHub and GitLab and as a diff block on Gitea and Bitbucket Server. See [Suggesting code changes](docs/improve.md). |
 | `job_result` | Returns the result of a `pr_review`, `pr_ask`, `pr_describe` or `pr_improve` call that took longer than `wait_seconds` and answered with a `job_id` instead. stdio only; see [Slow endpoints](docs/review.md#slow-endpoints). |
 
 ## Documentation
@@ -184,6 +202,7 @@ except `job_result`).
 - [Describing pull requests](docs/describe.md): what `pr_describe` sends to the LLM, the result, large pull requests described in parts with a summary call, files that were not described, `publish` as a comment or as a marked region of the description (how to remove it, `update_title`, concurrent edits, Bitbucket Server reviewers), permissions, `diag describe --dry-run`.
 - [Suggesting code changes](docs/improve.md): what `pr_improve` sends to the LLM (and what the self-review does not get), parts, the self-review score and `improve.min_score`, ranking and the cap, verification against the head file, `publish` (the overview edited in place, inline comments with a diff block, no repeated suggestions), permissions, `improve.*` settings, `diag improve --dry-run`.
 - [GitHub](docs/github.md): the token and its permissions, URL shapes and GitHub Enterprise Server, how the API address is derived, rate limits, the 3000-file and 250-commit limits, comment threads and why resolved state is not shown, replies and edits, one review per run, native suggestion blocks and their re-indentation rule, `pr_info` (approvals from rulesets and classic protection, the merge status), the description edit, repository context, and what is not supported.
+- [GitLab](docs/gitlab.md): the token and its scopes, URL shapes (nested groups, a context path), the minimum version 16.0, the diff base and the "diff not ready" case, the diff limits, rate limits, comment threads and replies, inline discussions and native suggestions, quick-action safety (what is sanitised, the diff fallback, the description refusal), `pr_info` (reviewers, approvals, the merge status), CI from commit statuses and what is not read, repository context, a proxy or `external_url` that differs from the base URL, and what is not supported.
 - [Pull request status](docs/pr-info.md): what `pr_info` reports (target branch, human reviewers, approvals, merge status, CI results), where each fact comes from, and why review-mcp's own reviews are not reviewers.
 - [Repository context](docs/repo-context.md): opt-in, stdio only: shows the model where the symbols a pull request changes are used elsewhere in the project (a cached `git` fetch of the head, `git grep`, a budgeted prompt block), its configuration, the cache, the security properties, the coverage line and the evaluation harness.
 - [Getting started](docs/getting-started.md): the minimal configuration and the diff budget in detail.

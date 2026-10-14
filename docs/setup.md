@@ -6,9 +6,10 @@ It covers the default transport, stdio, where the MCP client starts review-mcp
 as a local process. For a shared server see [Serve mode](serve.md).
 
 Every host name below is a placeholder (`your-gitea.example`,
-`bitbucket.example.com`, `ghe.example.com`, `llm.example.com`). Replace them
-with your own. (`https://github.com` is the public GitHub product, not a
-placeholder.)
+`bitbucket.example.com`, `ghe.example.com`, `gitlab.example.com`,
+`llm.example.com`). Replace them with your own. (`https://github.com` is the
+public GitHub product and `https://gitlab.com` the public GitLab one, not
+placeholders.)
 
 1. [Install](#1-install)
 2. [Create tokens](#2-create-tokens)
@@ -101,6 +102,7 @@ Use a read-only token to start. `pr_review`, `pr_ask`, `pr_describe` and
 | `pr_describe` with `publish=true` and `publish_mode=description` (also `update_title`) | the read scopes plus write access to the pull request itself, not only to its comments (see the `PATCH` and `PUT` rows below) |
 | CI results (`pr_info`, and `pr_review` unless `review.ci_status` is false), the guidelines file and the file tree (`pr_review`, `pr_improve`) | Gitea and Bitbucket Server: nothing beyond the read scopes (the commit status or build status, and file contents at the target branch). GitHub: **Commit statuses: Read** and **Checks: Read** for the CI results (fine-grained token; a classic token's `repo` scope covers them), **Contents: Read** for the guidelines and the tree. See the endpoint tables below |
 | GitHub, any use | see [GitHub](#github) below: a fine-grained token with Pull requests, Contents and Metadata, or a classic `repo` / `public_repo` token |
+| GitLab, any use | see [GitLab](#gitlab) below: a personal access token with `read_api` (read) or `api` (publish), or a project or group access token with the role Reporter (read) or Developer (publish) |
 
 > **Every scope in this guide is unconfirmed.** They are derived from the API
 > calls the code makes, in the tables below, and each is marked "verify at V1
@@ -269,6 +271,60 @@ Every row's permission is derived from the API calls and unconfirmed until the
 v2 acceptance. With the repository context enabled, `git` also fetches
 `refs/pull/{n}/head` over HTTPS with the same token (Contents read).
 
+### GitLab
+
+review-mcp works with gitlab.com and with self-managed GitLab 16.0 or newer
+through a token and the REST API v4. The full reference is [GitLab](gitlab.md).
+
+1. Create the token. Three kinds work, and all are sent as `PRIVATE-TOKEN`:
+   - **Personal access token** (**Preferences, Access tokens** in your
+     profile). Scope `read_api` for read-only use, `api` to publish and for
+     `pr_comment_reply` and `pr_comment_create`. Add `read_repository` for the
+     [repository context](repo-context.md).
+   - **Project access token** or **group access token** (**Settings, Access
+     tokens** of the project or group). Role **Reporter** for reads,
+     **Developer** to publish. Scopes as for a personal token. The token's user
+     is a bot, and review-mcp's comments are written under its name.
+2. Set the web address of your GitLab as the base URL, and the token:
+   `REVIEW_MCP_GITLAB_BASE_URL=https://gitlab.com` for the public product, or
+   `REVIEW_MCP_GITLAB_BASE_URL=https://gitlab.example.com` (with a context path
+   if your instance has one, for example `https://example.com/gitlab`), and
+   `REVIEW_MCP_GITLAB_TOKEN`. The base URL has **no default**: GitLab is
+   enabled only when you set it. The API address is always `{base}/api/v4`.
+
+| Token | Permissions | Status |
+|---|---|---|
+| Read only | personal: `read_api`; project or group: role Reporter | verify at the 2C acceptance (items Q1, Q2, Q6, Q7) |
+| Read and write | personal: `api`; project or group: role Developer | verify at the 2C acceptance (items Q3 to Q5b) |
+| Repository context | personal: `read_repository` (or `api`); project or group: Reporter | verify at the 2C acceptance |
+
+Endpoints the GitLab provider calls (under `{base}/api/v4`; `{p}` is
+`/projects/{full path}` with the slashes of the path sent as `%2F`, and `{mr}`
+is `{p}/merge_requests/{iid}`):
+
+| Method and endpoint | Purpose | Needs | Code |
+|---|---|---|---|
+| `GET {mr}` | the merge request (title, description, state, draft, `detailed_merge_status`, `diff_refs`, `web_url`, `changes_count`); read again for `pr_info` | read | `internal/provider/gitlab/gitlab.go` (`GetPullRequest`) |
+| `GET {mr}/diffs`, `GET {mr}/commits` | the changed files with their hunks (at most 4000), the commit messages (at most 1000), followed through the `Link` header | read | `internal/provider/gitlab/diff.go`, `gitlab.go` |
+| `GET {p}/repository/files/{path}/raw?ref={sha}` | the full contents of both sides for extra context; the guidelines file at the base revision | read | `internal/provider/gitlab/diff.go`, `reads.go` (`GetFileAt`) |
+| `GET {p}/repository/tree?path={dir}&ref={rev}&pagination=keyset` | the listing of the touched directories at the base revision | read | `internal/provider/gitlab/reads.go` (`ListDir`) |
+| `GET {p}/repository/commits/{sha}/statuses` | the CI results of the head commit (the latest status of each name) | read | `internal/provider/gitlab/checks.go` (`GetChecks`) |
+| `GET {mr}/discussions` | `pr_comments`, reply lookup, duplicate checks | read | `internal/provider/gitlab/comments.go` |
+| `GET {mr}/reviewers`, `GET {mr}/approvals` | `pr_info`: reviewers and their states, approvers, required approvals | read | `internal/provider/gitlab/status.go` |
+| `GET /user` | the token's own user (a bot for a project or group token) | read | `internal/provider/gitlab/gitlab.go` (`CurrentUser`) |
+| `GET {mr}/notes/{id}` | read a note and check its author before editing it | read | `internal/provider/gitlab/comments.go` (`EditComment`) |
+| `POST {mr}/notes` | a merge request comment (`publish=true`, `pr_comment_create` without a file) | write | `internal/provider/gitlab/comments.go` (`PostComment`) |
+| `POST {mr}/discussions` | one inline discussion per finding or suggestion (`publish=true`, `pr_comment_create` with `file` and `line`) | write | `internal/provider/gitlab/inline.go` |
+| `POST {mr}/discussions/{id}/notes` | a reply inside a thread | write | `internal/provider/gitlab/comments.go` (`ReplyToComment`) |
+| `PUT {mr}/notes/{id}` | edit a note the token's user wrote (the overview of `pr_review` and `pr_improve`, the comment of `pr_describe`) | write | `internal/provider/gitlab/comments.go` (`EditComment`) |
+| `DELETE {mr}/notes/{id}` | only the guard for a general note that GitLab created because it could not place an inline comment: the note just created, never any other | write | `internal/provider/gitlab/inline.go` |
+| `PUT {mr}` | `pr_describe` with `publish_mode=description`: set the description and, with `update_title`, the title; only those fields are sent. The merge request is read again right before | write | `internal/provider/gitlab/update.go` |
+
+Every row's permission is derived from the API calls and unconfirmed until the
+2C acceptance. With the repository context enabled, `git` also fetches
+`refs/merge-requests/{iid}/head` over HTTPS with the same token
+(`read_repository`).
+
 ### Give review-mcp the tokens
 
 Pass tokens through the environment only:
@@ -278,10 +334,12 @@ Pass tokens through the environment only:
 | `REVIEW_MCP_GITEA_TOKEN` | Gitea |
 | `REVIEW_MCP_BITBUCKET_SERVER_TOKEN` | Bitbucket Server |
 | `REVIEW_MCP_GITHUB_TOKEN` | GitHub |
+| `REVIEW_MCP_GITLAB_TOKEN` | GitLab |
 
 Also set the base URL of each provider you use (`REVIEW_MCP_GITEA_BASE_URL`,
-`REVIEW_MCP_BITBUCKET_SERVER_BASE_URL`, `REVIEW_MCP_GITHUB_BASE_URL`; the
-Bitbucket one includes any context path, and the GitHub one has no default). A provider without a base URL is disabled. At least one must be
+`REVIEW_MCP_BITBUCKET_SERVER_BASE_URL`, `REVIEW_MCP_GITHUB_BASE_URL`,
+`REVIEW_MCP_GITLAB_BASE_URL`; the Bitbucket and GitLab ones include any
+context path, and the GitHub and GitLab ones have no default). A provider without a base URL is disabled. At least one must be
 enabled. More about base URLs, CA certificates and the context path is in
 [Troubleshooting](troubleshooting.md#base-url-notes).
 

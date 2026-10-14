@@ -16,6 +16,7 @@ const (
 	testGitea  = "FAKE-gitea-token-ZQ7X-do-not-leak"
 	testBitbkt = "FAKE-bitbucket-token-ZQ7X-do-not-leak"
 	testGitHub = "FAKE-github-token-ZQ7X-do-not-leak"
+	testGitLab = "FAKE-gitlab-token-ZQ7X-do-not-leak"
 )
 
 func validEnv() map[string]string {
@@ -30,6 +31,8 @@ func validEnv() map[string]string {
 		"REVIEW_MCP_BITBUCKET_SERVER_TOKEN":      testBitbkt,
 		"REVIEW_MCP_GITHUB_BASE_URL":             "https://github.example.com/ghe",
 		"REVIEW_MCP_GITHUB_TOKEN":                testGitHub,
+		"REVIEW_MCP_GITLAB_BASE_URL":             "https://example.com/gitlab",
+		"REVIEW_MCP_GITLAB_TOKEN":                testGitLab,
 		"REVIEW_MCP_GITEA_INSECURE_SKIP_VERIFY":  "true", // produces a warning
 		"REVIEW_MCP_SOMETHING_UNKNOWN":           "x",
 		"REVIEW_MCP_REVIEW_EXTRA_INSTRUCTIONS":   "use <b>bold</b> and `ticks`\nsecond line",
@@ -53,8 +56,9 @@ func TestServerInfoValid(t *testing.T) {
 	if len(r.Problems) != 0 {
 		t.Errorf("problems = %v, want none", r.Problems)
 	}
-	if len(r.Providers) != 3 || r.Providers[0].Kind != "gitea" || r.Providers[1].Kind != "bitbucket_server" ||
-		r.Providers[2] != (ProviderInfo{Kind: "github", BaseURL: "https://github.example.com/ghe", APIURL: "https://github.example.com/ghe/api/v3"}) {
+	if len(r.Providers) != 4 || r.Providers[0].Kind != "gitea" || r.Providers[1].Kind != "bitbucket_server" ||
+		r.Providers[2] != (ProviderInfo{Kind: "github", BaseURL: "https://github.example.com/ghe", APIURL: "https://github.example.com/ghe/api/v3"}) ||
+		r.Providers[3] != (ProviderInfo{Kind: "gitlab", BaseURL: "https://example.com/gitlab", APIURL: "https://example.com/gitlab/api/v4"}) {
 		t.Errorf("providers = %+v", r.Providers)
 	}
 	if len(r.Warnings) == 0 {
@@ -63,10 +67,11 @@ func TestServerInfoValid(t *testing.T) {
 	if r.Version == "" || r.GoVersion == "" {
 		t.Errorf("version info missing: %+v", r)
 	}
-	if r.Config.Secrets["llm.api_key"] != "set" || r.Config.Secrets["github.token"] != "set" {
-		t.Errorf("secrets = %v, want a set llm key and github token", r.Config.Secrets)
+	if r.Config.Secrets["llm.api_key"] != "set" || r.Config.Secrets["github.token"] != "set" || r.Config.Secrets["gitlab.token"] != "set" {
+		t.Errorf("secrets = %v, want a set llm key, github token and gitlab token", r.Config.Secrets)
 	}
-	for _, k := range []string{"github.base_url", "github.api_url", "github.ca_cert", "github.insecure_skip_verify"} {
+	for _, k := range []string{"github.base_url", "github.api_url", "github.ca_cert", "github.insecure_skip_verify",
+		"gitlab.base_url", "gitlab.ca_cert", "gitlab.insecure_skip_verify"} {
 		if _, ok := r.Config.Values[k]; !ok {
 			t.Errorf("config values lack %s", k)
 		}
@@ -224,7 +229,7 @@ func assertNoSecrets(t *testing.T, r ServerInfoResult, md string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range []string{testLLMKey, testGitea, testBitbkt, testGitHub} {
+	for _, s := range []string{testLLMKey, testGitea, testBitbkt, testGitHub, testGitLab} {
 		if strings.Contains(string(raw), s) || strings.Contains(md, s) {
 			t.Errorf("secret %q leaked", s)
 		}
@@ -241,7 +246,8 @@ func TestRenderMarkdownContent(t *testing.T) {
 	for _, want := range []string{
 		"# review-mcp server info", "## Providers", "## Secrets", "## Effective configuration",
 		"`gitea`: `https://your-gitea.example`", "## Warnings",
-		"`github`: `https://github.example.com/ghe` (API `https://github.example.com/ghe/api/v3`)", "`llm.model` = `\"example-model\"` (env)",
+		"`github`: `https://github.example.com/ghe` (API `https://github.example.com/ghe/api/v3`)",
+		"`gitlab`: `https://example.com/gitlab` (API `https://example.com/gitlab/api/v4`)", "`llm.model` = `\"example-model\"` (env)",
 	} {
 		if !strings.Contains(md, want) {
 			t.Errorf("markdown lacks %q:\n%s", want, md)

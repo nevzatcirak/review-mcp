@@ -616,6 +616,22 @@ func TestCommentBodiesSanitizedByCapability(t *testing.T) {
 	}
 }
 
+// TestCommentBodyHandWrittenSuggestionFence (X-35): a client's body that
+// holds a hand-written suggestion fence keeps its "//" line there, exactly
+// as written, and still loses the quick action inside it. [canary: exempt
+// every line inside suggestion fences]
+func TestCommentBodyHandWrittenSuggestionFence(t *testing.T) {
+	const body = "Try:\n```suggestion\n// keep\n/merge\n```\n/close"
+	const want = "Try:\n```suggestion\n// keep\n /merge\n```\n /close"
+	fp := &fakeProvider{caps: provider.Capabilities{GFM: true, QuickActions: true}}
+	if _, err := PRCommentCreate(context.Background(), &fakeResolver{p: fp}, PRCommentCreateArgs{PRURL: testPRURL, Body: body}); err != nil {
+		t.Fatal(err)
+	}
+	if fp.gotBody != want {
+		t.Errorf("body = %q, want %q", fp.gotBody, want)
+	}
+}
+
 // TestPRCommentsResolutionNote: a provider that reports resolution for no
 // kind of thread gets the fixed note once; one that reports either does not.
 func TestPRCommentsResolutionNote(t *testing.T) {

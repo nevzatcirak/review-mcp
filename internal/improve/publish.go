@@ -56,6 +56,19 @@ const (
 // posted because the PR's comments could not be read.
 const errInlineNotChecked = "the comments already on the PR could not be read"
 
+// ReasonSlashDiffBlock is the fixed reason why a suggestion that could have
+// had a native block is shown as the diff block on a provider with
+// QuickActions (X-35): a line of its code could run a quick action, and
+// sanitising it would change the code the block applies. The inline
+// comment carries it as the line SlashDiffBlockLine above its marker.
+const ReasonSlashDiffBlock = "a line of the suggested code starts with a slash command, so it is shown as a diff"
+
+// SlashDiffBlockLine is the paragraph of an inline comment that says why it
+// shows the diff block (ReasonSlashDiffBlock). DESIGN-QUESTION WP-6c
+// DQ-c4: the spec does not say where the reason goes; it is published in
+// the comment, where the reader misses the "apply" button.
+const SlashDiffBlockLine = "Note: " + ReasonSlashDiffBlock + "."
+
 func noteOlderOverviews(n int) string {
 	return llmrun.CountPhrase(n, "older overview comment by the same user was",
 		"older overview comments by the same user were") + " left unchanged."
@@ -314,14 +327,18 @@ func (pl *Plan) readComments(ctx context.Context) ([]provider.Thread, provider.U
 // (anchorFor), and its improved code could be re-indented to the real lines
 // (blockCode). The renderer then gets a copy of the suggestion with the
 // re-indented code; otherwise it gets caps without a suggestion style and
-// renders the diff block.
+// renders the diff block. On a provider with QuickActions a fourth must
+// hold (X-35): no line of the re-indented code could run a quick action
+// (provider.HasQuickActionLine), since sanitising it would change the code
+// the block applies; otherwise the diff block is rendered and the comment
+// says why (SlashDiffBlockLine).
 func (pl *Plan) planInline(render InlineRenderer, posted map[string]string, unchecked bool) ([]inlineItem, *InlineSummary) {
 	sum := &InlineSummary{}
 	caps := pl.p.Capabilities()
 	native := caps.NativeSuggestionStyle() != provider.SuggestionStyleNone
 	plain := caps
 	plain.SuggestionBlocks, plain.SuggestionStyle = false, provider.SuggestionStyleNone
-	blocks, kept := 0, 0
+	blocks, kept, slashed := 0, 0, 0
 	var out []inlineItem
 	for i := range pl.Result.Suggestions {
 		s := &pl.Result.Suggestions[i]
@@ -345,23 +362,32 @@ func (pl *Plan) planInline(render InlineRenderer, posted map[string]string, unch
 			s.Anchor = &Anchor{Status: AnchorSkippedDuplicate, Line: a.Line, URL: url}
 			continue
 		}
-		rs, rcaps := s, plain
+		rs, rcaps, slash := s, plain, false
 		if native {
-			if code, ok := blockCode(pl.files[s.File], s); ok {
+			code, ok := blockCode(pl.files[s.File], s)
+			switch {
+			case ok && caps.QuickActions && provider.HasQuickActionLine(code):
+				slash = true
+				slashed++
+			case ok:
 				c := *s
 				c.ImprovedCode = code
 				rs, rcaps = &c, caps
 				blocks++
-			} else {
+			default:
 				kept++
 			}
 		}
-		body := strings.TrimRight(render(rs, rcaps), " \t\r\n") + "\n\n" + SuggestionMarker(fp)
+		body := strings.TrimRight(render(rs, rcaps), " \t\r\n")
+		if slash {
+			body += "\n\n" + SlashDiffBlockLine
+		}
+		body += "\n\n" + SuggestionMarker(fp)
 		a.Body = provider.SanitizeBody(caps, body)
 		out = append(out, inlineItem{idx: i, item: a})
 	}
 	if native {
-		pl.log.Debug("improve: suggestion blocks", "native", blocks, "diff_block", kept)
+		pl.log.Debug("improve: suggestion blocks", "native", blocks, "diff_block", kept, "diff_block_slash", slashed)
 	}
 	return out, sum
 }
@@ -423,6 +449,12 @@ func anchorFor(fp *provider.FilePatch, start, end int) (provider.InlineComment, 
 			continue
 		}
 		c := provider.InlineComment{Path: fp.Path, Line: start, LineType: typ}
+		if typ == provider.LineContext {
+			// DESIGN-QUESTION WP-6c DQ-c1: LineType is also computed in
+			// anchor.Resolve; the old-side line comes from the one shared
+			// helper, so only the line type logic stays in two places.
+			c.OldLine = h.OldLineOf(start)
+		}
 		if end > start {
 			c.EndLine = end
 		}

@@ -179,6 +179,7 @@ func TestURLUserinfoRejectedAndNeverEchoed(t *testing.T) {
 		"bitbucket_server.base_url": "REVIEW_MCP_BITBUCKET_SERVER_BASE_URL",
 		"github.base_url":           "REVIEW_MCP_GITHUB_BASE_URL",
 		"github.api_url":            "REVIEW_MCP_GITHUB_API_URL",
+		"gitlab.base_url":           "REVIEW_MCP_GITLAB_BASE_URL",
 	}
 	for key, envName := range keys {
 		for _, raw := range []string{
@@ -190,6 +191,9 @@ func TestURLUserinfoRejectedAndNeverEchoed(t *testing.T) {
 			env := envWith(map[string]string{envName: raw})
 			if key == "bitbucket_server.base_url" {
 				env["REVIEW_MCP_BITBUCKET_SERVER_TOKEN"] = fakeBitbkt
+			}
+			if key == "gitlab.base_url" {
+				env["REVIEW_MCP_GITLAB_TOKEN"] = fakeGitLab
 			}
 			if strings.HasPrefix(key, "github.") {
 				env["REVIEW_MCP_GITHUB_TOKEN"] = fakeGitHub
@@ -476,7 +480,8 @@ func TestGitHubConfig(t *testing.T) {
 		delete(env, "REVIEW_MCP_GITEA_BASE_URL")
 		delete(env, "REVIEW_MCP_GITEA_TOKEN")
 		_, _, err := Load(MemSource{Env: env})
-		want := "no provider enabled: set gitea.base_url (REVIEW_MCP_GITEA_BASE_URL), bitbucket_server.base_url (REVIEW_MCP_BITBUCKET_SERVER_BASE_URL) and/or github.base_url (REVIEW_MCP_GITHUB_BASE_URL)"
+		want := "no provider enabled: set gitea.base_url (REVIEW_MCP_GITEA_BASE_URL), bitbucket_server.base_url (REVIEW_MCP_BITBUCKET_SERVER_BASE_URL), " +
+			"github.base_url (REVIEW_MCP_GITHUB_BASE_URL) and/or gitlab.base_url (REVIEW_MCP_GITLAB_BASE_URL)"
 		if !hasProblem(problemsOf(t, err), want) {
 			t.Errorf("want %q, got %v", want, err)
 		}
@@ -499,4 +504,81 @@ func TestGitHubEffectiveAPIURL(t *testing.T) {
 			t.Errorf("EffectiveAPIURL(%q, %q) = %q, want %q", c.base, c.api, got, c.want)
 		}
 	}
+}
+
+func TestGitLabConfig(t *testing.T) {
+	gl := func(extra map[string]string) map[string]string {
+		env := map[string]string{"REVIEW_MCP_GITLAB_BASE_URL": " https://example.com/gitlab/ ", "REVIEW_MCP_GITLAB_TOKEN": fakeGitLab}
+		for k, v := range extra {
+			env[k] = v
+		}
+		return envWith(env)
+	}
+	t.Run("enabled_normalized_and_summarized", func(t *testing.T) {
+		cfg, rep := mustLoad(t, MemSource{Env: gl(nil)})
+		if cfg.GitLab.BaseURL != "https://example.com/gitlab" || cfg.GitLab.APIURL() != "https://example.com/gitlab/api/v4" {
+			t.Errorf("normalization: %q %q", cfg.GitLab.BaseURL, cfg.GitLab.APIURL())
+		}
+		sum := cfg.Summary(rep)
+		want := ProviderSummary{Kind: "gitlab", BaseURL: "https://example.com/gitlab", APIURL: "https://example.com/gitlab/api/v4"}
+		if len(sum.Providers) != 2 || sum.Providers[1] != want {
+			t.Errorf("providers: %+v", sum.Providers)
+		}
+		if sum.Secrets["gitlab.token"] != "set" || sum.Values["gitlab.base_url"].Value != "https://example.com/gitlab" ||
+			sum.Values["gitlab.base_url"].Source != OriginEnv {
+			t.Errorf("summary: %v %+v", sum.Secrets, sum.Values["gitlab.base_url"])
+		}
+		for _, k := range []string{"gitlab.ca_cert", "gitlab.insecure_skip_verify"} {
+			if _, ok := sum.Values[k]; !ok {
+				t.Errorf("summary lacks %s", k)
+			}
+		}
+		if _, ok := sum.Values["gitlab.api_url"]; ok {
+			t.Error("gitlab.api_url is a key; the API base has no setting of its own")
+		}
+	})
+	t.Run("gitlab_only", func(t *testing.T) {
+		env := gl(nil)
+		delete(env, "REVIEW_MCP_GITEA_BASE_URL")
+		delete(env, "REVIEW_MCP_GITEA_TOKEN")
+		cfg, _ := mustLoad(t, MemSource{Env: env})
+		if cfg.GitLab.BaseURL == "" || cfg.Gitea.BaseURL != "" {
+			t.Errorf("gitlab only: %+v", cfg.GitLab)
+		}
+	})
+	t.Run("no_default_host", func(t *testing.T) {
+		if d := Defaults().GitLab; d != (GitLab{}) || d.APIURL() != "" {
+			t.Errorf("defaults = %+v, want no GitLab host assumed", d)
+		}
+	})
+	for _, tc := range []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{"token_required", map[string]string{"REVIEW_MCP_GITLAB_TOKEN": ""}, "REVIEW_MCP_GITLAB_TOKEN is required because gitlab.base_url is set"},
+		{"base_url_scheme", map[string]string{"REVIEW_MCP_GITLAB_BASE_URL": "ftp://gitlab.example.com"}, "gitlab.base_url: scheme must be http or https"},
+		{"base_url_fragment", map[string]string{"REVIEW_MCP_GITLAB_BASE_URL": "https://gitlab.example.com/#x"}, "gitlab.base_url: URL must not contain a fragment"},
+		{"ca_cert_missing", map[string]string{"REVIEW_MCP_GITLAB_CA_CERT": "/certs/none.pem"}, "gitlab.ca_cert: cannot read CA certificate file"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := Load(MemSource{Env: gl(tc.env)})
+			if !hasProblem(problemsOf(t, err), tc.want) {
+				t.Errorf("want %q, got %v", tc.want, err)
+			}
+			assertNoSecrets(t, tc.name, err.Error())
+		})
+	}
+	t.Run("token_without_provider_warns", func(t *testing.T) {
+		_, rep := mustLoad(t, MemSource{Env: envWith(map[string]string{"REVIEW_MCP_GITLAB_TOKEN": fakeGitLab})})
+		if len(rep.Warnings) != 1 || rep.Warnings[0] != "REVIEW_MCP_GITLAB_TOKEN is set but gitlab is not enabled (gitlab.base_url is unset); the token is ignored" {
+			t.Errorf("warnings: %v", rep.Warnings)
+		}
+	})
+	t.Run("insecure_warns", func(t *testing.T) {
+		_, rep := mustLoad(t, MemSource{Env: gl(map[string]string{"REVIEW_MCP_GITLAB_INSECURE_SKIP_VERIFY": "true"})})
+		if !strings.Contains(strings.Join(rep.Warnings, "|"), "TLS verification disabled for gitlab") {
+			t.Errorf("warnings: %v", rep.Warnings)
+		}
+	})
 }

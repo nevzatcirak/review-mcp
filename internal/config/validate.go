@@ -302,16 +302,18 @@ func (l *loader) validateLLM() {
 
 func (l *loader) validateProviders() {
 	c := l.cfg
-	g, b, h := &c.Gitea, &c.BitbucketServer, &c.GitHub
+	g, b, h, gl := &c.Gitea, &c.BitbucketServer, &c.GitHub, &c.GitLab
 	g.BaseURL = strings.TrimSpace(g.BaseURL)
 	g.WebURL = strings.TrimSpace(g.WebURL)
 	b.BaseURL = strings.TrimSpace(b.BaseURL)
 	h.BaseURL = strings.TrimSpace(h.BaseURL)
 	h.APIURL = strings.TrimSpace(h.APIURL)
+	gl.BaseURL = strings.TrimSpace(gl.BaseURL)
 
 	giteaOn := g.BaseURL != ""
 	bbOn := b.BaseURL != ""
 	ghOn := h.BaseURL != ""
+	glOn := gl.BaseURL != ""
 
 	// In serve mode provider tokens come from request headers: the
 	// environment token must be unset whether or not the provider is enabled
@@ -321,6 +323,7 @@ func (l *loader) validateProviders() {
 		l.refuseServeEnvToken(c.Secrets.GiteaToken, envGiteaToken)
 		l.refuseServeEnvToken(c.Secrets.BitbucketServerToken, envBitbucketServerToken)
 		l.refuseServeEnvToken(c.Secrets.GitHubToken, envGitHubToken)
+		l.refuseServeEnvToken(c.Secrets.GitLabToken, envGitLabToken)
 	}
 
 	if giteaOn {
@@ -362,14 +365,24 @@ func (l *loader) validateProviders() {
 		l.checkURL("github.api_url", &h.APIURL)
 	}
 
-	if !giteaOn && !bbOn && !ghOn {
-		l.problem("no provider enabled: set gitea.base_url (%s), bitbucket_server.base_url (%s) and/or github.base_url (%s)",
-			keyToEnv["gitea.base_url"], keyToEnv["bitbucket_server.base_url"], keyToEnv["github.base_url"])
+	if glOn {
+		l.checkURL("gitlab.base_url", &gl.BaseURL)
+		if !serve && !c.Secrets.GitLabToken.IsSet() {
+			l.problem("%s is required because gitlab.base_url is set", envGitLabToken)
+		}
+	} else if !serve && c.Secrets.GitLabToken.IsSet() {
+		l.warn("%s is set but gitlab is not enabled (gitlab.base_url is unset); the token is ignored", envGitLabToken)
+	}
+
+	if !giteaOn && !bbOn && !ghOn && !glOn {
+		l.problem("no provider enabled: set gitea.base_url (%s), bitbucket_server.base_url (%s), github.base_url (%s) and/or gitlab.base_url (%s)",
+			keyToEnv["gitea.base_url"], keyToEnv["bitbucket_server.base_url"], keyToEnv["github.base_url"], keyToEnv["gitlab.base_url"])
 	}
 
 	l.checkCACert("gitea.ca_cert", g.CACert)
 	l.checkCACert("bitbucket_server.ca_cert", b.CACert)
 	l.checkCACert("github.ca_cert", h.CACert)
+	l.checkCACert("gitlab.ca_cert", gl.CACert)
 	if g.InsecureSkipVerify {
 		l.warn("TLS verification disabled for gitea")
 	}
@@ -378,6 +391,9 @@ func (l *loader) validateProviders() {
 	}
 	if h.InsecureSkipVerify {
 		l.warn("TLS verification disabled for github")
+	}
+	if gl.InsecureSkipVerify {
+		l.warn("TLS verification disabled for gitlab")
 	}
 }
 

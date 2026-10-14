@@ -29,12 +29,15 @@ type Anchor struct {
 	// LineType is LineAdded for a "+" line and LineContext for an unchanged
 	// line of the hunk.
 	LineType provider.LineType
+	// OldLine is the old-side line number of Line when it is a context
+	// line, and 0 for an added line (provider.InlineComment.OldLine).
+	OldLine int
 }
 
 // Comment returns the inline comment with body at the anchor.
 func (a Anchor) Comment(body string) provider.InlineComment {
 	return provider.InlineComment{Path: a.Path, OldPath: a.OldPath, Line: a.Line, EndLine: a.EndLine,
-		LineType: a.LineType, Body: body}
+		LineType: a.LineType, OldLine: a.OldLine, Body: body}
 }
 
 // Resolve returns the anchor of the new-side line range start to end of
@@ -59,7 +62,7 @@ func Resolve(file *provider.FilePatch, start, end int) (Anchor, bool) {
 	if err != nil {
 		return Anchor{}, false
 	}
-	line, last, typ := 0, 0, provider.LineType("")
+	line, last, typ, old := 0, 0, provider.LineType(""), 0
 	for _, h := range hunks {
 		if h.Malformed() {
 			continue
@@ -77,9 +80,11 @@ func Resolve(file *provider.FilePatch, start, end int) (Anchor, bool) {
 				}
 				run = n
 				if line == 0 || n < line {
-					line, typ = n, provider.LineContext
+					// DESIGN-QUESTION WP-6c DQ-c1: improve.anchorFor computes
+					// the line type too; both take OldLine from h.OldLineOf.
+					line, typ, old = n, provider.LineContext, h.OldLineOf(n)
 					if l.Op == '+' {
-						typ = provider.LineAdded
+						typ, old = provider.LineAdded, 0
 					}
 				}
 			}
@@ -92,7 +97,7 @@ func Resolve(file *provider.FilePatch, start, end int) (Anchor, bool) {
 	if line == 0 {
 		return Anchor{}, false
 	}
-	a := Anchor{Path: file.Path, Line: line, LineType: typ}
+	a := Anchor{Path: file.Path, Line: line, LineType: typ, OldLine: old}
 	if last > line {
 		a.EndLine = last
 	}

@@ -24,6 +24,7 @@ const (
 	MissingGiteaTokenMessage           = "no Gitea token in this request: set the X-Review-MCP-Gitea-Token header in your MCP client configuration"                       //nolint:gosec // G101 false positive: a fixed user-facing sentence, not a credential
 	MissingBitbucketServerTokenMessage = "no Bitbucket Server token in this request: set the X-Review-MCP-Bitbucket-Server-Token header in your MCP client configuration" //nolint:gosec // G101 false positive: a fixed user-facing sentence, not a credential
 	MissingGitHubTokenMessage          = "no GitHub token in this request: set the X-Review-MCP-GitHub-Token header in your MCP client configuration"                     //nolint:gosec // G101 false positive: a fixed user-facing sentence, not a credential
+	MissingGitLabTokenMessage          = "no GitLab token in this request: set the X-Review-MCP-GitLab-Token header in your MCP client configuration"                     //nolint:gosec // G101 false positive: a fixed user-facing sentence, not a credential
 	MissingLLMAPIKeyMessage            = "no LLM API key in this request: set the X-Review-MCP-LLM-API-Key header in your MCP client configuration"                       //nolint:gosec // G101 false positive: a fixed user-facing sentence, not a credential
 	ServerBusyMessage                  = "the server is busy: retry shortly"
 )
@@ -60,6 +61,7 @@ var (
 	errMissingGitea = &RequestError{Class: ClassCredentialsMissing, Message: MissingGiteaTokenMessage}
 	errMissingBBS   = &RequestError{Class: ClassCredentialsMissing, Message: MissingBitbucketServerTokenMessage}
 	errMissingGH    = &RequestError{Class: ClassCredentialsMissing, Message: MissingGitHubTokenMessage}
+	errMissingGL    = &RequestError{Class: ClassCredentialsMissing, Message: MissingGitLabTokenMessage}
 	errMissingLLM   = &RequestError{Class: ClassCredentialsMissing, Message: MissingLLMAPIKeyMessage}
 )
 
@@ -113,6 +115,10 @@ func missingCredential(cfg *config.Config, kind provider.Kind, needLLM bool) err
 	case provider.KindGitHub:
 		if !cfg.Secrets.GitHubToken.IsSet() {
 			return errMissingGH
+		}
+	case provider.KindGitLab:
+		if !cfg.Secrets.GitLabToken.IsSet() {
+			return errMissingGL
 		}
 	}
 	if needLLM && !cfg.Secrets.LLMAPIKey.IsSet() {

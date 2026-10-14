@@ -48,3 +48,25 @@ func TestNewResolverResolvesGitHub(t *testing.T) {
 		t.Errorf("unconfigured github.com: err = %v", err)
 	}
 }
+
+func TestNewResolverResolvesGitLab(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Gitea.BaseURL = "https://your-gitea.example"
+	cfg.GitLab.BaseURL = "https://example.com/gitlab"
+	r := NewResolver(cfg, nil)
+
+	ref, p, err := r.Resolve("https://example.com/gitlab/group/sub/project/-/merge_requests/7/diffs")
+	if err != nil || p == nil || p.Kind() != provider.KindGitLab || ref.Kind != provider.KindGitLab ||
+		ref.Namespace != "group/sub" || ref.Repo != "project" || ref.Number != 7 {
+		t.Fatalf("gitlab: ref %+v err %v", ref, err)
+	}
+	// Outside the context path nothing matches.
+	if _, _, err = r.Resolve("https://example.com/group/project/-/merge_requests/7"); !errors.Is(err, provider.ErrURLNotConfigured) {
+		t.Errorf("outside the context path: err = %v", err)
+	}
+	// No GitLab host is assumed when gitlab.base_url is unset (X-2).
+	cfg.GitLab = config.GitLab{}
+	if _, _, err = NewResolver(cfg, nil).Resolve("https://gitlab.com/group/project/-/merge_requests/7"); !errors.Is(err, provider.ErrURLNotConfigured) {
+		t.Errorf("unconfigured gitlab.com: err = %v", err)
+	}
+}

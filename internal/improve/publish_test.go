@@ -525,11 +525,11 @@ func TestAnchorFor(t *testing.T) {
 		start, end int
 		want       string
 	}{
-		"context line":                    {file(provider.ChangeModified, two), 1, 1, "n.go:1:context"},
+		"context line":                    {file(provider.ChangeModified, two), 1, 1, "n.go:1:context:old1"},
 		"added line":                      {file(provider.ChangeModified, two), 2, 2, "n.go:2:added"},
-		"context to added":                {file(provider.ChangeModified, two), 1, 4, "n.go:1-4:context"},
-		"across a removed line":           {file(provider.ChangeModified, two), 1, 3, "n.go:1-3:context"},
-		"whole second hunk":               {file(provider.ChangeModified, two), 21, 23, "n.go:21-23:context"},
+		"context to added":                {file(provider.ChangeModified, two), 1, 4, "n.go:1-4:context:old1"},
+		"across a removed line":           {file(provider.ChangeModified, two), 1, 3, "n.go:1-3:context:old1"},
+		"whole second hunk":               {file(provider.ChangeModified, two), 21, 23, "n.go:21-23:context:old20"},
 		"leaves the first hunk":           {file(provider.ChangeModified, two), 4, 6, ""},
 		"gap between hunks":               {file(provider.ChangeModified, two), 5, 21, ""},
 		"only in the gap":                 {file(provider.ChangeModified, two), 10, 11, ""},
@@ -537,7 +537,7 @@ func TestAnchorFor(t *testing.T) {
 		"end before start":                {file(provider.ChangeModified, two), 3, 2, ""},
 		"adjacent hunks not one":          {file(provider.ChangeModified, adjacent), 2, 3, ""},
 		"removed-only position":           {file(provider.ChangeModified, del), 6, 6, ""},
-		"line before a removal":           {file(provider.ChangeModified, del), 5, 5, "n.go:5:context"},
+		"line before a removal":           {file(provider.ChangeModified, del), 5, 5, "n.go:5:context:old5"},
 		"renamed keeps the old":           {file(provider.ChangeRenamed, two), 2, 2, "n.go:2:added"},
 		"deleted file":                    {file(provider.ChangeDeleted, two), 1, 1, ""},
 		"unparsable":                      {file(provider.ChangeModified, "not a patch"), 1, 1, ""},
@@ -553,6 +553,9 @@ func TestAnchorFor(t *testing.T) {
 				got += "-" + strconv.Itoa(c.EndLine)
 			}
 			got += ":" + string(c.LineType)
+			if c.OldLine != 0 {
+				got += ":old" + strconv.Itoa(c.OldLine)
+			}
 		}
 		if got != tc.want {
 			t.Errorf("%s: %q, want %q", name, got, tc.want)

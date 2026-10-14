@@ -48,6 +48,9 @@ func TestRequireCredentials(t *testing.T) {
 		{"github missing", provider.KindGitHub, secretsCfg("g", "b", "k"), true, MissingGitHubTokenMessage},
 		{"github ok", provider.KindGitHub, config.Defaults().WithSecrets(config.Secrets{GitHubToken: config.NewSecret("h")}), false, ""},
 		{"github before llm", provider.KindGitHub, config.Defaults().WithSecrets(config.Secrets{GitHubToken: config.NewSecret("h")}), true, MissingLLMAPIKeyMessage},
+		{"gitlab missing", provider.KindGitLab, secretsCfg("g", "b", "k"), true, MissingGitLabTokenMessage},
+		{"gitlab ok", provider.KindGitLab, config.Defaults().WithSecrets(config.Secrets{GitLabToken: config.NewSecret("l")}), false, ""},
+		{"gitlab before llm", provider.KindGitLab, config.Defaults().WithSecrets(config.Secrets{GitLabToken: config.NewSecret("l")}), true, MissingLLMAPIKeyMessage},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -90,6 +93,9 @@ func TestRequestErrorMessages(t *testing.T) {
 	}
 	if got := UserMessage(errMissingGH); got != "no GitHub token in this request: set the X-Review-MCP-GitHub-Token header in your MCP client configuration" {
 		t.Errorf("github = %q", got)
+	}
+	if got := UserMessage(errMissingGL); got != "no GitLab token in this request: set the X-Review-MCP-GitLab-Token header in your MCP client configuration" {
+		t.Errorf("gitlab = %q", got)
 	}
 	if ErrCredentialsMissing.Error() != "credentials_missing" {
 		t.Errorf("sentinel text = %q", ErrCredentialsMissing.Error())

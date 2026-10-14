@@ -83,6 +83,35 @@ const (
 // a valid unified hunk header.
 func (h Hunk) Malformed() bool { return h.malformed }
 
+// OldLineOf returns the old-side line number of the context line that is
+// the new-side line newLine of h, and 0 when that line is an added line,
+// is not a new-side line of h, or h is malformed. Inline anchoring uses it
+// for provider.InlineComment.OldLine.
+func (h Hunk) OldLineOf(newLine int) int {
+	if h.malformed {
+		return 0
+	}
+	o, n := h.OldStart, h.NewStart
+	for _, l := range h.Lines {
+		switch l.Op {
+		case ' ':
+			if n == newLine {
+				return o
+			}
+			o++
+			n++
+		case '+':
+			if n == newLine {
+				return 0
+			}
+			n++
+		case '-':
+			o++
+		}
+	}
+	return 0
+}
+
 // ParseHunks parses a hunk-only patch as produced by the providers: it starts
 // at the first "@@" line and has no file header lines. An empty patch yields
 // no hunks. Every non-header line must start with ' ', '+', '-' or '\\';

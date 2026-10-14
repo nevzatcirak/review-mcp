@@ -18,10 +18,11 @@ const (
 	fakeGitea       = "FAKE-gitea-token-ZQ7X-do-not-leak"
 	fakeBitbkt      = "FAKE-bitbucket-token-ZQ7X-do-not-leak"
 	fakeGitHub      = "FAKE-github-token-ZQ7X-do-not-leak"
+	fakeGitLab      = "FAKE-gitlab-token-ZQ7X-do-not-leak"
 	fakeURLUserinfo = "FAKE-url-password-ZQ7X"
 )
 
-var allSecrets = []string{fakeLLMKey, fakeGitea, fakeBitbkt, fakeGitHub, fakeURLUserinfo}
+var allSecrets = []string{fakeLLMKey, fakeGitea, fakeBitbkt, fakeGitHub, fakeGitLab, fakeURLUserinfo}
 
 func validEnv() map[string]string {
 	return map[string]string{
@@ -35,6 +36,8 @@ func validEnv() map[string]string {
 		"REVIEW_MCP_BITBUCKET_SERVER_TOKEN":    fakeBitbkt,
 		"REVIEW_MCP_GITHUB_BASE_URL":           "https://github.example.com",
 		"REVIEW_MCP_GITHUB_TOKEN":              fakeGitHub,
+		"REVIEW_MCP_GITLAB_BASE_URL":           "https://gitlab.example.com",
+		"REVIEW_MCP_GITLAB_TOKEN":              fakeGitLab,
 		"REVIEW_MCP_NOT_A_REAL_SETTING":        "1", // yields a warning
 	}
 }
@@ -45,6 +48,7 @@ func invalidEnv() map[string]string {
 		"REVIEW_MCP_GITEA_TOKEN":               fakeGitea,
 		"REVIEW_MCP_BITBUCKET_SERVER_TOKEN":    fakeBitbkt,
 		"REVIEW_MCP_GITHUB_TOKEN":              fakeGitHub,
+		"REVIEW_MCP_GITLAB_TOKEN":              fakeGitLab,
 		"REVIEW_MCP_BITBUCKET_SERVER_BASE_URL": "ftp://user:" + fakeURLUserinfo + "@bitbucket.example.com",
 		"REVIEW_MCP_LLM_CONTEXT_WINDOW":        "12",
 	}
@@ -188,7 +192,7 @@ func TestStdioValidConfig(t *testing.T) {
 		if got := len(decodeLines(t, stdout)); got != 3 {
 			t.Errorf("responses = %d, want 3:\n%s", got, stdout)
 		}
-		if !strings.Contains(stderr, "review-mcp starting") || !strings.Contains(stderr, "providers=\"[gitea bitbucket_server github]\"") {
+		if !strings.Contains(stderr, "review-mcp starting") || !strings.Contains(stderr, "providers=\"[gitea bitbucket_server github gitlab]\"") {
 			t.Errorf("startup line missing or wrong:\n%s", stderr)
 		}
 		if !strings.Contains(stderr, "level=WARN") {

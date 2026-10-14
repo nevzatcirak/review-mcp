@@ -15,6 +15,7 @@ const (
 	envGiteaToken           = "REVIEW_MCP_GITEA_TOKEN"            //nolint:gosec // G101 false positive: an environment variable name, not a credential
 	envBitbucketServerToken = "REVIEW_MCP_BITBUCKET_SERVER_TOKEN" //nolint:gosec // G101 false positive: an environment variable name, not a credential
 	envGitHubToken          = "REVIEW_MCP_GITHUB_TOKEN"           //nolint:gosec // G101 false positive: an environment variable name, not a credential
+	envGitLabToken          = "REVIEW_MCP_GITLAB_TOKEN"           //nolint:gosec // G101 false positive: an environment variable name, not a credential
 	envServeAccessToken     = "REVIEW_MCP_SERVE_ACCESS_TOKEN"     //nolint:gosec // G101 false positive: an environment variable name, not a credential
 )
 
@@ -58,6 +59,11 @@ var table = []entry{
 	{"github.api_url", "REVIEW_MCP_GITHUB_API_URL", func(c *Config) any { return &c.GitHub.APIURL }},
 	{"github.ca_cert", "REVIEW_MCP_GITHUB_CA_CERT", func(c *Config) any { return &c.GitHub.CACert }},
 	{"github.insecure_skip_verify", "REVIEW_MCP_GITHUB_INSECURE_SKIP_VERIFY", func(c *Config) any { return &c.GitHub.InsecureSkipVerify }},
+
+	// gitlab.* rows: v2 spec 2C §1 item 1 (X-34).
+	{"gitlab.base_url", "REVIEW_MCP_GITLAB_BASE_URL", func(c *Config) any { return &c.GitLab.BaseURL }},
+	{"gitlab.ca_cert", "REVIEW_MCP_GITLAB_CA_CERT", func(c *Config) any { return &c.GitLab.CACert }},
+	{"gitlab.insecure_skip_verify", "REVIEW_MCP_GITLAB_INSECURE_SKIP_VERIFY", func(c *Config) any { return &c.GitLab.InsecureSkipVerify }},
 
 	{"output.language", "REVIEW_MCP_OUTPUT_LANGUAGE", func(c *Config) any { return &c.Output.Language }},
 
@@ -138,6 +144,7 @@ var secretTable = []secretEntry{
 	{"gitea.token", envGiteaToken, func(c *Config) *Secret { return &c.Secrets.GiteaToken }},
 	{"bitbucket_server.token", envBitbucketServerToken, func(c *Config) *Secret { return &c.Secrets.BitbucketServerToken }},
 	{"github.token", envGitHubToken, func(c *Config) *Secret { return &c.Secrets.GitHubToken }},
+	{"gitlab.token", envGitLabToken, func(c *Config) *Secret { return &c.Secrets.GitLabToken }},
 	{"serve.access_token", envServeAccessToken, func(c *Config) *Secret { return &c.Secrets.ServeAccessToken }},
 }
 
@@ -149,6 +156,7 @@ var urlKeys = map[string]bool{
 	"bitbucket_server.base_url": true,
 	"github.base_url":           true,
 	"github.api_url":            true,
+	"gitlab.base_url":           true,
 }
 
 var (

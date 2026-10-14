@@ -48,7 +48,7 @@ The structured result has the same facts:
 | `reviewers[].at` | when the state was given; omitted when the provider does not say |
 | `approvals` | `{approved, changes_requested, pending}` counted over `reviewers` (reviewers who only commented are in none of them); `null` with `reviewers` |
 | `required_approvals` | the number of approvals the target branch requires; `0` with a note when no protection rule applies; `null` when it is not known |
-| `required_approvals_note` | a fixed text whenever `required_approvals` is `null`, `0` because no rule applies, or a lower bound: "not readable with this token", "a protection pattern could not be evaluated", "no branch protection rule applies to the target branch", or (GitHub) "classic branch protection is not readable with this token; the required count may be higher" (see [Troubleshooting](troubleshooting.md#pr_info-required_approvals-notes)) |
+| `required_approvals_note` | a fixed text whenever `required_approvals` is `null`, `0` because no rule applies, or a lower bound: "not readable with this token", "a protection pattern could not be evaluated", "no branch protection rule applies to the target branch", or (GitHub) "classic branch protection is not readable with this token; the required count may be higher", or (GitLab) "no approval rule applies to this merge request" (see [Troubleshooting](troubleshooting.md#pr_info-required_approvals-notes)) |
 | `mergeable` | `true`, `false`, or `null` when unknown (also `null` for a pull request that is not open) |
 | `merge_blockers` | short fixed reasons, only where the provider gives structured ones |
 | `ci` | the CI results the repository reported for the head commit; always present (see [CI results](#ci-results)) |
@@ -161,6 +161,62 @@ Rules:
 - A pull request with more than 250 commits gets the note "GitHub lists at most
   250 commits of a pull request; the commits past them are not available."
 
+### GitLab
+
+| Fact | Source |
+|---|---|
+| title, author, state, `draft`, branches, head, merge base, `detailed_merge_status` | `GET /projects/{id}/merge_requests/{iid}` (read again for the status) |
+| reviewers and their states | `GET .../merge_requests/{iid}/reviewers` |
+| approvers, required approvals | `GET .../merge_requests/{iid}/approvals` (`approved_by`, `approvals_required`) |
+| review-mcp's own marked overview and inline findings | the discussions, as for `pr_comments`; `GET /user` for the token's user |
+
+Rules:
+
+- Every listed reviewer is `requested: true`. GitLab's reviewer `state` maps as:
+  `approved` is `approved`, `requested_changes` is `changes_requested`,
+  `reviewed` is `commented`, and `unreviewed`, `review_started`, `unapproved`
+  and any other value are `pending`.
+- A user in `approved_by` is **approved now**. A requested reviewer who is
+  listed there is reported `approved` whatever `/reviewers` says, except a
+  reviewer whose state is `requested_changes`, who keeps `changes_requested`
+  (older 16.x servers report only `unreviewed` and `reviewed`). An approver
+  who is not a reviewer is added as `approved` with `requested: false`.
+- `stale` is always false: GitLab reports no commit per approval, and `at` is
+  omitted.
+- A `404` on `/reviewers` falls back to the merge request's own reviewers, all
+  `pending`. Any other failure is `reviewers: null` with the note "The reviews
+  could not be read, so the reviewers are not listed." When only `/approvals`
+  cannot be read, the reviewers from `/reviewers` are still listed (without
+  the approvers who are not reviewers) and `required_approvals` is `null` with
+  "not readable with this token".
+- `required_approvals` is `approvals_required`. `0` comes with the note "no
+  approval rule applies to this merge request"; an absent value is `null` with
+  "not readable with this token".
+- `mergeable` and `merge_blockers` come from `detailed_merge_status`; the value
+  itself is never shown:
+
+  | `detailed_merge_status` | `mergeable` | `merge_blockers` |
+  |---|---|---|
+  | `mergeable` | `true` | none |
+  | `unchecked`, `checking`, `approvals_syncing`, `preparing` | `null` | none |
+  | `conflict`, `broken_status` | `false` | "merge conflict" |
+  | `ci_must_pass`, `ci_still_running`, `external_status_checks`, `security_policy_pipeline_check` | `false` | "required builds are missing or failing" |
+  | `discussions_not_resolved` | `false` | "unresolved discussions must be resolved" |
+  | `draft_status` | `false` | "the pull request is a draft" |
+  | `need_rebase` | `false` | "the branch is behind the target branch" |
+  | `not_approved` | `false` | "required approvals missing" |
+  | `requested_changes` | `false` | "a reviewer marked the pull request as needs work" |
+  | anything else (`not_open`, `blocked_status`, `merge_request_blocked`, `jira_association_missing`, `title_regex`, `merge_time`, `locked_paths`, an unknown value) | `false` | "other merge check" |
+
+  A merged or closed merge request gets no merge state. An open one with no
+  `detailed_merge_status` is `null` with the note "The merge status could not
+  be read." The "unresolved discussions" blocker needs the project setting
+  "All threads must be resolved".
+- review-mcp never approves, so it has no review of its own to leave out; its
+  comments are counted under `review_mcp_activity`.
+
+See [GitLab](gitlab.md#pr_info).
+
 ## CI results
 
 `ci` is what the repository's own CI reported for the head commit: statuses and
@@ -200,7 +256,9 @@ controls `pr_review`. The same object, with the same rules, is in the
   and skipped checks count as passing.
 - Where the facts come from: Gitea, the combined commit status of the head
   commit; Bitbucket Server, the repository's build statuses (the older build
-  status API only when the first answers 404); GitHub, the check runs and the
+  status API only when the first answers 404); GitLab, the commit statuses of the
+  head commit (the latest status per name; the pipelines of merged results,
+  merge trains and forks are not read, see [GitLab](gitlab.md#ci-results)); GitHub, the check runs and the
   combined commit status, merged by name with the check run winning. Without
   the **Checks** or the **Commit statuses** permission only the other list is
   read: the state covers that list, `ci.note` says "Only part of the CI results
@@ -255,4 +313,6 @@ Commit statuses read and Checks read (a classic token needs no more than the
 branch protection needs Administration read, without which the count comes from
 the rulesets alone, with a note. Gitea and Bitbucket Server need nothing extra
 for `ci`: the read access above covers the commit status and the build status.
+GitLab: `read_api` (a personal access token) or the Reporter role (a project or
+group access token); that covers the approvals and the commit statuses too.
 The full endpoint list is in the [Setup guide](setup.md#what-each-token-needs).

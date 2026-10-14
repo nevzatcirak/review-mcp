@@ -219,3 +219,52 @@ func TestPlanInlineDiffBlockFallback(t *testing.T) {
 		}
 	}
 }
+
+// gitlabCaps is a provider with the offset style and QuickActions.
+var gitlabCaps = provider.Capabilities{GFM: true, MarkdownTables: true, Labels: true, InlineComments: true,
+	SuggestionBlocks: true, SuggestionStyle: provider.SuggestionStyleOffset, QuickActions: true}
+
+// TestPlanInlineSuggestionBlockKeepsSlashComments (X-35): on a provider
+// with QuickActions a suggestion whose improved code has a Go doc comment
+// at column 0 gets a native block whose code is byte for byte the improved
+// code after the body was sanitised. [canary: keep sanitising "//" lines
+// inside the block]
+func TestPlanInlineSuggestionBlockKeepsSlashComments(t *testing.T) {
+	s := blockSuggestion("func Run() {", "// Retry runs the loop again.\nfunc Run() {", 3, 3)
+	items := planBlocks(t, gitlabCaps, true, s)
+	want := "```suggestion\n// Retry runs the loop again.\nfunc Run() {\n```"
+	if got := change(items[0]); got != want {
+		t.Errorf("change\n%q\nwant\n%q", got, want)
+	}
+	if strings.Contains(items[0].item.Body, ReasonSlashDiffBlock) {
+		t.Errorf("a doc comment gave the slash-command reason: %q", items[0].item.Body)
+	}
+}
+
+// TestPlanInlineSlashCommandFallsBackToDiff (X-35): improved code with a
+// line that could be a quick action is shown as the diff block with the
+// fixed reason, on a provider with QuickActions only; the diff block's
+// lines start with "+" or "-", so the code stays exact. A re-indented line
+// that no longer starts with "/" keeps the native block.
+func TestPlanInlineSlashCommandFallsBackToDiff(t *testing.T) {
+	slash := blockSuggestion("func Run() {", "/merge\nfunc Run() {", 3, 3)
+	items := planBlocks(t, gitlabCaps, true, slash)
+	want := "```diff\n-func Run() {\n+/merge\n+func Run() {\n```\n\n" + SlashDiffBlockLine
+	if got := change(items[0]); got != want {
+		t.Errorf("change\n%q\nwant\n%q", got, want)
+	}
+	for _, l := range strings.Split(items[0].item.Body, "\n") {
+		if provider.QuickActionLine(l) {
+			t.Errorf("the published body has a quick-action line %q", l)
+		}
+	}
+	// Without QuickActions (the range style of GitHub) the block is native.
+	if got := change(planBlocks(t, githubCaps, true, slash)[0]); got != "```suggestion\n/merge\nfunc Run() {\n```" {
+		t.Errorf("without QuickActions: change %q", got)
+	}
+	// Re-indented by two tabs, the line is no longer a quick action.
+	indented := blockSuggestion("call(i)", "/merge(i)", 5, 5)
+	if got := change(planBlocks(t, gitlabCaps, true, indented)[0]); got != "```suggestion\n\t\t/merge(i)\n```" {
+		t.Errorf("re-indented: change %q", got)
+	}
+}

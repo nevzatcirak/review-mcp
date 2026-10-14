@@ -13,6 +13,7 @@ see [Getting started](getting-started.md)), then run:
 review-mcp diag pr https://your-gitea.example/octo/demo/pulls/7
 review-mcp diag pr https://bitbucket.example.com/projects/PROJ/repos/demo/pull-requests/7
 review-mcp diag pr https://github.example.com/octo/demo/pull/7
+review-mcp diag pr https://gitlab.example.com/group/sub/project/-/merge_requests/7
 ```
 
 The command resolves the provider from the URL, fetches the pull request, its
@@ -64,6 +65,7 @@ It tells you which revision the diff was computed against (`base_sha`).
 | `bbs:ancestor_walk` | The merge-base endpoint answered 404, so the common ancestor was found by walking the target branch history. |
 | `github:merge_base` | GitHub's compare endpoint reported the merge base; this is the normal case. |
 | `github:base_sha` | The compare endpoint could not be read, so the target branch revision recorded on the pull request (`base.sha`) was used. |
+| `gitlab:diff_refs` | GitLab reported the diff base (`diff_refs.base_sha`); this is the only value on GitLab. |
 
 ### `skipped` reasons
 
@@ -71,9 +73,9 @@ A skipped file is not part of `files` and is not reviewed.
 
 | Reason | Meaning |
 |---|---|
-| `binary` | The file is binary (on GitHub: no patch, and its extension is on the binary list). |
+| `binary` | The file is binary (on GitHub: no patch, and its extension is on the binary list; on GitLab: an empty diff and an extension on the binary list, or a diff that starts with `Binary files `). |
 | `file_limit` | More files than `diff.max_files_full_content` (Bitbucket Server cannot build a patch without file contents). GitHub's own 3000-file listing limit is a note, not a skipped file (see [GitHub](#github)). |
-| `size_limit` | A side of the file is larger than `diff.max_file_bytes` (Bitbucket Server); on GitHub, a file with line changes whose patch GitHub did not send because the diff is too large. |
+| `size_limit` | A side of the file is larger than `diff.max_file_bytes` (Bitbucket Server); on GitHub, a file with line changes whose patch GitHub did not send because the diff is too large; on GitLab, a file GitLab marked `too_large` or `collapsed`. |
 | `fetch_failed` | The file's contents could not be fetched or it is listed by only one of Gitea's two sources. |
 | `filtered` | An ignore rule excluded the file (`diag pr` applies none; `diag diff` applies the file filter and says which rule matched). |
 
@@ -127,7 +129,8 @@ a new PR-level comment that starts with a quote line such as
 `> Replying to @alice on src/app.go:10`, and `"in_thread": false` is expected
 there. On GitHub a reply to an inline comment lands inside the thread, and a
 reply to a general comment or a review body is a new PR-level comment with the
-quote line `> Replying to @alice`. This needs write access (see the token
+quote line `> Replying to @alice`. On GitLab a reply always lands inside the
+thread (`"in_thread": true`), for general and inline discussions alike. This needs write access (see the token
 scopes below).
 
 ## Read the prepared diff with `diag diff`
@@ -360,7 +363,7 @@ log as an error class (`REVIEW_MCP_LOG_LEVEL=debug`). See
 
 | Sentence | Where | Cause and what to do |
 |---|---|---|
-| The CI results of the head commit could not be read. | `ci.note` (`ci.state` is `unreadable`); the overview line is "CI status could not be read" | Reading the head commit's statuses or checks failed, for any reason. On GitHub the token needs **Commit statuses: Read** and **Checks: Read**; with only one of them the read is partial (next row), with neither it is `unreadable`. On Gitea and Bitbucket Server the read access to the repository is enough, so check the token and the server ([Token scopes](#token-scopes)). `pr_info` shows the same sentence. The debug log line `ci: checks not read` names the error class. |
+| The CI results of the head commit could not be read. | `ci.note` (`ci.state` is `unreadable`); the overview line is "CI status could not be read" | Reading the head commit's statuses or checks failed, for any reason. On GitHub the token needs **Commit statuses: Read** and **Checks: Read**; with only one of them the read is partial (next row), with neither it is `unreadable`. On GitLab `read_api` (or the Reporter role) is enough; the pipelines of merged results and of a fork's project are not read, see [GitLab](#gitlab). On Gitea and Bitbucket Server the read access to the repository is enough, so check the token and the server ([Token scopes](#token-scopes)). `pr_info` shows the same sentence. The debug log line `ci: checks not read` names the error class. |
 | Only part of the CI results could be read with this token (check runs or commit statuses). | `ci.note`; the overview line ends with "; only part of the CI results could be read with this token" | GitHub only: the token may read the check runs but not the commit statuses, or the reverse (one list answered 401, 403 or 404). `state` and the counts cover the list that was read, so a failing check in the other list is not seen. Give a fine-grained token both **Checks: Read** and **Commit statuses: Read** ([Token scopes](#token-scopes)); the debug log line `github checks: ... not readable` names which list and the error class. |
 | The host reported more CI checks than could be read; the counts and the list are incomplete. | `ci.note`; the overview line ends with "; more checks exist than were read" | The commit has more than 500 checks. The counts and `state` cover what was read, so a failing check among the unread ones is not seen. Nothing to change in review-mcp; look at the CI page. |
 | The CI results were left out of the prompt to stay within the CI token budget. | `notes` | The CI block did not fit `review.max_ci_tokens`, or the context window left no room for the diff beside it (the CI block is the last optional block to go). The `ci` object and the overview line are unaffected. Raise `review.max_ci_tokens`, or use a larger `llm.context_window`. |
@@ -577,6 +580,169 @@ public product, your GHES address otherwise), not the API address, and that
 the scheme and port match. A GHES whose API is not at `{base}/api/v3` needs
 `github.api_url`.
 
+## GitLab
+
+What to check when a GitLab merge request does not work as expected. The full
+behaviour is in [GitLab](gitlab.md); the sentences below are exact.
+
+### Rate limited
+
+```text
+the server rate-limited the request (HTTP 429): retry after 2026-10-09 12:30:00 UTC
+```
+
+GitLab answers `429`, or `403` with `RateLimit-Remaining: 0`, when a token
+makes too many requests. The time is the reset, in UTC. review-mcp itself
+waits at most once, only when the reset is 60 seconds or less away, and then
+repeats the request one time. **What to do:** wait until the time shown and run
+the tool again, and do not start several reviews at once with one token. When
+the sentence ends at `(HTTP 429)` or `(HTTP 403)` with no time, GitLab sent no
+usable reset. A `403` without `RateLimit-Remaining: 0` is an authentication
+problem instead, see below.
+
+### Authentication failed on GitLab
+
+`authentication failed: check the token and its scopes (HTTP 401)` or
+`(HTTP 403)`. **What to do:** check that the token is valid and has not
+expired. A personal access token needs `read_api` (read) or `api` (publish,
+reply, create comments, edit the description), and `read_repository` for the
+repository context; a project or group access token needs the role Reporter
+(read) or Developer (publish) and belongs to one project or group only. A
+project or group the token cannot see answers `the requested resource was not
+found` (HTTP 404). See [GitLab](gitlab.md#token).
+
+### The diff is not ready
+
+```text
+the server reported an internal error: the merge request's diff is not ready yet; try again in a moment
+```
+
+GitLab fills the diff of a merge request asynchronously: right after it is
+created, or after a push, `diff_refs` is empty or still names an older head. The
+read is retried once after 2 seconds; this sentence means it was still not
+ready. **What to do:** run the tool again in a moment. `pr_comments` can fail the
+same way for a few seconds after a push; posting a comment does not wait for the
+diff. If it never clears, open the merge request in the browser and check that GitLab shows its changes.
+
+### Version
+
+```text
+the server version is not supported: GitLab 16.0 or newer is required
+```
+
+An endpoint answered `404` although the merge request itself could be read, so
+the instance is older than GitLab 16.0 (review-mcp reads the diff from
+`GET .../diffs` and needs `detailed_merge_status`). **What to do:** upgrade
+GitLab; there is no fallback to the older `/changes` endpoint.
+
+### A link points outside the API base
+
+```text
+the server sent an unexpected response: a link in the response points outside the configured API base
+```
+
+Paging follows the `Link` header, and only a next link on the configured API
+base (`{gitlab.base_url}/api/v4`) is followed; any other link is refused so
+that the token is never sent to another host. This appears on a list with more
+than one page (the changed files, the discussions, the commit statuses) when a
+reverse proxy sits in front of GitLab, or when the instance's `external_url`
+differs from `gitlab.base_url` in scheme, host, port or context path: GitLab
+builds the `Link` header from its own `external_url`. **What to do:** set
+`REVIEW_MCP_GITLAB_BASE_URL` to the address in GitLab's `external_url`, or
+change `external_url` to the address review-mcp uses. `server_info` shows the
+API base in use. The links to comments (`web_url`) come from GitLab too, so
+behind such a proxy they can differ from the URL you typed; see
+[GitLab](gitlab.md#a-proxy-or-an-external_url-that-differs-from-the-base-url).
+
+### Limits of what GitLab lists
+
+| Note | Meaning and what to do |
+|---|---|
+| `GitLab did not list every changed file (its diff limit was reached); the files it left out are not reviewed.` | The merge request is so large that GitLab stopped listing changed files (`changes_count` ends in `+`). The listed files are reviewed; the others are not, have no name in the result and are not counted in the coverage. Split the merge request or review them by hand. |
+| `review-mcp reads at most 4000 changed files of a merge request; the files GitLab listed after them are not reviewed.` | GitLab listed more than 40 pages of 100 files. The files past the cap are not reviewed. Split the merge request. |
+
+### Inline comments that GitLab could not place
+
+These are the `error` of an inline comment (`pr_review`, `pr_improve`,
+`pr_comment_create` with a file and a line) in the publish result.
+
+| Sentence | Meaning and what to do |
+|---|---|
+| `GitLab could not place the inline comment on its line; the general comment it created instead was removed` | Reason `unanchorable`. GitLab answered `201` with a general note instead of a diff note, and review-mcp deleted that note at once. The line may not be on the merge request's diff (the head moved on, or the line is outside the changes). Run again after reading the merge request again; the finding stays in the overview. |
+| `an inline comment GitLab could not place was posted as a general comment and could not be removed` | Reason `failed`. The same, but the note could not be deleted (the token may not delete its own notes, or the request failed). **A general comment is still on the merge request:** delete it by hand. |
+| `the server sent an unexpected response: the created discussion's note was not reported` | GitLab answered `201` for the discussion but named no note, so the outcome cannot be checked. Look at the merge request for the comment. |
+| `the request conflicts with the current state on the server: the merge request's head changed; read it again` | The merge request's head moved between the read and the post. Run the tool again. |
+
+### `pr_info` on GitLab
+
+| Sentence | Meaning and what to do |
+|---|---|
+| `no approval rule applies to this merge request` (`required_approvals` is `0`) | GitLab reported `approvals_required` of 0: no approval rule applies. Not an error. |
+| `not readable with this token` (`required_approvals` is `null`) | `/approvals` could not be read or has no `approvals_required`. The reviewers from `/reviewers` are still listed, without approvers who are not reviewers. Check the token's scope (`read_api`) and the role. |
+| `The reviews could not be read, so the reviewers are not listed.` | `/reviewers` failed with something other than a `404`. The merge and approval facts are still returned. |
+| `The merge status could not be read.` | An open merge request came without `detailed_merge_status`. `mergeable` is `null`; run again. |
+
+`merge_blockers` are fixed texts from `detailed_merge_status`:
+
+| Blocker | Cause and what to do |
+|---|---|
+| merge conflict | `conflict` or `broken_status`. Rebase or merge the target. |
+| required builds are missing or failing | `ci_must_pass`, `ci_still_running`, `external_status_checks` or `security_policy_pipeline_check`. Look at the pipeline page. |
+| unresolved discussions must be resolved | `discussions_not_resolved`. The project requires every thread to be resolved ("All threads must be resolved") and one is open. |
+| the pull request is a draft | `draft_status`. Mark it ready. |
+| the branch is behind the target branch | `need_rebase`. Rebase the branch. |
+| required approvals missing | `not_approved`. |
+| a reviewer marked the pull request as needs work | `requested_changes`. |
+| other merge check | Any other value (`not_open`, `blocked_status`, `merge_request_blocked`, `jira_association_missing`, `title_regex`, `merge_time`, `locked_paths`, or one review-mcp does not know). GitLab names a single reason; look at the merge request page. |
+
+When `mergeable` is `null` and there are no blockers, GitLab has not computed the
+merge status yet (`unchecked`, `checking`, `approvals_syncing`, `preparing`);
+run `pr_info` again in a moment.
+
+### The description has a line GitLab could run as a quick action
+
+```text
+the description has a line GitLab could run as a quick action; publish in comment mode instead
+```
+
+`pr_describe` with `publish_mode=description` was refused before any write.
+GitLab runs a quick action (a line that starts with `/` followed by a letter, a
+digit or an underscore, after up to three spaces: `/label ~x`, `/close`) when a
+description is updated, and review-mcp never changes the author's text, so it
+cannot make that line harmless. **What to do:** publish in comment mode
+(`publish_mode=comment`), or edit the description so that no line outside
+review-mcp's region starts that way. The refusal also applies to a run that
+would only change the title. See
+[GitLab](gitlab.md#quick-action-safety).
+
+### A suggestion is shown as a diff, not as a block
+
+```text
+Note: a line of the suggested code starts with a slash command, so it is shown as a diff.
+```
+
+This paragraph is in an inline comment of `pr_improve` that has no "Apply
+suggestion" button. A line of the suggested code starts with `/` followed by a
+letter, a digit or an underscore, which GitLab could run as a quick action if it
+were published, so the suggestion is shown as the fenced `diff` block instead. It
+is a reading aid: copy the change by hand. A code line such as `// comment` does
+not cause this.
+
+### Configuration sentences (GitLab)
+
+| Sentence | What to do |
+|---|---|
+| `REVIEW_MCP_GITLAB_TOKEN is required because gitlab.base_url is set` | Stdio: set the token. |
+| `REVIEW_MCP_GITLAB_TOKEN is set but gitlab is not enabled (gitlab.base_url is unset); the token is ignored` | Warning: set `REVIEW_MCP_GITLAB_BASE_URL`, or unset the token. |
+| `TLS verification disabled for gitlab` | Warning: `REVIEW_MCP_GITLAB_INSECURE_SKIP_VERIFY` is set. Prefer `REVIEW_MCP_GITLAB_CA_CERT`. |
+| `no provider enabled: set gitea.base_url (...), bitbucket_server.base_url (...), github.base_url (...) and/or gitlab.base_url (...)` | No provider has a base URL; set at least one. |
+
+A GitLab URL that reports `url_not_configured` although it looks right: check
+that `gitlab.base_url` is the web address (`https://gitlab.com` for the public
+product, your own address, with its context path, otherwise), and that the
+scheme and port match. A URL without `/-/` before `merge_requests`, or with a
+tail other than `/diffs`, `/commits` or `/pipelines`, is `url_malformed`.
+
 ## Repository context was skipped
 
 The coverage section says `Repository context: skipped: <reason>` (and
@@ -696,7 +862,8 @@ is still returned, and the reason is the fixed sentence in `publish.error`
 | The pull request description contains a damaged review-mcp region; fix or remove it and run again. | `publish_mode=description` found marker lines that are not exactly one `[//]: # (review-mcp:describe:start)` line followed by one `[//]: # (review-mcp:describe:end)` line: two or more starts or ends, an end before a start, a start without an end, or an end without a start. Nothing was written. Open the description in the web UI and fix it: either delete both marker lines and everything between them (the next run appends a fresh region), or restore the missing marker. A marker is a line that equals the marker text once spaces and tabs at its ends are removed. **Fences are not special:** a marker line inside a fenced code block, for example a pasted copy of an earlier description in a code block, counts too, and also makes the region damaged. Remove or change that line (adding a character to it is enough). |
 | The pull request description changed while it was being updated; nothing was written. | Someone edited the description (or, on Bitbucket Server, changed the pull request) between the read and the write, twice in a row. review-mcp never overwrites such an edit. Nothing was written; wait until the editing is done and run again. |
 | Nothing was described, so the pull request description was not changed. | `publish_mode=description` with no described file and no summary: an empty region would replace an earlier good one, so nothing was sent. Look at the Not described section and the notes for why (`not_returned`, a failed part, a diff that did not fit), fix that, and run again. `publish_mode=comment` still publishes the coverage and the notes. |
-| This provider does not support editing the pull request description; use publish_mode=comment. | The provider has no description edit (the capability `DescriptionEdit`). Gitea, Bitbucket Server and GitHub all have it, so you see this only with a provider that does not. Use `publish_mode=comment`. No request was made. |
+| the description has a line GitLab could run as a quick action; publish in comment mode instead | GitLab only. The author's text of the description (outside review-mcp's region) has a line that starts with `/` and a letter, a digit or an underscore, after up to three spaces, which GitLab would run when the description is updated. Nothing was written, also when only the title would change. Publish in comment mode, or remove the line; see [GitLab](#the-description-has-a-line-gitlab-could-run-as-a-quick-action). |
+| This provider does not support editing the pull request description; use publish_mode=comment. | The provider has no description edit (the capability `DescriptionEdit`). Gitea, Bitbucket Server, GitHub and GitLab all have it, so you see this only with a provider that does not. Use `publish_mode=comment`. No request was made. |
 | authentication failed: check the token and its scopes (HTTP 403) | The token may read the pull request but not write it. Description mode needs write access to the pull request, comment mode write access to comments; see [Token scopes](#token-scopes). |
 | the server sent an unexpected response: a reviewer cannot be named, so the update was not sent | Bitbucket Server only. The update is a full `PUT` that sends the reviewers back by user name, and one reviewer in the server's answer has none. review-mcp refuses rather than send a list that would drop that reviewer. Nothing was written; use `publish_mode=comment`, or edit the description by hand. |
 | the description could not be published to the pull request | An error that is not one of the classified provider errors. Rerun with `REVIEW_MCP_LOG_LEVEL=debug`; the log names the failing step, never content. |
@@ -736,7 +903,10 @@ title. Two limits:
 - The prefix is kept only when the server reports the pull request as a draft.
 
 Bitbucket Server keeps the draft state as a flag, and the update sends it back
-unchanged.
+unchanged. On GitLab a draft is also a title prefix, and the known prefixes are
+`Draft:`, `[Draft]` and `(Draft)` as well as `WIP:` and `[WIP]`, in any case; the
+same two rules apply. GitLab's own setting is fixed, so no prefix is unknown
+there.
 
 ### Describe errors and arguments
 
@@ -909,14 +1079,14 @@ sentence, for example `authentication failed: check the token and its scopes (HT
 
 | Sentence | Class | Meaning and what to check |
 |---|---|---|
-| the pull request URL does not match any configured provider | `url_not_configured` | The URL's scheme, host, port or path prefix matches no configured base URL (or Gitea `web_url`). Compare it with `REVIEW_MCP_GITEA_BASE_URL` / `REVIEW_MCP_BITBUCKET_SERVER_BASE_URL` / `REVIEW_MCP_GITHUB_BASE_URL`, including `http` vs `https`, the port, and a Bitbucket context path. No request was sent. |
-| the URL matches a configured provider but is not a pull request URL | `url_malformed` | Use the PR page URL: `.../{owner}/{repo}/pulls/{n}` (Gitea), `.../{owner}/{repo}/pull/{n}` (GitHub) or `.../projects/{KEY}/repos/{slug}/pull-requests/{id}` (Bitbucket Server; `/users/{user}/repos/...` for personal repositories). Do not put credentials in the URL. |
+| the pull request URL does not match any configured provider | `url_not_configured` | The URL's scheme, host, port or path prefix matches no configured base URL (or Gitea `web_url`). Compare it with `REVIEW_MCP_GITEA_BASE_URL` / `REVIEW_MCP_BITBUCKET_SERVER_BASE_URL` / `REVIEW_MCP_GITHUB_BASE_URL` / `REVIEW_MCP_GITLAB_BASE_URL`, including `http` vs `https`, the port, and a Bitbucket context path. No request was sent. |
+| the URL matches a configured provider but is not a pull request URL | `url_malformed` | Use the PR page URL: `.../{owner}/{repo}/pulls/{n}` (Gitea), `.../{owner}/{repo}/pull/{n}` (GitHub), `.../{namespace}/{project}/-/merge_requests/{iid}` (GitLab; the `/-/` is required, and only `/diffs`, `/commits` or `/pipelines` may follow the number) or `.../projects/{KEY}/repos/{slug}/pull-requests/{id}` (Bitbucket Server; `/users/{user}/repos/...` for personal repositories). Do not put credentials in the URL. |
 | authentication failed: check the token and its scopes | `auth` (HTTP 401/403) | The token is wrong, expired, or lacks a scope; see the token scopes below. Also check that the token belongs to the provider whose URL you used. |
 | the requested resource was not found | `not_found` (HTTP 404) | The repository or PR does not exist, or the token's user cannot see it (many servers answer 404 for a hidden repository). On Bitbucket Server, a wrong context path also gives 404. |
-| the server rate-limited the request | `rate_limited` (HTTP 429, or 403 on GitHub) | Wait and retry; check any rate limits or a reverse proxy in front of the server. On GitHub the sentence ends with the reset time when it is known; see [GitHub](#github). |
-| the server reported an internal error | `upstream` (HTTP 5xx) | The provider (or a proxy in front of it) failed. Look at the server's own logs. |
+| the server rate-limited the request | `rate_limited` (HTTP 429, or 403 on GitHub and GitLab) | Wait and retry; check any rate limits or a reverse proxy in front of the server. On GitHub and GitLab the sentence ends with the reset time when it is known; see [GitHub](#github) and [GitLab](#gitlab). |
+| the server reported an internal error | `upstream` (HTTP 5xx) | The provider (or a proxy in front of it) failed. Look at the server's own logs. On GitLab the hint `the merge request's diff is not ready yet; try again in a moment` is not a server failure; see [GitLab](#the-diff-is-not-ready). |
 | a response exceeded its size limit | `too_large` | The hint names the limit: `diff.max_diff_bytes` or `diff.max_file_bytes`; raise it, or review a smaller PR. The hint `(json response limit)` is a fixed 10 MiB safety cap on JSON responses and is not configurable; if you hit it, please report it. |
-| the server version is not supported | `unsupported_version` | Bitbucket Server / Data Center 7.0 or later is required. |
+| the server version is not supported | `unsupported_version` | Bitbucket Server / Data Center 7.0 or later is required; GitLab 16.0 or newer (the hint `GitLab 16.0 or newer is required`, see [GitLab](#version)). |
 | could not complete the request to the server | `transport` | The hint says why: `DNS lookup failed` (check the host name), `timeout` (check the network, proxy and server load), `TLS verification failed` (see CA certificates below), `connection failed` (check the port, firewall and scheme). |
 | the server sent an unexpected response | `protocol` | The server answered, but not in the expected shape. Check that the base URL points at the real API host and context path, not at a login page or a proxy; a redirect to another host is refused. A 4xx other than 401/403/404/429 also lands here. |
 
@@ -938,16 +1108,16 @@ table also covers the configuration, argument and serve-mode errors.
 | Sentence | Class | Cause and what to check |
 |---|---|---|
 | review-mcp configuration is invalid; call server_info for the list of problems | `config_invalid` | The server started in degraded mode. Call `server_info`: `problems` lists every invalid key. Fix the environment or file and restart the server. Nothing was sent. |
-| the pull request URL does not match any configured provider | `url_not_configured` | The URL matches no provider's base URL (or Gitea `web_url`). Check `REVIEW_MCP_GITEA_BASE_URL` / `REVIEW_MCP_BITBUCKET_SERVER_BASE_URL` / `REVIEW_MCP_GITHUB_BASE_URL`: scheme, host, port, context path. |
+| the pull request URL does not match any configured provider | `url_not_configured` | The URL matches no provider's base URL (or Gitea `web_url`). Check `REVIEW_MCP_GITEA_BASE_URL` / `REVIEW_MCP_BITBUCKET_SERVER_BASE_URL` / `REVIEW_MCP_GITHUB_BASE_URL` / `REVIEW_MCP_GITLAB_BASE_URL`: scheme, host, port, context path. |
 | the URL matches a configured provider but is not a pull request URL | `url_malformed` | Use the PR page URL; no credentials in the URL. |
-| authentication failed: check the token and its scopes | `auth` | Wrong, expired or under-privileged provider token. Check `REVIEW_MCP_GITEA_TOKEN` / `REVIEW_MCP_BITBUCKET_SERVER_TOKEN` / `REVIEW_MCP_GITHUB_TOKEN` (stdio) or the `X-Review-MCP-...-Token` header (serve), and [Token scopes](#token-scopes). |
+| authentication failed: check the token and its scopes | `auth` | Wrong, expired or under-privileged provider token. Check `REVIEW_MCP_GITEA_TOKEN` / `REVIEW_MCP_BITBUCKET_SERVER_TOKEN` / `REVIEW_MCP_GITHUB_TOKEN` / `REVIEW_MCP_GITLAB_TOKEN` (stdio) or the `X-Review-MCP-...-Token` header (serve), and [Token scopes](#token-scopes). |
 | the requested resource was not found | `not_found` | Wrong repository or PR, a token that cannot see it, or a wrong Bitbucket context path. |
-| the server rate-limited the request | `rate_limited` | Provider or proxy rate limit; wait and retry. GitHub adds `(HTTP 403)` or `(HTTP 429)` and, when known, `: retry after <time> UTC`. |
+| the server rate-limited the request | `rate_limited` | Provider or proxy rate limit; wait and retry. GitHub and GitLab add `(HTTP 403)` or `(HTTP 429)` and, when known, `: retry after <time> UTC`. |
 | the server reported an internal error | `upstream` | Provider (or its proxy) failed; see its logs. |
 | a response exceeded its size limit | `too_large` | Check `diff.max_diff_bytes` / `diff.max_file_bytes` (named in the hint). |
-| the server version is not supported | `unsupported_version` | Bitbucket Server / Data Center 7.0 or later is required. |
+| the server version is not supported | `unsupported_version` | Bitbucket Server / Data Center 7.0 or later is required; GitLab 16.0 or newer (the hint `GitLab 16.0 or newer is required`, see [GitLab](#version)). |
 | could not complete the request to the server | `transport` | DNS, timeout, TLS or connection problem; see the hint and [Base URL notes](#base-url-notes). |
-| the server sent an unexpected response | `protocol` | Base URL points at something that is not the provider API (for GitHub also `github.api_url`); the hint `the comment id is ambiguous on GitHub` is explained under [GitHub](#github); a hint such as `empty body` or `invalid comment id` means `pr_comment_reply` got a blank `body` or a `comment_id` that is not a positive integer. |
+| the server sent an unexpected response | `protocol` | Base URL points at something that is not the provider API (for GitHub also `github.api_url`); the hint `the comment id is ambiguous on GitHub` is explained under [GitHub](#github); the hints `a link in the response points outside the configured API base` and `the created discussion's note was not reported` under [GitLab](#a-link-points-outside-the-api-base); a hint such as `empty body` or `invalid comment id` means `pr_comment_reply` got a blank `body` or a `comment_id` that is not a positive integer. |
 | the LLM endpoint rejected the credentials | `llm_auth` | `REVIEW_MCP_LLM_API_KEY` (stdio, or serve with `llm_key_source = server`) or the `X-Review-MCP-LLM-API-Key` header. |
 | the LLM endpoint or model was not found | `llm_not_found` | `llm.base_url` and `llm.model`. |
 | the LLM endpoint rate-limited the request | `llm_rate_limited` | Wait; `llm.max_retries`. |
@@ -984,6 +1154,7 @@ table also covers the configuration, argument and serve-mode errors.
 | no Gitea token in this request: set the X-Review-MCP-Gitea-Token header in your MCP client configuration | `credentials_missing` | Serve mode: the request carried no Gitea token. Add the header to the client configuration ([Serve mode](serve.md#client-configuration-for-a-remote-server)); `server_info` shows which headers arrived. No outbound request was made. |
 | no Bitbucket Server token in this request: set the X-Review-MCP-Bitbucket-Server-Token header in your MCP client configuration | `credentials_missing` | Same, for a Bitbucket Server URL. |
 | no GitHub token in this request: set the X-Review-MCP-GitHub-Token header in your MCP client configuration | `credentials_missing` | Same, for a GitHub URL. |
+| no GitLab token in this request: set the X-Review-MCP-GitLab-Token header in your MCP client configuration | `credentials_missing` | Same, for a GitLab URL. |
 | no LLM API key in this request: set the X-Review-MCP-LLM-API-Key header in your MCP client configuration | `credentials_missing` | Same, for the LLM key. Only when `serve.llm_key_source = header`; with `server` the server's own key is used. |
 | malformed credential header: <header name> | (HTTP 400) | A credential header is longer than 4096 bytes, contains anything but visible ASCII (a stray newline or a space inside the value) or was sent twice. Fix the value in the client configuration. The value is never echoed. |
 | the server is busy: retry shortly | `server_busy` | All `serve.max_concurrent_calls` slots are in use. Retry, or raise the key (1 to 64). |
@@ -1040,6 +1211,11 @@ A3) has verified them.
   one of them the CI results are partial with a note, without both the CI
   state is `unreadable` with a note, and the rest still works. A
   classic token's `repo` scope covers them. See [GitHub](github.md#token).
+- **GitLab:** a personal access token with `read_api` (read) or `api`
+  (publishing, `pr_comment_reply`, `pr_comment_create` and the description
+  edit), plus `read_repository` for the repository context; or a project or
+  group access token with the role Reporter (read) or Developer (publish). See
+  [GitLab](gitlab.md#token).
 - **Bitbucket Server / Data Center:** an HTTP access token with repository
   read permission, plus write permission only for comments and for
   `pr_describe` with `publish_mode=description`, which updates the pull
@@ -1050,14 +1226,15 @@ A3) has verified them.
   read access above is enough (the commit status or build status of the head
   commit, the guidelines file and the directory listings at the target
   branch). On GitHub the guidelines and the listings need Contents (read); the
-  CI results need the two permissions named under GitHub.
+  CI results need the two permissions named under GitHub. On GitLab `read_api`
+  (or the Reporter role) covers all of it.
 
 Which call fails tells you which scope is missing: if `diag pr` works but
 `diag comment` fails with `authentication failed`, the token is valid but
 lacks the write scope; if `diag pr` itself fails, the token is wrong or
 cannot read the repository (a hidden repository may also answer 404). Pass
 tokens only through the environment (`REVIEW_MCP_GITEA_TOKEN`,
-`REVIEW_MCP_BITBUCKET_SERVER_TOKEN`, `REVIEW_MCP_GITHUB_TOKEN`) or, in serve mode, the request headers
+`REVIEW_MCP_BITBUCKET_SERVER_TOKEN`, `REVIEW_MCP_GITHUB_TOKEN`, `REVIEW_MCP_GITLAB_TOKEN`) or, in serve mode, the request headers
 ([Serve mode](serve.md)); never put them in a URL or a config file that is
 checked in.
 
@@ -1079,17 +1256,22 @@ checked in.
   `{base}/api/v3` otherwise) unless `REVIEW_MCP_GITHUB_API_URL` is set;
   `server_info` shows the one in use. If calls fail with `not_found` or
   `protocol` on a GHES, check that `{base}/api/v3` is really the API.
+- **GitLab base URL.** `REVIEW_MCP_GITLAB_BASE_URL` is the web address merge
+  request URLs start with, with its context path if the instance has one (for
+  example `https://example.com/gitlab`), and has no default. The API address
+  is always `{base}/api/v4`; `server_info` shows it. It must be the address in
+  GitLab's `external_url`, or paging fails ([GitLab](#a-link-points-outside-the-api-base)).
 - **Scheme, host and port must match exactly** (case-insensitive host; default
   ports 80/443 are implied). `https://your-gitea.example.evil.example` or a
   sibling path such as `/bitbucket-old` does not match `/bitbucket`.
 - **CA certificates.** For a server with a private CA, set
   `REVIEW_MCP_GITEA_CA_CERT`, `REVIEW_MCP_BITBUCKET_SERVER_CA_CERT` or
-  `REVIEW_MCP_GITHUB_CA_CERT` to the
+  `REVIEW_MCP_GITHUB_CA_CERT` or `REVIEW_MCP_GITLAB_CA_CERT` to the
   path of a PEM bundle; it is used in addition to the system roots. A
   `transport` error with the hint `TLS verification failed` usually means the
   CA is missing or the certificate does not cover the host name.
 - **`insecure_skip_verify`.** `REVIEW_MCP_GITEA_INSECURE_SKIP_VERIFY=true` (and
-  the Bitbucket Server and GitHub equivalents) turns off certificate verification. Use it
+  the Bitbucket Server, GitHub and GitLab equivalents) turns off certificate verification. Use it
   only to confirm that TLS is the problem on a throwaway setup; prefer a CA
   certificate. review-mcp warns at startup when it is set.
 

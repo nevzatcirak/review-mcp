@@ -56,6 +56,14 @@ type Traits struct {
 	// ignores EndLine: the comment is posted on Line and listed there, with
 	// StartLine 0.
 	InlineRanges bool
+	// NoStaleReviews is true for a provider whose host reports no commit
+	// per verdict (GitLab): a Reviewer with Stale in the Spec is served as
+	// a plain verdict, and the provider must report it not stale.
+	//
+	// DESIGN-QUESTION WP-6d DQ-d3: the stale case of review_status cannot
+	// hold on such a host; a trait (not a skip) keeps the rest of the case
+	// running.
+	NoStaleReviews bool
 }
 
 // Declarer is implemented by a Fixture that declares Traits.
@@ -101,6 +109,8 @@ func Run(t *testing.T, f Fixture) {
 		{"errors", s.errorCases},
 	}
 	for _, c := range cases {
-		t.Run(c.name, c.run)
+		t.Run(c.name, func(t *testing.T) {
+			c.run(t)
+		})
 	}
 }

@@ -19,6 +19,7 @@ const (
 	HeaderGiteaToken           = "X-Review-MCP-Gitea-Token"            //nolint:gosec // G101 false positive: a header name, not a credential
 	HeaderBitbucketServerToken = "X-Review-MCP-Bitbucket-Server-Token" //nolint:gosec // G101 false positive: a header name, not a credential
 	HeaderGitHubToken          = "X-Review-MCP-GitHub-Token"           //nolint:gosec // G101 false positive: a header name, not a credential
+	HeaderGitLabToken          = "X-Review-MCP-GitLab-Token"           //nolint:gosec // G101 false positive: a header name, not a credential
 	HeaderLLMAPIKey            = "X-Review-MCP-LLM-API-Key"            //nolint:gosec // G101 false positive: a header name, not a credential
 	HeaderAuthorization        = "Authorization"
 )
@@ -28,7 +29,7 @@ const MaxValueBytes = 4096
 
 // ToolHeaders are the headers that carry a tool credential, in the order
 // they are checked.
-var ToolHeaders = []string{HeaderGiteaToken, HeaderBitbucketServerToken, HeaderGitHubToken, HeaderLLMAPIKey}
+var ToolHeaders = []string{HeaderGiteaToken, HeaderBitbucketServerToken, HeaderGitHubToken, HeaderGitLabToken, HeaderLLMAPIKey}
 
 // MalformedError reports a credential header whose value failed the checks.
 // Its text names the header and never contains the value.
@@ -109,6 +110,10 @@ func Secrets(h http.Header, serverKeySource bool, serverKey, accessToken config.
 	if err != nil {
 		return config.Secrets{}, err
 	}
+	gl, err := Value(h, HeaderGitLabToken)
+	if err != nil {
+		return config.Secrets{}, err
+	}
 	key := serverKey
 	if !serverKeySource {
 		v, err := Value(h, HeaderLLMAPIKey)
@@ -122,6 +127,7 @@ func Secrets(h http.Header, serverKeySource bool, serverKey, accessToken config.
 		GiteaToken:           config.NewSecret(gitea),
 		BitbucketServerToken: config.NewSecret(bbs),
 		GitHubToken:          config.NewSecret(gh),
+		GitLabToken:          config.NewSecret(gl),
 		ServeAccessToken:     accessToken,
 	}, nil
 }

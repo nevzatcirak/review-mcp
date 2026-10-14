@@ -27,7 +27,7 @@ const (
 // plan is everything Ensure derives from a Repo and a PR before any I/O.
 type plan struct {
 	cloneURL  string
-	remoteRef string // refs/pull/{n}/head or refs/pull-requests/{n}/from
+	remoteRef string // refs/pull/{n}/head, refs/pull-requests/{n}/from or refs/merge-requests/{n}/head
 	localRef  string
 	rel       string // <host>/<base>/<namespace dir>/<repo> under the cache directory
 	headSHA   string
@@ -163,6 +163,14 @@ func newPlan(repo Repo, pr PR) (*plan, error) {
 		p.cloneURL = base + "/" + ns + "/" + name + ".git"
 		p.remoteRef = "refs/pull/" + n + "/head"
 		p.schemes = []scheme{schemeAccessToken, schemeBearer}
+	case provider.KindGitLab:
+		// Y-21. The base is the web base (it may carry a context path), the
+		// namespace may be nested groups, and the merge request ref is
+		// fixed. GitLab takes a token as the password of HTTP Basic with
+		// any user name: "oauth2", the fixed one, as GitLab documents it.
+		p.cloneURL = base + "/" + ns + "/" + name + ".git"
+		p.remoteRef = "refs/merge-requests/" + n + "/head"
+		p.schemes = []scheme{schemeOAuth2}
 	default:
 		return nil, unsupported
 	}
@@ -188,10 +196,14 @@ const (
 	schemeBearer                    // Bitbucket Server: "Authorization: Bearer <token>"
 	schemeBasic                     // Gitea, Bitbucket Server: HTTP Basic, user = token identity, password = token
 	schemeAccessToken               // GitHub: HTTP Basic, user = accessTokenUser, password = token
+	schemeOAuth2                    // GitLab: HTTP Basic, user = oauth2User, password = token
 )
 
 // accessTokenUser is the fixed Basic user of GitHub's git over HTTPS.
 const accessTokenUser = "x-access-token"
+
+// oauth2User is the fixed Basic user of GitLab's git over HTTPS.
+const oauth2User = "oauth2"
 
 // workingScheme remembers, per provider kind and base URL, the scheme that
 // fetched successfully. It lives for the process.
@@ -227,6 +239,8 @@ func authHeader(ctx context.Context, repo Repo, s scheme) (string, error) {
 		return "Authorization: Bearer " + tok, nil
 	case schemeAccessToken:
 		return "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(accessTokenUser+":"+tok)), nil
+	case schemeOAuth2:
+		return "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(oauth2User+":"+tok)), nil
 	}
 	if repo.Identity == nil {
 		return "", fail(ReasonAuth)

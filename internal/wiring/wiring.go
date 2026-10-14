@@ -11,11 +11,13 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/provider/bitbucketserver"
 	"github.com/nevzatcirak/review-mcp/internal/provider/gitea"
 	"github.com/nevzatcirak/review-mcp/internal/provider/github"
+	"github.com/nevzatcirak/review-mcp/internal/provider/gitlab"
 )
 
 // NewResolver builds a Resolver from every provider factory. Providers that
 // are not enabled in cfg are ignored by the resolver itself. It performs no
 // network I/O.
 func NewResolver(cfg *config.Config, logger *slog.Logger) *provider.Resolver {
-	return provider.NewResolver(cfg, logger, gitea.NewFactory(), bitbucketserver.NewFactory(), github.NewFactory())
+	return provider.NewResolver(cfg, logger, gitea.NewFactory(), bitbucketserver.NewFactory(), github.NewFactory(),
+		gitlab.NewFactory())
 }

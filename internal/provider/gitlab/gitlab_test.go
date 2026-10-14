@@ -257,14 +257,20 @@ func TestRateLimit(t *testing.T) {
 	}
 }
 
-// TestDiffRefsRetry: empty diff_refs are read again once after 2 s, inside
-// the deadline; still empty, or no room for the wait, is upstream with the
-// fixed hint.
+// TestDiffRefsRetry: empty diff_refs, or a sha that differs from their
+// head (a push GitLab is still processing), are read again once after 2 s,
+// inside the deadline; still not ready, or no room for the wait, is
+// upstream with the fixed hint. The head revision is always diff_refs'
+// head_sha.
 func TestDiffRefsRetry(t *testing.T) {
 	clock := time.Now().UTC().Truncate(time.Second)
 	for _, c := range []struct {
-		name      string
-		filled    int // the read from which diff_refs are filled; 0 never
+		name   string
+		filled int // the read from which diff_refs are filled; 0 never
+		// matched is the read from which sha equals diff_refs' head; before
+		// it sha is another revision. 0 means sha matches on every read.
+		matched   int
+		noSHA     bool // sha absent: diff_refs' head alone is the head
 		deadline  time.Duration
 		wantErr   bool
 		wantWaits []time.Duration
@@ -275,6 +281,9 @@ func TestDiffRefsRetry(t *testing.T) {
 		{name: "never_filled", wantErr: true, wantWaits: []time.Duration{2 * time.Second}, wantReads: 2},
 		{name: "filled_too_late", filled: 3, wantErr: true, wantWaits: []time.Duration{2 * time.Second}, wantReads: 2},
 		{name: "no_room_before_the_deadline", filled: 2, deadline: 1500 * time.Millisecond, wantErr: true, wantReads: 1},
+		{name: "head_matched_on_the_retry", filled: 1, matched: 2, wantWaits: []time.Duration{2 * time.Second}, wantReads: 2},
+		{name: "head_never_matched", filled: 1, matched: 3, wantErr: true, wantWaits: []time.Duration{2 * time.Second}, wantReads: 2},
+		{name: "no_sha", filled: 1, noSHA: true, wantReads: 1},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f := newFake(t)
@@ -284,6 +293,12 @@ func TestDiffRefsRetry(t *testing.T) {
 				m := mrJSON(c.filled != 0 && int(i) >= c.filled)
 				if i == 1 && c.filled != 1 {
 					m["diff_refs"] = nil // GitLab may send null as well as empty values
+				}
+				switch {
+				case c.noSHA:
+					delete(m, "sha")
+				case int(i) < c.matched:
+					m["sha"] = testPushed
 				}
 				writeJSON(w, m)
 			})
@@ -303,8 +318,8 @@ func TestDiffRefsRetry(t *testing.T) {
 				}
 			case err != nil:
 				t.Fatalf("GetPullRequest: %v", err)
-			case pr.BaseSHA != testBase || pr.BaseStrategy != provider.BaseGitLabDiffRefs:
-				t.Errorf("base %q strategy %q", pr.BaseSHA, pr.BaseStrategy)
+			case pr.BaseSHA != testBase || pr.HeadSHA != testHead || pr.BaseStrategy != provider.BaseGitLabDiffRefs:
+				t.Errorf("base %q head %q strategy %q", pr.BaseSHA, pr.HeadSHA, pr.BaseStrategy)
 			}
 			if !slices.Equal(*slept, c.wantWaits) || n.Load() != c.wantReads {
 				t.Errorf("waits %v, %d reads; want %v, %d", *slept, n.Load(), c.wantWaits, c.wantReads)
@@ -516,6 +531,9 @@ func TestFileRequests(t *testing.T) {
 	f.handle(http.MethodGet, fakeProject+"/repository/files/src%2Fa%20b%2Fc+d.go/raw", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("ref") != testBase {
 			t.Errorf("ref = %q", r.URL.Query().Get("ref"))
+		}
+		if got := r.Header.Get("Accept"); got != "*/*" {
+			t.Errorf("raw file request: Accept %q, want */*", got)
 		}
 		_, _ = w.Write([]byte("package c\n"))
 	})

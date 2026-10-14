@@ -110,11 +110,13 @@ func sleepCtx(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// request is one GET of the API.
+// request is one GET of the API. accept overrides the client's Accept
+// (application/json) when set.
 type request struct {
 	path     string
 	maxBytes int64
 	capKey   string
+	accept   string
 }
 
 // do performs r. When the answer is a rate limit whose reset is known, at
@@ -150,7 +152,7 @@ func (p *Provider) fitsDeadline(ctx context.Context, d time.Duration) bool {
 }
 
 func (p *Provider) send(ctx context.Context, r request) (*httpx.Response, error) {
-	hr := httpx.Request{Method: http.MethodGet, PathAndQuery: r.path, MaxBytes: r.maxBytes, CapKey: r.capKey}
+	hr := httpx.Request{Method: http.MethodGet, PathAndQuery: r.path, MaxBytes: r.maxBytes, CapKey: r.capKey, Accept: r.accept}
 	if hr.MaxBytes <= 0 {
 		hr.MaxBytes, hr.CapKey = httpx.MaxJSONBytes, httpx.JSONCapKey
 	}

@@ -125,6 +125,9 @@ func testRef() provider.PRRef {
 const (
 	testHead = "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
 	testBase = "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+	// testPushed is a newer head that GitLab reports in sha before it has
+	// recomputed diff_refs.
+	testPushed = "d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
 )
 
 // mrJSON is a merge request payload; refs false serves empty diff_refs.

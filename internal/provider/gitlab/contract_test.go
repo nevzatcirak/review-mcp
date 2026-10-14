@@ -264,8 +264,13 @@ func (g *ctGitLab) checkHeaders(r *http.Request) bool {
 		g.t.Errorf("request %s %s: unexpected token header shape", r.Method, r.URL.EscapedPath())
 		ok = false
 	}
-	if got := r.Header.Get("Accept"); got != "application/json" {
-		g.t.Errorf("request %s %s: Accept %q", r.Method, r.URL.EscapedPath(), got)
+	// The raw file request takes any media type; every other request JSON.
+	wantAccept := "application/json"
+	if p := r.URL.EscapedPath(); strings.HasPrefix(p, ctProject+"/repository/files/") && strings.HasSuffix(p, "/raw") {
+		wantAccept = "*/*"
+	}
+	if got := r.Header.Get("Accept"); got != wantAccept {
+		g.t.Errorf("request %s %s: Accept %q, want %q", r.Method, r.URL.EscapedPath(), got, wantAccept)
 		ok = false
 	}
 	if !strings.HasPrefix(r.Header.Get("User-Agent"), "review-mcp/") {

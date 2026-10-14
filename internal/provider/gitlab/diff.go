@@ -18,10 +18,10 @@ import (
 const (
 	// NoteDiffLimit: the merge request's changes_count ends in "+", so
 	// GitLab stopped listing changed files at its diff limit.
-	NoteDiffLimit = "GitLab did not list every changed file (its diff limit was reached); the files it left out are not reviewed"
+	NoteDiffLimit = "GitLab did not list every changed file (its diff limit was reached); the files it left out are not reviewed."
 	// NoteDiffPageCap: GitLab kept listing changed files past diffsPageCap
 	// pages of perPage files.
-	NoteDiffPageCap = "review-mcp reads at most 4000 changed files of a merge request; the files GitLab listed after them are not reviewed"
+	NoteDiffPageCap = "review-mcp reads at most 4000 changed files of a merge request; the files GitLab listed after them are not reviewed."
 )
 
 // apiDiff is one entry of GET /merge_requests/{iid}/diffs.
@@ -333,13 +333,14 @@ func (p *Provider) fetchContent(ctx context.Context, project string, t fetchTask
 
 // getRaw reads the raw content of path at sha, capped at
 // diff.max_file_bytes. It is the one content request of GetDiff and
-// GetFileAt. An unusable path or revision is a protocol error, with no
-// request.
+// GetFileAt. The body is the file itself, not JSON, so the request sends
+// Accept: */* (acceptRaw). An unusable path or revision is a protocol
+// error, with no request.
 func (p *Provider) getRaw(ctx context.Context, project, path, sha string) ([]byte, error) {
 	if !provider.ValidRevision(sha) || !validContentPath(path) {
 		return nil, protocolErr("unusable path or revision")
 	}
-	resp, err := p.do(ctx, request{path: rawPath(project, path, sha), maxBytes: p.maxFile, capKey: capKeyFile})
+	resp, err := p.do(ctx, request{path: rawPath(project, path, sha), maxBytes: p.maxFile, capKey: capKeyFile, accept: acceptRaw})
 	if err != nil {
 		return nil, err
 	}

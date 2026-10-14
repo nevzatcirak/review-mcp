@@ -34,8 +34,10 @@ import (
 )
 
 const (
-	// mediaJSON is the Accept value of every request.
+	// mediaJSON is the Accept value of every request but the raw file
+	// request, which sends acceptRaw.
 	mediaJSON = "application/json"
+	acceptRaw = "*/*"
 
 	// perPage is the page size asked for; GitLab's maximum.
 	perPage = 100
@@ -323,10 +325,14 @@ type apiMR struct {
 	TargetProjectID     int64        `json:"target_project_id"`
 }
 
-// diffReady reports whether GitLab has filled the merge request's
-// diff_refs (it does so asynchronously after the merge request is created).
+// diffReady reports whether the merge request's diff can be read: GitLab
+// has filled its diff_refs (it does so asynchronously after the merge
+// request is created), and sha, when set, is diff_refs' head (otherwise a
+// push is still being processed). The diff, the contents and the inline
+// positions then all use diff_refs' head.
 func (m *apiMR) diffReady() bool {
-	return m.DiffRefs != nil && m.DiffRefs.BaseSHA != "" && m.DiffRefs.HeadSHA != ""
+	return m.DiffRefs != nil && m.DiffRefs.BaseSHA != "" && m.DiffRefs.HeadSHA != "" &&
+		(m.SHA == "" || m.SHA == m.DiffRefs.HeadSHA)
 }
 
 // mapState maps a merge request state to the provider-neutral words:
@@ -346,11 +352,12 @@ func mapState(s string) (state string, merged bool) {
 
 // GetPullRequest implements provider.Provider: GET
 // /projects/{id}/merge_requests/{iid}. The base revision is diff_refs'
-// base_sha (gitlab:diff_refs). GitLab fills diff_refs asynchronously after
-// a merge request is created: when they are still empty the merge request
-// is read once more after diffRefsRetry, if that wait ends before ctx's
-// deadline; still empty, the call fails with class upstream and
-// HintDiffNotReady.
+// base_sha (gitlab:diff_refs) and the head revision is diff_refs' head_sha.
+// GitLab fills diff_refs asynchronously after a merge request is created or
+// pushed to: when they are still empty, or sha differs from their head,
+// the merge request is read once more after diffRefsRetry, if that wait
+// ends before ctx's deadline; still not ready, the call fails with class
+// upstream and HintDiffNotReady.
 func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*provider.PullRequest, error) {
 	path, err := mrPath(ref)
 	if err != nil {
@@ -365,7 +372,7 @@ func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*pro
 		if !p.fitsDeadline(ctx, diffRefsRetry) {
 			return nil, notReady
 		}
-		p.logger.Debug("gitlab merge request diff_refs are empty: reading it again once", "wait_ms", diffRefsRetry.Milliseconds())
+		p.logger.Debug("gitlab merge request diff_refs are not ready: reading it again once", "wait_ms", diffRefsRetry.Milliseconds())
 		if serr := p.sleep(ctx, diffRefsRetry); serr != nil {
 			return nil, provider.TransportError(serr)
 		}
@@ -384,7 +391,7 @@ func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*pro
 		Author:              in.Author.Username,
 		SourceBranch:        in.SourceBranch,
 		TargetBranch:        in.TargetBranch,
-		HeadSHA:             in.SHA,
+		HeadSHA:             in.DiffRefs.HeadSHA,
 		BaseSHA:             in.DiffRefs.BaseSHA,
 		StartSHA:            in.DiffRefs.StartSHA,
 		BaseStrategy:        provider.BaseGitLabDiffRefs,
@@ -396,17 +403,11 @@ func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*pro
 		ChangedFiles:        in.ChangesCount.n,
 		ChangedFilesAtLeast: in.ChangesCount.atLeast,
 	}
-	if pr.HeadSHA == "" {
-		pr.HeadSHA = in.DiffRefs.HeadSHA
-	}
 	if in.Description != nil {
 		pr.Description = *in.Description
 	}
 	if in.SourceProjectID != 0 && in.SourceProjectID != in.TargetProjectID {
 		p.logger.Debug("gitlab merge request comes from a fork")
-	}
-	if in.DiffRefs.HeadSHA != pr.HeadSHA {
-		p.logger.Debug("gitlab merge request head differs from its diff_refs head")
 	}
 	p.logger.Debug("gitlab base revision chosen", "strategy", provider.BaseGitLabDiffRefs)
 	return pr, nil

@@ -5,6 +5,35 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0]
+
+Third stable release, and the first of v2. The code is the same as
+`2.0.0-rc.6`; each release candidate was accepted in use (record #19), the
+GitHub provider on this repository and the GitLab provider on gitlab.com. The
+`2.0.0-rc.1` to `2.0.0-rc.6` sections of CHANGELOG.md list everything that went into
+2.0.0 since 1.1.0. Nothing in the tools or in the configuration of 1.1.0 is
+removed or renamed: a 1.1.0 setup keeps working unchanged.
+
+### Highlights
+
+- Two more providers: GitHub (github.com and GitHub Enterprise Server) and
+  GitLab (gitlab.com and self-managed GitLab 16.0 or newer), next to Gitea
+  and Bitbucket Server, behind one shared contract test suite.
+- Two new tools: `pr_describe` (title, type, summary and a per-file
+  walkthrough, published as a comment or in a marked region of the
+  description that never touches the author's text) and `pr_improve`
+  (verified code suggestions, with native suggestion blocks on GitHub and
+  GitLab).
+- Review quality: the head commit's CI results, the project's guidelines file
+  and the touched directories (both read at the target branch), focused
+  reviews and a single merged publish, and the `multi_perspective_review`
+  prompt.
+- Findings already posted at the same place are not repeated, and inline code
+  in findings stays code.
+- GitLab quick-action safety: no published line can run a quick action, native
+  suggestions stay exact, and a description that already holds a possible
+  command is never rewritten.
+
 ## [2.0.0-rc.6]
 
 Sixth v2 release candidate, built on 2.0.0-rc.5 (the npm dist-tag `next`;
@@ -1049,6 +1078,7 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[2.0.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.0.0
 [2.0.0-rc.6]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.0.0-rc.6
 [2.0.0-rc.5]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.0.0-rc.5
 [2.0.0-rc.4]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.0.0-rc.4

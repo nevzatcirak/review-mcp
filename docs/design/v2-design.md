@@ -99,7 +99,7 @@ Amended by the spec (2026-10-14): minimum GitLab 16.0, so the `/changes` fallbac
 
 ## 9. After 2.0 — v2.1 and later (owner decision 2026-10-10; scope only, each item gets a design note)
 
-Taken in full by the owner. Order inside v2.1 is decided when 2.0 ships.
+Taken in full by the owner. **Order inside v2.1 (owner decision 2026-10-14):** V-1 incremental review → V-6 fallback model chain → V-5 repository config → V-2/V-3 issue compliance → V-8 deeper local analysis → V-4 CI mode → V-7 container image. Each opens with a small housekeeping package from the backlog where one is due. v2.1 work is not merged into `main` before `v2.0.0` is tagged.
 
 | Item | Content | Target |
 |---|---|---|

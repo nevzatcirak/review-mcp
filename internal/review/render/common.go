@@ -43,6 +43,8 @@ const (
 	textNotes            = llmrender.TextNotes
 	textSnippetNote      = "Snippet note: "
 	textListedHere       = "(listed here only)"
+	textCarriedFrom      = "(from the review of "
+	textCarriedSuffix    = ", listed here only)"
 	textDiscussed        = "Already discussed"
 	textCode             = "Code:"
 	textPublish          = "Publishing"
@@ -137,6 +139,29 @@ func newView(res *review.Result) view {
 // comment because it is not on a changed line or its comment failed.
 func listedHereOnly(i *review.KeyIssue) bool {
 	return i.InlineStatus == review.InlineUnanchorable || i.InlineStatus == review.InlineFailed
+}
+
+// listedSuffix is the suffix of a finding's index line in the overview: for
+// a finding carried forward from an earlier review (spec v2.1 §7.4 item 1)
+// "(from the review of `abc1234`, listed here only)", with the commit as
+// HTML code when gfm is set (the line is a <summary>, where markdown is not
+// rendered); "(listed here only)" for one without an inline comment; ""
+// otherwise. The commit is a validated id, never model text.
+func listedSuffix(i *review.KeyIssue, gfm bool) string {
+	if i.CarriedFrom != "" {
+		sha := shortSHA(i.CarriedFrom)
+		if sha == "" {
+			return textListedHere
+		}
+		if gfm {
+			return textCarriedFrom + "<code>" + sha + "</code>" + textCarriedSuffix
+		}
+		return textCarriedFrom + "`" + sha + "`" + textCarriedSuffix
+	}
+	if listedHereOnly(i) {
+		return textListedHere
+	}
+	return ""
 }
 
 // runLine is the overview's second header line (spec P7 §4.3): the run time

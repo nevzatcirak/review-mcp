@@ -144,7 +144,8 @@ func gfmRow(b *strings.Builder, emoji, label, value string) {
 // gfmIssue is entry n of the findings index (spec P7 §4.3): a <details>
 // block whose summary is the index line (number, header linked to the
 // inline comment or the file line, location, "(listed here only)" when the
-// finding has no inline comment) and whose body is the content, the
+// finding has no inline comment, or the carried suffix of listedSuffix) and
+// whose body is the content, the
 // snippet and the snippet note.
 func gfmIssue(n int, i *review.KeyIssue) string {
 	head := "<strong>" + mdutil.EscapeHTMLKeepingCodeSpans(issueHeader(i.IssueHeader)) + "</strong>"
@@ -159,8 +160,8 @@ func gfmIssue(n int, i *review.KeyIssue) string {
 		}
 		head += " <code>" + html.EscapeString(loc) + "</code>"
 	}
-	if listedHereOnly(i) {
-		head += " " + textListedHere
+	if s := listedSuffix(i, true); s != "" {
+		head += " " + s
 	}
 	var b strings.Builder
 	b.WriteString("<details><summary>" + head + "</summary>\n\n" + gfmText(i.IssueContent) + "\n")
@@ -230,7 +231,7 @@ func writePlain(b *strings.Builder, res *review.Result, v *view, tables bool) {
 // writePlainIssue writes one entry of the findings index without HTML
 // (spec P7 §4.3): a numbered line with the header, the location (a link to
 // the inline comment or the file line) and "(listed here only)" when the
-// finding has no inline comment, then a sub-list with the content, the
+// finding has no inline comment (or the carried suffix of listedSuffix), then a sub-list with the content, the
 // snippet and the snippet note.
 func writePlainIssue(b *strings.Builder, n int, i *review.KeyIssue) {
 	prefix := strconv.Itoa(n) + ". "
@@ -240,8 +241,8 @@ func writePlainIssue(b *strings.Builder, n int, i *review.KeyIssue) {
 	if loc := clientLocation(i); loc != "" {
 		b.WriteString(" — " + loc)
 	}
-	if listedHereOnly(i) {
-		b.WriteString(" " + textListedHere)
+	if s := listedSuffix(i, false); s != "" {
+		b.WriteString(" " + s)
 	}
 	b.WriteString("\n")
 	if c := strings.TrimSpace(i.IssueContent); c != "" {

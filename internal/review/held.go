@@ -64,9 +64,10 @@ func noteNotCarried(n int) string {
 }
 
 // overviewOnly reports whether the overview is the only place of a finding
-// (spec §7.1): it has no inline comment of review-mcp on the pull request,
-// because inline findings were off or not yet posted (no status), it is on
-// no changed line, or its inline comment failed.
+// (spec §7.1): it was carried forward from an earlier review, or it has no
+// inline comment of review-mcp on the pull request, because inline findings
+// were off or not yet posted (no status), it is on no changed line, or its
+// inline comment failed.
 //
 // DESIGN-QUESTION (WP-7f DQ-1): a publish without an overview to edit posts
 // the overview before the inline comments, so the findings planned inline
@@ -78,6 +79,9 @@ func noteNotCarried(n int) string {
 // rather than drop one that has none. Recommendation: keep (never lose a
 // finding).
 func overviewOnly(ki *KeyIssue) bool {
+	if ki.CarriedFrom != "" {
+		return true
+	}
 	switch ki.InlineStatus {
 	case "", InlineUnanchorable, InlineFailed:
 		return true
@@ -87,7 +91,7 @@ func overviewOnly(ki *KeyIssue) bool {
 
 // heldLines returns the held lines of res's overview-only findings, in the
 // order of the findings, for an overview that records the commit sha (each
-// new finding's "from"), and the number of overview-only findings that got
+// new finding's "from"; a carried finding keeps its own), and the number of overview-only findings that got
 // none: those after the first line that would take the lines over
 // maxHeldBytes, and any whose record would not be read back (heldValid).
 // Without a valid sha nothing is recorded and nothing is counted: an
@@ -112,8 +116,12 @@ func heldLines(res *Result, sha string) (lines []string, unrecorded int) {
 		if !overviewOnly(ki) {
 			continue
 		}
+		from := sha
+		if ki.CarriedFrom != "" {
+			from = ki.CarriedFrom
+		}
 		rec := heldRecord{V: heldVersion, F: ki.RelevantFile, S: ki.StartLine, E: ki.EndLine,
-			H: cutBytes(ki.IssueHeader, maxHeldHeaderBytes), C: cutBytes(ki.IssueContent, maxHeldContentBytes), From: sha}
+			H: cutBytes(ki.IssueHeader, maxHeldHeaderBytes), C: cutBytes(ki.IssueContent, maxHeldContentBytes), From: from}
 		line, ok := encodeHeld(rec)
 		switch {
 		case !ok || full:

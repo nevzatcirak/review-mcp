@@ -245,8 +245,9 @@ var errNoRenderer = errors.New("review: no provider renderer")
 // repeats one of review-mcp's own finding comments (duplicateOf: the same
 // place, else the same fingerprint) is skipped as a duplicate and links to
 // that comment through InlineURL when its URL is known. The file is
-// matched exactly, as for the finding's link. The summary counts the
-// unanchorable and duplicate findings; Posted and Failed are left 0.
+// matched exactly, as for the finding's link. A carried finding is skipped
+// and keeps no status. The summary counts the unanchorable and duplicate
+// findings; Posted and Failed are left 0.
 func planInline(res *Result, d *provider.Diff, own []ownFinding, render InlineRenderer, caps provider.Capabilities) ([]inlineFinding, *InlineSummary) {
 	sum := &InlineSummary{}
 	if res.Review == nil {
@@ -261,6 +262,12 @@ func planInline(res *Result, d *provider.Diff, own []ownFinding, render InlineRe
 	var out []inlineFinding
 	for n := range res.Review.KeyIssuesToReview {
 		ki := &res.Review.KeyIssuesToReview[n]
+		if ki.CarriedFrom != "" {
+			// Carried forward from an earlier review (spec v2.1 §7.3): listed
+			// in the overview only, never inline and never part of the
+			// duplicate check.
+			continue
+		}
 		a, ok := anchor.Resolve(files[ki.RelevantFile], ki.StartLine, ki.EndLine)
 		if !ok {
 			sum.Unanchorable++

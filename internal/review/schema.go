@@ -97,7 +97,9 @@ func ResultSchema() map[string]any {
 			"strategy":        str("how the changed files were found: git:diff (repository context cache) or api:contents (the provider's API); empty when no comparison was used"),
 			"changed_files":   integer("listed files of the diff treated as changed and reviewed (all of them in a full review)"),
 			"unchanged_files": integer("listed files skipped as unchanged since the last review"),
-		}, "mode", "strategy", "changed_files", "unchanged_files"),
+			"carried_findings": integer("findings of earlier reviews on unchanged files carried forward into this review without a model call " +
+				"(review.key_issues_to_review items with carried_from); 0 outside mode incremental"),
+		}, "mode", "strategy", "changed_files", "unchanged_files", "carried_findings"),
 		"publish": object("publishing outcome; present when publish was requested, except when nothing changed since the last review (incremental.mode unchanged), which publishes nothing", map[string]any{
 			"published":  boolean("whether the overview was posted or updated"),
 			"comment_id": str("id of the overview comment"),

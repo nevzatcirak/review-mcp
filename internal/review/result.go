@@ -132,7 +132,9 @@ type PublishResult struct {
 }
 
 // InlineSummary counts the findings of an inline publish (spec P7 §3.3).
-// Every finding is in exactly one of the counts.
+// Every finding of the run is in exactly one of the counts; a finding
+// carried forward from an earlier review (KeyIssue.CarriedFrom) is in none:
+// it is never considered for an inline comment.
 type InlineSummary struct {
 	// Posted findings have an inline comment; KeyIssue.InlineURL links it
 	// when the server reported a URL.

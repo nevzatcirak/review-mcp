@@ -58,6 +58,13 @@ func noteNoFileChanged(sha string) string {
 	return "No file of the pull request changed since the last review (commit `" + shortCommit(sha) + "`); nothing was reviewed."
 }
 
+// noteCarried: findings of earlier reviews on files that did not change
+// since were carried forward without a model call (spec v2.1 §7.3 item 4).
+func noteCarried(n int) string {
+	return countPhrase(n, "finding of earlier reviews on unchanged files is carried forward; it was",
+		"findings of earlier reviews on unchanged files are carried forward; they were") + " not reviewed again."
+}
+
 // shortCommit is the 7-character form of a full commit id.
 func shortCommit(sha string) string {
 	if len(sha) > 7 {
@@ -83,6 +90,10 @@ type Incremental struct {
 	// skipped as unchanged.
 	ChangedFiles   int `json:"changed_files"`
 	UnchangedFiles int `json:"unchanged_files"`
+	// CarriedFindings counts the findings of earlier reviews on unchanged
+	// files that the run carried forward (spec v2.1 §7.3; KeyIssue.
+	// CarriedFrom); 0 outside mode IncrementalChanged.
+	CarriedFindings int `json:"carried_findings"`
 }
 
 // fullIncremental is the record of a full review of d.
@@ -129,7 +140,51 @@ func (pl *Plan) lastReviewed(ctx context.Context, explicit bool) (sha string, no
 		}
 		return "", nil
 	}
+	pl.held = found.held
 	return found.reviewed, nil
+}
+
+// carryForward returns the findings of the last review's held lines
+// (pl.held) that an incremental review carries forward (spec v2.1 §7.3):
+// those whose file is a listed file of d that r found unchanged since the
+// last review and that is not deleted. A record of a changed file (reviewed
+// again: the new review replaces it), of a file no longer in the pull
+// request or of a deleted file is dropped. Each carried finding links to its
+// file line at the head, whose content is that of the review that produced
+// it, and has no snippet; the model never sees it.
+//
+// DESIGN-QUESTION (WP-7f DQ-3): the spec does not say whether carried
+// findings count against review.max_findings or the effective
+// max_total_findings. They do not: they are not this run's findings, and a
+// cap would drop findings of unchanged files again, the gap this package
+// closes. The held lines' own 12,000-byte budget bounds them. The run's
+// order is kept: they follow the new findings in the order of the earlier
+// overview. Recommendation: keep.
+func (pl *Plan) carryForward(d *provider.Diff, r incremental.Result) []KeyIssue {
+	unchanged := map[string]bool{}
+	for i, f := range r.Files {
+		if f.State == incremental.Unchanged && i < len(d.Files) && d.Files[i].Type != provider.ChangeDeleted {
+			unchanged[d.Files[i].Path] = true
+		}
+	}
+	var out []KeyIssue
+	for _, h := range pl.held {
+		if !unchanged[h.F] {
+			continue
+		}
+		out = append(out, KeyIssue{RelevantFile: h.F, StartLine: h.S, EndLine: h.E, IssueHeader: h.H,
+			IssueContent: h.C, Link: pl.p.FileLineURL(pl.ref, pl.pr, h.F, h.S), CarriedFrom: h.From})
+	}
+	pl.log.Debug("review: held findings", "read", len(pl.held), "carried", len(out))
+	return out
+}
+
+// withCarried appends the carried findings (carryForward) to rev, after the
+// findings of this run.
+func (pl *Plan) withCarried(rev *Review) {
+	if len(pl.carried) > 0 {
+		rev.KeyIssuesToReview = append(rev.KeyIssuesToReview, pl.carried...)
+	}
 }
 
 // detectChanges runs the change detection of WP-7c on the listed files of d

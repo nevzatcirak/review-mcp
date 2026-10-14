@@ -185,7 +185,9 @@ func fixtures() map[string]*review.Result {
 	// partial (filtered, binary and empty-diff files do not count, X-18):
 	// no banner, the unscoped "nothing found" sentences.
 	complete := noFindingsResult(completeCoverage())
+	carried := carriedResult()
 	all := map[string]*review.Result{
+		"carried":    carried,
 		"all_fields": allFields, "no_findings": noFindings, "no_snippet": noSnippet,
 		"non_english": nonEnglish, "coverage_many": coverageMany, "published": published,
 		"complete": complete, "code_span_header": codeSpanHeader,
@@ -195,6 +197,75 @@ func fixtures() map[string]*review.Result {
 		r.Reviewed.SHA = r.PR.HeadSHA
 	}
 	return all
+}
+
+// carriedResult is an incremental run (X-36) that reviewed one file, posted
+// its finding inline and carried a finding of the unchanged file forward
+// from an earlier review (spec v2.1 §7.4); the security and performance
+// fields found nothing in the reviewed file.
+func carriedResult() *review.Result {
+	const since = "def5678abc123def4567890abc123def4567890"
+	cov := review.Coverage{
+		Included: []string{"cmd/app/main.go"}, Clipped: []string{}, DeletedListed: []string{},
+		Omitted:  review.OmittedFiles{Added: []string{}, Modified: []string{}, Deleted: []string{}},
+		Skipped:  []review.SkippedFile{{Path: "internal/util/strings_util.go", Reason: llmrun.SkipUnchangedSinceReview}},
+		Filtered: []review.SkippedFile{},
+	}
+	cov.Finalize()
+	return &review.Result{
+		PR: basePR(), EnabledFields: allKeys, Coverage: cov,
+		Notes: []string{"1 finding of earlier reviews on unchanged files is carried forward; it was not reviewed again."},
+		Review: &review.Review{
+			EstimatedEffortToReview: ip(2), RelevantTests: bp(false), SecurityConcerns: sp(review.SecurityNo),
+			PerformanceConcerns: sp(review.PerformanceNo),
+			KeyIssuesToReview: []review.KeyIssue{
+				{
+					RelevantFile: "cmd/app/main.go", IssueHeader: "Possible Bug", IssueContent: "The loop never ends.",
+					StartLine: 10, EndLine: 10, Snippet: "for {}",
+					Link:         "https://your-gitea.example/org/repo/src/commit/abc123/cmd/app/main.go#L10",
+					InlineURL:    "https://your-gitea.example/org/repo/pulls/12/files#issuecomment-901",
+					InlineStatus: review.InlinePosted,
+				},
+				{
+					RelevantFile: "internal/util/strings_util.go", IssueHeader: "Resource leak",
+					IssueContent: "The response body is not closed on the error path.", StartLine: 40, EndLine: 40,
+					Link:        "https://your-gitea.example/org/repo/src/commit/abc123/internal/util/strings_util.go#L40",
+					CarriedFrom: since,
+				},
+			},
+		},
+		Reviewed:    review.ReviewedCommit{Since: since},
+		Incremental: &review.Incremental{Mode: review.IncrementalChanged, Since: since, ChangedFiles: 1, UnchangedFiles: 1, CarriedFindings: 1},
+	}
+}
+
+// TestCarriedSuffix (spec v2.1 §7.4 item 1): a carried finding is listed
+// after the new ones with "(from the review of `abc1234`, listed here
+// only)" instead of "(listed here only)", linked to its file line, in every
+// provider profile; the commit is HTML code inside the GFM <summary>.
+func TestCarriedSuffix(t *testing.T) {
+	res := carriedResult()
+	res.Reviewed.SHA = res.PR.HeadSHA
+	for profile, tc := range map[string]struct {
+		caps provider.Capabilities
+		want string
+	}{
+		"gitea":     {capsGitea, "<a href='https://your-gitea.example/org/repo/src/commit/abc123/internal/util/strings_util.go#L40'><strong>Resource leak</strong></a> <code>internal/util/strings_util.go L40</code> (from the review of <code>def5678</code>, listed here only)</summary>"},
+		"github":    {provider.Capabilities{GFM: true, MarkdownTables: true, Labels: true, InlineComments: true}, "(from the review of <code>def5678</code>, listed here only)</summary>"},
+		"gitlab":    {provider.Capabilities{GFM: true, MarkdownTables: true, Labels: true, InlineComments: true, QuickActions: true}, "(from the review of <code>def5678</code>, listed here only)</summary>"},
+		"bitbucket": {capsBB, "2. **Resource leak** — [`internal/util/strings_util.go` L40](https://your-gitea.example/org/repo/src/commit/abc123/internal/util/strings_util.go#L40) (from the review of `def5678`, listed here only)\n"},
+	} {
+		out := Provider(res, tc.caps)
+		if !strings.Contains(out, tc.want) {
+			t.Errorf("%s lacks %q:\n%s", profile, tc.want, out)
+		}
+		if strings.Count(out, "listed here only") != 1 {
+			t.Errorf("%s: the carried finding must be the only one listed here only:\n%s", profile, out)
+		}
+		if strings.Index(out, "Possible Issue") > strings.Index(out, "Resource leak") {
+			t.Errorf("%s lists the carried finding first", profile)
+		}
+	}
 }
 
 // TestPerformanceFollowsEnabledFields: the performance row (or section)

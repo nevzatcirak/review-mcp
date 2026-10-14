@@ -103,6 +103,14 @@ func clientPRLine(pr *review.PRInfo) string {
 	return line
 }
 
+// writeClientIssues lists the findings for the client. Like "(listed here
+// only)", the suffix of a carried finding is not shown here: the result's
+// carried_from and its note say it.
+//
+// DESIGN-QUESTION (WP-7f DQ-5): the spec puts the carried suffix on the four
+// provider renderers; the client view shows no inline state for any finding,
+// so it shows none for a carried one either. Recommendation: keep; a client
+// mark for carried findings can follow with the other inline states.
 func writeClientIssues(b *strings.Builder, issues []review.KeyIssue, none string) {
 	b.WriteString("\n### " + textKeyIssues + "\n\n")
 	if len(issues) == 0 {

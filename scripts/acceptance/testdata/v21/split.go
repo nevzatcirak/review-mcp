@@ -6,7 +6,7 @@ import "strings"
 func Fields(s string) []string {
 	parts := strings.Split(s, ",")
 	out := make([]string, len(parts))
-	for i := 0; i <= len(parts); i++ {
+	for i := 0; i < len(parts); i++ {
 		out[i] = strings.TrimSpace(parts[i])
 	}
 	return out

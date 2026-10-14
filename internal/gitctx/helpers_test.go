@@ -88,6 +88,9 @@ type fakeBehavior struct {
 	DiffOut    string `json:"diff_out"`
 	DiffExit   int    `json:"diff_exit"`
 	DiffStderr string `json:"diff_stderr"`
+	// What "git ls-tree" prints and exits with (X-36).
+	LsTreeOut  string `json:"lstree_out"`
+	LsTreeExit int    `json:"lstree_exit"`
 }
 
 // fakeCall is one recorded invocation of the fake git.

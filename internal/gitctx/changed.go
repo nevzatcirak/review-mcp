@@ -7,10 +7,11 @@ import (
 	"strings"
 )
 
-// maxChangedOutput caps what the comparison of two commits may print. With
-// -z every path costs its length plus one byte, so 16 MiB holds well over a
-// hundred thousand changed paths. A list cut by the cap could leave a
-// changed file out, so a cut list is an error, never a short answer.
+// maxChangedOutput caps what the comparison of two commits, and the listing
+// of one commit's files, may print. With -z every path costs its length
+// plus one byte, so 16 MiB holds well over a hundred thousand paths. A list
+// cut by the cap could leave a file out, so a cut list is an error, never a
+// short answer.
 var maxChangedOutput = 16 << 20
 
 // ChangedPaths returns the paths whose entry differs between the commits
@@ -58,20 +59,7 @@ func (r *Runner) ChangedPaths(ctx context.Context, c Checkout, from, to string) 
 	if err != nil {
 		return nil, err
 	}
-	dctx, cancel := context.WithTimeout(ctx, grepTimeout)
-	defer cancel()
-	res := g.run(dctx, gitCmd{args: changedPathsArgs(from, to), offline: true, maxStdout: maxChangedOutput})
-	if res.err != nil {
-		if err := ctx.Err(); err != nil && !errors.Is(err, context.DeadlineExceeded) {
-			return nil, err
-		}
-		_, ferr := res.failure()
-		return nil, ferr
-	}
-	if res.truncated {
-		return nil, fail(ReasonTooLarge)
-	}
-	return nameList(res.stdout), nil
+	return g.nameListOf(ctx, changedPathsArgs(from, to))
 }
 
 // nameList reads the NUL-terminated paths of --name-only -z. A path is kept
@@ -88,6 +76,66 @@ func nameList(b []byte) []string {
 		out = append(out, string(p))
 	}
 	return out
+}
+
+// ListPaths returns the path of every file of the tree of commit rev (a full
+// SHA) of c's repository (X-36), from
+//
+//	git ls-tree -r -z --name-only --end-of-options <rev>
+//
+// with the rules of ChangedPaths: offline, the same environment, timeout
+// and output cap; the tree objects only, never a blob. Paths come back as
+// git stores them. A commit or tree the cache lacks, a failure and output
+// past the cap are an *Error, never a short list; a canceled ctx returns
+// the context's own error.
+//
+// The change detection uses it so that a file is called unchanged only when
+// git knows its path: a path git did not list as changed could also be one
+// git never matched (DQ-7 on WP-7c).
+//
+// DESIGN-QUESTION (WP-7c fix DQ-10): unlike git diff, ls-tree takes
+// --end-of-options as a synonym of "--", so a "--" after the commit would be
+// read as a path and the list would come back empty without an error. The
+// argv therefore ends with the commit. Recommendation: keep; the real-git
+// test pins a non-empty list.
+func (r *Runner) ListPaths(ctx context.Context, c Checkout, rev string) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	rev = strings.ToLower(rev)
+	if !shaRE.MatchString(rev) {
+		return nil, fail(ReasonUnsupported)
+	}
+	g, err := r.openCheckout(c)
+	if err != nil {
+		return nil, err
+	}
+	return g.nameListOf(ctx, listPathsArgs(rev))
+}
+
+// nameListOf runs one offline git command that prints NUL-terminated paths,
+// with the timeout and the output cap of ChangedPaths.
+func (g *gitRun) nameListOf(ctx context.Context, args []string) ([]string, error) {
+	dctx, cancel := context.WithTimeout(ctx, grepTimeout)
+	defer cancel()
+	res := g.run(dctx, gitCmd{args: args, offline: true, maxStdout: maxChangedOutput})
+	if res.err != nil {
+		if err := ctx.Err(); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
+		}
+		_, ferr := res.failure()
+		return nil, ferr
+	}
+	if res.truncated {
+		return nil, fail(ReasonTooLarge)
+	}
+	return nameList(res.stdout), nil
+}
+
+// listPathsArgs is the git command of ListPaths after the global options;
+// rev is a validated SHA.
+func listPathsArgs(rev string) []string {
+	return []string{"ls-tree", "-r", "-z", "--name-only", "--end-of-options", rev}
 }
 
 // changedPathsArgs is the git command of ChangedPaths after the global

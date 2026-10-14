@@ -184,6 +184,31 @@ func TestRunnerChangedPathsShallow(t *testing.T) {
 	}
 }
 
+// TestRunnerListPaths: every file of a commit, nested ones included, as git
+// stores the path; an unknown commit is an error, never an empty list.
+func TestRunnerListPaths(t *testing.T) {
+	r, co, shas := localHistory(t, "", changedHistory()...)
+	ctx := context.Background()
+	got, err := r.ListPaths(ctx, co, strings.ToUpper(shas[0]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(got)
+	want := []string{"dir with space/ünï.go", "edit.go", "gone.go", "keep.go", "mode.sh", "nested/deeper/inner.go", "odd\nname.go", "old name.go", "revert.go"}
+	if !slices.Equal(got, want) {
+		t.Errorf("ListPaths(first) = %q, want %q", got, want)
+	}
+	got, err = r.ListPaths(ctx, co, shas[2])
+	if err != nil || !slices.Contains(got, "new name.go") || slices.Contains(got, "old name.go") || slices.Contains(got, "gone.go") || len(got) != 8 {
+		t.Errorf("ListPaths(last) = %q, %v", got, err)
+	}
+	_, err = r.ListPaths(ctx, co, strings.Repeat("ab", 20))
+	var ge *Error
+	if !errors.As(err, &ge) {
+		t.Errorf("ListPaths(unknown commit) error = %v, want a gitctx error", err)
+	}
+}
+
 // ---- argv, isolation and failures (fake git) ----
 
 const fakeSHA2 = "89abcdef0123456789abcdef0123456789abcdef"
@@ -234,6 +259,86 @@ func TestRunnerChangedPathsArgv(t *testing.T) {
 			t.Errorf("git diff got %s, which is not on the allowlist", name)
 		}
 	}
+}
+
+// TestRunnerListPathsArgv: the exact command line of ListPaths: tree objects
+// only, the commit after --end-of-options and nothing after it (ls-tree
+// would read a "--" there as a path and list nothing); offline, with the
+// cache's empty home.
+func TestRunnerListPathsArgv(t *testing.T) {
+	r, f := fakeRunner(t, fakeBehavior{SHA: fakeSHA, LsTreeOut: "a b/ü.go\x00c.go\x00"}, Options{})
+	co := fakeCheckout(t, r)
+	got, err := r.ListPaths(context.Background(), co, strings.ToUpper(fakeSHA2))
+	if err != nil || !slices.Equal(got, []string{"a b/ü.go", "c.go"}) {
+		t.Fatalf("ListPaths = %q, %v", got, err)
+	}
+	calls := callsOf(f.calls(t), "ls-tree")
+	if len(calls) != 1 {
+		t.Fatalf("%d git ls-tree calls, want 1", len(calls))
+	}
+	c := calls[0]
+	want := append(safetyArgsFor(nil, runtime.GOOS, true), "--git-dir="+co.GitDir,
+		"ls-tree", "-r", "-z", "--name-only", "--end-of-options", fakeSHA2)
+	if !slices.Equal(c.Args, want) {
+		t.Errorf("git ls-tree argv =\n  %q\nwant\n  %q", c.Args, want)
+	}
+	if v, ok := envValue(c.Env, "GIT_NO_LAZY_FETCH"); !ok || v != "1" {
+		t.Errorf("GIT_NO_LAZY_FETCH = %q (set %v), want 1", v, ok)
+	}
+	root, _ := r.CacheDir()
+	if h, _ := envValue(c.Env, "HOME"); h != homeDir(root) {
+		t.Errorf("HOME = %q, want the cache's empty home", h)
+	}
+	for _, kv := range c.Env {
+		name, _, _ := strings.Cut(kv, "=")
+		if name != "GIT_NO_LAZY_FETCH" && !allowedEnv.MatchString(name) {
+			t.Errorf("git ls-tree got %s, which is not on the allowlist", name)
+		}
+	}
+}
+
+// TestRunnerListPathsFailures: an unusable revision is refused before git
+// runs; a failure and a list cut by the cap are errors, never a short list;
+// a canceled context is reported as such.
+func TestRunnerListPathsFailures(t *testing.T) {
+	t.Run("refused", func(t *testing.T) {
+		r, f := fakeRunner(t, fakeBehavior{SHA: fakeSHA}, Options{})
+		co := fakeCheckout(t, r)
+		for _, rev := range []string{"--output=x", "HEAD", fakeSHA[:12], "", fakeSHA + ":dir"} {
+			_, err := r.ListPaths(context.Background(), co, rev)
+			wantReason(t, err, ReasonUnsupported)
+		}
+		if n := len(callsOf(f.calls(t), "ls-tree")); n != 0 {
+			t.Errorf("%d git ls-tree calls for refused input", n)
+		}
+	})
+	t.Run("git fails", func(t *testing.T) {
+		r, _ := fakeRunner(t, fakeBehavior{SHA: fakeSHA, LsTreeExit: 128, LsTreeOut: "partial.go\x00"}, Options{})
+		got, err := r.ListPaths(context.Background(), fakeCheckout(t, r), fakeSHA)
+		var ge *Error
+		if !errors.As(err, &ge) || got != nil {
+			t.Errorf("ListPaths = %q, %v, want a gitctx error and no paths", got, err)
+		}
+	})
+	t.Run("output cap", func(t *testing.T) {
+		saved := maxChangedOutput
+		maxChangedOutput = 64
+		t.Cleanup(func() { maxChangedOutput = saved })
+		r, _ := fakeRunner(t, fakeBehavior{SHA: fakeSHA, LsTreeOut: strings.Repeat("some/long/path.go\x00", 20)}, Options{})
+		got, err := r.ListPaths(context.Background(), fakeCheckout(t, r), fakeSHA)
+		if got != nil {
+			t.Errorf("a cut list came back: %q", got)
+		}
+		wantReason(t, err, ReasonTooLarge)
+	})
+	t.Run("canceled", func(t *testing.T) {
+		r, _ := fakeRunner(t, fakeBehavior{SHA: fakeSHA}, Options{})
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if _, err := r.ListPaths(ctx, fakeCheckout(t, r), fakeSHA); !errors.Is(err, context.Canceled) {
+			t.Errorf("err = %v, want context.Canceled", err)
+		}
+	})
 }
 
 // TestRunnerChangedPathsOutput: the NUL-separated output is read as it is: a

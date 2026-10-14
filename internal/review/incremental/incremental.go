@@ -12,8 +12,11 @@
 //
 //   - git:diff, when repository context (X-22) is enabled and its cache
 //     holds both commits: one offline "git diff --name-only" of the two
-//     commits in the cache (gitctx.Runner.ChangedPaths). A file is changed
-//     when its path or its old path is listed.
+//     commits in the cache (gitctx.Runner.ChangedPaths) and the file lists
+//     of both commits (gitctx.Runner.ListPaths). A file is changed when its
+//     path or its old path is listed by the diff, and unchanged only when
+//     git also knows its path: in both commits, or for a deleted file in
+//     neither.
 //   - api:contents, otherwise: the file at the last reviewed commit is read
 //     through the provider and compared byte for byte with its content at
 //     the head.
@@ -122,6 +125,7 @@ var _ Reader = provider.Provider(nil)
 type Local interface {
 	HasCommit(ctx context.Context, c gitctx.Checkout, rev string) bool
 	ChangedPaths(ctx context.Context, c gitctx.Checkout, from, to string) ([]string, error)
+	ListPaths(ctx context.Context, c gitctx.Checkout, rev string) ([]string, error)
 }
 
 var _ Local = (*gitctx.Runner)(nil)
@@ -191,9 +195,8 @@ func Detect(ctx context.Context, in Input) (Result, error) {
 	}
 
 	if in.Local != nil && in.Local.HasCommit(ctx, in.Checkout, head) && in.Local.HasCommit(ctx, in.Checkout, last) {
-		paths, err := in.Local.ChangedPaths(ctx, in.Checkout, last, head)
-		if err == nil {
-			return byPaths(in.Files, paths), nil
+		if res, err := byGit(ctx, in, head, last); err == nil {
+			return res, nil
 		}
 		// DESIGN-QUESTION (WP-7c DQ-3): the spec does not say what follows a
 		// failed comparison in the cache (a tree the shallow or partial
@@ -232,8 +235,40 @@ func full(note string) Result {
 	return Result{Full: true, Notes: []string{note}}
 }
 
+// byGit runs the git strategy: the paths that changed between the two
+// commits and the file lists of both. Any error ends it (the caller then
+// compares through the provider, or returns when ctx ended).
+func byGit(ctx context.Context, in Input, head, last string) (Result, error) {
+	changed, err := in.Local.ChangedPaths(ctx, in.Checkout, last, head)
+	if err != nil {
+		return Result{}, err
+	}
+	atHead, err := in.Local.ListPaths(ctx, in.Checkout, head)
+	if err != nil {
+		return Result{}, err
+	}
+	atLast, err := in.Local.ListPaths(ctx, in.Checkout, last)
+	if err != nil {
+		return Result{}, err
+	}
+	return byPaths(in.Files, changed, atHead, atLast), nil
+}
+
+func toSet(paths []string) map[string]bool {
+	m := make(map[string]bool, len(paths))
+	for _, p := range paths {
+		m[p] = true
+	}
+	return m
+}
+
 // byPaths classifies the files by the paths git listed between the two
 // commits: a file is changed when its path or its old path is among them.
+// Otherwise it is unchanged only when git knows its path: a deleted file's
+// path is in neither commit's file list, any other file's path is in both.
+// Anything else is changed, so a provider path git never matched (another
+// byte form of the same name, a path present on one side only) is never
+// taken for unchanged (DQ-7, settled by the architect: the presence check).
 //
 // DESIGN-QUESTION (WP-7c DQ-6): the two strategies can differ in two rare
 // cases, both towards "changed" in the git strategy: a change of the file
@@ -241,22 +276,20 @@ func full(note string) Result {
 // file whose old path was touched again since the last review. The spec
 // defines both rules as they are. Recommendation: keep.
 //
-// DESIGN-QUESTION (WP-7c DQ-7): the provider's paths are matched byte for
-// byte against git's. Every provider reports the host's git paths, decoded;
-// a provider that changed a path (another Unicode normal form, say) would
-// make a changed file look unchanged here. Recommendation: accept for now,
-// and add a contract case with a path holding spaces and non-ASCII
-// characters (backlog).
-func byPaths(files []provider.FilePatch, paths []string) Result {
-	changed := make(map[string]bool, len(paths))
-	for _, p := range paths {
-		changed[p] = true
-	}
+// The old path of a rename is only matched against the diff, as before.
+func byPaths(files []provider.FilePatch, changedPaths, atHead, atLast []string) Result {
+	changed, head, last := toSet(changedPaths), toSet(atHead), toSet(atLast)
 	out := Result{Strategy: StrategyGit, Files: make([]File, len(files))}
 	for i, f := range files {
-		st := Unchanged
-		if changed[f.Path] || (f.OldPath != "" && changed[f.OldPath]) {
-			st = Changed
+		st := Changed
+		if !changed[f.Path] && (f.OldPath == "" || !changed[f.OldPath]) {
+			if f.Type == provider.ChangeDeleted {
+				if !head[f.Path] && !last[f.Path] {
+					st = Unchanged
+				}
+			} else if head[f.Path] && last[f.Path] {
+				st = Unchanged
+			}
 		}
 		out.Files[i] = File{Path: f.Path, OldPath: f.OldPath, State: st}
 	}

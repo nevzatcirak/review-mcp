@@ -168,17 +168,21 @@ func realHistory(g *gitRepo) (last, head string, files []provider.FilePatch, wan
 		modified("keep.go"), modified("edit.go"), modified("revert.go"), modified("ünï stays.go"),
 		modified("dir with space/ünï.go"), renamed("new name.go", "old name.go"), renamed("moved.go", "orig.go"),
 		deleted("deleted-before.go"), deleted("deleted-since.go"),
+		// The same name as "ünï stays.go" in decomposed form (NFD), which git
+		// does not hold: a provider path git never matched.
+		modified("u\u0308ni\u0308 stays.go"),
 	}
 	want = map[string]State{
-		"keep.go":               Unchanged,
-		"edit.go":               Changed,
-		"revert.go":             Unchanged, // the same blob again
-		"ünï stays.go":          Unchanged,
-		"dir with space/ünï.go": Changed,
-		"new name.go":           Changed, // renamed since the last review
-		"moved.go":              Unchanged,
-		"deleted-before.go":     Unchanged,
-		"deleted-since.go":      Changed,
+		"keep.go":                  Unchanged,
+		"edit.go":                  Changed,
+		"revert.go":                Unchanged, // the same blob again
+		"ünï stays.go":             Unchanged,
+		"dir with space/ünï.go":    Changed,
+		"new name.go":              Changed, // renamed since the last review
+		"moved.go":                 Unchanged,
+		"deleted-before.go":        Unchanged,
+		"deleted-since.go":         Changed,
+		"u\u0308ni\u0308 stays.go": Changed,
 	}
 	return last, head, files, want
 }

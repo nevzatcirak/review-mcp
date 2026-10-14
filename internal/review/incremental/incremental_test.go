@@ -86,12 +86,16 @@ func (f *fakeReader) readCount() int {
 	return len(f.reads)
 }
 
-// fakeLocal is a repository-context cache holding the commits in has.
+// fakeLocal is a repository-context cache holding the commits in has:
+// paths is what the comparison lists, trees the files of each commit.
 type fakeLocal struct {
-	has   map[string]bool
-	paths []string
-	err   error
-	calls [][2]string
+	has     map[string]bool
+	paths   []string
+	err     error
+	trees   map[string][]string
+	treeErr map[string]error
+	calls   [][2]string
+	listed  []string
 }
 
 func (l *fakeLocal) HasCommit(_ context.Context, _ gitctx.Checkout, rev string) bool {
@@ -104,6 +108,14 @@ func (l *fakeLocal) ChangedPaths(ctx context.Context, _ gitctx.Checkout, from, t
 		return nil, err
 	}
 	return l.paths, l.err
+}
+
+func (l *fakeLocal) ListPaths(ctx context.Context, _ gitctx.Checkout, rev string) ([]string, error) {
+	l.listed = append(l.listed, rev)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return l.trees[rev], l.treeErr[rev]
 }
 
 func str(s string) *string { return &s }
@@ -462,6 +474,10 @@ func TestLocalStrategy(t *testing.T) {
 	l := &fakeLocal{
 		has:   map[string]bool{lastSHA: true, headSHA: true},
 		paths: []string{"edited.go", "old.go", "deleted-since.go", "dir with space/ünï.go", "unrelated.go"},
+		trees: map[string][]string{
+			headSHA: {"same.go", "edited.go", "new.go", "moved.go", "dir with space/ünï.go", "unrelated.go"},
+			lastSHA: {"same.go", "edited.go", "old.go", "moved.go", "deleted-since.go", "dir with space/ünï.go"},
+		},
 	}
 	r := &fakeReader{}
 	res, err := Detect(context.Background(), Input{Ref: testRef, Files: files, Head: strings.ToUpper(headSHA), Last: lastSHA, Provider: r, Local: l})
@@ -478,9 +494,46 @@ func TestLocalStrategy(t *testing.T) {
 	if !slices.Equal(l.calls, [][2]string{{lastSHA, headSHA}}) {
 		t.Errorf("ChangedPaths calls = %q, want one from the last commit to the head", l.calls)
 	}
+	if !slices.Equal(l.listed, []string{headSHA, lastSHA}) {
+		t.Errorf("ListPaths calls = %q, want the head and the last commit once each", l.listed)
+	}
 	if r.readCount() != 0 || r.lists != 0 {
 		t.Error("the provider was asked although the cache answered")
 	}
+}
+
+// TestLocalPresenceCheck [canary]: a path git did not list as changed is
+// unchanged only when git knows it: in both commits, or for a deleted file
+// in neither. A provider path in another byte form than git's (NFD against
+// git's NFC), a path present at the head only (renamed since the last
+// review, with the old path not matched) and a deleted file still present at
+// the last commit are changed.
+func TestLocalPresenceCheck(t *testing.T) {
+	const nfc, nfd = "caf\u00e9.go", "cafe\u0301.go"
+	files := []provider.FilePatch{
+		modified(nfd), modified("known.go"), modified("head-only.go"), modified("last-only.go"),
+		deleted("deleted-nowhere.go"), deleted("deleted-at-last.go"), deleted("deleted-at-head.go"),
+	}
+	l := &fakeLocal{
+		has: map[string]bool{lastSHA: true, headSHA: true},
+		trees: map[string][]string{
+			headSHA: {nfc, "known.go", "head-only.go", "deleted-at-head.go"},
+			lastSHA: {nfc, "known.go", "last-only.go", "deleted-at-last.go"},
+		},
+	}
+	res, err := Detect(context.Background(), Input{Ref: testRef, Files: files, Head: headSHA, Last: lastSHA, Provider: refusingReader{t}, Local: l})
+	if err != nil || res.Strategy != StrategyGit {
+		t.Fatalf("result = %+v, %v, want the git strategy", res, err)
+	}
+	wantStates(t, res, map[string]State{
+		nfd:                  Changed, // git never matched the provider's bytes
+		"known.go":           Unchanged,
+		"head-only.go":       Changed,
+		"last-only.go":       Changed,
+		"deleted-nowhere.go": Unchanged,
+		"deleted-at-last.go": Changed,
+		"deleted-at-head.go": Changed,
+	})
 }
 
 // TestLocalFallsBackToAPI: the cache is used only when it holds both
@@ -492,6 +545,10 @@ func TestLocalFallsBackToAPI(t *testing.T) {
 		"lacks the head":        {has: map[string]bool{lastSHA: true}},
 		"git fails":             {has: map[string]bool{lastSHA: true, headSHA: true}, err: &gitctx.Error{Reason: gitctx.ReasonGitFailed}},
 		"output too large":      {has: map[string]bool{lastSHA: true, headSHA: true}, err: &gitctx.Error{Reason: gitctx.ReasonTooLarge}},
+		"head list fails": {has: map[string]bool{lastSHA: true, headSHA: true},
+			treeErr: map[string]error{headSHA: &gitctx.Error{Reason: gitctx.ReasonGitFailed}}},
+		"last list too large": {has: map[string]bool{lastSHA: true, headSHA: true},
+			trees: map[string][]string{headSHA: {"unchanged.go"}}, treeErr: map[string]error{lastSHA: &gitctx.Error{Reason: gitctx.ReasonTooLarge}}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			files, r, want := apiFixture()

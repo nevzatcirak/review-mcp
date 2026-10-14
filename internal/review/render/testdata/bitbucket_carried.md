@@ -7,8 +7,8 @@ Reviewed on 2026-10-06 09:30 UTC at commit `abc123d`.
 |---|---|
 | ⏱️ Estimated effort to review | 2/5 🔵🔵⚪⚪⚪ |
 | 🧪 Tests | No relevant tests |
-| 🔒 Security | No security concerns identified |
-| 🐢 Performance | No performance concerns identified |
+| 🔒 Security | No security concerns identified in the reviewed files |
+| 🐢 Performance | No performance concerns identified in the reviewed files |
 
 ### ⚡ Recommended focus areas for review
 
@@ -27,6 +27,7 @@ Reviewed on 2026-10-06 09:30 UTC at commit `abc123d`.
 - Included: 1 file
 - Omitted: 0 files
 - 1 file reviewed, 1 unchanged since the last review
+- Inline comments of earlier reviews stay on the pull request.
 
 Unchanged since the last review (1):
 

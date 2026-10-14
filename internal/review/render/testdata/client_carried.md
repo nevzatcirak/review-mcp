@@ -4,8 +4,8 @@ Pull request: Gitea #12 — Add retry to the fetcher (`https://your-gitea.exampl
 
 - Estimated effort to review: 2/5 🔵🔵⚪⚪⚪
 - No relevant tests
-- No security concerns identified
-- No performance concerns identified
+- No security concerns identified in the reviewed files
+- No performance concerns identified in the reviewed files
 
 ### Key issues to review
 
@@ -26,6 +26,7 @@ Pull request: Gitea #12 — Add retry to the fetcher (`https://your-gitea.exampl
 - Included: 1 file
 - Omitted: 0 files
 - 1 file reviewed, 1 unchanged since the last review
+- Inline comments of earlier reviews stay on the pull request.
 
 Unchanged since the last review (1):
 

@@ -6,8 +6,8 @@ Reviewed on 2026-10-06 09:30 UTC at commit `abc123d`.
 <table>
 <tr><td>⏱️&nbsp;<strong>Estimated effort to review</strong>: 2/5 🔵🔵⚪⚪⚪</td></tr>
 <tr><td>🧪&nbsp;<strong>No relevant tests</strong></td></tr>
-<tr><td>🔒&nbsp;<strong>No security concerns identified</strong></td></tr>
-<tr><td>🐢&nbsp;<strong>No performance concerns identified</strong></td></tr>
+<tr><td>🔒&nbsp;<strong>No security concerns identified in the reviewed files</strong></td></tr>
+<tr><td>🐢&nbsp;<strong>No performance concerns identified in the reviewed files</strong></td></tr>
 <tr><td>⚡&nbsp;<strong>Recommended focus areas for review</strong><br><br>
 
 <details><summary>1. <a href='https://your-gitea.example/org/repo/pulls/12/files#issuecomment-901'><strong>Possible Issue</strong></a> <code>cmd/app/main.go L10</code></summary>
@@ -34,6 +34,7 @@ The response body is not closed on the error path.
 - Included: 1 file
 - Omitted: 0 files
 - 1 file reviewed, 1 unchanged since the last review
+- Inline comments of earlier reviews stay on the pull request.
 
 Unchanged since the last review (1):
 

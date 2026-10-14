@@ -722,3 +722,81 @@ func TestIncrementalCoverage(t *testing.T) {
 		t.Errorf("a full run shows the incremental line:\n%s", out)
 	}
 }
+
+// incrementalProfiles are the client view and the overview of the four
+// providers (GitHub and GitLab render with GFM like Gitea).
+func incrementalProfiles() map[string]func(*review.Result) string {
+	gfm := provider.Capabilities{GFM: true, MarkdownTables: true, Labels: true, InlineComments: true}
+	gitlab := gfm
+	gitlab.QuickActions = true
+	return map[string]func(*review.Result) string{
+		"client":    Client,
+		"gitea":     func(r *review.Result) string { return Provider(r, capsGitea) },
+		"github":    func(r *review.Result) string { return Provider(r, gfm) },
+		"gitlab":    func(r *review.Result) string { return Provider(r, gitlab) },
+		"bitbucket": func(r *review.Result) string { return Provider(r, capsBB) },
+	}
+}
+
+// TestIncrementalScopedStatements [canary] (spec v2.1 §7.4 item 2): in mode
+// incremental the "nothing found" statements speak of the reviewed files
+// only, in every profile, as for a partial result; the key-issues statement
+// appears only when the list, carried findings included, is empty. A full
+// review keeps the unscoped statements.
+func TestIncrementalScopedStatements(t *testing.T) {
+	scoped := []string{textNoSecurityScoped, textNoPerfScoped}
+	for name, tc := range map[string]struct {
+		mode    string
+		carried bool
+		want    []string
+		absent  []string
+	}{
+		"incremental, no findings": {review.IncrementalChanged, false, append([]string{textNoIssuesScoped}, scoped...),
+			[]string{textNoIssues, textNoSecurity + "\n", textNoSecurity + " |", textNoSecurity + "</strong>"}},
+		"incremental, carried only": {review.IncrementalChanged, true, scoped, []string{textNoIssuesScoped, textNoIssues}},
+		"full, no findings": {review.IncrementalFull, false, []string{textNoIssues, textNoSecurity, textNoPerf},
+			[]string{textNoIssuesScoped, textNoSecurityScoped, textNoPerfScoped}},
+	} {
+		res := carriedResult()
+		res.Incremental.Mode = tc.mode
+		res.Review.KeyIssuesToReview = res.Review.KeyIssuesToReview[1:]
+		if !tc.carried {
+			res.Review.KeyIssuesToReview = nil
+		}
+		for profile, render := range incrementalProfiles() {
+			out := render(res)
+			for _, w := range tc.want {
+				if !strings.Contains(out, w) {
+					t.Errorf("%s/%s lacks %q:\n%s", profile, name, w, out)
+				}
+			}
+			for _, a := range tc.absent {
+				if strings.Contains(out, a) {
+					t.Errorf("%s/%s has %q:\n%s", profile, name, a, out)
+				}
+			}
+		}
+	}
+}
+
+// TestIncrementalEarlierInlineLine (spec v2.1 §0 item 3, §7.4 item 3): in
+// mode incremental the coverage section says, after the "N files reviewed,
+// M unchanged" line, that the inline comments of earlier reviews stay on
+// the pull request, in every profile; a full run and a run that reviewed
+// nothing do not.
+func TestIncrementalEarlierInlineLine(t *testing.T) {
+	const line = "- 1 file reviewed, 1 unchanged since the last review\n- Inline comments of earlier reviews stay on the pull request.\n"
+	for _, mode := range []string{review.IncrementalChanged, review.IncrementalFull, review.IncrementalUnchanged} {
+		res := carriedResult()
+		res.Incremental.Mode = mode
+		for profile, render := range incrementalProfiles() {
+			out := render(res)
+			if got := strings.Contains(out, line); got != (mode == review.IncrementalChanged) {
+				t.Errorf("%s/%s: line present %v:\n%s", profile, mode, got, out)
+			}
+			if mode != review.IncrementalChanged && strings.Contains(out, "Inline comments of earlier reviews") {
+				t.Errorf("%s/%s shows the earlier inline comments line", profile, mode)
+			}
+		}
+	}
+}

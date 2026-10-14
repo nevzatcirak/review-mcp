@@ -240,6 +240,10 @@ type Plan struct {
 	// the PR's threads when the run will publish inline comments.
 	own []ownFinding
 
+	// heldNote is the note of overview-only findings without a held line
+	// that the last render of the overview added; "" for none.
+	heldNote string
+
 	// The PR's threads and the token's user, each read at most once per
 	// run (listThreads, currentUser).
 	threadsRead bool

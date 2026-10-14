@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
@@ -83,7 +84,11 @@ func publish(ctx context.Context, deps Deps, args Args, pl *Plan) {
 	var render func(provider.Capabilities) string
 	if deps.RenderProvider != nil {
 		render = func(caps provider.Capabilities) string {
-			return withReviewedMarker(deps.RenderProvider(res, caps), res.Reviewed.SHA)
+			// The held lines follow the findings' inline statuses, which the
+			// inline post changes between two renders; so does their note.
+			held, unrecorded := heldLines(res, res.Reviewed.SHA)
+			pl.setHeldNote(unrecorded)
+			return withTrailer(deps.RenderProvider(res, caps), held, res.Reviewed.SHA)
 		}
 	}
 
@@ -200,8 +205,35 @@ func editOverview(ctx context.Context, log *slog.Logger, pl *Plan, found *foundO
 	if !pub.Published {
 		// Neither edited nor posted: the note's "a new one was posted" is
 		// not true, and the old overview stays as it was.
-		res.Notes = res.Notes[:len(res.Notes)-1]
+		if i := slices.Index(res.Notes, NoteOverviewReplaced); i >= 0 {
+			res.Notes = slices.Delete(res.Notes, i, i+1)
+		}
 	}
+}
+
+// setHeldNote keeps the note of overview-only findings without a held line
+// (noteNotCarried) in step with the last render: it replaces the note of
+// the previous render in place, removes it when every finding is recorded
+// now, or appends it.
+func (pl *Plan) setHeldNote(unrecorded int) {
+	res := pl.Result
+	note := ""
+	if unrecorded > 0 {
+		note = noteNotCarried(unrecorded)
+	}
+	i := -1
+	if pl.heldNote != "" {
+		i = slices.Index(res.Notes, pl.heldNote)
+	}
+	switch {
+	case i >= 0 && note == "":
+		res.Notes = slices.Delete(res.Notes, i, i+1)
+	case i >= 0:
+		res.Notes[i] = note
+	case note != "":
+		res.Notes = append(res.Notes, note)
+	}
+	pl.heldNote = note
 }
 
 // errNoRenderer stands for a missing Deps.RenderProvider in editOverview.

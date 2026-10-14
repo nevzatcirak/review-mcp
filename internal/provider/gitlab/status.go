@@ -53,6 +53,18 @@ func reviewerState(s string) provider.ReviewState {
 	return provider.ReviewPending
 }
 
+// requestedState is the verdict of a requested reviewer: approved_by is
+// what GitLab counts as approving now, so a reviewer in it is approved
+// whatever /reviewers says (servers before the reviewer states report only
+// unreviewed or reviewed), except one who requested changes.
+func requestedState(state string, inApprovedBy bool) provider.ReviewState {
+	s := reviewerState(state)
+	if inApprovedBy && s != provider.ReviewChangesRequested {
+		return provider.ReviewApproved
+	}
+	return s
+}
+
 func reviewerOf(u *apiUser, state provider.ReviewState, requested bool) provider.Reviewer {
 	out := provider.User{Name: u.Username}
 	if u.ID > 0 {
@@ -64,7 +76,8 @@ func reviewerOf(u *apiUser, state provider.ReviewState, requested bool) provider
 // GetReviewStatus implements provider.Provider (spec 2C §4 item 1).
 //
 // Reviewers: GET .../reviewers, every entry requested, with the state
-// mapped by reviewerState; the users of approved_by (GET .../approvals)
+// mapped by requestedState (a reviewer in approved_by is approved unless
+// they requested changes); the users of approved_by (GET .../approvals)
 // who are not reviewers are added as approved and not requested. GitLab
 // reports no commit per approval, so Stale is always false. A 404 on
 // /reviewers (an instance without the endpoint) falls back to the merge
@@ -126,15 +139,16 @@ func (p *Provider) GetReviewStatus(ctx context.Context, ref provider.PRRef, pr *
 		seen[userKey(&reviewers[i].User)] = true
 	}
 	out := make([]provider.Reviewer, 0, len(reviewers)+len(appr.ApprovedBy))
-	// DESIGN-QUESTION WP-6d DQ-d2: a requested reviewer keeps the state
-	// /reviewers reports even when approved_by lists them (the spec maps
-	// approved_by only for users who are not reviewers). Option: show them
-	// approved unless they requested changes. Kept the spec's rule.
+	approved := map[string]bool{}
+	for i := range appr.ApprovedBy {
+		approved[userKey(&appr.ApprovedBy[i].User)] = true
+	}
 	for i := range reviewers {
 		if reviewers[i].User.Username == "" {
 			continue
 		}
-		out = append(out, reviewerOf(&reviewers[i].User, reviewerState(reviewers[i].State), true))
+		state := requestedState(reviewers[i].State, approved[userKey(&reviewers[i].User)])
+		out = append(out, reviewerOf(&reviewers[i].User, state, true))
 	}
 	for i := range appr.ApprovedBy {
 		u := &appr.ApprovedBy[i].User

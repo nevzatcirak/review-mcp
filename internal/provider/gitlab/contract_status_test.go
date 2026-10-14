@@ -54,7 +54,11 @@ func (g *ctGitLab) reviewersJSON() []any {
 	out := []any{}
 	for _, r := range g.ctReviewers() {
 		if !ctApprovedOnly(r) {
-			out = append(out, map[string]any{"user": ctUser(r.User), "state": ctReviewerStates[r.State],
+			state := ctReviewerStates[r.State]
+			if s, ok := g.fx.reviewerStates[r.User.Login]; ok {
+				state = s
+			}
+			out = append(out, map[string]any{"user": ctUser(r.User), "state": state,
 				"created_at": "2026-01-02T03:04:05Z"})
 		}
 	}

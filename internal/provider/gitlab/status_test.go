@@ -86,14 +86,71 @@ func TestReviewerStates(t *testing.T) {
 	}
 }
 
+// TestRequestedReviewerApproved: a requested reviewer in approved_by is
+// approved whatever /reviewers says, except one who requested changes; one
+// not in approved_by keeps the /reviewers state. [canary: ignore
+// approved_by for requested reviewers]
+func TestRequestedReviewerApproved(t *testing.T) {
+	for _, tc := range []struct {
+		state string
+		in    bool
+		want  provider.ReviewState
+	}{
+		{"unreviewed", true, provider.ReviewApproved},
+		{"reviewed", true, provider.ReviewApproved},
+		{"review_started", true, provider.ReviewApproved},
+		{"approved", true, provider.ReviewApproved},
+		{"requested_changes", true, provider.ReviewChangesRequested},
+		{"unreviewed", false, provider.ReviewPending},
+		{"reviewed", false, provider.ReviewCommented},
+		{"approved", false, provider.ReviewApproved},
+		{"requested_changes", false, provider.ReviewChangesRequested},
+	} {
+		if got := requestedState(tc.state, tc.in); got != tc.want {
+			t.Errorf("requestedState(%q, in approved_by %v) = %q, want %q", tc.state, tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestRequestedReviewerApprovedServed: the same rule through /reviewers and
+// /approvals: approvers whose /reviewers state is unreviewed, reviewed or
+// requested_changes, and a reviewer not in approved_by.
+func TestRequestedReviewerApprovedServed(t *testing.T) {
+	spec := ctSpec(ctModified)
+	spec.Reviewers = []contract.Reviewer{
+		{User: contract.User{ID: 201, Login: "dave"}, State: provider.ReviewApproved},
+		{User: contract.User{ID: 202, Login: "erin"}, State: provider.ReviewApproved},
+		{User: contract.User{ID: 203, Login: "frank"}, State: provider.ReviewApproved},
+		{User: contract.User{ID: 204, Login: "heidi"}, State: provider.ReviewCommented},
+	}
+	f := ctFixture{reviewerStates: map[string]string{"dave": "unreviewed", "erin": "reviewed", "frank": "requested_changes"}}
+	st, _ := ctStatusOf(t, f, spec)
+	want := map[string]ctReviewerWant{
+		"dave":  {provider.ReviewApproved, true},
+		"erin":  {provider.ReviewApproved, true},
+		"frank": {provider.ReviewChangesRequested, true},
+		"heidi": {provider.ReviewCommented, true},
+	}
+	got := ctReviewersOf(st)
+	if len(st.Reviewers) != len(want) {
+		t.Errorf("%d reviewers, want %d: %+v", len(st.Reviewers), len(want), st.Reviewers)
+	}
+	for name, w := range want {
+		if got[name] != w {
+			t.Errorf("%s = %+v, want %+v", name, got[name], w)
+		}
+	}
+}
+
 // TestReviewersNotFound: an instance that answers 404 for /reviewers falls
-// back to the merge request's reviewers[], all pending, plus approved_by;
+// back to the merge request's reviewers[], pending unless approved_by
+// lists them, plus approved_by;
 // any other failure leaves the reviewers unread, with the fixed note, and
 // the required approvals are still read.
 func TestReviewersNotFound(t *testing.T) {
 	st, g := ctStatusOf(t, ctFixture{reviewersStatus: 404}, ctStatusSpec())
 	want := map[string]ctReviewerWant{
-		"dave":  {provider.ReviewPending, true},
+		"dave":  {provider.ReviewApproved, true}, // in approved_by
 		"erin":  {provider.ReviewPending, true},
 		"heidi": {provider.ReviewPending, true},
 		"ivan":  {provider.ReviewPending, true},

@@ -121,6 +121,8 @@ type ctFixture struct {
 	omitRequired    bool
 	approvalsStatus int
 	reviewersStatus int
+	// reviewerStates overrides the /reviewers state served for a login.
+	reviewerStates map[string]string
 	// statuses are served instead of the Spec's checks when set (raw
 	// commit statuses); statusPage is their page size (100 when 0).
 	statuses   []map[string]any

@@ -19,7 +19,6 @@
 package contract
 
 import (
-	"sort"
 	"testing"
 
 	"github.com/nevzatcirak/review-mcp/internal/provider"
@@ -57,14 +56,14 @@ type Traits struct {
 	// ignores EndLine: the comment is posted on Line and listed there, with
 	// StartLine 0.
 	InlineRanges bool
-	// Pending maps a case, or one call of the errors case, to the work
-	// package that will implement it, while a provider is built up over
-	// several packages. Run skips each with "pending: <package>" instead of
-	// running it. A key is a case name of Run ("threads") or "errors/" plus
-	// a call name of the errors case ("errors/ListThreads"); an unknown key
-	// fails the suite, so that a stale entry cannot hide a case. A finished
-	// provider has no Pending entries.
-	Pending map[string]string
+	// NoStaleReviews is true for a provider whose host reports no commit
+	// per verdict (GitLab): a Reviewer with Stale in the Spec is served as
+	// a plain verdict, and the provider must report it not stale.
+	//
+	// DESIGN-QUESTION WP-6d DQ-d3: the stale case of review_status cannot
+	// hold on such a host; a trait (not a skip) keeps the rest of the case
+	// running.
+	NoStaleReviews bool
 }
 
 // Declarer is implemented by a Fixture that declares Traits.
@@ -109,45 +108,9 @@ func Run(t *testing.T, f Fixture) {
 		{"list_dir", s.listDir},
 		{"errors", s.errorCases},
 	}
-	var names []string
-	for _, c := range cases {
-		names = append(names, c.name)
-	}
-	for _, k := range unknownPending(tr.Pending, names) {
-		t.Errorf("Traits.Pending names %q, which is neither a case nor a call of the errors case", k)
-	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			s.skipPending(t, c.name)
 			c.run(t)
 		})
-	}
-}
-
-// unknownPending returns the keys of pending, sorted, that name neither one
-// of the cases nor "errors/" plus a call of the errors case.
-func unknownPending(pending map[string]string, cases []string) []string {
-	known := map[string]bool{}
-	for _, c := range cases {
-		known[c] = true
-	}
-	for _, n := range failureCallNames {
-		known["errors/"+n] = true
-	}
-	var out []string
-	for k := range pending {
-		if !known[k] {
-			out = append(out, k)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-// skipPending skips t when the fixture declares key pending.
-func (s *suite) skipPending(t *testing.T, key string) {
-	t.Helper()
-	if wp, ok := s.tr.Pending[key]; ok {
-		t.Skip("pending: " + wp)
 	}
 }

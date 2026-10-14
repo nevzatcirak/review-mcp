@@ -729,6 +729,11 @@ func TestPublishDescriptionTitleKeepsDraftPrefix(t *testing.T) {
 		{"lower case", "wip: retry more", &yes, "wip: " + generated},
 		{"mixed case, leading space", "  [Wip]   retry more", &yes, "  [Wip]   " + generated},
 		{"no space after the prefix", "WIP:retry more", &yes, "WIP: " + generated},
+		{"GitLab colon", "Draft: retry more", &yes, "Draft: " + generated},
+		{"GitLab brackets", "[Draft] retry more", &yes, "[Draft] " + generated},
+		{"GitLab parentheses", "(Draft) retry more", &yes, "(Draft) " + generated},
+		{"GitLab upper case", "DRAFT: retry more", &yes, "DRAFT: " + generated},
+		{"GitLab prefix on a non-draft is replaced", "[draft] retry more", &no, generated},
 		{"draft flag without a prefix", "retry more", &yes, generated},
 		{"not a draft", "retry more", &no, generated},
 		{"flag unknown", "retry more", nil, generated},
@@ -744,7 +749,8 @@ func TestPublishDescriptionTitleKeepsDraftPrefix(t *testing.T) {
 		})
 	}
 	t.Run("a generated prefix cannot make a draft", func(t *testing.T) {
-		for _, gen := range []string{"WIP: " + generated, "[wip] wip: " + generated} {
+		for _, gen := range []string{"WIP: " + generated, "[wip] wip: " + generated, "Draft: " + generated,
+			"(DRAFT) [Draft] draft: " + generated} {
 			if got := keepDraftPrefix(&provider.PullRequest{Title: "retry", Draft: &no}, stripDraftPrefix(gen)); got != generated {
 				t.Errorf("title for %q = %q", gen, got)
 			}
@@ -753,4 +759,113 @@ func TestPublishDescriptionTitleKeepsDraftPrefix(t *testing.T) {
 			t.Errorf("a bare prefix left %q", got)
 		}
 	})
+}
+
+// qaCaps are the capabilities of a host with quick actions and description
+// edits (GitLab).
+var qaCaps = provider.Capabilities{GFM: true, DescriptionEdit: true, QuickActions: true}
+
+// A description whose author text has a line a host could run as a quick
+// action is refused before any write; the region is the only text review-mcp
+// owns. [canary: skip the check]
+func TestPublishDescriptionQuickActionRefusal(t *testing.T) {
+	region := RegionStart + "\n/label ~inside\n" + RegionEnd
+	for _, tc := range []struct {
+		name, desc string
+		refused    bool
+	}{
+		{"command", "Fixes it.\n/label ~x\n", true},
+		{"first line", "/label ~x", true},
+		{"three spaces", "text\n   /label ~x", true},
+		{"four spaces", "text\n    /label ~x", false},
+		{"digit", "/1", true},
+		{"underscore", "/_x", true},
+		{"CRLF", "text\r\n  /close\r\nmore", true},
+		{"lone CR", "text\r/close", true},
+		{"after the region", region + "\ntext\n/label ~x", true},
+		{"before the region", "/label ~x\n" + region, true},
+		{"comment", "// a comment\n/* c */\n/\n", false},
+		{"mid-line", "text /label ~x\n", false},
+		{"inside our region only", "Plain text.\n" + region + "\nMore text.", false},
+		{"no description", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, p := publishHarness(qaCaps)
+			p.desc = tc.desc
+			res := h.run(t, descArgs(true))
+			if tc.refused {
+				if res.Publish.Published || res.Publish.Error != MsgQuickActionInDescription || p.writes != 0 || p.updates != 0 {
+					t.Errorf("publish %+v, %d writes: want the refusal and no write", res.Publish, p.writes)
+				}
+				if p.desc != tc.desc {
+					t.Errorf("description = %q, want it untouched", p.desc)
+				}
+				return
+			}
+			if !res.Publish.Published || res.Publish.Error != "" || p.writes != 1 {
+				t.Errorf("publish %+v, %d writes: want published", res.Publish, p.writes)
+			}
+			if tc.desc != "" && !strings.Contains(p.desc, strings.Split(tc.desc, RegionStart)[0]) {
+				t.Errorf("the author's text changed: %q", p.desc)
+			}
+		})
+	}
+	if MsgQuickActionInDescription != "the description has a line GitLab could run as a quick action; publish in comment mode instead" {
+		t.Errorf("sentence = %q", MsgQuickActionInDescription)
+	}
+}
+
+// The check runs on the re-read right before the write, so a command added
+// after the pipeline read the description is caught as well.
+func TestPublishDescriptionQuickActionAddedConcurrently(t *testing.T) {
+	h, p := publishHarness(qaCaps)
+	p.desc = "Clean text."
+	p.beforeGet = func(n int) {
+		if n == 2 { // the re-read
+			p.edit("Clean text.\n/assign @bob")
+		}
+	}
+	res := h.run(t, descArgs(false))
+	if res.Publish.Published || res.Publish.Error != MsgQuickActionInDescription || p.writes != 0 {
+		t.Errorf("publish %+v, %d writes: want the refusal and no write", res.Publish, p.writes)
+	}
+}
+
+// A host without quick actions is unaffected, and so is the comment mode of
+// the host with them.
+func TestPublishQuickActionRefusalOnlyWithQuickActions(t *testing.T) {
+	const desc = "Author text.\n/label ~x\n"
+	for name, caps := range map[string]provider.Capabilities{"gitea": giteaCaps, "bitbucket": bbsCaps} {
+		t.Run(name, func(t *testing.T) {
+			h, p := publishHarness(caps)
+			p.desc = desc
+			res := h.run(t, descArgs(false))
+			if !res.Publish.Published || p.writes != 1 || !strings.HasPrefix(p.desc, desc) {
+				t.Errorf("publish %+v, %d writes, description %q", res.Publish, p.writes, p.desc)
+			}
+		})
+	}
+	t.Run("comment mode", func(t *testing.T) {
+		h, p := publishHarness(qaCaps)
+		p.desc = desc
+		res := h.run(t, Args{Publish: true})
+		if !res.Publish.Published || len(p.comments) != 1 || p.updates != 0 {
+			t.Errorf("publish %+v, %d comments", res.Publish, len(p.comments))
+		}
+	})
+}
+
+func TestAuthorText(t *testing.T) {
+	region := RegionStart + "\nbody\n" + RegionEnd
+	for in, want := range map[string]string{
+		"":                               "",
+		"plain":                          "plain",
+		"a\n" + region + "\nb":           "a\n\n\nb",
+		region:                           "\n",
+		RegionStart + "\n" + RegionStart: RegionStart + "\n" + RegionStart, // damaged: whole text
+	} {
+		if got := authorText(in); got != want {
+			t.Errorf("authorText(%q) = %q, want %q", in, got, want)
+		}
+	}
 }

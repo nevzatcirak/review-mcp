@@ -1,6 +1,10 @@
 package describe
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/nevzatcirak/review-mcp/internal/provider"
+)
 
 // The markers of the description region (v2 spec §4, Y-5). Both are CommonMark
 // link reference definitions, which render as nothing.
@@ -27,6 +31,11 @@ const (
 	// MsgChangedWhileUpdating: the description changed twice while it was
 	// being updated (or a version conflict repeated); nothing was written.
 	MsgChangedWhileUpdating = "The pull request description changed while it was being updated; nothing was written."
+	// MsgQuickActionInDescription: the author's text of the description has
+	// a line a host with quick actions (GitLab) could run when the
+	// description is updated; review-mcp never changes the author's text, so
+	// it writes nothing.
+	MsgQuickActionInDescription = "the description has a line GitLab could run as a quick action; publish in comment mode instead"
 	// publishFailedMessage is shown for a publish error that is not a
 	// classified provider error.
 	publishFailedMessage = "the description could not be published to the pull request"
@@ -122,6 +131,46 @@ func ApplyRegion(text, body string) (out string, replaced bool, err error) {
 		return text[:lines[starts[0]].start] + region + text[lines[ends[0]].end:], true, nil
 	}
 	return "", false, errDamagedRegion
+}
+
+// authorText returns the part of the description that review-mcp does not
+// own: the whole text when it has no region, else the text before the start
+// marker line and after the end marker line. A text whose region is damaged
+// (ApplyRegion refuses it) is returned whole.
+func authorText(text string) string {
+	lines := splitLines(text)
+	var starts, ends []int
+	for i, l := range lines {
+		switch {
+		case isMarker(text, l, RegionStart):
+			starts = append(starts, i)
+		case isMarker(text, l, RegionEnd):
+			ends = append(ends, i)
+		}
+	}
+	if len(starts) == 1 && len(ends) == 1 && starts[0] < ends[0] {
+		return text[:lines[starts[0]].start] + "\n" + text[lines[ends[0]].end:]
+	}
+	return text
+}
+
+// hasQuickActionLine reports whether a line of text, after up to three
+// leading spaces, could run a quick action (provider.QuickActionLine). It
+// is deliberately stricter than the sanitiser, which only looks at column
+// 0: the author's lines are not rewritten, so any line a host might read as
+// a command counts. Lines end at "\r\n", "\r" or "\n".
+func hasQuickActionLine(text string) bool {
+	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
+	for _, l := range strings.Split(text, "\n") {
+		n := 0
+		for n < 3 && n < len(l) && l[n] == ' ' {
+			n++
+		}
+		if provider.QuickActionLine(l[n:]) {
+			return true
+		}
+	}
+	return false
 }
 
 // separator returns the line terminators to put between text and a block

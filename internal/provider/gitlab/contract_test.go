@@ -26,7 +26,7 @@ import (
 
 // TestContract runs the provider contract suite against a fake GitLab API
 // v4 under a context path, serving each contract.Spec from a project in a
-// nested group. The cases of WP-6d are declared pending.
+// nested group.
 func TestContract(t *testing.T) {
 	contract.Run(t, ctFixture{})
 }
@@ -41,6 +41,12 @@ func TestReviewDuplicates(t *testing.T) {
 // provider and the contract fake.
 func TestReviewFindings(t *testing.T) {
 	contract.RunReviewFindings(t, ctFixture{})
+}
+
+// TestReviewCI runs the CI scenario (X-31) of pr_review through this
+// provider and the contract fake: the commit statuses of the head commit.
+func TestReviewCI(t *testing.T) {
+	contract.RunReviewCI(t, ctFixture{})
 }
 
 // TestReviewProject runs the project-context scenario (X-32) of pr_review
@@ -99,6 +105,26 @@ type ctFixture struct {
 	strayLine         int
 	strayAuthor       *contract.User
 	strayDeleteStatus int
+	// webURL is the merge request's web_url when set (the default is
+	// https://gitlab.example.com/group/sub/project/-/merge_requests/7), and
+	// emptyWebURL serves none.
+	webURL      string
+	emptyWebURL bool
+	// mergeStatus is the merge request's detailed_merge_status ("mergeable"
+	// when empty) and state its state ("opened" when empty).
+	mergeStatus, state string
+	// required is approvals_required of the approvals read (2 when nil);
+	// omitRequired leaves the field out; approvalsStatus and
+	// reviewersStatus answer those reads with that error status, and
+	// noReviewersRoute answers 404 on /reviewers only.
+	required        *int
+	omitRequired    bool
+	approvalsStatus int
+	reviewersStatus int
+	// statuses are served instead of the Spec's checks when set (raw
+	// commit statuses); statusPage is their page size (100 when 0).
+	statuses   []map[string]any
+	statusPage int
 	// objectErrors sends a refused position's errors as an object
 	// ({"message": {"line_code": [...]}}) instead of a Ruby hash string.
 	objectErrors bool
@@ -110,14 +136,7 @@ func (ctFixture) Traits() contract.Traits {
 	return contract.Traits{
 		BaseStrategies:  BaseStrategies(),
 		CheckStrategies: CheckStrategies(),
-		Pending: map[string]string{
-			"review_status":            "WP-6d",
-			"update_pull_request":      "WP-6d",
-			"checks":                   "WP-6d",
-			"errors/UpdatePullRequest": "WP-6d",
-			"errors/GetReviewStatus":   "WP-6d",
-			"errors/GetChecks":         "WP-6d",
-		},
+		NoStaleReviews:  true,
 	}
 }
 
@@ -177,6 +196,8 @@ type ctGitLab struct {
 	// the ids of the notes deleted.
 	positions []ctPositionIn
 	deleted   []int64
+	// puts are the bodies of the PUTs of the merge request, as sent.
+	puts []map[string]json.RawMessage
 }
 
 func ctUser(u contract.User) map[string]any {
@@ -192,19 +213,38 @@ func ctJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func (g *ctGitLab) mrJSON() map[string]any {
+// mrBody is the merge request as the title, description and state are now.
+func (g *ctGitLab) mrBody() map[string]any {
 	count := strconv.Itoa(len(g.pr.Files))
 	if g.fx.diffLimit {
 		count = "1000+"
 	}
 	m := map[string]any{
 		"id": 99007, "iid": 7, "project_id": 4242, "title": g.pr.Title, "description": g.pr.Description,
-		"state": "opened", "draft": g.pr.Draft, "detailed_merge_status": "mergeable",
+		"state": "opened", "draft": g.pr.Draft, "detailed_merge_status": "mergeable", "reviewers": g.reviewerUsers(),
 		"web_url":       "https://gitlab.example.com/group/sub/project/-/merge_requests/7",
 		"changes_count": count, "source_branch": g.pr.SourceBranch, "target_branch": g.pr.TargetBranch,
 		"sha": g.pr.HeadSHA, "author": ctUser(g.pr.Author), "source_project_id": 4242, "target_project_id": 4242,
 		"diff_refs": map[string]any{"base_sha": g.pr.BaseSHA, "head_sha": g.pr.HeadSHA, "start_sha": ctStartSHA},
 	}
+	if g.fx.webURL != "" {
+		m["web_url"] = g.fx.webURL
+	}
+	if g.fx.emptyWebURL {
+		m["web_url"] = ""
+	}
+	if g.fx.mergeStatus != "" {
+		m["detailed_merge_status"] = g.fx.mergeStatus
+	}
+	if g.fx.state != "" {
+		m["state"] = g.fx.state
+	}
+	return m
+}
+
+// mrJSON is mrBody for a read: the first read has empty diff_refs.
+func (g *ctGitLab) mrJSON() map[string]any {
+	m := g.mrBody()
 	g.mrReads++
 	if g.mrReads == 1 {
 		m["diff_refs"] = nil
@@ -314,7 +354,7 @@ func (g *ctGitLab) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		contract.WriteError(w, http.StatusUnauthorized)
 		return
 	}
-	if g.serveInline(w, r, path) || g.serveComments(w, r, path) {
+	if g.serveInline(w, r, path) || g.serveComments(w, r, path) || g.serveStatus(w, r, path) {
 		return
 	}
 	if r.Method != http.MethodGet {

@@ -185,10 +185,15 @@ func (p *Provider) ListThreads(ctx context.Context, ref provider.PRRef) ([]provi
 }
 
 // PostComment implements provider.Provider: POST
-// /projects/{id}/merge_requests/{iid}/notes. The comment's URL is built
-// from the web base ({web_url}#note_{id}); the response carries none.
+// /projects/{id}/merge_requests/{iid}/notes. The comment's URL is
+// {web_url}#note_{id} with the merge request's own web_url, as ListThreads
+// reports it (mrURL); the response carries none.
 func (p *Provider) PostComment(ctx context.Context, ref provider.PRRef, body string) (*provider.Comment, error) {
 	mr, err := mrPath(ref)
+	if err != nil {
+		return nil, err
+	}
+	web, err := p.mrURL(ctx, ref, mr)
 	if err != nil {
 		return nil, err
 	}
@@ -196,19 +201,39 @@ func (p *Provider) PostComment(ctx context.Context, ref provider.PRRef, body str
 	if err := p.sendJSON(ctx, http.MethodPost, mr+"/notes", map[string]string{"body": body}, &out); err != nil {
 		return nil, err
 	}
-	return p.postedComment(ref, out.ID), nil
+	return postedComment(web, out.ID), nil
+}
+
+// mrURL reads the merge request's web_url with a plain GET of the merge
+// request, before any write, so that a failed read leaves nothing posted.
+// GetPullRequest is not used: it waits and fails while diff_refs are not
+// ready, and a note needs no diff, so a merge request whose diff is not
+// ready yet can still be commented on. A merge request without a web_url
+// gets the URL built from the web base (mrWebURL).
+func (p *Provider) mrURL(ctx context.Context, ref provider.PRRef, mr string) (string, error) {
+	var m struct {
+		WebURL string `json:"web_url"`
+	}
+	if err := p.getJSON(ctx, mr, &m); err != nil {
+		return "", err
+	}
+	if m.WebURL == "" {
+		return p.mrWebURL(ref), nil
+	}
+	return m.WebURL, nil
 }
 
 // postedComment builds the result of a write. The note exists already: a
 // response without an id is not an error (a retry would post a duplicate).
-func (p *Provider) postedComment(ref provider.PRRef, id int64) *provider.Comment {
+func postedComment(web string, id int64) *provider.Comment {
 	if id == 0 {
 		return &provider.Comment{}
 	}
-	return &provider.Comment{ID: idStr(id), URL: noteURL(p.mrWebURL(ref), id)}
+	return &provider.Comment{ID: idStr(id), URL: noteURL(web, id)}
 }
 
-// mrWebURL is {base}/{full_path}/-/merge_requests/{iid}.
+// mrWebURL is {base}/{full_path}/-/merge_requests/{iid}, the web_url
+// fallback for a merge request that reports none.
 func (p *Provider) mrWebURL(ref provider.PRRef) string {
 	return p.webURL + "/" + provider.EscapeNamespace(ref.Namespace) + "/" + url.PathEscape(ref.Repo) +
 		"/-/merge_requests/" + idStr(ref.Number)
@@ -217,7 +242,8 @@ func (p *Provider) mrWebURL(ref provider.PRRef) string {
 // ReplyToComment implements provider.Provider. It finds the discussion that
 // holds the note commentID (a note that is on no listed discussion is
 // not_found) and posts the reply to it: POST .../discussions/{id}/notes.
-// The reply is in thread for general and inline discussions alike.
+// The reply is in thread for general and inline discussions alike. Its URL
+// is built from the merge request's web_url, read (mrURL) before the post.
 func (p *Provider) ReplyToComment(ctx context.Context, ref provider.PRRef, commentID, body string) (*provider.ReplyResult, error) {
 	if err := provider.ValidateReply(commentID, body); err != nil {
 		return nil, err
@@ -243,11 +269,15 @@ find:
 	if did == "" || !validDiscussionID(did) {
 		return nil, &provider.Error{Class: provider.ClassNotFound}
 	}
+	web, err := p.mrURL(ctx, ref, mr)
+	if err != nil {
+		return nil, err
+	}
 	var out apiNote
 	if err := p.sendJSON(ctx, http.MethodPost, mr+"/discussions/"+did+"/notes", map[string]string{"body": body}, &out); err != nil {
 		return nil, err
 	}
-	return &provider.ReplyResult{Comment: *p.postedComment(ref, out.ID), InThread: true}, nil
+	return &provider.ReplyResult{Comment: *postedComment(web, out.ID), InThread: true}, nil
 }
 
 // validDiscussionID reports whether id is safe as a path segment: GitLab's

@@ -68,12 +68,14 @@ const (
 type Repo struct {
 	// Kind selects the provider's clone URL layout, PR ref and auth schemes.
 	Kind provider.Kind
-	// BaseURL is the configured provider base URL (gitea.base_url or
-	// bitbucket_server.base_url, including any context path).
+	// BaseURL is the configured provider base URL (gitea.base_url,
+	// bitbucket_server.base_url, github.base_url or gitlab.base_url,
+	// including any context path).
 	BaseURL string
-	// Namespace is the Gitea owner or the Bitbucket project key. It may hold
-	// "/" (nested groups); the clone URL keeps the "/" and escapes each
-	// segment, and the cache directory is the segments joined with "+".
+	// Namespace is the Gitea, GitHub or GitLab namespace or the Bitbucket
+	// project key. It may hold "/" (nested groups); the clone URL keeps the
+	// "/" and escapes each segment, and the cache directory is the segments
+	// joined with "+".
 	Namespace string
 	// Name is the repository name (Gitea) or slug (Bitbucket Server).
 	Name string
@@ -183,6 +185,11 @@ func RepoFor(cfg *config.Config, ref provider.PRRef, p provider.Provider) (repo 
 		// Basic user is fixed, so the identity below is never asked for.
 		repo.BaseURL, repo.Token = cfg.GitHub.BaseURL, cfg.Secrets.GitHubToken
 		repo.CACert, repo.InsecureSkipVerify = cfg.GitHub.CACert, cfg.GitHub.InsecureSkipVerify
+	case provider.KindGitLab:
+		// The web base, with any context path (never {base}/api/v4). The
+		// Basic user is fixed, so the identity below is never asked for.
+		repo.BaseURL, repo.Token = cfg.GitLab.BaseURL, cfg.Secrets.GitLabToken
+		repo.CACert, repo.InsecureSkipVerify = cfg.GitLab.CACert, cfg.GitLab.InsecureSkipVerify
 	default:
 		return Repo{}, false
 	}

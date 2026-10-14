@@ -308,6 +308,42 @@ func TestPlan(t *testing.T) {
 	}
 }
 
+// TestPlanGitLab: the clone URL is {web base}/{full path}.git, keeping a
+// context path and the segments of a nested group (never the API base); the
+// ref is the merge request head; the only scheme is Basic oauth2.
+func TestPlanGitLab(t *testing.T) {
+	cases := []struct {
+		repo      Repo
+		url, rel  string
+		allowHTTP bool
+	}{
+		{gitlabRepo("https://gitlab.example.com"), "https://gitlab.example.com/group/sub/project.git",
+			"gitlab.example.com/_/group+sub/project", false},
+		{gitlabRepo("https://example.com/gitlab/"), "https://example.com/gitlab/group/sub/project.git",
+			"example.com/gitlab/group+sub/project", false},
+		{func() Repo { r := gitlabRepo("http://127.0.0.1:8929"); r.Namespace = "user"; return r }(),
+			"http://127.0.0.1:8929/user/project.git", "127.0.0.1_8929/_/user/project", true},
+	}
+	for _, tc := range cases {
+		p, err := newPlan(tc.repo, PR{Number: 7, HeadSHA: fakeSHA})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.url, err)
+		}
+		if p.cloneURL != tc.url || p.remoteRef != "refs/merge-requests/7/head" || filepath.ToSlash(p.rel) != tc.rel ||
+			len(p.schemes) != 1 || p.schemes[0] != schemeOAuth2 || p.net.allowHTTP != tc.allowHTTP {
+			t.Errorf("plan = %+v, want url %s rel %s", p, tc.url, tc.rel)
+		}
+	}
+	// An empty or dotted namespace segment is refused, as for every provider.
+	for _, ns := range []string{"group//sub", "group/../sub", "/group"} {
+		r := gitlabRepo("https://gitlab.example.com")
+		r.Namespace = ns
+		if _, err := newPlan(r, PR{Number: 7, HeadSHA: fakeSHA}); ReasonOf(err) != ReasonUnsupported {
+			t.Errorf("namespace %q: error %v, want unsupported", ns, err)
+		}
+	}
+}
+
 func TestClassifyStderr(t *testing.T) {
 	for stderr, want := range map[string]classified{
 		"fatal: could not read Username for 'https://h': terminal prompts disabled": {ReasonAuth, true},
@@ -632,6 +668,20 @@ func TestRepoFor(t *testing.T) {
 	cfg.GitHub.BaseURL = ""
 	if _, ok := RepoFor(cfg, provider.PRRef{Kind: provider.KindGitHub, Namespace: "octo", Repo: "demo", Number: 7}, nil); ok {
 		t.Error("GitHub without a web base gave a Repo")
+	}
+	// GitLab: the web base with its context path, never the API base.
+	cfg.GitLab.BaseURL = "https://example.com/gitlab"
+	cfg.GitLab.CACert = "/etc/gl-ca.pem"
+	cfg.GitLab.InsecureSkipVerify = true
+	cfg.Secrets.GitLabToken = config.NewSecret(testToken)
+	repo, ok = RepoFor(cfg, provider.PRRef{Kind: provider.KindGitLab, Namespace: "group/sub", Repo: "project", Number: 7}, nil)
+	if !ok || repo.BaseURL != "https://example.com/gitlab" || repo.Token.Reveal() != testToken || repo.CACert != "/etc/gl-ca.pem" ||
+		!repo.InsecureSkipVerify || repo.Namespace != "group/sub" || repo.Name != "project" || repo.Kind != provider.KindGitLab {
+		t.Errorf("RepoFor(GitLab) = %+v, %v", repo, ok)
+	}
+	cfg.GitLab.BaseURL = ""
+	if _, ok := RepoFor(cfg, provider.PRRef{Kind: provider.KindGitLab, Namespace: "group", Repo: "project", Number: 7}, nil); ok {
+		t.Error("GitLab without a web base gave a Repo")
 	}
 	o := OptionsFromConfig(config.Defaults().Context.Repo)
 	if o.MaxCacheBytes != 2048<<20 || o.MaxRepoBytes != 500<<20 || o.FetchTimeout != time.Minute || o.IdleDays != 7 {

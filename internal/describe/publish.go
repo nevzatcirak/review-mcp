@@ -129,7 +129,10 @@ func noteOlderComments(n int) string {
 // (Y-5) and, with args.UpdateTitle, replaces the title with the generated
 // one.
 //
-// The text outside the region is never changed (ApplyRegion). A concurrent
+// The text outside the region is never changed (ApplyRegion). On a host with
+// quick actions (Capabilities.QuickActions) a description whose author text
+// has a line that could run one is refused before any write
+// (MsgQuickActionInDescription); the check runs on every re-read. A concurrent
 // edit is never overwritten: the PR is re-read right before the write, and
 //
 //   - when the description differs from the text the region was computed on,
@@ -194,6 +197,21 @@ func (pl *Plan) publishDescription(ctx context.Context, args Args, render func(p
 		if err != nil {
 			pub.Error = errorSentence(err)
 			log.Debug("describe: description re-read failed", "error", pub.Error)
+			return
+		}
+		// DESIGN-QUESTION WP-6d DQ-d4: the check also refuses a run that
+		// would write only the title or nothing (an up-to-date region). The
+		// spec says description mode is refused; the narrower rule (refuse
+		// only when the description is written) would let a title-only
+		// update through. Kept the simple rule.
+		if caps.QuickActions && hasQuickActionLine(authorText(fresh.Description)) {
+			// The author's text is never changed, and a host with quick
+			// actions runs the commands in a description when it is
+			// updated: nothing is written. The check is on the text as it
+			// is right before the write, so a line added since the first
+			// read is caught too.
+			pub.Error = MsgQuickActionInDescription
+			log.Debug("describe: the author's description has a possible quick action, nothing written")
 			return
 		}
 		if fresh.Description != base.Description {
@@ -294,10 +312,19 @@ func reviewersChanged(before, after []provider.Reviewer) bool {
 
 // draftPrefixes are the title prefixes that make a pull request a draft on a
 // host that derives the draft state from the title: Gitea's default
-// WORK_IN_PROGRESS_PREFIXES, matched case-insensitively at the start of the
+// WORK_IN_PROGRESS_PREFIXES ("WIP:", "[WIP]") and GitLab's ("Draft:",
+// "[Draft]", "(Draft)"), matched case-insensitively at the start of the
 // title. The server does not report its setting, so a non-default list is
 // not known here.
-var draftPrefixes = []string{"WIP:", "[WIP]"}
+//
+// One list serves every provider. keepDraftPrefix only copies a prefix the
+// current title already has, and only for a pull request that is a draft,
+// so a prefix of another host's list is never added. stripDraftPrefix may
+// remove a word such as "Draft:" from the start of a generated title on a
+// host where it means nothing (GitHub and Bitbucket Server keep the draft
+// state in a flag, Gitea knows only its WIP prefixes); the cost is a
+// slightly shorter generated title, never a changed draft state.
+var draftPrefixes = []string{"WIP:", "[WIP]", "Draft:", "[Draft]", "(Draft)"}
 
 // draftPrefixLen returns the length of the draft prefix at the start of
 // title, with the whitespace around it, or 0 when there is none.

@@ -134,7 +134,9 @@ func TestContractEditAndPost(t *testing.T) {
 	if err != nil || c.ID == "" || c.URL == "" {
 		t.Fatalf("PostComment = %+v, %v", c, err)
 	}
-	if want := p.webURL + "/group/sub/project/-/merge_requests/7#note_" + c.ID; c.URL != want {
+	// The link is built from the merge request's web_url, which the fake
+	// serves as https://gitlab.example.com/..., not from the configured base.
+	if want := "https://gitlab.example.com/group/sub/project/-/merge_requests/7#note_" + c.ID; c.URL != want {
 		t.Errorf("URL = %q, want %q", c.URL, want)
 	}
 	if err := p.EditComment(t.Context(), ref, "80", "Mine now."); !errors.Is(err, provider.ErrNotOwner) {

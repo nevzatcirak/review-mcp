@@ -104,6 +104,33 @@ func TestEnsureGitHub(t *testing.T) {
 	}
 }
 
+// TestEnsureGitLab fetches refs/merge-requests/7/head from the GitLab layout
+// ({web base with a context path}/{nested group}/{project}.git) with Basic
+// oauth2:<token> as the first and only attempt; the identity is not needed.
+func TestEnsureGitLab(t *testing.T) {
+	resetSchemes()
+	s := newGitServer(t, provider.KindGitLab)
+	s.set(acceptExactly(basicOf("oauth2", testToken)), "")
+	r, _ := realRunner(t, Options{})
+	calls := 0
+	repo := gitlabRepo(s.base)
+	repo.Identity = identityOf(testUser, &calls)
+
+	co, err := r.Ensure(context.Background(), repo, PR{Number: 7, HeadSHA: s.head})
+	if err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	if co.HeadSHA != s.head {
+		t.Errorf("head = %s, want %s", co.HeadSHA, s.head)
+	}
+	if calls != 0 {
+		t.Errorf("identity called %d times, want 0", calls)
+	}
+	if got := schemesOf(s.requests()); len(got) != 1 || got[0] != "Basic" {
+		t.Errorf("auth schemes = %v, want [Basic]", got)
+	}
+}
+
 // TestGitHubSchemeOrder: Basic is always the first attempt, and Bearer is
 // tried only after a 401; the working scheme is remembered for the process.
 func TestGitHubSchemeOrder(t *testing.T) {

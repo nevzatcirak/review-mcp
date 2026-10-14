@@ -12,8 +12,8 @@
 // revision from diff_refs, the diff with contents, the commit messages, the
 // token's user, files and directory listings at a revision; and the
 // discussions (WP-6b, comments.go): threads, replies, edits and general
-// comments; and the inline discussions (WP-6c, inline.go). pr_info,
-// description edits and CI (WP-6d) are pending (pending.go).
+// comments; the inline discussions (WP-6c, inline.go); and pr_info
+// (status.go), description edits (update.go) and CI (checks.go) (WP-6d).
 package gitlab
 
 import (
@@ -214,13 +214,13 @@ func (*Provider) Kind() provider.Kind { return provider.KindGitLab }
 // kinds of discussion can be resolved. Inline comments are discussions on
 // one line (inline.go), and a native suggestion block sits on that line
 // and says how many lines below it it replaces ("suggestion:-0+N",
-// SuggestionStyleOffset). Description edits (WP-6d) are not set until that
-// package lands.
+// SuggestionStyleOffset). A description (and title) can be edited
+// (update.go); the draft state of a merge request follows its title.
 func (*Provider) Capabilities() provider.Capabilities {
 	return provider.Capabilities{
 		GFM: true, MarkdownTables: true, Labels: true, InlineComments: true,
 		SuggestionBlocks: true, SuggestionStyle: provider.SuggestionStyleOffset, QuickActions: true,
-		InlineThreadResolution: true, GeneralThreadResolution: true,
+		InlineThreadResolution: true, GeneralThreadResolution: true, DescriptionEdit: true,
 	}
 }
 
@@ -231,7 +231,7 @@ func BaseStrategies() []string {
 }
 
 // CheckStrategies returns the provider.Checks.Strategy values this provider
-// will produce (a fresh slice); GetChecks itself is WP-6d.
+// will produce (a fresh slice).
 func CheckStrategies() []string {
 	return []string{provider.ChecksGitLabCommitStatuses}
 }

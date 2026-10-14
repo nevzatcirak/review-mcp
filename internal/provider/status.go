@@ -67,6 +67,9 @@ const (
 	// host requires it to be up to date.
 	BlockerBehind = "the branch is behind the target branch"
 	BlockerDraft  = "the pull request is a draft"
+	// BlockerDiscussions: the host requires every discussion to be
+	// resolved before the merge (GitLab's discussions_not_resolved).
+	BlockerDiscussions = "unresolved discussions must be resolved"
 )
 
 // Fixed notes for RequiredApprovals (RequiredApprovalsNote).
@@ -81,6 +84,10 @@ const (
 	// NoteProtectionPatternUnevaluable accompanies a nil RequiredApprovals
 	// when no rule matched but a rule pattern could not be evaluated.
 	NoteProtectionPatternUnevaluable = "a protection pattern could not be evaluated"
+	// NoteNoApprovalRule accompanies RequiredApprovals 0 when the host
+	// reported that no approval is required (GitLab: approvals_required 0,
+	// no approval rule applies).
+	NoteNoApprovalRule = "no approval rule applies to this merge request"
 	// NoteClassicProtectionUnreadable accompanies a RequiredApprovals taken
 	// from the rulesets alone, when the classic branch protection (which
 	// may ask for more) could not be read.

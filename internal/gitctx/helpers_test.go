@@ -205,6 +205,10 @@ func githubRepo(base string) Repo {
 	return Repo{Kind: provider.KindGitHub, BaseURL: base, Namespace: "owner", Name: "repo", Token: config.NewSecret(testToken)}
 }
 
+func gitlabRepo(base string) Repo {
+	return Repo{Kind: provider.KindGitLab, BaseURL: base, Namespace: "group/sub", Name: "project", Token: config.NewSecret(testToken)}
+}
+
 func bbsRepo(base string) Repo {
 	return Repo{Kind: provider.KindBitbucketServer, BaseURL: base, Namespace: "PROJ", Name: "repo", Token: config.NewSecret(testToken)}
 }
@@ -281,7 +285,8 @@ type gitServer struct {
 
 // newGitServer serves owner/repo (Gitea layout, refs/pull/7/head) or
 // PROJ/repo (Bitbucket layout under the context path /bb, with
-// refs/pull-requests/7/from).
+// refs/pull-requests/7/from) or group/sub/project (GitLab layout under the
+// context path /gitlab, with refs/merge-requests/7/head).
 func newGitServer(t *testing.T, kind provider.Kind) *gitServer {
 	t.Helper()
 	return newGitServerFiles(t, kind, nil)
@@ -310,8 +315,12 @@ func newGitServerFiles(t *testing.T, kind provider.Kind, files map[string]string
 	if kind == provider.KindBitbucketServer {
 		ns, prRef, prefix = "PROJ", "refs/pull-requests/7/from", "/bb"
 	}
+	repoName := "repo"
+	if kind == provider.KindGitLab {
+		ns, prRef, prefix, repoName = "group/sub", "refs/merge-requests/7/head", "/gitlab", "project"
+	}
 	root := filepath.Join(tmp, "srv")
-	bare := filepath.Join(root, ns, "repo.git")
+	bare := filepath.Join(root, filepath.FromSlash(ns), repoName+".git")
 	gitOut(t, tmp, gitPath, "init", "-q", "--bare", bare)
 	gitOut(t, tmp, gitPath, "--git-dir="+bare, "config", "uploadpack.allowFilter", "true")
 	gitOut(t, src, gitPath, "push", "-q", bare, "HEAD:"+prRef, "HEAD:refs/heads/main")

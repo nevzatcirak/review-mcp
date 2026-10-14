@@ -598,6 +598,16 @@ the settings are in [Repository context](repo-context.md#enabling-it)). Check
 `server_info` for `enabled, git <version>` and the coverage section of a review
 for the `Repository context` line.
 
+**Optional: incremental review.** To review only the files that changed since
+the last published review, set `REVIEW_MCP_REVIEW_INCREMENTAL=true`
+(`review.incremental`, default `false`; the `incremental` argument of
+`pr_review` replaces it per call). Change detection reads at most
+`review.incremental_max_files` files through the provider (`REVIEW_MCP_REVIEW_INCREMENTAL_MAX_FILES`,
+default 300, 1 to 5000); a larger pull request is reviewed in full, with a
+note. It needs nothing beyond the read scopes, and the first review of a pull
+request is always a full one published with `publish=true`
+([Incremental review](review.md#incremental-review)).
+
 ## 6. When something fails
 
 Every error review-mcp returns is one of a fixed set of sentences, each tied to

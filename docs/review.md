@@ -21,6 +21,7 @@ edit in place, and an inline comment on each changed line a finding is about
 | `focus` | no | Review one area only: `security`, `architecture`, `performance`, `ux`, `tests`, or a description of 1 to 200 characters. A focused review never publishes; see [Focused reviews and the merged publish](#focused-reviews-and-the-merged-publish). |
 | `findings` | no | Findings to publish instead of calling the model: the merged findings of several focused reviews. Needs `publish=true` and no `focus`; at most twice `review.max_total_findings` items. |
 | `security_concerns`, `performance_concerns` | no | With `findings`, the overview's security and performance texts (at most 5000 characters each). |
+| `incremental` | no | `true` reviews only the files whose content changed since the last review review-mcp published on this pull request; `false` reviews all of them. Replaces `review.incremental` (default `false`) for this call; ignored with `findings`. See [Incremental review](#incremental-review). |
 
 Invalid `output_language`, `max_findings` or `wait_seconds` values, and
 `focus` and `findings` combinations the tool does not run, are rejected with a
@@ -30,8 +31,9 @@ are in [Troubleshooting](troubleshooting.md#focus-and-findings-refusals)).
 The result has two parts: the review as portable markdown (the text content;
 no raw HTML, so terminal clients show it as is) and the same data as
 structured content (`pr`, `review`, `coverage`, `notes`, `metadata`, `ci`
-(see [CI results](#ci-results)), `focus` for a focused review and, when
-requested, `publish`). While it runs, a client that sent a progress token
+(see [CI results](#ci-results)), `incremental` (see
+[Incremental review](#incremental-review)), `focus` for a focused review and,
+when requested, `publish`). While it runs, a client that sent a progress token
 receives the stages `fetching`, `preparing diff`, `calling model` and
 `rendering` (with [repository context](#repository-context) on and symbols to
 look for, `fetching repository context` comes before `preparing diff`). A review in parts reports `calling model (part 1 of 3)`,
@@ -191,7 +193,9 @@ did **not** see. Every changed file appears in exactly one group:
   `diff.max_diff_bytes`), `fetch_failed`, `empty_diff`, `unparseable_patch`,
   and for a review in parts `too_large` (the file does not fit a part of its
   own) and `model_call_failed` (the file was in a part whose model call
-  failed).
+  failed). An [incremental review](#incremental-review) adds
+  `unchanged_since_review`: the file has the content it had at the last
+  review, so it was not sent again. It does not make the review partial.
 - **Repository context**: a line, only when it is on, with
   `N symbols, M references from K files` or `skipped: <reason>` (see
   [Repository context](#repository-context)).
@@ -211,8 +215,9 @@ says "No reviewable changes after filtering."
 The structured `coverage` object also carries `deleted_listed` (the deleted
 files listed by name), the counts behind the
 [partial banner](#partial-reviews) (`partial`, `reviewed_files`, `total_files`
-and `not_reviewed_files`), and `model_calls` and `failed_parts` (see
-[Large pull requests](#large-pull-requests)).
+and `not_reviewed_files`), `model_calls` and `failed_parts` (see
+[Large pull requests](#large-pull-requests)) and, for an incremental review,
+`unchanged_files`.
 
 ### Partial reviews
 
@@ -424,7 +429,9 @@ that Gitea, GitHub and Bitbucket Server render as nothing. On the next publish,
 review-mcp lists the PR's general comments and takes the ones whose last line is
 exactly that marker **and** whose author is the token's own user; it edits the
 newest in place, so the PR keeps one overview with an updated time and head
-commit. Older matches are left alone, with a note.
+commit. Older matches are left alone, with a note. Directly above the marker sits a
+second hidden line that records the reviewed commit (see
+[Incremental review](#incremental-review)).
 
 A marker in a comment written by anyone else is ignored: that person could have
 planted it, and review-mcp never edits or adopts a comment it did not write.
@@ -940,6 +947,151 @@ These are checked in this order, before any request:
 | "findings must hold at most N items (twice review.max_total_findings); merge repeats before publishing" | more items than twice the call's `review.max_total_findings` (20 with the defaults) |
 
 Every message is also in [Troubleshooting](troubleshooting.md#focus-and-findings-refusals).
+
+## Incremental review
+
+By default every run reviews the whole pull request. With **incremental
+review** `pr_review` reviews only the files whose content changed since the
+last review review-mcp published on the pull request, so a push that touches
+one file of twenty costs one file's worth of model input. It is off by default,
+and it applies to `pr_review` only: `pr_describe` and `pr_improve` always
+read the whole pull request.
+
+| Setting | Env | Default | Effect |
+|---|---|---|---|
+| `review.incremental` | `REVIEW_MCP_REVIEW_INCREMENTAL` | `false` | review only the files that changed since the last review; the `incremental` argument replaces it for one call |
+| `review.incremental_max_files` | `REVIEW_MCP_REVIEW_INCREMENTAL_MAX_FILES` | `300` | the most files the change detection compares through the provider's API, 1 to 5000; a pull request with more files is reviewed in full, with a note |
+
+`server_info` lists both. The `incremental` argument of `pr_review` (`true` or
+`false`) wins over `review.incremental` for that call.
+
+### The record of the last review
+
+Every overview review-mcp publishes (a full or an incremental `pr_review`
+publish) carries the head commit the run reviewed, in a hidden line directly
+above the overview marker:
+`[//]: # (review-mcp:reviewed:<40 or 64 hex digits>)`. Like the marker it is a
+Markdown link reference, so no provider shows it. The footer of the overview
+shows the same commit as "Reviewed commit: `abc1234`" (the first 7
+characters), and for an incremental run as "Reviewed commit: `abc1234`
+(changes since `def5678`)".
+
+The record is read from review-mcp's **own** overview only, the comment whose
+last line is the marker and whose author is the token's user (see
+[The overview and its marker](#the-overview-and-its-marker)). A line in anyone
+else's comment is never read, a line that is not exactly this format (wrong
+length, upper case, extra text) is ignored, and when several lines sit above
+the marker the last one counts. A line that looks like a record inside the
+model's text or a code excerpt is written with a backslash before its `[`, so
+model output cannot forge one.
+
+Two lines of the overview name a commit, and after a merged `findings` publish
+they can differ: "Reviewed on ... at commit" is the current head of the pull
+request, while "Reviewed commit" is the recorded one, because a merged publish
+carries the earlier record over unchanged (the client's focused runs may have
+reviewed an older head, and recording the current one would let a later
+incremental run skip files no model saw), or writes none when there was none.
+
+A **partial** review (see [Partial reviews](#partial-reviews)) records no
+commit and shows no "Reviewed commit" line, so the next incremental run is a
+full review. Otherwise a file the budget, a failed part or the provider left
+out would count as "unchanged" for ever after without any model having seen
+it. A model answer that was cut off by the output limit is not yet treated as
+partial.
+
+### The three modes
+
+The result always carries `incremental`, with the `mode`:
+
+| Mode | When | What happens |
+|---|---|---|
+| `full` | incremental review is off, the overview holds no record, the lookup of the overview failed, or the change detection could not be used (below) | the whole pull request is reviewed, as without the feature |
+| `incremental` | a record exists and at least one file changed | only the changed files are sent to the model, each with its whole patch from the base, so the model sees the full change of every file it reviews |
+| `unchanged` | the record is the current head, or every listed file has the content it had at the recorded commit | the model is not called and **nothing is posted or edited**, even with `publish=true` |
+
+The other fields of `incremental`: `since` (the recorded commit the run
+continued from; absent for `full`), `strategy` (`git:diff`, `api:contents` or
+empty), `changed_files` (the listed files the run treats as changed; all of
+them for `full`) and `unchanged_files`. The coverage gains
+`coverage.unchanged_files`; the unchanged files are in `coverage.skipped`
+with the reason `unchanged_since_review`, outside `reviewed_files`,
+`not_reviewed_files` and `total_files`, and they never make the review
+partial. The overview's coverage section has a line "N files reviewed, M
+unchanged since the last review" and a group "Unchanged since the last
+review (M):".
+
+With no record the run is `full`; the note "No earlier review by review-mcp
+was found on this pull request, so the whole pull request was reviewed." is
+added only when you asked for `incremental=true` explicitly, since for the
+configured default a first review is the normal case. A failed lookup of the
+overview is a full review with the note "The last review could not be
+compared with the current head, so the whole pull request was reviewed."
+whichever way incremental review was switched on. In `unchanged` mode the
+result holds no findings and enables no fields, so nothing says "No major
+issues detected" about a run that reviewed nothing; the guidelines and the file
+tree are `off`, repository context (when on) is `skipped` with
+`nothing_to_review`, and the CI results are still read. The notes are all in
+[Troubleshooting](troubleshooting.md#incremental-review-notes).
+
+An incremental run adds one fixed sentence to the system prompt ("This is an
+incremental review: only the files that changed since the last review are
+shown; findings already posted on the pull request were not repeated.") and
+changes nothing else in it. Parts, repeated findings, CI results,
+guidelines and the file tree work on the reduced diff as usual; the file tree
+lists the directories of the changed files only, and a use of a changed symbol
+in an unchanged file is shown in the repository context marked as not
+reviewed. A `focus` run may be incremental (it never publishes, so it never
+writes a record). A `findings` publish makes no model call and compares
+nothing: it ignores `incremental` and carries the record over.
+
+### What is not carried forward
+
+An incremental overview does not repeat earlier findings. It says which
+commit it continues from and how many files it skipped, and the overview is
+edited in place as always, so an earlier finding that was only in the overview
+(it had no inline comment, for example because its line could not be
+anchored) is no longer listed. Earlier inline comments are not touched: they
+stay on the pull request, and a finding already posted at the same place is
+still not posted again (see [No repeated findings](#no-repeated-findings)).
+
+### How the changed files are found
+
+Files are compared **by content** between the recorded commit and the current
+head, so a rebase or a force-push needs no special case: a file whose content
+is the same is unchanged whatever its commits did, and a file reverted to its
+earlier content is unchanged too. Nothing is built or run. A doubt is never a
+skip: a read error, a file that is too large to read, a file present at only
+one of the two commits (a file renamed since the last review) and anything
+else unexpected make the file `changed`. Two strategies exist, and the result
+names the one used.
+
+- **`api:contents`** (the default). The commit of the last review is probed
+  with one directory listing; if it is gone (for example after a force-push
+  and garbage collection) or cannot be read, the run is full with a note.
+  Then every listed file is read at the recorded commit and, unless the diff
+  already holds its full head content, at the head: up to two file reads per
+  file, as many at a time as the providers use for file contents. At most
+  `review.incremental_max_files` files are compared; above that nothing is
+  read and the run is full, with a note.
+- **`git:diff`**. With [repository context](#repository-context) on and its
+  checkout holding both commits, one read-only `git diff --name-only` between
+  the two commits (and a listing of the files of each) replaces all those
+  requests, whatever the size of the pull request. A file is unchanged only
+  when git did not list it as changed and its path is in both commits, so a
+  path git does not know is never taken for unchanged. If anything in the
+  cache fails, the `api:contents` strategy runs instead. The git commands are read-only, run
+  offline and under the same rules as the other git commands of repository
+  context ([Security](repo-context.md#security)).
+
+`git:diff` is reachable only when the cache still holds the old commit.
+Incremental review never fetches for itself: the cache is used only when this
+very run has already fetched the head for the repository context (which
+happens only when the diff defines a symbol to look for), and the old commit
+must still be in the cache from an earlier run's fetch. Otherwise
+`api:contents` runs. That is fine: both strategies give the same answer, and
+`git:diff` only saves requests. The two can differ in two rare cases, always
+towards `changed` under `git:diff`: a change of the file mode alone, and a
+renamed file whose old path was touched again since the last review.
 
 ## MCP instructions and the `multi_perspective_review` prompt
 

@@ -5,6 +5,105 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0-rc.1] - Unreleased
+
+First v2.1 release candidate, built on 2.0.0 (the npm dist-tag `next`; `latest`
+stays on 2.0.0 until a v2.1 release). Incremental review (V-1, X-36): `pr_review`
+can review only the files whose content changed since the last review it
+published. It is off by default, so a 2.0.0 setup behaves exactly as before.
+Nothing in the tools or in the configuration of 2.0.0 is removed or renamed.
+Everything here is tested against fake servers only (and a real `git` for the
+local strategy); the live acceptance is still to be done, by the owner, on a
+throwaway pull request in this repository.
+
+### Added
+
+- Incremental review (X-36), for `pr_review` only. Guide:
+  [Incremental review](docs/review.md#incremental-review).
+  - Configuration: `review.incremental` (`REVIEW_MCP_REVIEW_INCREMENTAL`,
+    default `false`) and `review.incremental_max_files`
+    (`REVIEW_MCP_REVIEW_INCREMENTAL_MAX_FILES`, default 300, 1 to 5000, the most
+    files the change detection compares through the provider's API; a larger
+    pull request is reviewed in full, with a note). `server_info` lists both.
+  - The `pr_review` argument `incremental` replaces `review.incremental` for one
+    call. A `findings` publish ignores it.
+  - The record: every overview review-mcp publishes carries the reviewed head
+    commit in a hidden line above its marker,
+    `[//]: # (review-mcp:reviewed:<sha>)`, and its footer shows "Reviewed commit:
+    `abc1234`" (for an incremental run "(changes since `def5678`)"). It is read
+    from review-mcp's own overview only; a line that is not exactly this format is
+    ignored, and a line of that shape in the model's text is defused. A merged
+    `findings` publish carries the previous record over unchanged.
+  - Change detection, by content, so a rebase or a force-push needs no special
+    case. With repository context on and the head fetched by this run, a
+    read-only `git diff --name-only` between the two commits in the cache
+    (strategy `git:diff`); otherwise the file contents at the two commits through
+    the provider (strategy `api:contents`: one directory listing and up to two
+    file reads per file). A doubt is always "changed" or a full review, never a
+    skip. Nothing is built or run.
+  - Three modes in the new result field `incremental` (`mode` `full`,
+    `incremental` or `unchanged`, plus `since`, `strategy`, `changed_files` and
+    `unchanged_files`). In `unchanged` mode (the recorded commit is the head, or
+    no file changed) the model is not called and nothing is posted or edited, even
+    with `publish=true`.
+  - Coverage: unchanged files are listed in `coverage.skipped` with the new
+    reason `unchanged_since_review`, counted in the new `coverage.unchanged_files`,
+    outside `reviewed_files`, `not_reviewed_files` and `total_files`, and never
+    make a review partial. The coverage section says "N files reviewed, M
+    unchanged since the last review" and lists the files in a group of their own.
+  - One fixed sentence in the system prompt of an incremental run; the prompt of
+    every other run is unchanged.
+  - New notes, all in [Troubleshooting](docs/troubleshooting.md#incremental-review-notes):
+    "No earlier review by review-mcp was found on this pull request, so the whole
+    pull request was reviewed.", "Nothing changed since the last review (commit
+    `abc1234`); nothing was reviewed.", "No file of the pull request changed since
+    the last review (commit `abc1234`); nothing was reviewed.", "The commit of the
+    last review is no longer available, so the whole pull request was
+    reviewed.", "The last review could not be compared with the current head, so
+    the whole pull request was reviewed." and "The pull request has more than N
+    files, so it was not compared with the last review and was reviewed in full."
+  - New read-only `gitctx` operations `ChangedPaths` and `ListPaths`, and
+    `provider.ContentFetchConcurrency`; the contract suite gains
+    `RunReviewIncremental` for all four providers.
+- `Diff.Incomplete`: a provider sets it when the host stopped listing changed
+  files (GitHub's 3000-file cap, GitLab's diff limit and 40-page cap).
+
+### Changed
+
+- A review of a pull request whose files the host did not list completely
+  (GitHub, GitLab) is now **partial**: `coverage.partial` is true and the
+  provider's existing note explains why. The file counts do not change.
+- A finding header with a code span, in the collapsible block of the GitHub,
+  Gitea and GitLab overview, now shows the span as code instead of showing its
+  backticks (`<code>` with escaped content inside `<summary>`). Bitbucket
+  Server, which has no collapsible block, is unchanged.
+- A **partial review no longer records a reviewed commit** (its overview has no
+  "Reviewed commit" line), so the next incremental run is a full review. Files the
+  budget, a failed part or a provider skip left out are therefore never skipped
+  as "unchanged" without a model having seen them. A model answer cut off by the
+  output limit is not yet treated as partial.
+- `improve.anchorFor` is now `anchor.ResolveExact`, next to `anchor.Resolve`,
+  which share one function for the line type; no behaviour change. The shared
+  contract suite checks the order of commit messages (oldest first) on every
+  provider.
+- The documentation: [Reviewing pull requests](docs/review.md#incremental-review),
+  [Setup](docs/setup.md), [Troubleshooting](docs/troubleshooting.md#incremental-review-notes),
+  the README and NOTICE (the idea follows PR-Agent's incremental review; no code
+  is copied) and the decision X-36.
+
+### Acceptance checklist
+
+The live acceptance runs after 2.1.0-rc.1 is published, by the owner, on a
+throwaway pull request in this repository. Tick each item when it holds; write
+down the real answer when it does not.
+
+- [ ] **Q1** A full review with `publish=true`: the overview shows "Reviewed commit".
+- [ ] **Q2** Push one commit that touches one of two changed files; `pr_review` with `incremental=true` reviews one file, `incremental.mode` is `incremental`, the overview says "changes since ...", and nothing is posted for the other file.
+- [ ] **Q3** Run again without a new commit: `mode` is `unchanged`, `llm_calls` is 0 and nothing is posted.
+- [ ] **Q4** Force-push a rebased branch: the content comparison decides (files whose content did not change stay unchanged).
+- [ ] **Q5** Without repository context the strategy is `api:contents`. With repository context enabled, `git:diff` appears only when this run fetched the head and the cache still holds the last reviewed commit from an earlier run; otherwise `api:contents` is correct. Record which one was seen.
+- [ ] **Q6** A review that is partial (a part failed, or the budget left files out) records no reviewed commit, so the next incremental run is full.
+
 ## [2.0.0]
 
 Third stable release, and the first of v2. The code is the same as
@@ -1078,6 +1177,7 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[2.1.0-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.1.0-rc.1
 [2.0.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.0.0
 [2.0.0-rc.6]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.0.0-rc.6
 [2.0.0-rc.5]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.0.0-rc.5

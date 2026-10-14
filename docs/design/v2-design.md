@@ -72,7 +72,10 @@ Origin: the owner's proposal that a review should know whether the change builds
 - **Y-24 — Focused reviews.** `pr_review` gains an optional `focus` (`security`, `architecture`, `performance`, `ux` or free text). A client agent may run several focused reviews in parallel subagents; those calls do not publish and return structured findings that carry their anchors, and one agent merges them and publishes once (single writer; anchored findings inline, the rest in the overview, the X-14 fallback keeps every finding). The pattern is offered to clients through the MCP `instructions` field, the tool description and an MCP prompt (`multi_perspective_review`); the server never fans out on its own. Open question for the design: whether publishing merged findings needs a dedicated mode or the existing tools suffice.
 - **Acceptance:** in use on all three providers available by then (Gitea, Bitbucket Server, GitHub).
 
-## 6. Phase 2C — GitLab provider
+## 6. Phase 2C — GitLab provider (binding spec `docs/plan/v2-2C-spec.md`, X-34 and X-35)
+
+Amended by the spec (2026-10-14): minimum GitLab 16.0, so the `/changes` fallback of Y-18 is dropped; inline findings are individual discussions (batched draft notes move to the backlog); CI reads the head commit's statuses (merged-results and fork pipelines are not read in rc.6); quick-action safety X-35 (suggestion-aware sanitising with a diff-block fallback, and a description-edit refusal).
+
 
 - **Y-17 — Addressing.** MR URL `{base}/{group}/{subgroup…}/{project}/-/merge_requests/{iid}`, self-managed with a context path supported. Project id is the URL-encoded full path. API v4. Token header `PRIVATE-TOKEN` (personal, project or group tokens).
 - **Y-18 — Diff.** `GET /merge_requests/{iid}/diffs` (paged; GitLab 15.7+) with fallback to `/changes` for older servers (recorded as the strategy). Base from `diff_refs` (`base_sha`, `start_sha`, `head_sha`); the diff is against `base_sha` (`gitlab:diff_refs`). Contents via `/repository/files/{path}/raw?ref=`. Collapsed or too-large diffs map to `size_limit`.

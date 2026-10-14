@@ -12,7 +12,7 @@ import (
 const prInfoDescription = "Reports which branch a pull request merges into and who has reviewed or approved it: the human reviewers with their states, approval counts, required approvals and merge status where the provider exposes them, and the CI results (statuses and checks) the repository reported for the head commit. review-mcp's own reviews and comments are reported separately and never count as approvals. Read-only; no LLM call."
 
 type prInfoInput struct {
-	PRURL string `json:"pr_url" jsonschema:"URL of the pull request, on a configured Gitea, Bitbucket Server or GitHub host"`
+	PRURL string `json:"pr_url" jsonschema:"URL of the pull request, on a configured Gitea, Bitbucket Server, GitHub or GitLab host"`
 }
 
 func registerPRInfo(s *mcp.Server, deps Deps) {

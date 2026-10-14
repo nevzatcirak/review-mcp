@@ -46,6 +46,8 @@ func TestSecretNeverAppearsInAnyOutput(t *testing.T) {
 		"REVIEW_MCP_BITBUCKET_SERVER_TOKEN":    fakeBitbkt,
 		"REVIEW_MCP_GITHUB_BASE_URL":           "https://github.example.com",
 		"REVIEW_MCP_GITHUB_TOKEN":              fakeGitHub,
+		"REVIEW_MCP_GITLAB_BASE_URL":           "https://example.com/gitlab",
+		"REVIEW_MCP_GITLAB_TOKEN":              fakeGitLab,
 	})
 	cfg, rep := mustLoad(t, MemSource{Env: env})
 	sum := cfg.Summary(rep)
@@ -71,7 +73,7 @@ func TestSecretNeverAppearsInAnyOutput(t *testing.T) {
 			"key", cfg.Secrets.LLMAPIKey,
 			"secrets", cfg.Secrets,
 			slog.Any("any", cfg.Secrets.GiteaToken),
-			slog.Group("g", "tok", cfg.Secrets.BitbucketServerToken, "gh", cfg.Secrets.GitHubToken),
+			slog.Group("g", "tok", cfg.Secrets.BitbucketServerToken, "gh", cfg.Secrets.GitHubToken, "gl", cfg.Secrets.GitLabToken),
 			"config", cfg,
 		)
 		outputs[name] = buf.String()

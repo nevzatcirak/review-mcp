@@ -32,7 +32,8 @@ type ProviderSummary struct {
 	Kind    string `json:"kind"`
 	BaseURL string `json:"base_url"`
 	// APIURL is the API base when it is not BaseURL itself (GitHub: the
-	// configured or derived github.api_url); omitted otherwise.
+	// configured or derived github.api_url; GitLab: {base_url}/api/v4);
+	// omitted otherwise.
 	APIURL string `json:"api_url,omitempty"`
 }
 
@@ -70,6 +71,10 @@ func (c *Config) Summary(r *Report) Summary {
 	if c.GitHub.BaseURL != "" {
 		s.Providers = append(s.Providers, ProviderSummary{Kind: "github", BaseURL: logging.RedactURL(c.GitHub.BaseURL),
 			APIURL: logging.RedactURL(c.GitHub.EffectiveAPIURL())})
+	}
+	if c.GitLab.BaseURL != "" {
+		s.Providers = append(s.Providers, ProviderSummary{Kind: "gitlab", BaseURL: logging.RedactURL(c.GitLab.BaseURL),
+			APIURL: logging.RedactURL(c.GitLab.APIURL())})
 	}
 	if r != nil {
 		s.Warnings = append(s.Warnings, r.Warnings...)

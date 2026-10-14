@@ -186,6 +186,8 @@ func providerName(kind string) string {
 		return "Bitbucket Server"
 	case string(provider.KindGitHub):
 		return "GitHub"
+	case string(provider.KindGitLab):
+		return "GitLab"
 	}
 	return kind
 }

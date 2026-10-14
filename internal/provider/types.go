@@ -23,15 +23,17 @@ const (
 	// KindGitHub is the GitHub provider (github.com and GitHub Enterprise
 	// Server).
 	KindGitHub Kind = "github"
+	// KindGitLab is the GitLab provider (gitlab.com and self-managed GitLab).
+	KindGitLab Kind = "gitlab"
 )
 
 // PRRef identifies one pull request.
 //
-// Namespace is the Gitea or GitHub owner or the Bitbucket project key
-// ("~user" for personal repositories). It may contain "/" (nested groups, such as
-// "group/sub/team" on GitLab); each Factory.ParsePRPath decides how many
-// URL segments are namespace, and Gitea, Bitbucket Server and GitHub accept
-// exactly one. Whatever builds a URL, a cache path or a log field from it escapes it
+// Namespace is the Gitea or GitHub owner, the Bitbucket project key
+// ("~user" for personal repositories) or the GitLab namespace. It may
+// contain "/" (nested groups, such as "group/sub/team" on GitLab); each
+// Factory.ParsePRPath decides how many URL segments are namespace: Gitea,
+// Bitbucket Server and GitHub accept exactly one, GitLab one or more. Whatever builds a URL, a cache path or a log field from it escapes it
 // per segment (EscapeNamespace), never as one string. URL is the
 // user-supplied PR URL; it may only be logged through logging.RedactURL.
 type PRRef struct {
@@ -61,9 +63,14 @@ type PullRequest struct {
 	State                                                                            string
 	// BaseStrategy says how BaseSHA was chosen. It is one of BaseGiteaMergeBase,
 	// BaseGiteaBaseSHA, BaseBBSMergeBaseEP, BaseBBSAncestorWalk,
-	// BaseGitHubMergeBase and BaseGitHubBaseSHA. GetDiff uses BaseSHA and
-	// BaseStrategy as given.
+	// BaseGitHubMergeBase, BaseGitHubBaseSHA and BaseGitLabDiffRefs. GetDiff
+	// uses BaseSHA and BaseStrategy as given.
 	BaseStrategy string
+	// StartSHA is the revision the host's own diff starts from when the
+	// host reports one next to BaseSHA (GitLab's diff_refs.start_sha, the
+	// target branch's head when the diff was computed); "" otherwise. It is
+	// kept for the positions of inline comments.
+	StartSHA string
 
 	// The fields below feed pr_info (X-23). They carry states and identities
 	// only, never a comment or review body.
@@ -86,6 +93,10 @@ type PullRequest struct {
 	// compares it with the files the host lists to tell when the listing
 	// was cut short.
 	ChangedFiles int
+	// ChangedFilesAtLeast is true when ChangedFiles is only a lower bound:
+	// the host stopped counting there (GitLab's changes_count "1000+", its
+	// diff limit), so the files it lists are not all the changed files.
+	ChangedFilesAtLeast bool
 	// CommitCount is the total number of commits the provider reports for
 	// the PR itself (GitHub's commits). 0 means unknown: providers that know
 	// the total set it, the others leave it 0.
@@ -181,6 +192,9 @@ const (
 	// BaseGitHubBaseSHA: the target branch's revision recorded on the pull
 	// request, used when the compare endpoint could not be read.
 	BaseGitHubBaseSHA = "github:base_sha"
+	// BaseGitLabDiffRefs: the base_sha of the merge request's diff_refs,
+	// the revision GitLab computed the merge request's diff against.
+	BaseGitLabDiffRefs = "gitlab:diff_refs"
 )
 
 // Diff is the result of Provider.GetDiff.
@@ -191,8 +205,8 @@ type Diff struct {
 	BaseStrategy string
 	// Notes are fixed sentences about changed files the host did not list
 	// at all, so that they appear neither in Files nor in Skipped (GitHub
-	// lists at most 3000 files of a pull request). Nil for a complete
-	// listing.
+	// lists at most 3000 files of a pull request; GitLab stops at its diff
+	// limit). Nil for a complete listing.
 	Notes []string
 }
 

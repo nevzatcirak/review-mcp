@@ -548,7 +548,7 @@ func TestPossibleBugSoftened(t *testing.T) {
 func TestProviderName(t *testing.T) {
 	for kind, want := range map[string]string{
 		string(provider.KindGitea): "Gitea", string(provider.KindBitbucketServer): "Bitbucket Server",
-		string(provider.KindGitHub): "GitHub", "other": "other",
+		string(provider.KindGitHub): "GitHub", string(provider.KindGitLab): "GitLab", "other": "other",
 	} {
 		if got := providerName(kind); got != want {
 			t.Errorf("providerName(%q) = %q, want %q", kind, got, want)

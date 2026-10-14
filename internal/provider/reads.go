@@ -52,6 +52,9 @@ const (
 	// ChecksGitHubRunsAndStatuses: the check runs and the combined status,
 	// merged by name.
 	ChecksGitHubRunsAndStatuses = "github:check_runs+statuses"
+	// ChecksGitLabCommitStatuses: the commit statuses of the head commit,
+	// GET /projects/{id}/repository/commits/{sha}/statuses (2C WP-6d).
+	ChecksGitLabCommitStatuses = "gitlab:commit_statuses"
 )
 
 // Check is one CI status or check of a commit. Name and URL are untrusted

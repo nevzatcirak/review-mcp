@@ -19,6 +19,7 @@ type Config struct {
 	Gitea           Gitea           `toml:"gitea" json:"gitea"`
 	BitbucketServer BitbucketServer `toml:"bitbucket_server" json:"bitbucket_server"`
 	GitHub          GitHub          `toml:"github" json:"github"`
+	GitLab          GitLab          `toml:"gitlab" json:"gitlab"`
 	Output          Output          `toml:"output" json:"output"`
 	Diff            Diff            `toml:"diff" json:"diff"`
 	Ignore          Ignore          `toml:"ignore" json:"ignore"`
@@ -100,6 +101,27 @@ func (g GitHub) EffectiveAPIURL() string {
 		return gitHubDotComAPI
 	}
 	return base + "/api/v3"
+}
+
+// GitLab configures the GitLab provider (gitlab.com or self-managed
+// GitLab); it is enabled iff BaseURL is set. BaseURL is the web base that
+// merge request URLs start with, including any context path (such as
+// https://example.com/gitlab); no host is assumed (X-2). The API base is
+// always derived from it (APIURL); there is no separate setting.
+type GitLab struct {
+	BaseURL            string `toml:"base_url" json:"base_url"`
+	CACert             string `toml:"ca_cert" json:"ca_cert"`
+	InsecureSkipVerify bool   `toml:"insecure_skip_verify" json:"insecure_skip_verify"`
+}
+
+// APIURL returns the API base the GitLab provider calls, {base_url}/api/v4,
+// without a trailing slash. It is "" when the provider is not enabled.
+func (g GitLab) APIURL() string {
+	base := strings.TrimRight(strings.TrimSpace(g.BaseURL), "/")
+	if base == "" {
+		return ""
+	}
+	return base + "/api/v4"
 }
 
 // Output configures result rendering.

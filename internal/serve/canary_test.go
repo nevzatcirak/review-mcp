@@ -271,16 +271,18 @@ func TestEndToEndNoCredentialLeak(t *testing.T) {
 		giteaMarker  = "GITEA-MARKER-c41f9e"
 		bbsMarker    = "BBS-MARKER-c41f9e"
 		ghMarker     = "GH-MARKER-c41f9e"
+		glMarker     = "GL-MARKER-c41f9e"
 		llmMarker    = "LLM-MARKER-c41f9e"
 		accessMarker = "ACCESS-MARKER-c41f9e"
 	)
-	markers := []string{giteaMarker, bbsMarker, ghMarker, llmMarker, accessMarker}
+	markers := []string{giteaMarker, bbsMarker, ghMarker, glMarker, llmMarker, accessMarker}
 	ts := startServer(t, serverOpts{
 		env: map[string]string{
 			"REVIEW_MCP_SERVE_ACCESS_TOKEN":        accessMarker,
 			"REVIEW_MCP_LOG_LEVEL":                 "debug",
 			"REVIEW_MCP_BITBUCKET_SERVER_BASE_URL": "https://bitbucket.example.com/bb",
 			"REVIEW_MCP_GITHUB_BASE_URL":           "https://github.example.com",
+			"REVIEW_MCP_GITLAB_BASE_URL":           "https://example.com/gitlab",
 		},
 		level: slog.LevelDebug,
 	})
@@ -291,6 +293,7 @@ func TestEndToEndNoCredentialLeak(t *testing.T) {
 		credentials.HeaderGiteaToken:           giteaMarker,
 		credentials.HeaderBitbucketServerToken: bbsMarker,
 		credentials.HeaderGitHubToken:          ghMarker,
+		credentials.HeaderGitLabToken:          glMarker,
 		credentials.HeaderLLMAPIKey:            llmMarker,
 		"Authorization":                        "Bearer " + accessMarker,
 	}

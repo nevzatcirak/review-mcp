@@ -33,7 +33,7 @@ func ResultSchema() map[string]any {
 
 	return object("pr_review result", map[string]any{
 		"pr": object("the reviewed pull request", map[string]any{
-			"kind":     str("provider kind: gitea, bitbucket_server or github"),
+			"kind":     str("provider kind: gitea, bitbucket_server, github or gitlab"),
 			"url":      str("pull request URL with credentials and query values removed"),
 			"number":   integer("pull request number"),
 			"title":    str("pull request title"),

@@ -1075,6 +1075,7 @@ func (s *suite) checkFailures(t *testing.T, p provider.Provider, ref provider.PR
 	}
 	for _, c := range calls {
 		t.Run(c.name, func(t *testing.T) {
+			s.skipPending(t, "errors/"+c.name)
 			err := c.call()
 			switch {
 			case err == nil:
@@ -1087,6 +1088,7 @@ func (s *suite) checkFailures(t *testing.T, p provider.Provider, ref provider.PR
 	}
 
 	t.Run("PostInlineComments", func(t *testing.T) {
+		s.skipPending(t, "errors/PostInlineComments")
 		items := []provider.InlineComment{{Path: pathModified, Line: 6, LineType: provider.LineAdded, Body: "Inline."}}
 		res, err := p.PostInlineComments(ctx, ref, pr, items)
 		switch {
@@ -1113,6 +1115,7 @@ func (s *suite) checkFailures(t *testing.T, p provider.Provider, ref provider.PR
 	})
 
 	t.Run("GetReviewStatus", func(t *testing.T) {
+		s.skipPending(t, "errors/GetReviewStatus")
 		st := p.GetReviewStatus(ctx, ref, pr, provider.ReviewStatusOptions{})
 		if st == nil || st.Reviewers != nil || !slices.Contains(st.Notes, provider.NoteReviewsUnreadable) {
 			t.Errorf("GetReviewStatus = %+v, want no reviewers and the note %q", st, provider.NoteReviewsUnreadable)

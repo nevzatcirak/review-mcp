@@ -599,8 +599,8 @@ func TestDiffFileShapes(t *testing.T) {
 	if !slices.Equal(d.Skipped, wantSkipped) {
 		t.Errorf("skipped = %+v, want %+v", d.Skipped, wantSkipped)
 	}
-	if d.Notes != nil || d.BaseStrategy != provider.BaseGitHubMergeBase {
-		t.Errorf("notes %q, strategy %q", d.Notes, d.BaseStrategy)
+	if d.Notes != nil || d.Incomplete || d.BaseStrategy != provider.BaseGitHubMergeBase {
+		t.Errorf("notes %q, incomplete %v, strategy %q", d.Notes, d.Incomplete, d.BaseStrategy)
 	}
 }
 
@@ -640,8 +640,8 @@ func TestDiffFileListingCap(t *testing.T) {
 		t.Errorf("%d files listed, want %d", len(d.Files), listed)
 	}
 	want := "GitHub lists at most 3000 files of a pull request: 2 more changed files were not listed, so they are not reviewed (file_limit)."
-	if !slices.Equal(d.Notes, []string{want}) {
-		t.Errorf("notes = %q, want %q", d.Notes, want)
+	if !slices.Equal(d.Notes, []string{want}) || !d.Incomplete {
+		t.Errorf("notes = %q, incomplete %v, want %q and true", d.Notes, d.Incomplete, want)
 	}
 	if n := len(f.requests()); n != listed/perPage {
 		t.Errorf("%d page requests, want %d", n, listed/perPage)

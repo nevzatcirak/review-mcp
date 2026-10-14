@@ -69,6 +69,7 @@ func (ctFixture) Traits() contract.Traits {
 		CheckStrategies: gitea.CheckStrategies(),
 		CheckStates: []provider.CheckState{provider.CheckSuccess, provider.CheckFailure, provider.CheckPending,
 			provider.CheckNeutral, provider.CheckError},
+		NoListingLimit: true,
 	}
 }
 

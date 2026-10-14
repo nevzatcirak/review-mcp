@@ -190,6 +190,11 @@ type Env struct {
 	// MaxFiles and MaxFileBytes are the provider's diff limits
 	// (diff.max_files_full_content and diff.max_file_bytes).
 	MaxFiles, MaxFileBytes int
+	// ListLimit, when positive, makes the host stop listing changed files
+	// after the first ListLimit of Files, the way GitHub and GitLab do at
+	// their limits: the host still says that more files exist. A fixture
+	// of a host that never stops listing ignores it (Traits.NoListingLimit).
+	ListLimit int
 	// Failure, when set, makes every request fail (see StartServer).
 	Failure Failure
 	// LegacyChecks makes the host an older server whose current checks

@@ -295,7 +295,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 
 	// The plain diff (ModePlain): the description is about what changed,
 	// not about line anchors.
-	dIn := diffpipe.Input{Files: d.Files, Skipped: d.Skipped, Mode: diffpipe.ModePlain, Budget: budget, Diff: cfg.Diff}
+	dIn := diffpipe.Input{Files: d.Files, Skipped: d.Skipped, Incomplete: d.Incomplete, Mode: diffpipe.ModePlain, Budget: budget, Diff: cfg.Diff}
 	prep, err := diffpipe.Prepare(dIn)
 	if err != nil {
 		if errors.Is(err, tokens.ErrDoesNotFit) {

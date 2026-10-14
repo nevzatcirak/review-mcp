@@ -47,6 +47,8 @@ type Chunks struct {
 	// not reviewed; a coverage lists them as skipped with reason
 	// SkipTooLarge.
 	TooLarge []string
+	// Incomplete is Input.Incomplete, kept for the coverage.
+	Incomplete bool
 }
 
 // PrepareChunks splits the reviewable files into at most maxChunks
@@ -90,7 +92,7 @@ func prepareChunks(in Input, maxChunks int, c *counter) (*Chunks, error) {
 	if err != nil {
 		return nil, err
 	}
-	ch := &Chunks{}
+	ch := &Chunks{Incomplete: in.Incomplete}
 	// taken holds every path a part has accounted for (reviewed, listed,
 	// skipped) or set aside as too large: the "already taken" filter.
 	taken := map[string]bool{}

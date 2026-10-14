@@ -132,6 +132,20 @@ func TestCoverageClippedAloneIsPartial(t *testing.T) {
 	}
 }
 
+// TestCoverageIncompleteListingIsPartial: a host that did not list every
+// changed file makes the coverage partial though every listed file was
+// reviewed, also over parts, and does not change the counts.
+func TestCoverageIncompleteListingIsPartial(t *testing.T) {
+	c := BuildCoverage(&diffpipe.Prepared{Included: []string{"a.go"}, Incomplete: true}, nil)
+	if !c.Partial || c.ReviewedFiles != 1 || c.NotReviewedFiles != 0 || c.TotalFiles != 1 {
+		t.Errorf("incomplete listing: %+v", c)
+	}
+	pc := PartsCoverage(&diffpipe.Chunks{Incomplete: true}, []Coverage{{Included: []string{"a.go"}}}, nil, nil)
+	if !pc.Partial || pc.NotReviewedFiles != 0 {
+		t.Errorf("incomplete listing over parts: %+v", pc)
+	}
+}
+
 // TestCoverageFilteredOnlyIsComplete: files excluded on purpose (and files
 // with nothing to review) do not make a result partial.
 func TestCoverageFilteredOnlyIsComplete(t *testing.T) {

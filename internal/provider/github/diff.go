@@ -152,6 +152,7 @@ func (p *Provider) GetDiff(ctx context.Context, ref provider.PRRef, pr *provider
 
 	out := &provider.Diff{BaseStrategy: pr.BaseStrategy}
 	if missing := pr.ChangedFiles - len(files); missing > 0 {
+		out.Incomplete = true
 		out.Notes = append(out.Notes, fmt.Sprintf(NoteFilesNotListedFormat, missing))
 		p.logger.Debug("github file list is cut short", "listed", len(files), "changed_files", pr.ChangedFiles,
 			"listing_limit", maxListedFiles)

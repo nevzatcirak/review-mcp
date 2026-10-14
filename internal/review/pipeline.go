@@ -495,7 +495,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	if reserve > 0 && withReserve(reserve).RequireCapacity() != nil {
 		reserve = 0
 	}
-	dIn := diffpipe.Input{Files: d.Files, Skipped: d.Skipped, Mode: diffpipe.ModeNumbered, Budget: base, Diff: cfg.Diff}
+	dIn := diffpipe.Input{Files: d.Files, Skipped: d.Skipped, Incomplete: d.Incomplete, Mode: diffpipe.ModeNumbered, Budget: base, Diff: cfg.Diff}
 	prepare := func(r int) (*diffpipe.Prepared, error) {
 		in := dIn
 		in.Budget = withReserve(r)

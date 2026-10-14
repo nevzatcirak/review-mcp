@@ -415,6 +415,9 @@ func jsonKeys(t *testing.T, typ reflect.Type) []string {
 	t.Helper()
 	var out []string
 	for i := range typ.NumField() {
+		if !typ.Field(i).IsExported() {
+			continue // not in the JSON
+		}
 		name, _, _ := strings.Cut(typ.Field(i).Tag.Get("json"), ",")
 		out = append(out, name)
 	}

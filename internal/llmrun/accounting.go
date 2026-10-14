@@ -33,6 +33,11 @@ type Coverage struct {
 	TotalFiles       int  `json:"total_files"`
 	NotReviewedFiles int  `json:"not_reviewed_files"`
 
+	// incomplete is Diff.Incomplete: the host did not list every changed
+	// file, so the lists above miss some. It makes Partial true and is not
+	// part of the JSON (the note says why).
+	incomplete bool
+
 	// ModelCalls is the number of parts sent to the model (X-19): 1 for a
 	// review in one call, N for a review in N parts, 0 without a model call.
 	// A re-ask of a part is not counted (metadata.llm_calls counts every
@@ -188,7 +193,7 @@ func (c *Coverage) Tally() Tally {
 		}
 	}
 	t.TotalFiles = t.Reviewed + t.NotReviewed
-	t.Partial = t.NotReviewed > 0
+	t.Partial = t.NotReviewed > 0 || c.incomplete
 	return t
 }
 
@@ -248,6 +253,7 @@ func BuildCoverage(p *diffpipe.Prepared, f *filter.Filter) Coverage {
 		Skipped:     []SkippedFile{},
 		Filtered:    []SkippedFile{},
 		RepoContext: RepoContext{Status: RepoOff},
+		incomplete:  p.Incomplete,
 	}
 	for _, s := range p.Skipped {
 		if s.Reason != provider.SkipFiltered {

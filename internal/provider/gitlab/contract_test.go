@@ -218,7 +218,7 @@ func ctJSON(w http.ResponseWriter, status int, v any) {
 // mrBody is the merge request as the title, description and state are now.
 func (g *ctGitLab) mrBody() map[string]any {
 	count := strconv.Itoa(len(g.pr.Files))
-	if g.fx.diffLimit {
+	if g.fx.diffLimit || g.listLimited() {
 		count = "1000+"
 	}
 	m := map[string]any{
@@ -254,12 +254,23 @@ func (g *ctGitLab) mrJSON() map[string]any {
 	return m
 }
 
+// listLimited reports that the spec makes the host stop listing files
+// (Env.ListLimit): GitLab then serves only the first diffs and a
+// changes_count with a "+".
+func (g *ctGitLab) listLimited() bool {
+	return g.pr.Env.ListLimit > 0 && g.pr.Env.ListLimit < len(g.pr.Files)
+}
+
 // diffsJSON renders the files as GitLab lists them: the diff is the hunks
 // without a header; a binary file has an empty diff (the extension rule
 // marks it), and an oversized file is too_large with an empty diff.
 func (g *ctGitLab) diffsJSON() []any {
 	var out []any
-	for _, f := range g.pr.Files {
+	files := g.pr.Files
+	if g.listLimited() {
+		files = files[:g.pr.Env.ListLimit]
+	}
+	for _, f := range files {
 		m := map[string]any{"old_path": f.BasePath(), "new_path": f.Path, "a_mode": "100644", "b_mode": "100644",
 			"new_file": f.Type == provider.ChangeAdded, "renamed_file": f.Type == provider.ChangeRenamed,
 			"deleted_file": f.Type == provider.ChangeDeleted, "too_large": f.TooLarge, "collapsed": false,
@@ -507,8 +518,8 @@ func TestContractDiffLimit(t *testing.T) {
 			if limit {
 				want = []string{NoteDiffLimit}
 			}
-			if !slices.Equal(d.Notes, want) || pr.ChangedFilesAtLeast != limit {
-				t.Errorf("notes %q (at least %v), want %q", d.Notes, pr.ChangedFilesAtLeast, want)
+			if !slices.Equal(d.Notes, want) || pr.ChangedFilesAtLeast != limit || d.Incomplete != limit {
+				t.Errorf("notes %q (at least %v, incomplete %v), want %q", d.Notes, pr.ChangedFilesAtLeast, d.Incomplete, want)
 			}
 			if len(d.Files) != 1 {
 				t.Errorf("%d files, want the one listed", len(d.Files))

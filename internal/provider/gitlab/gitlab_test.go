@@ -484,8 +484,8 @@ func TestDiffPageCap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(d.Files) != diffsPageCap || !slices.Equal(d.Notes, []string{NoteDiffPageCap}) || n.Load() != diffsPageCap {
-		t.Errorf("%d files, %d pages, notes %q", len(d.Files), n.Load(), d.Notes)
+	if len(d.Files) != diffsPageCap || !slices.Equal(d.Notes, []string{NoteDiffPageCap}) || !d.Incomplete || n.Load() != diffsPageCap {
+		t.Errorf("%d files, %d pages, notes %q, incomplete %v", len(d.Files), n.Load(), d.Notes, d.Incomplete)
 	}
 	if want := strconv.Itoa(diffsPageCap * perPage); !strings.Contains(NoteDiffPageCap, want) {
 		t.Errorf("the note does not name the cap %s", want)

@@ -70,6 +70,7 @@ func (ctFixture) Traits() contract.Traits {
 		CheckStrategies:      bitbucketserver.CheckStrategies(),
 		CheckStates:          []provider.CheckState{provider.CheckSuccess, provider.CheckFailure, provider.CheckPending, provider.CheckNeutral},
 		OmitsNoNewlineMarker: true,
+		NoListingLimit:       true,
 	}
 }
 

@@ -301,7 +301,11 @@ var ctStatus = map[provider.ChangeType]string{
 // the patch of a diff too large to show).
 func (g *ctGitHub) filesJSON() []any {
 	var out []any
-	for _, f := range g.pr.Files {
+	files := g.pr.Files
+	if n := g.pr.Env.ListLimit; n > 0 && n < len(files) {
+		files = files[:n] // the host stops listing; changed_files still counts every file
+	}
+	for _, f := range files {
 		add, del := 0, 0
 		for _, l := range strings.Split(f.Hunks, "\n") {
 			switch {

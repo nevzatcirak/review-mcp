@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nevzatcirak/review-mcp/internal/diffpipe"
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/review/anchor"
 )
@@ -313,6 +315,49 @@ func (s *suite) fileLimit(t *testing.T) {
 		for i := range beyond {
 			f := &beyond[i]
 			s.checkLimited(t, f, v.files[f.Path], v.skipped[f.Path], provider.SkipFileLimit, provider.ContentNotFetchedFileCap)
+		}
+	})
+}
+
+// listingLimit: a host that stops listing changed files gives a diff marked
+// Incomplete, with a note, and the coverage over it is partial though every
+// listed file is reviewed. A complete listing is never marked.
+func (s *suite) listingLimit(t *testing.T) {
+	cover := func(d *provider.Diff) llmrun.Coverage {
+		prep := &diffpipe.Prepared{Incomplete: d.Incomplete}
+		for i := range d.Files {
+			prep.Included = append(prep.Included, d.Files[i].Path)
+		}
+		return llmrun.BuildCoverage(prep, nil)
+	}
+	t.Run("complete", func(t *testing.T) {
+		p, ref, _ := s.serve(t, fileLimitPR())
+		v := mustDiff(t, p, ref)
+		if v.d.Incomplete || len(v.d.Notes) != 0 {
+			t.Errorf("complete listing: Incomplete %v, notes %q", v.d.Incomplete, v.d.Notes)
+		}
+		if c := cover(v.d); c.Partial {
+			t.Errorf("complete listing: coverage is partial")
+		}
+	})
+	if s.tr.NoListingLimit {
+		return
+	}
+	t.Run("stopped", func(t *testing.T) {
+		spec := fileLimitPR()
+		spec.Env.ListLimit = 2
+		p, ref, _ := s.serve(t, spec)
+		v := mustDiff(t, p, ref)
+		if len(v.files) != 2 {
+			t.Errorf("%d files listed, want the first 2", len(v.files))
+		}
+		if !v.d.Incomplete || len(v.d.Notes) == 0 {
+			t.Errorf("stopped listing: Incomplete %v, notes %q, want true and a note", v.d.Incomplete, v.d.Notes)
+		}
+		c := cover(v.d)
+		if !c.Partial || c.NotReviewedFiles != 0 || c.ReviewedFiles != 2 {
+			t.Errorf("stopped listing: partial %v, reviewed %d, not reviewed %d, want true, 2, 0",
+				c.Partial, c.ReviewedFiles, c.NotReviewedFiles)
 		}
 	})
 }

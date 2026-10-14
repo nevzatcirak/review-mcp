@@ -144,7 +144,7 @@ func gfmRow(b *strings.Builder, emoji, label, value string) {
 // finding has no inline comment) and whose body is the content, the
 // snippet and the snippet note.
 func gfmIssue(n int, i *review.KeyIssue) string {
-	head := "<strong>" + html.EscapeString(issueHeader(i.IssueHeader)) + "</strong>"
+	head := "<strong>" + mdutil.EscapeHTMLKeepingCodeSpans(issueHeader(i.IssueHeader)) + "</strong>"
 	if l := findingLink(i); l != "" {
 		head = "<a href='" + html.EscapeString(l) + "'>" + head + "</a>"
 	}

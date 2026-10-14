@@ -106,6 +106,19 @@ func fixtures() map[string]*review.Result {
 			},
 		},
 	}
+	// codeSpanHeader has code spans in the header of a finding: a collapsible
+	// GFM header shows them as <code>, with their content escaped (X-30); a
+	// lone backtick stays text.
+	codeSpanHeader := &review.Result{
+		PR: basePR(), EnabledFields: []string{review.KeyKeyIssues}, Coverage: baseCoverage(), Notes: []string{},
+		Review: &review.Review{KeyIssuesToReview: []review.KeyIssue{
+			{
+				RelevantFile: "cmd/app/main.go", IssueHeader: "Unbounded `retry<T>()` loop & a lone ` tick",
+				IssueContent: "The `retry` loop never stops.", StartLine: 10, EndLine: 12,
+				Snippet: "for {\n\ttry()\n}",
+			},
+		}},
+	}
 	many := baseCoverage()
 	for i := range 55 {
 		many.Omitted.Modified = append(many.Omitted.Modified, fmt.Sprintf("pkg/mod%02d/file.go", i))
@@ -174,7 +187,7 @@ func fixtures() map[string]*review.Result {
 	all := map[string]*review.Result{
 		"all_fields": allFields, "no_findings": noFindings, "no_snippet": noSnippet,
 		"non_english": nonEnglish, "coverage_many": coverageMany, "published": published,
-		"complete": complete,
+		"complete": complete, "code_span_header": codeSpanHeader,
 	}
 	for _, r := range all {
 		r.Metadata.ReviewedAt = "2026-10-06T09:30:15Z"

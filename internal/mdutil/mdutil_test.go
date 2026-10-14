@@ -141,3 +141,21 @@ func TestInlineKeepingCodeSpans(t *testing.T) {
 		t.Errorf("InlineKeepingCodeSpans = %q", got)
 	}
 }
+
+func TestEscapeHTMLKeepingCodeSpans(t *testing.T) {
+	for _, c := range []struct{ name, in, want string }{
+		{"no span", `a <b> & "c"`, `a &lt;b&gt; &amp; &#34;c&#34;`},
+		{"span", "the `name` field", "the <code>name</code> field"},
+		{"content escaped", "use `a<b && c>d`", "use <code>a&lt;b &amp;&amp; c&gt;d</code>"},
+		{"text around escaped", "<i> `x` </i>", "&lt;i&gt; <code>x</code> &lt;/i&gt;"},
+		{"longer delimiter", "a ``x ` y`` b", "a <code>x ` y</code> b"},
+		{"space stripping", "`` `x` ``", "<code>`x`</code>"},
+		{"unclosed run is text", "a ` b", "a ` b"},
+		{"escaped backtick is text", "a \\`b`", "a \\`b`"},
+		{"two spans", "`a` and `b`", "<code>a</code> and <code>b</code>"},
+	} {
+		if got := EscapeHTMLKeepingCodeSpans(c.in); got != c.want {
+			t.Errorf("%s: EscapeHTMLKeepingCodeSpans(%q) = %q, want %q", c.name, c.in, got, c.want)
+		}
+	}
+}

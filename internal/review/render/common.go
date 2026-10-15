@@ -43,6 +43,8 @@ const (
 	textNotes            = llmrender.TextNotes
 	textSnippetNote      = "Snippet note: "
 	textListedHere       = "(listed here only)"
+	textCarriedFrom      = "(from the review of "
+	textCarriedSuffix    = ", listed here only)"
 	textDiscussed        = "Already discussed"
 	textCode             = "Code:"
 	textPublish          = "Publishing"
@@ -72,29 +74,31 @@ type view struct {
 	hasReview   bool
 	hasConcerns bool
 	hasPerf     bool
-	// partial is the X-18 state of the coverage: "no concerns" statements
-	// are scoped to the reviewed files.
-	partial bool
+	// scoped makes the "nothing found" statements speak of the reviewed
+	// files only: the result is partial (X-18), or it is an incremental
+	// review of the files that changed since the last one (spec v2.1 §7.4
+	// item 2), which did not look at the other files again.
+	scoped bool
 }
 
 // noSecurity, noPerf and noIssues are the "nothing found" statements, scoped
-// to the reviewed files when the result is partial.
+// to the reviewed files when v.scoped is set.
 func (v *view) noSecurity() string {
-	if v.partial {
+	if v.scoped {
 		return textNoSecurityScoped
 	}
 	return textNoSecurity
 }
 
 func (v *view) noPerf() string {
-	if v.partial {
+	if v.scoped {
 		return textNoPerfScoped
 	}
 	return textNoPerf
 }
 
 func (v *view) noIssues() string {
-	if v.partial {
+	if v.scoped {
 		return textNoIssuesScoped
 	}
 	return textNoIssues
@@ -102,7 +106,8 @@ func (v *view) noIssues() string {
 
 func newView(res *review.Result) view {
 	var v view
-	v.partial = res.Coverage.Tally().Partial
+	v.scoped = res.Coverage.Tally().Partial ||
+		(res.Incremental != nil && res.Incremental.Mode == review.IncrementalChanged)
 	for _, k := range res.EnabledFields {
 		switch k {
 		case review.KeyEffort:
@@ -137,6 +142,29 @@ func newView(res *review.Result) view {
 // comment because it is not on a changed line or its comment failed.
 func listedHereOnly(i *review.KeyIssue) bool {
 	return i.InlineStatus == review.InlineUnanchorable || i.InlineStatus == review.InlineFailed
+}
+
+// listedSuffix is the suffix of a finding's index line in the overview: for
+// a finding carried forward from an earlier review (spec v2.1 §7.4 item 1)
+// "(from the review of `abc1234`, listed here only)", with the commit as
+// HTML code when gfm is set (the line is a <summary>, where markdown is not
+// rendered); "(listed here only)" for one without an inline comment; ""
+// otherwise. The commit is a validated id, never model text.
+func listedSuffix(i *review.KeyIssue, gfm bool) string {
+	if i.CarriedFrom != "" {
+		sha := shortSHA(i.CarriedFrom)
+		if sha == "" {
+			return textListedHere
+		}
+		if gfm {
+			return textCarriedFrom + "<code>" + sha + "</code>" + textCarriedSuffix
+		}
+		return textCarriedFrom + "`" + sha + "`" + textCarriedSuffix
+	}
+	if listedHereOnly(i) {
+		return textListedHere
+	}
+	return ""
 }
 
 // runLine is the overview's second header line (spec P7 §4.3): the run time
@@ -174,10 +202,12 @@ func ReviewedLine(res *review.Result) string {
 
 // writeCoverage writes the coverage section (llmrender.Coverage); an
 // incremental run (X-36) adds "N files reviewed, M unchanged since the last
-// review" and lists its unchanged files apart (llmrender.IncrementalCoverage).
+// review" and lists its unchanged files apart (llmrender.IncrementalCoverage);
+// in mode incremental the line on the earlier inline comments follows
+// (spec v2.1 §7.4 item 3).
 func writeCoverage(b *strings.Builder, heading string, res *review.Result) {
 	if inc := res.Incremental; inc != nil && inc.Mode != review.IncrementalFull {
-		llmrender.IncrementalCoverage(b, heading, &res.Coverage)
+		llmrender.IncrementalCoverage(b, heading, &res.Coverage, inc.Mode == review.IncrementalChanged)
 		return
 	}
 	llmrender.Coverage(b, heading, &res.Coverage)

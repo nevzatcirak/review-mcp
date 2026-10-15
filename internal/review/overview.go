@@ -94,32 +94,36 @@ func withOverviewMarker(body string) string {
 	return llmrun.WithMarker(body, OverviewMarker)
 }
 
-// withReviewedMarker returns the overview body with the reviewed-commit
-// line of sha (when it is valid) and the overview marker as its last two
-// lines. The body is model-influenced (finding text, a diff snippet in a
-// fence), so first any line of it that looks like a reviewed-commit line
-// is defused: the reader takes the last such line, and when there is no
-// sha to write there would be no later line to outvote a forged one.
-func withReviewedMarker(body, sha string) string {
-	body = defuseReviewedLines(body)
+// withTrailer returns the overview body followed by its trailer: the held
+// lines (spec v2.1 §7.2), the reviewed-commit line of sha and the overview
+// marker, in that order, as the last lines. Held lines are written only
+// with a valid sha. The body is model-influenced (finding text, a diff
+// snippet in a fence), so first any line of it that looks like a marker
+// line of review-mcp is defused: the reader takes the last reviewed-commit
+// line, and when there is no sha to write there would be no later line to
+// outvote a forged one; held lines are read from the trailer only, and a
+// forged one must not look like part of it either.
+func withTrailer(body string, held []string, sha string) string {
+	body = defuseMarkerLines(body)
 	if sha = ValidReviewedSHA(sha); sha != "" {
-		body = llmrun.WithMarker(body, reviewedLinePrefix+sha+reviewedLineSuffix)
-		return strings.TrimRight(body, " \t\r\n") + "\n" + OverviewMarker
+		trailer := append(append([]string(nil), held...), reviewedLinePrefix+sha+reviewedLineSuffix, OverviewMarker)
+		return llmrun.WithMarker(body, strings.Join(trailer, "\n"))
 	}
 	return withOverviewMarker(body)
 }
 
-// defuseReviewedLines escapes the opening bracket of every line of body
-// that, after trimming and lower-casing, starts a reviewed-commit line, so
-// that it is no link reference definition and no reader accepts it.
-func defuseReviewedLines(body string) string {
-	if !strings.Contains(strings.ToLower(body), "review-mcp:reviewed:") {
+// defuseMarkerLines escapes the opening bracket of every line of body that
+// ContainsMarkerLine would flag (after trimming and lower-casing, a "[//]:"
+// line that mentions "review-mcp:"), so that it is no link reference
+// definition and no reader accepts it: a reviewed-commit line, a held line
+// or the marker itself.
+func defuseMarkerLines(body string) string {
+	if !strings.Contains(strings.ToLower(body), "review-mcp:") {
 		return body
 	}
 	lines := strings.Split(body, "\n")
 	for i, line := range lines {
-		l := strings.ToLower(strings.TrimSpace(line))
-		if strings.HasPrefix(l, markerLinePrefix) && strings.Contains(l, "review-mcp:reviewed:") {
+		if ContainsMarkerLine(line) {
 			at := strings.Index(line, "[")
 			lines[i] = line[:at] + "\\" + line[at:]
 		}
@@ -179,6 +183,9 @@ type foundOverview struct {
 	// reviewed is the commit the overview records as reviewed (X-36); ""
 	// when it records none.
 	reviewed string
+	// held are the valid records of its held lines (spec v2.1 §7.2), in
+	// the order of the overview.
+	held []heldRecord
 	// older counts the other overviews of ours, left unchanged.
 	older int
 }
@@ -187,8 +194,8 @@ type foundOverview struct {
 // roots of the PR's general threads, the comments whose last line is the
 // marker and whose author is the token's own user; the newest of them
 // (llmrun.FindMarked, shared with pr_describe). The reviewed commit it
-// records is read from that comment only, so a line planted in anyone
-// else's comment is never read.
+// records, and its held lines, are read from that comment only, so a line
+// planted in anyone else's comment is never read.
 //
 // It returns nil when none matches and an error when the threads or the
 // user could not be read. ListThreads reads every page or fails (the
@@ -208,7 +215,11 @@ func (pl *Plan) findOverview(ctx context.Context) (*foundOverview, error) {
 	if m == nil {
 		return nil, nil
 	}
-	return &foundOverview{id: m.ID, url: m.URL, reviewed: reviewedSHAOf(m.Body), older: m.Older}, nil
+	held, invalid := heldOf(m.Body)
+	if invalid > 0 {
+		pl.log.Debug("review: held lines ignored", "invalid", invalid, "valid", len(held))
+	}
+	return &foundOverview{id: m.ID, url: m.URL, reviewed: reviewedSHAOf(m.Body), held: held, older: m.Older}, nil
 }
 
 // readDiscussion reads the PR's threads for the prompt and the duplicate

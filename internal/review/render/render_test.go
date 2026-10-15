@@ -185,7 +185,9 @@ func fixtures() map[string]*review.Result {
 	// partial (filtered, binary and empty-diff files do not count, X-18):
 	// no banner, the unscoped "nothing found" sentences.
 	complete := noFindingsResult(completeCoverage())
+	carried := carriedResult()
 	all := map[string]*review.Result{
+		"carried":    carried,
 		"all_fields": allFields, "no_findings": noFindings, "no_snippet": noSnippet,
 		"non_english": nonEnglish, "coverage_many": coverageMany, "published": published,
 		"complete": complete, "code_span_header": codeSpanHeader,
@@ -195,6 +197,75 @@ func fixtures() map[string]*review.Result {
 		r.Reviewed.SHA = r.PR.HeadSHA
 	}
 	return all
+}
+
+// carriedResult is an incremental run (X-36) that reviewed one file, posted
+// its finding inline and carried a finding of the unchanged file forward
+// from an earlier review (spec v2.1 §7.4); the security and performance
+// fields found nothing in the reviewed file.
+func carriedResult() *review.Result {
+	const since = "def5678abc123def4567890abc123def4567890"
+	cov := review.Coverage{
+		Included: []string{"cmd/app/main.go"}, Clipped: []string{}, DeletedListed: []string{},
+		Omitted:  review.OmittedFiles{Added: []string{}, Modified: []string{}, Deleted: []string{}},
+		Skipped:  []review.SkippedFile{{Path: "internal/util/strings_util.go", Reason: llmrun.SkipUnchangedSinceReview}},
+		Filtered: []review.SkippedFile{},
+	}
+	cov.Finalize()
+	return &review.Result{
+		PR: basePR(), EnabledFields: allKeys, Coverage: cov,
+		Notes: []string{"1 finding of earlier reviews on unchanged files is carried forward; it was not reviewed again."},
+		Review: &review.Review{
+			EstimatedEffortToReview: ip(2), RelevantTests: bp(false), SecurityConcerns: sp(review.SecurityNo),
+			PerformanceConcerns: sp(review.PerformanceNo),
+			KeyIssuesToReview: []review.KeyIssue{
+				{
+					RelevantFile: "cmd/app/main.go", IssueHeader: "Possible Bug", IssueContent: "The loop never ends.",
+					StartLine: 10, EndLine: 10, Snippet: "for {}",
+					Link:         "https://your-gitea.example/org/repo/src/commit/abc123/cmd/app/main.go#L10",
+					InlineURL:    "https://your-gitea.example/org/repo/pulls/12/files#issuecomment-901",
+					InlineStatus: review.InlinePosted,
+				},
+				{
+					RelevantFile: "internal/util/strings_util.go", IssueHeader: "Resource leak",
+					IssueContent: "The response body is not closed on the error path.", StartLine: 40, EndLine: 40,
+					Link:        "https://your-gitea.example/org/repo/src/commit/abc123/internal/util/strings_util.go#L40",
+					CarriedFrom: since,
+				},
+			},
+		},
+		Reviewed:    review.ReviewedCommit{Since: since},
+		Incremental: &review.Incremental{Mode: review.IncrementalChanged, Since: since, ChangedFiles: 1, UnchangedFiles: 1, CarriedFindings: 1},
+	}
+}
+
+// TestCarriedSuffix (spec v2.1 §7.4 item 1): a carried finding is listed
+// after the new ones with "(from the review of `abc1234`, listed here
+// only)" instead of "(listed here only)", linked to its file line, in every
+// provider profile; the commit is HTML code inside the GFM <summary>.
+func TestCarriedSuffix(t *testing.T) {
+	res := carriedResult()
+	res.Reviewed.SHA = res.PR.HeadSHA
+	for profile, tc := range map[string]struct {
+		caps provider.Capabilities
+		want string
+	}{
+		"gitea":     {capsGitea, "<a href='https://your-gitea.example/org/repo/src/commit/abc123/internal/util/strings_util.go#L40'><strong>Resource leak</strong></a> <code>internal/util/strings_util.go L40</code> (from the review of <code>def5678</code>, listed here only)</summary>"},
+		"github":    {provider.Capabilities{GFM: true, MarkdownTables: true, Labels: true, InlineComments: true}, "(from the review of <code>def5678</code>, listed here only)</summary>"},
+		"gitlab":    {provider.Capabilities{GFM: true, MarkdownTables: true, Labels: true, InlineComments: true, QuickActions: true}, "(from the review of <code>def5678</code>, listed here only)</summary>"},
+		"bitbucket": {capsBB, "2. **Resource leak** — [`internal/util/strings_util.go` L40](https://your-gitea.example/org/repo/src/commit/abc123/internal/util/strings_util.go#L40) (from the review of `def5678`, listed here only)\n"},
+	} {
+		out := Provider(res, tc.caps)
+		if !strings.Contains(out, tc.want) {
+			t.Errorf("%s lacks %q:\n%s", profile, tc.want, out)
+		}
+		if strings.Count(out, "listed here only") != 1 {
+			t.Errorf("%s: the carried finding must be the only one listed here only:\n%s", profile, out)
+		}
+		if strings.Index(out, "Possible Issue") > strings.Index(out, "Resource leak") {
+			t.Errorf("%s lists the carried finding first", profile)
+		}
+	}
 }
 
 // TestPerformanceFollowsEnabledFields: the performance row (or section)
@@ -649,5 +720,83 @@ func TestIncrementalCoverage(t *testing.T) {
 	res.Incremental = &review.Incremental{Mode: review.IncrementalFull, ChangedFiles: 1}
 	if out := Client(res); strings.Contains(out, "unchanged since the last review\n") {
 		t.Errorf("a full run shows the incremental line:\n%s", out)
+	}
+}
+
+// incrementalProfiles are the client view and the overview of the four
+// providers (GitHub and GitLab render with GFM like Gitea).
+func incrementalProfiles() map[string]func(*review.Result) string {
+	gfm := provider.Capabilities{GFM: true, MarkdownTables: true, Labels: true, InlineComments: true}
+	gitlab := gfm
+	gitlab.QuickActions = true
+	return map[string]func(*review.Result) string{
+		"client":    Client,
+		"gitea":     func(r *review.Result) string { return Provider(r, capsGitea) },
+		"github":    func(r *review.Result) string { return Provider(r, gfm) },
+		"gitlab":    func(r *review.Result) string { return Provider(r, gitlab) },
+		"bitbucket": func(r *review.Result) string { return Provider(r, capsBB) },
+	}
+}
+
+// TestIncrementalScopedStatements [canary] (spec v2.1 §7.4 item 2): in mode
+// incremental the "nothing found" statements speak of the reviewed files
+// only, in every profile, as for a partial result; the key-issues statement
+// appears only when the list, carried findings included, is empty. A full
+// review keeps the unscoped statements.
+func TestIncrementalScopedStatements(t *testing.T) {
+	scoped := []string{textNoSecurityScoped, textNoPerfScoped}
+	for name, tc := range map[string]struct {
+		mode    string
+		carried bool
+		want    []string
+		absent  []string
+	}{
+		"incremental, no findings": {review.IncrementalChanged, false, append([]string{textNoIssuesScoped}, scoped...),
+			[]string{textNoIssues, textNoSecurity + "\n", textNoSecurity + " |", textNoSecurity + "</strong>"}},
+		"incremental, carried only": {review.IncrementalChanged, true, scoped, []string{textNoIssuesScoped, textNoIssues}},
+		"full, no findings": {review.IncrementalFull, false, []string{textNoIssues, textNoSecurity, textNoPerf},
+			[]string{textNoIssuesScoped, textNoSecurityScoped, textNoPerfScoped}},
+	} {
+		res := carriedResult()
+		res.Incremental.Mode = tc.mode
+		res.Review.KeyIssuesToReview = res.Review.KeyIssuesToReview[1:]
+		if !tc.carried {
+			res.Review.KeyIssuesToReview = nil
+		}
+		for profile, render := range incrementalProfiles() {
+			out := render(res)
+			for _, w := range tc.want {
+				if !strings.Contains(out, w) {
+					t.Errorf("%s/%s lacks %q:\n%s", profile, name, w, out)
+				}
+			}
+			for _, a := range tc.absent {
+				if strings.Contains(out, a) {
+					t.Errorf("%s/%s has %q:\n%s", profile, name, a, out)
+				}
+			}
+		}
+	}
+}
+
+// TestIncrementalEarlierInlineLine (spec v2.1 §0 item 3, §7.4 item 3): in
+// mode incremental the coverage section says, after the "N files reviewed,
+// M unchanged" line, that the inline comments of earlier reviews stay on
+// the pull request, in every profile; a full run and a run that reviewed
+// nothing do not.
+func TestIncrementalEarlierInlineLine(t *testing.T) {
+	const line = "- 1 file reviewed, 1 unchanged since the last review\n- Inline comments of earlier reviews stay on the pull request.\n"
+	for _, mode := range []string{review.IncrementalChanged, review.IncrementalFull, review.IncrementalUnchanged} {
+		res := carriedResult()
+		res.Incremental.Mode = mode
+		for profile, render := range incrementalProfiles() {
+			out := render(res)
+			if got := strings.Contains(out, line); got != (mode == review.IncrementalChanged) {
+				t.Errorf("%s/%s: line present %v:\n%s", profile, mode, got, out)
+			}
+			if mode != review.IncrementalChanged && strings.Contains(out, "Inline comments of earlier reviews") {
+				t.Errorf("%s/%s shows the earlier inline comments line", profile, mode)
+			}
+		}
 	}
 }

@@ -44,6 +44,14 @@ func noteSuppliedMerged(n int) string {
 		" an earlier one at the same place with the same header and " + wasWere(n) + " merged into it."
 }
 
+// noteHeldDropped: findings the found overview listed only there (held
+// lines) that a merged publish does not carry, because the client's set
+// replaces the overview's findings.
+func noteHeldDropped(n int) string {
+	return countPhrase(n, "finding listed only in the earlier overview was",
+		"findings listed only in the earlier overview were") + " not carried into this publish."
+}
+
 // supplyFindings builds the review of a merged publish (X-33) from
 // args.Findings, against the files of the prepared plan's diff, and
 // returns it with its notes. In order:

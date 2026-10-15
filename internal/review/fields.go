@@ -129,6 +129,12 @@ type KeyIssue struct {
 	// Focus is the focus a client gave a supplied finding of a merged
 	// publish (X-33), cleaned as the focus argument is; empty otherwise.
 	Focus string `json:"focus,omitempty"`
+	// CarriedFrom is set on a finding an incremental review carried forward
+	// from an earlier overview (spec v2.1 §7.3, WP-7f): the full commit id
+	// of the review that produced it. Such a finding is on a file that did
+	// not change since; no model saw it in this run, and it is listed in
+	// the overview only. Empty for the findings of this run.
+	CarriedFrom string `json:"carried_from,omitempty"`
 }
 
 // InlineStatus values: the counts of InlineSummary, per finding.
@@ -230,6 +236,8 @@ var keyIssueExtraSchema = map[string]map[string]any{
 	"inline_status": {"type": "string", "enum": []any{InlinePosted, InlineSkippedDuplicate, InlineUnanchorable, InlineFailed},
 		"description": "what happened to the finding in an inline publish; absent when inline findings were not considered"},
 	"focus": {"type": "string", "description": "the focus the client gave this finding in a publish of merged findings; absent otherwise"},
+	"carried_from": {"type": "string", "description": "for a finding of an earlier review carried forward by an incremental review " +
+		"because its file did not change since (listed in the overview only, not reviewed again): the full commit id of that review; absent otherwise"},
 }
 
 // fields is the review descriptor table, in upstream order (X-4), with the

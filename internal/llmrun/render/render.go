@@ -101,25 +101,32 @@ type coverageGroup struct {
 // listed across all groups; the rest are counted ("and N more").
 // Everything is plain markdown (no HTML).
 func Coverage(b *strings.Builder, heading string, c *llmrun.Coverage) {
-	coverage(b, heading, c, "Reviewed", false)
+	coverage(b, heading, c, "Reviewed", false, false)
 }
+
+// TextEarlierInline is the coverage line of an incremental review that
+// reviewed the changed files (spec v2.1 §0 item 3 and §7.4 item 3).
+const TextEarlierInline = "Inline comments of earlier reviews stay on the pull request."
 
 // IncrementalCoverage is Coverage for an incremental pr_review (X-36): one
 // more line, "N files reviewed, M unchanged since the last review", and the
 // unchanged files are listed in a group of their own instead of being
-// counted as omitted.
-func IncrementalCoverage(b *strings.Builder, heading string, c *llmrun.Coverage) {
-	coverage(b, heading, c, "Reviewed", true)
+// counted as omitted. With continued set (the run reviewed the files that
+// changed since the last review, incremental mode "incremental"), the line
+// "- Inline comments of earlier reviews stay on the pull request." follows
+// it.
+func IncrementalCoverage(b *strings.Builder, heading string, c *llmrun.Coverage, continued bool) {
+	coverage(b, heading, c, "Reviewed", true, continued)
 }
 
 // DescribeCoverage is Coverage for pr_describe: the line of a description
 // in N > 1 parts reads "Described in N model calls." (the reduce call is not
 // counted, as model_calls does not count it).
 func DescribeCoverage(b *strings.Builder, heading string, c *llmrun.Coverage) {
-	coverage(b, heading, c, "Described", false)
+	coverage(b, heading, c, "Described", false, false)
 }
 
-func coverage(b *strings.Builder, heading string, c *llmrun.Coverage, verb string, incremental bool) {
+func coverage(b *strings.Builder, heading string, c *llmrun.Coverage, verb string, incremental, continued bool) {
 	t := c.Tally()
 	included := len(c.Included) + len(c.Clipped)
 	budget := len(c.Omitted.Added) + len(c.Omitted.Modified) + len(c.Omitted.Deleted)
@@ -147,6 +154,9 @@ func coverage(b *strings.Builder, heading string, c *llmrun.Coverage, verb strin
 	if incremental {
 		b.WriteString("- " + count(t.Reviewed, "file", "files") + " reviewed, " + strconv.Itoa(len(unchanged)) +
 			" unchanged since the last review\n")
+		if continued {
+			b.WriteString("- " + TextEarlierInline + "\n")
+		}
 	}
 	if c.ModelCalls > 1 {
 		// A review in parts (X-19, RC-13) says how many calls it used.

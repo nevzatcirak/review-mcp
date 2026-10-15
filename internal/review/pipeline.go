@@ -240,6 +240,16 @@ type Plan struct {
 	// the PR's threads when the run will publish inline comments.
 	own []ownFinding
 
+	// held are the records of the held lines of the overview the
+	// incremental lookup found (spec v2.1 §7.2); carried are the findings
+	// carried forward from them (carryForward), appended after the run's
+	// own findings.
+	held    []heldRecord
+	carried []KeyIssue
+	// heldNote is the note of overview-only findings without a held line
+	// that the last render of the overview added; "" for none.
+	heldNote string
+
 	// The PR's threads and the token's user, each read at most once per
 	// run (listThreads, currentUser).
 	threadsRead bool
@@ -300,6 +310,7 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 		// set? — chose yes because step 13 applies to every returned
 		// review and the comment then shows the coverage and the note.
 		res.Review = &Review{KeyIssuesToReview: []KeyIssue{}}
+		pl.withCarried(res.Review)
 		res.Notes = append(res.Notes, NoteNoReviewableChanges)
 		publish(ctx, deps, args, pl)
 		return res, nil
@@ -437,9 +448,21 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			inc = &Incremental{Mode: IncrementalUnchanged, Since: last, Strategy: r.Strategy, UnchangedFiles: unchanged}
 			return pl.unchangedPlan(ctx, deps, args, window, rd, inc, noteNoFileChanged(last)), nil
 		default:
+			// A focused run (X-33) carries nothing (WP-7f DQ-4, overridden):
+			// it never publishes, every focused run of the same head would
+			// list the same carried findings (N copies in the client's merged
+			// set), and SuppliedFinding has no carried_from, so a carried
+			// finding passed back would become a fresh one (planned inline,
+			// recorded with the wrong "from").
+			if args.Focus == "" {
+				pl.carried = pl.carryForward(d, r)
+			}
+			if n := len(pl.carried); n > 0 {
+				incNotes = append(incNotes, noteCarried(n))
+			}
 			rd, paths := reduceDiff(d, r)
 			inc = &Incremental{Mode: IncrementalChanged, Since: last, Strategy: r.Strategy, ChangedFiles: changed,
-				UnchangedFiles: unchanged}
+				UnchangedFiles: unchanged, CarriedFindings: len(pl.carried)}
 			d, treeDiff = rd, withoutUnchanged(rd)
 			pl.d = d
 			rcs.Narrow(d.Files, paths)
@@ -809,6 +832,7 @@ func (pl *Plan) finish(ctx context.Context, deps Deps, args Args) (*Result, erro
 	// Steps 10 and 11: snippets and links, on the merged list against every
 	// file of the PR.
 	pl.attachSnippets(rev)
+	pl.withCarried(rev)
 	res.Review = rev
 	log.Debug("review: done", "findings", len(rev.KeyIssuesToReview),
 		"llm_calls", res.Metadata.LLMCalls, "reasked", res.Metadata.Reasked, "parts", n, "failed_parts", failed)

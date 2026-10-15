@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
@@ -28,7 +29,9 @@ import (
 const (
 	// MaxResponseBytes caps the response body.
 	MaxResponseBytes int64 = 8 << 20
-	// MaxRetryAfter caps a server-supplied Retry-After delay.
+	// MaxRetryAfter caps a server-supplied Retry-After delay of a retryable
+	// class other than HTTP 429, whose delay is the endpoint's cool-down
+	// (X-37).
 	MaxRetryAfter = 30 * time.Second
 
 	maxRedirects = 10
@@ -73,6 +76,18 @@ func WithClock(now func() time.Time) Option {
 	return func(c *Client) { c.now = now }
 }
 
+// WithoutKey lets the client run without an API key: it then sends no
+// Authorization header at all. A fallback on another host without a key of
+// its own is built this way, so the primary key never reaches it (X-38).
+func WithoutKey() Option {
+	return func(c *Client) { c.noKey = true }
+}
+
+// withRegistry replaces the process-wide limiter registry (tests).
+func withRegistry(r *registry) Option {
+	return func(c *Client) { c.registry = r }
+}
+
 // WithProbeTimeout replaces the 10 s timeout of ResolveContextWindow.
 func WithProbeTimeout(d time.Duration) Option {
 	return func(c *Client) { c.probeTimeout = d }
@@ -94,6 +109,31 @@ type Client struct {
 	maxBytes     int64
 	sleep        func(context.Context, time.Duration) error
 	now          func() time.Time
+	// registry holds the endpoint's limiter (X-37); limiter is this
+	// client's, looked up once in New.
+	registry *registry
+	limiter  *limiter
+	// noKey allows an unset key (WithoutKey).
+	noKey bool
+	// waitMu guards the rate-limit waits of this client's run (§2.3 item
+	// 1): waits counts the requests that had to wait, waited their total.
+	waitMu sync.Mutex
+	waits  int
+	waited time.Duration
+}
+
+// RateLimitWaits returns the rate-limit waits of the client so far: how
+// many requests had to wait for the endpoint's limits, and the total wait
+// (X-37). A Client serves one tool call, so these are the run's.
+//
+// DESIGN-QUESTION (WP-8b DQ-3): the spec names a count of waits. A request
+// may be woken several times while it waits (another request started, a
+// cool-down began); it counts once, with its whole wait. Recommendation:
+// keep.
+func (c *Client) RateLimitWaits() (int, time.Duration) {
+	c.waitMu.Lock()
+	defer c.waitMu.Unlock()
+	return c.waits, c.waited
 }
 
 // redirectError marks a refused redirect.
@@ -107,9 +147,6 @@ func New(cfg config.LLM, key config.Secret, logger *slog.Logger, opts ...Option)
 	u, err := url.Parse(cfg.BaseURL)
 	if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil {
 		return nil, errors.New("llm: invalid base URL")
-	}
-	if !key.IsSet() {
-		return nil, errors.New("llm: API key is not set")
 	}
 	if cfg.Model == "" {
 		return nil, errors.New("llm: model is not set")
@@ -133,6 +170,7 @@ func New(cfg config.LLM, key config.Secret, logger *slog.Logger, opts ...Option)
 		maxBytes:     MaxResponseBytes,
 		sleep:        sleepCtx,
 		now:          time.Now,
+		registry:     limiters,
 	}
 	tr, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
@@ -144,6 +182,10 @@ func New(cfg config.LLM, key config.Secret, logger *slog.Logger, opts ...Option)
 	for _, o := range opts {
 		o(c)
 	}
+	if !key.IsSet() && !c.noKey {
+		return nil, errors.New("llm: API key is not set")
+	}
+	c.limiter = c.registry.lookup(u, key, cfg)
 	return c, nil
 }
 
@@ -221,6 +263,10 @@ func (c *Client) checkRedirect(req *http.Request, via []*http.Request) error {
 // setAuth is the only place the API key is revealed.
 func (c *Client) setAuth(req *http.Request) {
 	req.Header.Del("Authorization")
+	if !c.key.IsSet() {
+		// A client without a key (WithoutKey) sends none.
+		return
+	}
 	req.Header.Set("Authorization", "Bearer "+c.key.Reveal())
 }
 
@@ -346,10 +392,15 @@ func parseResponse(data []byte) (*Response, *Error) {
 // --- Complete ------------------------------------------------------------
 
 // Complete sends one system and one user message and returns the first
-// choice. Retryable classes are retried up to cfg.MaxRetries times. A
-// canceled or expired ctx stops everything and is returned as ctx.Err().
+// choice. An HTTP 429 cools the endpoint down for every caller and is
+// retried after the cool-down, up to cfg.MaxRateRetries times, while each
+// wait is at most cfg.MaxRateWaitSeconds (X-37); the other retryable
+// classes are retried up to cfg.MaxRetries times. A canceled or expired ctx
+// stops everything and is returned as ctx.Err().
 func (c *Client) Complete(ctx context.Context, system, user string) (*Response, error) {
 	maxRetries := max(c.cfg.MaxRetries, 0)
+	maxRateRetries := max(c.cfg.MaxRateRetries, 0)
+	retries, rateRetries := 0, 0
 	for attempt := 0; ; attempt++ {
 		resp, retryAfter, le := c.attempt(ctx, attempt, system, user)
 		if le == nil {
@@ -358,10 +409,26 @@ func (c *Client) Complete(ctx context.Context, system, user string) (*Response, 
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		if !le.Class.Retryable() || attempt >= maxRetries {
+		if le.reason == reasonWaitTooLong {
+			// The limiter found the needed wait too long: no retry may
+			// wait for it either (§2.2 item 4).
 			return nil, le
 		}
-		delay := backoff[min(attempt, len(backoff)-1)]
+		if le.Class == ClassRateLimited {
+			// The 429 set the endpoint's cool-down; the next attempt's
+			// limiter wait is the retry delay (§2.2 item 7).
+			if rateRetries >= maxRateRetries {
+				return nil, le
+			}
+			rateRetries++
+			c.logger.Debug("llm retry", "class", string(le.Class), "attempt", attempt+1, "rate_retry", rateRetries)
+			continue
+		}
+		if !le.Class.Retryable() || retries >= maxRetries {
+			return nil, le
+		}
+		delay := backoff[min(retries, len(backoff)-1)]
+		retries++
 		if retryAfter > 0 {
 			delay = min(retryAfter, MaxRetryAfter)
 		}
@@ -379,6 +446,24 @@ func (c *Client) attempt(ctx context.Context, attempt int, system, user string) 
 	if err != nil {
 		return nil, 0, &Error{Class: ClassProtocol, Detail: "request could not be encoded"}
 	}
+	// Every attempt, retries included, takes a place in the endpoint's
+	// limits (X-37) and holds it until its response is read.
+	st, err := c.limiter.acquire(ctx, c.now, c.sleep, c.logger)
+	if st.waits > 0 {
+		c.waitMu.Lock()
+		c.waits++
+		c.waited += st.waited
+		c.waitMu.Unlock()
+	}
+	if err != nil {
+		var long *errWaitTooLong
+		if errors.As(err, &long) {
+			return nil, 0, &Error{Class: ClassRateLimited, reason: reasonWaitTooLong, waitReason: long.why, wait: long.need,
+				maxWait: time.Duration(max(c.cfg.MaxRateWaitSeconds, 0)) * time.Second}
+		}
+		return nil, 0, &Error{Class: ClassTransport, Detail: "canceled"}
+	}
+	defer c.limiter.release()
 	full := c.baseStr + chatPath
 	rctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
@@ -415,9 +500,20 @@ func (c *Client) attempt(ctx context.Context, attempt int, system, user string) 
 		}
 		retryAfter := c.retryAfter(resp.Header.Get("Retry-After"))
 		le := c.statusError(status, errBody)
+		if status == http.StatusTooManyRequests {
+			// Retry-After is the endpoint's cool-down, not this request's
+			// delay: every caller waits for it (§2.2 item 5).
+			d := c.limiter.rateLimited(c.now(), resp.Header)
+			c.logger.Debug("llm rate limit cool-down", "endpoint", c.limiter.endpoint, "cool_down_ms", d.Milliseconds())
+			retryAfter = 0
+		}
 		logFail(status, le.Class)
 		return nil, retryAfter, le
 	}
+
+	// A successful status, whatever its body: the 429 doubling starts
+	// again, and an exhausted request budget cools the endpoint down.
+	c.limiter.succeeded(c.now(), resp.Header)
 
 	if resp.ContentLength > c.maxBytes {
 		le := &Error{Class: ClassProtocol, Status: status, Detail: "response exceeded the size limit"}

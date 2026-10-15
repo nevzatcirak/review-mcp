@@ -53,12 +53,12 @@ own. Three kinds of token work, and all are sent the same way:
 
 | Token type | What to grant |
 |---|---|
-| **Personal access token** (Preferences, Access tokens) | `read_api` for read-only use; `api` to publish, reply and create comments. Add `read_repository` for the [repository context](#repository-context). |
-| **Project access token** or **group access token** (Settings, Access tokens of the project or group) | Role **Reporter** for reads, **Developer** to publish. Scopes as for a personal token (`read_api` or `api`, plus `read_repository` for the repository context). The token's user is a bot, so review-mcp's comments are written under the bot's name. |
+| **Personal access token** (Preferences, Access tokens) | Use a **legacy** personal access token with the scopes `api` and `read_repository`. `api` covers reading, publishing, replying and creating comments; `read_repository` is for the [repository context](#repository-context). `read_api` cannot publish, and in testing GitLab refused it, and fine-grained personal access tokens, for review-mcp's requests. |
+| **Project access token** or **group access token** (Settings, Access tokens of the project or group) | Role **Reporter** for reads, **Developer** to publish. Scopes `api` and `read_repository`, as for a personal token. The token's user is a bot, so review-mcp's comments are written under the bot's name. |
 
 | Use | Needs |
 |---|---|
-| `pr_review`, `pr_ask`, `pr_describe`, `pr_improve` with `publish=false`, `pr_comments`, `pr_info` | `read_api` (Reporter); this includes the file contents, the directory listings, the commit statuses and the approvals |
+| `pr_review`, `pr_ask`, `pr_describe`, `pr_improve` with `publish=false`, `pr_comments`, `pr_info` | read access (the role Reporter for a project or group token; the `api` scope of a personal token): the file contents, the directory listings, the commit statuses and the approvals |
 | `publish=true`, `pr_comment_reply`, `pr_comment_create` | `api` (Developer) |
 | `pr_describe` with `publish_mode=description` (and `update_title`) | `api` (Developer): it edits the merge request itself |
 | The [repository context](#repository-context) | `read_repository` (Reporter), in addition |

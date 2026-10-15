@@ -103,8 +103,15 @@ func (g *ctGitLab) statusesJSON() []any {
 		if c.Unknown {
 			value = "brand_new_state"
 		}
-		items = append(items, map[string]any{"id": i + 1, "name": c.Name, "status": value, "target_url": c.URL,
-			"allow_failure": c.State == provider.CheckNeutral && !c.Unknown})
+		item := map[string]any{"name": c.Name, "status": value, "target_url": c.URL,
+			"allow_failure": c.State == provider.CheckNeutral && !c.Unknown}
+		// The shared contract expects no URL for a check without one, and
+		// the provider links the job page of a status that has an id
+		// (TestCheckJobLinks), so such a status is served without an id.
+		if c.URL != "" {
+			item["id"] = i + 1
+		}
+		items = append(items, item)
 	}
 	return items
 }

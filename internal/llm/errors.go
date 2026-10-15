@@ -3,6 +3,8 @@ package llm
 import (
 	"errors"
 	"strconv"
+	"strings"
+	"time"
 )
 
 // ErrorClass is the X-6 allowlist class of an LLM client error.
@@ -52,6 +54,21 @@ type Error struct {
 	// Sentence, when set, replaces the class sentence (the probe's fixed
 	// sentences, which carry their own hint).
 	Sentence string
+	// reason is an internal reason of a rate-limited failure
+	// (reasonWaitTooLong), and wait the needed wait it refused; neither is
+	// part of the sentence.
+	reason string
+	// waitReason is what needed the refused wait (waitCoolDown, the
+	// endpoint's; waitWindow, llm.requests_per_minute's); it chooses the
+	// sentence of a reasonWaitTooLong failure and is not shown otherwise.
+	waitReason string
+	wait       time.Duration
+	// maxWait is llm.max_rate_wait_seconds, named in the sentence of a
+	// reasonWaitTooLong failure.
+	maxWait time.Duration
+	// note is a fixed sentence appended to the error's own, such as the
+	// chain's "All N fallback models failed as well." (X-38).
+	note string
 }
 
 var sentences = map[ErrorClass]string{
@@ -85,6 +102,27 @@ func (e *Error) Error() string {
 	}
 	if e.Hint != "" {
 		s += "; check " + e.Hint
+	}
+	if e.reason == reasonWaitTooLong {
+		// §2.3 item 3: no header value and no URL, the configured limit only.
+		//
+		// DESIGN-QUESTION (WP-8b DQ-5): "(N s)" follows the key name, so N is
+		// read as the key's value (the configured longest wait), not the
+		// wait that was needed; the needed wait is an endpoint answer and
+		// stays in the debug log. Recommendation: keep.
+		limit := "llm.max_rate_wait_seconds (" + strconv.Itoa(int(e.maxWait/time.Second)) + " s)."
+		if e.waitReason == waitWindow {
+			s += ". Staying within llm.requests_per_minute would need a wait longer than " + limit
+		} else {
+			s += ". The endpoint asked for a wait longer than " + limit
+		}
+	}
+	if e.note != "" {
+		if strings.HasSuffix(s, ".") {
+			s += " " + e.note
+		} else {
+			s += ". " + e.note
+		}
 	}
 	return s
 }

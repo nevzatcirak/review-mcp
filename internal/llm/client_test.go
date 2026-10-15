@@ -98,7 +98,9 @@ func (s *fakeSleep) sleep(ctx context.Context, d time.Duration) error {
 
 func newClient(t *testing.T, cfg config.LLM, logger *slog.Logger, fs *fakeSleep) *Client {
 	t.Helper()
-	opts := []Option{}
+	// A registry of its own: a cool-down of one test never reaches another
+	// that happens to get the same server address.
+	opts := []Option{withRegistry(&registry{})}
 	if fs != nil {
 		opts = append(opts, WithSleeper(fs.sleep))
 	}
@@ -324,8 +326,11 @@ func TestNonRetryableClassesNotRetried(t *testing.T) {
 	}
 }
 
+// TestRetryCountsAndBackoff: the retryable classes other than HTTP 429
+// (which has its own policy, TestRateLimitRetries) are retried up to
+// llm.max_retries times with the backoff.
 func TestRetryCountsAndBackoff(t *testing.T) {
-	for _, st := range []int{429, 500, 502} {
+	for _, st := range []int{500, 502, 503} {
 		for _, retries := range []int{0, 1, 3, 5} {
 			f := newFake(t, func(_ int, w http.ResponseWriter, _ *http.Request) { writeJSON(w, st, `{}`) })
 			cfg := baseCfg(f.srv.URL)
@@ -369,6 +374,8 @@ func TestRetrySucceedsAfterFailure(t *testing.T) {
 	}
 }
 
+// TestRetryAfter: a Retry-After of a retryable status other than 429 is the
+// retry delay, capped at MaxRetryAfter.
 func TestRetryAfter(t *testing.T) {
 	fixed := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	tests := []struct {
@@ -394,13 +401,14 @@ func TestRetryAfter(t *testing.T) {
 					if tc.header != "" {
 						w.Header().Set("Retry-After", tc.header)
 					}
-					writeJSON(w, 429, `{}`)
+					writeJSON(w, 503, `{}`)
 					return
 				}
 				writeJSON(w, 200, okJSON("ok"))
 			})
 			fs := &fakeSleep{}
-			c, err := New(baseCfg(f.srv.URL), config.NewSecret(testKey), nil, WithSleeper(fs.sleep), WithClock(func() time.Time { return fixed }))
+			c, err := New(baseCfg(f.srv.URL), config.NewSecret(testKey), nil, WithSleeper(fs.sleep), WithClock(func() time.Time { return fixed }),
+				withRegistry(&registry{}))
 			if err != nil {
 				t.Fatal(err)
 			}

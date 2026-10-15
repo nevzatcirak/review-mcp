@@ -140,6 +140,28 @@ func progress(deps Deps, stage string) {
 // error (*llmrun.Error, *QuestionError, *provider.Error, *llm.Error) or the
 // result; a failed publish is reported in the result, never as an error.
 func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
+	res, err := run(ctx, deps, args)
+	if res != nil {
+		// The rate-limit waits of the run's client (X-37, v2.1 spec V-6
+		// §2.3): in the result, after the run, so a published comment
+		// does not carry them.
+		res.Metadata.RateLimitWaits, res.Metadata.RateLimitWaitMS = llmrun.RateLimitWaits(deps.LLM)
+		if note := llmrun.RateLimitNote(res.Metadata.RateLimitWaitMS); note != "" {
+			res.Notes = append(res.Notes, note)
+		}
+		// The models that served the run (X-38, v2.1 spec V-6 §3.4).
+		fb := llmrun.Fallback(deps.LLM, res.Metadata.Model, res.Metadata.LLMCalls)
+		if fb.Model != "" {
+			res.Metadata.Model = fb.Model
+		}
+		res.Metadata.ModelsUsed, res.Metadata.FallbackCalls = fb.ModelsUsed, fb.FallbackCalls
+		res.Notes = append(res.Notes, fb.Notes...)
+	}
+	return res, err
+}
+
+// run is Run without the rate-limit report.
+func run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 	if deps.Config == nil || deps.ConfigErr != nil {
 		return nil, llmrun.ErrConfigInvalid
 	}

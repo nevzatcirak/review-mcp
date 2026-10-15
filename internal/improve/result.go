@@ -287,4 +287,14 @@ type Metadata struct {
 	// AlreadyDiscussed is the number of discussion threads shown to the
 	// model (X-13).
 	AlreadyDiscussed int `json:"already_discussed"`
+	// RateLimitWaits is the number of model requests that waited for the
+	// endpoint's rate limit (X-37), and RateLimitWaitMS their total wait in
+	// milliseconds; both always set.
+	RateLimitWaits  int   `json:"rate_limit_waits"`
+	RateLimitWaitMS int64 `json:"rate_limit_wait_ms"`
+	// ModelsUsed are the distinct models that served model calls, in order
+	// of first use, and FallbackCalls the calls a fallback model served
+	// (X-38); both always set. Model is the model that served the last call.
+	ModelsUsed    []string `json:"models_used"`
+	FallbackCalls int      `json:"fallback_calls"`
 }

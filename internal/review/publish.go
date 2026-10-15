@@ -131,6 +131,7 @@ func publish(ctx context.Context, deps Deps, args Args, pl *Plan) {
 			if found.older > 0 {
 				res.Notes = append(res.Notes, noteOlderOverviews(found.older))
 			}
+			dropped := ""
 			if args.Findings != nil {
 				// The client's focused runs may have reviewed an older head;
 				// recording the current one would let an incremental run skip
@@ -139,11 +140,18 @@ func publish(ctx context.Context, deps Deps, args Args, pl *Plan) {
 				res.Reviewed.SHA = found.reviewed
 				// The client's set replaces the found overview's findings
 				// (spec v2.1 §7.2 item 6): its held findings are dropped.
+				// The note is in the overview that is written, so it is
+				// added before the write and taken back when nothing was
+				// written: neither an edit nor a replacement.
 				if n := len(found.held); n > 0 {
-					res.Notes = append(res.Notes, noteHeldDropped(n))
+					dropped = noteHeldDropped(n)
+					res.Notes = append(res.Notes, dropped)
 				}
 			}
 			editOverview(ctx, log, pl, found, items, sum, render)
+			if !res.Publish.Published {
+				removeNote(res, dropped)
+			}
 			return
 		}
 	}
@@ -210,9 +218,18 @@ func editOverview(ctx context.Context, log *slog.Logger, pl *Plan, found *foundO
 	if !pub.Published {
 		// Neither edited nor posted: the note's "a new one was posted" is
 		// not true, and the old overview stays as it was.
-		if i := slices.Index(res.Notes, NoteOverviewReplaced); i >= 0 {
-			res.Notes = slices.Delete(res.Notes, i, i+1)
-		}
+		removeNote(res, NoteOverviewReplaced)
+	}
+}
+
+// removeNote removes the first note equal to note, if any; an empty note
+// removes nothing.
+func removeNote(res *Result, note string) {
+	if note == "" {
+		return
+	}
+	if i := slices.Index(res.Notes, note); i >= 0 {
+		res.Notes = slices.Delete(res.Notes, i, i+1)
 	}
 }
 
@@ -315,6 +332,20 @@ func postInline(ctx context.Context, log *slog.Logger, pl *Plan, items []inlineF
 	for i, it := range items {
 		ki := &pl.Result.Review.KeyIssuesToReview[it.issue]
 		if err != nil || i >= len(results) || !results[i].Posted {
+			// DESIGN-QUESTION (WP-8a item 5): FailureClass is the class of the
+			// first failed item as the provider reported it. A first item
+			// that failed without a provider error (a stray note that was
+			// left, a result the provider did not return) leaves it empty
+			// rather than taking a later item's class, since the spec names
+			// the first failed item. Recommendation: keep.
+			if sum.Failed == 0 {
+				switch {
+				case err != nil:
+					sum.FailureClass = provider.ItemClass(err)
+				case i < len(results):
+					sum.FailureClass = results[i].Class
+				}
+			}
 			sum.Failed++
 			ki.InlineStatus = InlineFailed
 			continue

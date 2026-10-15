@@ -279,13 +279,14 @@ func TestPostInlineBatchStops(t *testing.T) {
 		status int
 		header map[string]string
 		class  *provider.Error
+		text   string // InlineResult.Class
 	}{
-		"auth":         {401, nil, provider.ErrAuth},
-		"forbidden":    {403, nil, provider.ErrAuth},
-		"rate limit":   {403, map[string]string{"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1700003600"}, provider.ErrRateLimited},
-		"secondary":    {429, map[string]string{"Retry-After": "3600"}, provider.ErrRateLimited},
-		"server error": {500, nil, provider.ErrUpstream},
-		"not found":    {404, nil, provider.ErrNotFound},
+		"auth":         {401, nil, provider.ErrAuth, "auth 401"},
+		"forbidden":    {403, nil, provider.ErrAuth, "auth 403"},
+		"rate limit":   {403, map[string]string{"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1700003600"}, provider.ErrRateLimited, "rate_limited 403"},
+		"secondary":    {429, map[string]string{"Retry-After": "3600"}, provider.ErrRateLimited, "rate_limited 429"},
+		"server error": {500, nil, provider.ErrUpstream, "upstream 500"},
+		"not found":    {404, nil, provider.ErrNotFound, "not_found 404"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newFake(t, "/api/v3")
@@ -303,6 +304,9 @@ func TestPostInlineBatchStops(t *testing.T) {
 			for i, r := range res {
 				if r.Posted || r.Reason != provider.InlineReasonFailed || !strings.HasPrefix(r.Error, tc.class.Error()) {
 					t.Errorf("item %d: %+v, want failed with %q", i, r, tc.class.Error())
+				}
+				if r.Class != tc.text {
+					t.Errorf("item %d: class %q, want %q", i, r.Class, tc.text)
 				}
 			}
 			if reqs := methodsAndPaths(f); !slices.Equal(reqs, []string{postRev}) {
@@ -355,6 +359,9 @@ func TestPostInlineFallbackStops(t *testing.T) {
 			}
 			if res[1].Error != res[2].Error {
 				t.Errorf("the unsent item's error %q differs from %q", res[2].Error, res[1].Error)
+			}
+			if res[0].Class != "" || res[1].Class == "" || res[2].Class != res[1].Class {
+				t.Errorf("classes %q, %q, %q: the unsent item must carry the stopping item's class", res[0].Class, res[1].Class, res[2].Class)
 			}
 			if reqs := methodsAndPaths(f); !slices.Equal(reqs, []string{postRev, postOne, postOne}) {
 				t.Errorf("requests %q, want the review and two comments", reqs)

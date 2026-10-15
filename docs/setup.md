@@ -102,7 +102,7 @@ Use a read-only token to start. `pr_review`, `pr_ask`, `pr_describe` and
 | `pr_describe` with `publish=true` and `publish_mode=description` (also `update_title`) | the read scopes plus write access to the pull request itself, not only to its comments (see the `PATCH` and `PUT` rows below) |
 | CI results (`pr_info`, and `pr_review` unless `review.ci_status` is false), the guidelines file and the file tree (`pr_review`, `pr_improve`) | Gitea and Bitbucket Server: nothing beyond the read scopes (the commit status or build status, and file contents at the target branch). GitHub: **Commit statuses: Read** and **Checks: Read** for the CI results (fine-grained token; a classic token's `repo` scope covers them), **Contents: Read** for the guidelines and the tree. See the endpoint tables below |
 | GitHub, any use | see [GitHub](#github) below: a fine-grained token with Pull requests, Contents and Metadata, or a classic `repo` / `public_repo` token |
-| GitLab, any use | see [GitLab](#gitlab) below: a personal access token with `read_api` (read) or `api` (publish), or a project or group access token with the role Reporter (read) or Developer (publish) |
+| GitLab, any use | see [GitLab](#gitlab) below: a legacy personal access token with the scopes `api` and `read_repository`, or a project or group access token with the role Reporter (read) or Developer (publish) and the same scopes |
 
 > **Every scope in this guide is unconfirmed.** They are derived from the API
 > calls the code makes, in the tables below, and each is marked "verify at V1
@@ -278,9 +278,13 @@ through a token and the REST API v4. The full reference is [GitLab](gitlab.md).
 
 1. Create the token. Three kinds work, and all are sent as `PRIVATE-TOKEN`:
    - **Personal access token** (**Preferences, Access tokens** in your
-     profile). Scope `read_api` for read-only use, `api` to publish and for
-     `pr_comment_reply` and `pr_comment_create`. Add `read_repository` for the
-     [repository context](repo-context.md).
+     profile). **Use a legacy personal access token with the scopes `api` and
+     `read_repository`**: GitLab refused fine-grained personal access tokens
+     and the `read_api` scope in testing. `api` covers reading, publishing,
+     `pr_comment_reply` and `pr_comment_create`; `read_repository` is for the
+     [repository context](repo-context.md). If the tool answers `authentication
+     failed` (HTTP 401 or 403) with a fine-grained token or `read_api`, see
+     [Authentication failed on GitLab](troubleshooting.md#authentication-failed-on-gitlab).
    - **Project access token** or **group access token** (**Settings, Access
      tokens** of the project or group). Role **Reporter** for reads,
      **Developer** to publish. Scopes as for a personal token. The token's user
@@ -294,9 +298,9 @@ through a token and the REST API v4. The full reference is [GitLab](gitlab.md).
 
 | Token | Permissions | Status |
 |---|---|---|
-| Read only | personal: `read_api`; project or group: role Reporter | verify at the 2C acceptance (items Q1, Q2, Q6, Q7) |
-| Read and write | personal: `api`; project or group: role Developer | verify at the 2C acceptance (items Q3 to Q5b) |
-| Repository context | personal: `read_repository` (or `api`); project or group: Reporter | verify at the 2C acceptance |
+| Read only | personal: legacy token with `api` (`read_api` was refused in testing); project or group: role Reporter | verify at the 2C acceptance (items Q1, Q2, Q6, Q7) |
+| Read and write | personal: legacy token with `api`; project or group: role Developer | verify at the 2C acceptance (items Q3 to Q5b) |
+| Repository context | personal: `read_repository` (with `api`); project or group: Reporter | verify at the 2C acceptance |
 
 Endpoints the GitLab provider calls (under `{base}/api/v4`; `{p}` is
 `/projects/{full path}` with the slashes of the path sent as `%2F`, and `{mr}`
@@ -396,6 +400,126 @@ A local model can take minutes on a large prompt. Two settings help:
   ([Slow endpoints](review.md#slow-endpoints)).
 
 `llm.timeout_seconds` (default 300) bounds one request to the model.
+
+### Rate limits
+
+A gateway often allows only a few requests per minute for one key, and
+parallel focused reviews ([Multi-perspective review](review.md#focused-reviews-and-the-merged-publish))
+then fail with HTTP 429. review-mcp keeps its own model calls within a limit
+you set, per endpoint and shared by every tool call of the process, so
+parallel calls wait for each other instead of failing.
+
+| Key | Environment variable | Default | Meaning |
+|---|---|---|---|
+| `llm.requests_per_minute` | `REVIEW_MCP_LLM_REQUESTS_PER_MINUTE` | 0 (no limit), 0 to 100000 | The most HTTP requests (every attempt, retries included) started in any 60-second window, per endpoint. |
+| `llm.max_concurrent_requests` | `REVIEW_MCP_LLM_MAX_CONCURRENT_REQUESTS` | 0 (unlimited), 0 to 256 | The most requests in flight at once, per endpoint. |
+| `llm.max_rate_wait_seconds` | `REVIEW_MCP_LLM_MAX_RATE_WAIT_SECONDS` | 60, 0 to 600 | The longest one wait for the rate limit may be (a limiter slot, a cool-down or a 429's delay). A longer needed wait is not waited for: the call fails, or moves to a [fallback model](#fallback-models) when one is configured. |
+| `llm.max_rate_retries` | `REVIEW_MCP_LLM_MAX_RATE_RETRIES` | 4, 0 to 20 | Retries after HTTP 429 for one model call, counted apart from `llm.max_retries`. |
+
+**Set `llm.requests_per_minute` to your gateway's per-minute limit**, and a
+little below it when other clients share the key. Nothing changes for a
+setup that sets none of these keys. `server_info` shows all four.
+
+How it works:
+
+- The limit is per endpoint: the base URL and the API key together. Two models
+  on the same base URL and key share one limit, because a gateway limits the
+  key, not the model. The key itself is never stored or logged; it only picks
+  the limit. The limit covers one review-mcp process: a second process (another
+  client session) against the same gateway has its own.
+- A request starts when fewer than `requests_per_minute` started in the last
+  60 seconds and fewer than `max_concurrent_requests` are in flight; otherwise
+  it waits, first come first served.
+- An HTTP 429 puts the whole endpoint into a cool-down, so every caller waits
+  for it instead of each retrying into the limit. Its length is `Retry-After`
+  (seconds or a date), else the `x-ratelimit-reset-requests` header (`6s`,
+  `1m30s`, `250ms`), else 10 s, then 20 s, 40 s and so on for every 429 in a
+  row, at most 600 s. A successful answer that says no request is left
+  (`x-ratelimit-remaining-requests: 0`) with a reset also cools the endpoint
+  down. The call is retried after the cool-down, up to `llm.max_rate_retries`
+  times. The 30-second cap on `Retry-After` of other errors does not apply to
+  429.
+- Every wait stops when the call is canceled. The result reports the waits
+  (`metadata.rate_limit_waits`, `metadata.rate_limit_wait_ms`) and, from one
+  second of waiting on, adds the note "The LLM endpoint's rate limit delayed
+  this run by N s." ([Troubleshooting](troubleshooting.md#rate-limit-and-fallback-notes)).
+- When the server instructions and the `multi_perspective_review` prompt are
+  shown to a client and `requests_per_minute` or `max_concurrent_requests` is
+  set, they add that parallel focused reviews are queued instead of failing.
+
+### Fallback models
+
+Up to three fallback models are tried in order when a model call cannot be
+served by the current one. The run stays on the model it fell back to, so a
+later call of the same run does not ask the failing model again; a new run
+starts at the primary model again. In the file:
+
+```toml
+[[llm.fallback]]
+model = "second-model"
+# base_url = "https://fallback.example/v1"   # default: llm.base_url
+# context_window = 128000                    # default: read from the endpoint (like llm.context_window)
+# max_output_tokens = 4096                   # default: llm.max_output_tokens
+# reasoning_effort = "low"                   # default: unset
+# timeout_seconds = 120                      # default: llm.timeout_seconds
+```
+
+In the environment, for entry N from 1 to 3:
+`REVIEW_MCP_LLM_FALLBACK_<N>_MODEL`, `_BASE_URL`, `_CONTEXT_WINDOW`,
+`_MAX_OUTPUT_TOKENS`, `_REASONING_EFFORT` and `_TIMEOUT_SECONDS`, and the secret
+`REVIEW_MCP_LLM_FALLBACK_<N>_API_KEY`. Entry N exists when the file has it or
+`..._<N>_MODEL` is set; every set variable replaces that field of the file's
+entry N. Entries are numbered from 1 without gaps. Temperature, seed, the
+retries and the rate limits are the primary's.
+
+**Which key a fallback sends.** A fallback uses its own
+`REVIEW_MCP_LLM_FALLBACK_<N>_API_KEY` when it is set. Without one it uses the
+primary key **only when its base URL is the primary's** (compared after
+normalising scheme, host, default port and a trailing slash); a fallback on
+another host without its own key sends **no key at all**, and the request has
+no `Authorization` header. The primary key is never sent to another host.
+`server_info` shows, for each fallback, the model, the redacted base URL, the
+key source (`own`, `primary` or `none`) and the context window.
+
+**Serve mode.** With `serve.llm_key_source = header` every caller sends the
+LLM key, so `REVIEW_MCP_LLM_API_KEY` must be unset, and so must every
+`REVIEW_MCP_LLM_FALLBACK_<N>_API_KEY`: a server-side fallback key would let
+every caller spend the operator's key. Such a fallback uses the caller's key on
+the primary's base URL and no key on any other host. With
+`llm_key_source = server` the fallback keys may be set ([Serve mode](serve.md)).
+
+**When a call moves to the next model:**
+
+- the model's own retries are used up for a server error (5xx), a timeout or a
+  transport failure (the endpoint is unreachable);
+- it stays rate limited: its rate-limit retries are used up, or the needed wait
+  is longer than `llm.max_rate_wait_seconds` (waits first, then falls back);
+- its answer is still unusable after the one re-ask that the tools make
+  (`pr_review`, `pr_improve`, `pr_describe`): the next model gets the original
+  prompt once.
+
+**When it does not move on**, and the call ends with the error as before:
+
+- authentication (`llm_auth`, HTTP 401 or 403);
+- a refused request (`llm_bad_request`);
+- not found (`llm_not_found`): a wrong model name is a configuration error and
+  must surface, not hide behind a fallback;
+- a request too long for the model's context window (`llm_context_too_long`);
+- an unexpected response (`llm_protocol`);
+- a canceled call or an expired deadline.
+
+**Size.** Before a fallback is asked, the prompt's estimate plus its maximum
+output must fit its context window; otherwise that fallback is skipped for the
+call, and the result says so. A fallback whose window is not set is read from
+its endpoint like `llm.context_window` ([Context window
+auto-detection](#context-window-auto-detection)).
+
+The result reports the models: `metadata.model` is the model that served the
+last call, `metadata.models_used` the models that served calls, in order, and
+`metadata.fallback_calls` the calls a fallback served; notes say why
+([Troubleshooting](troubleshooting.md#rate-limit-and-fallback-notes)). When
+every model fails, the error is the first model's, with "All N fallback models
+failed as well."
 
 ### `context_window` and `max_output_tokens`
 

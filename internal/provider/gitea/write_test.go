@@ -450,7 +450,7 @@ func TestPostInlineCommentsBatchFailureFallsBackWithoutPendingReview(t *testing.
 	}
 	want := []provider.InlineResult{
 		{Posted: true, ID: "1020", URL: commentURL(1020), Reason: provider.InlineReasonPosted},
-		{Error: "the server sent an unexpected response (HTTP 422)", Reason: provider.InlineReasonUnanchorable},
+		{Error: "the server sent an unexpected response (HTTP 422)", Reason: provider.InlineReasonUnanchorable, Class: "protocol 422"},
 		{Posted: true, ID: "1040", URL: commentURL(1040), Reason: provider.InlineReasonPosted},
 	}
 	if !reflect.DeepEqual(got, want) {

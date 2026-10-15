@@ -175,6 +175,28 @@ func progress(deps Deps, stage string) {
 // Run describes one pull request. It returns a classified error
 // (*llmrun.Error, *provider.Error, *llm.Error) or the result.
 func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
+	res, err := run(ctx, deps, args)
+	if res != nil {
+		// The rate-limit waits of the run's client (X-37, v2.1 spec V-6
+		// §2.3): in the result, after the run, so a published comment
+		// does not carry them.
+		res.Metadata.RateLimitWaits, res.Metadata.RateLimitWaitMS = llmrun.RateLimitWaits(deps.LLM)
+		if note := llmrun.RateLimitNote(res.Metadata.RateLimitWaitMS); note != "" {
+			res.Notes = append(res.Notes, note)
+		}
+		// The models that served the run (X-38, v2.1 spec V-6 §3.4).
+		fb := llmrun.Fallback(deps.LLM, res.Metadata.Model, res.Metadata.LLMCalls)
+		if fb.Model != "" {
+			res.Metadata.Model = fb.Model
+		}
+		res.Metadata.ModelsUsed, res.Metadata.FallbackCalls = fb.ModelsUsed, fb.FallbackCalls
+		res.Notes = append(res.Notes, fb.Notes...)
+	}
+	return res, err
+}
+
+// run is Run without the rate-limit report.
+func run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 	if deps.Config == nil || deps.ConfigErr != nil {
 		return nil, llmrun.ErrConfigInvalid
 	}
@@ -578,14 +600,29 @@ type callInfo struct {
 func (pl *Plan) call(ctx context.Context, deps Deps, p Prompts, reaskUser string,
 	conv func(map[string]any) (*answer, error)) (*answer, callInfo, error) {
 	var info callInfo
-	for attempt := range 2 {
+	var unusable error
+	for attempt := range 3 {
 		user := p.User
-		if attempt == 1 {
-			user = reaskUser
-			info.reasked = true
+		var resp *llm.Response
+		var err error
+		switch attempt {
+		case 0, 1:
+			if attempt == 1 {
+				user = reaskUser
+				info.reasked = true
+			}
+			resp, err = deps.LLM.Complete(ctx, p.System, user)
+			info.calls++
+		default:
+			// Still unusable after the re-ask: the next model of the
+			// chain gets the original prompt once (X-38).
+			var ok bool
+			resp, ok, err = llmrun.CompleteNext(ctx, deps.LLM, p.System, user)
+			if err == nil && !ok {
+				return nil, info, ErrUnparseable.WithCause(unusable)
+			}
+			info.calls++
 		}
-		resp, err := deps.LLM.Complete(ctx, p.System, user)
-		info.calls++
 		if err != nil {
 			return nil, info, err
 		}
@@ -599,7 +636,8 @@ func (pl *Plan) call(ctx context.Context, deps Deps, p Prompts, reaskUser string
 		if err == nil {
 			return a, info, nil
 		}
-		if attempt == 1 {
+		unusable = err
+		if attempt == 2 {
 			return nil, info, ErrUnparseable.WithCause(err)
 		}
 	}

@@ -226,21 +226,21 @@ func (p *Provider) PostInlineComments(ctx context.Context, ref provider.PRRef, p
 			msg = errPendingLeft
 		}
 		for i := range results {
-			results[i] = provider.InlineResult{Error: msg, Reason: provider.InlineReasonFailed}
+			results[i] = provider.InlineResult{Error: msg, Reason: provider.InlineReasonFailed, Class: provider.ItemClass(err)}
 		}
 		return results, nil
 	}
 	if provider.StopsBatch(err) {
 		for i := range results {
-			results[i] = provider.InlineResult{Error: provider.ItemError(err), Reason: provider.InlineReasonFailed}
+			results[i] = provider.InlineResult{Error: provider.ItemError(err), Reason: provider.InlineReasonFailed, Class: provider.ItemClass(err)}
 		}
 		return results, nil
 	}
 
-	posted, stopMsg := 0, ""
+	posted, stopMsg, stopClass := 0, "", ""
 	for i := range items {
 		if stopMsg != "" {
-			results[i] = provider.InlineResult{Error: stopMsg, Reason: provider.InlineReasonFailed}
+			results[i] = provider.InlineResult{Error: stopMsg, Reason: provider.InlineReasonFailed, Class: stopClass}
 			continue
 		}
 		rev, err := p.postReview(ctx, pp, pr.HeadSHA, items[i:i+1])
@@ -250,6 +250,11 @@ func (p *Provider) PostInlineComments(ctx context.Context, ref provider.PRRef, p
 			continue
 		}
 		msg, reason := errPendingDeleted, provider.InlineReasonFailed
+		// A review left pending (no error) is a protocol failure, as above.
+		class := provider.ItemClass(&provider.Error{Class: provider.ClassProtocol})
+		if err != nil {
+			class = provider.ItemClass(err)
+		}
 		switch {
 		case err != nil && rejected(err):
 			msg, reason = provider.ItemError(err), provider.RejectedReason(err, true)
@@ -259,15 +264,15 @@ func (p *Provider) PostInlineComments(ctx context.Context, ref provider.PRRef, p
 		switch {
 		case p.deletePending(ctx, pp, me) != nil:
 			// Any later review would reuse the leftover draft.
-			stopMsg = errPendingLeft
+			stopMsg, stopClass = errPendingLeft, class
 			if msg != errOutcomeUnknown {
 				msg = errPendingLeft
 			}
 			reason = provider.InlineReasonFailed
 		case err != nil && provider.StopsBatch(err):
-			stopMsg = provider.ItemError(err)
+			stopMsg, stopClass = provider.ItemError(err), class
 		}
-		results[i] = provider.InlineResult{Error: msg, Reason: reason}
+		results[i] = provider.InlineResult{Error: msg, Reason: reason, Class: class}
 	}
 	p.logger.Debug("gitea inline comments posted", "items", len(items), "mode", "per_item", "posted", posted)
 	return results, nil

@@ -336,6 +336,32 @@ func TestCommitStatusStates(t *testing.T) {
 	}
 }
 
+// TestCheckJobLinks (WP-8a): a commit status without a target_url and with
+// an id links the job page; one with a target_url keeps it; one without an
+// id has no link.
+func TestCheckJobLinks(t *testing.T) {
+	spec := ctSpec(ctModified)
+	f := ctFixture{statuses: []map[string]any{
+		{"id": 41, "name": "build", "status": "success", "target_url": ""},
+		{"id": 42, "name": "unit", "status": "failed", "target_url": "https://ci.example.com/u/1"},
+		{"name": "deploy", "status": "running"},
+		{"id": 0, "name": "e2e", "status": "running", "target_url": ""},
+	}}
+	p, ref, _, _ := f.serve(t, spec)
+	got, err := p.GetChecks(t.Context(), ref, spec.HeadSHA)
+	if err != nil {
+		t.Fatalf("GetChecks: %v", err)
+	}
+	var urls []string
+	for _, c := range got.Items {
+		urls = append(urls, c.URL)
+	}
+	job := p.webURL + "/" + provider.EscapeNamespace(ref.Namespace) + "/" + ref.Repo + "/-/jobs/41"
+	if want := []string{job, "https://ci.example.com/u/1", "", ""}; !slices.Equal(urls, want) {
+		t.Errorf("URLs = %q, want %q", urls, want)
+	}
+}
+
 // TestUpdatePutBody: the PUT carries the title and/or the description and
 // nothing else (the fake fails the test on any other field).
 func TestUpdatePutBody(t *testing.T) {

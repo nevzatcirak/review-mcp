@@ -1172,3 +1172,32 @@ func TestProviderDiffNotes(t *testing.T) {
 		t.Errorf("notes = %q", res.Notes)
 	}
 }
+
+// nextLLM is a fake model client with a fallback chain: CompleteNext serves
+// next once.
+type nextLLM struct {
+	*scriptLLM
+	next      string
+	nextUsers []string
+}
+
+func (n *nextLLM) CompleteNext(_ context.Context, _, user string) (*llm.Response, bool, error) {
+	n.nextUsers = append(n.nextUsers, user)
+	return &llm.Response{Content: n.next}, true, nil
+}
+
+// TestUnparseableNextModel (X-38, v2.1 spec V-6 §3.2 item 3): suggestions
+// still unusable after the re-ask send the original prompt once to the next
+// model, whose usable answer is used.
+func TestUnparseableNextModel(t *testing.T) {
+	answers := oneCallAnswers()
+	good := answers[0][0]
+	answers[0] = []string{"just prose", "suggestions: none"}
+	h := newHarness(answers)
+	n := &nextLLM{scriptLLM: h.llm, next: good}
+	h.deps.LLM = n
+	res := h.run(t, Args{})
+	if len(res.Suggestions) == 0 || len(n.nextUsers) != 1 || n.nextUsers[0] != h.llm.calls[0].user {
+		t.Errorf("suggestions %d, next prompts %d", len(res.Suggestions), len(n.nextUsers))
+	}
+}

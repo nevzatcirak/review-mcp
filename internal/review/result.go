@@ -111,6 +111,16 @@ type Metadata struct {
 	// the published overview when greater than 0. WP-PR-7e fills it; until
 	// then it is 0.
 	AlreadyDiscussed int `json:"already_discussed,omitempty"`
+	// RateLimitWaits is the number of model requests that waited for the
+	// endpoint's rate limit (X-37), and RateLimitWaitMS their total wait in
+	// milliseconds; both always set.
+	RateLimitWaits  int   `json:"rate_limit_waits"`
+	RateLimitWaitMS int64 `json:"rate_limit_wait_ms"`
+	// ModelsUsed are the distinct models that served model calls, in order
+	// of first use, and FallbackCalls the calls a fallback model served
+	// (X-38); both always set. Model is the model that served the last call.
+	ModelsUsed    []string `json:"models_used"`
+	FallbackCalls int      `json:"fallback_calls"`
 }
 
 // PublishResult is the outcome of publishing (step 13): the posted or
@@ -151,6 +161,12 @@ type InlineSummary struct {
 	// Failed findings were anchorable but their inline comment could not be
 	// posted; they are in the overview only.
 	Failed int `json:"failed"`
+	// FailureClass is the provider error class and HTTP status of the first
+	// failed inline item (provider.ItemClass, for example "rate_limited
+	// 403"), the text the providers' debug logs show; empty when none failed
+	// or the first one failed without a provider error. A fixed class string,
+	// never a provider message.
+	FailureClass string `json:"failure_class,omitempty"`
 }
 
 func nonNil[T any](s []T) []T { return llmrun.NonNil(s) }

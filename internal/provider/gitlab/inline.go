@@ -176,14 +176,15 @@ func (p *Provider) PostInlineComments(ctx context.Context, ref provider.PRRef, p
 	}
 	results := make([]provider.InlineResult, len(items))
 	var me *provider.User
-	posted, stopMsg := 0, ""
+	posted, stopMsg, stopClass := 0, "", ""
 	for i := range items {
 		if stopMsg != "" {
-			results[i] = provider.InlineResult{Error: stopMsg, Reason: provider.InlineReasonFailed}
+			results[i] = provider.InlineResult{Error: stopMsg, Reason: provider.InlineReasonFailed, Class: stopClass}
 			continue
 		}
 		var res provider.InlineResult
 		res, stopMsg = p.postInline(ctx, ref, mr, pr, &items[i], &me)
+		stopClass = res.Class
 		results[i] = res
 		if res.Posted {
 			posted++
@@ -199,7 +200,7 @@ func (p *Provider) PostInlineComments(ctx context.Context, ref provider.PRRef, p
 func (p *Provider) postInline(ctx context.Context, ref provider.PRRef, mr string, pr *provider.PullRequest,
 	it *provider.InlineComment, me **provider.User) (provider.InlineResult, string) {
 	fail := func(err error, reason provider.InlineReason) (provider.InlineResult, string) {
-		r := provider.InlineResult{Error: provider.ItemError(err), Reason: reason}
+		r := provider.InlineResult{Error: provider.ItemError(err), Reason: reason, Class: provider.ItemClass(err)}
 		if provider.StopsBatch(err) {
 			return r, r.Error
 		}
@@ -246,6 +247,7 @@ func (p *Provider) removeStray(ctx context.Context, mr string, n *apiCreatedNote
 		u, err := p.CurrentUser(ctx)
 		if err != nil {
 			p.logger.Debug("gitlab stray note kept: the token's user could not be read", "class", errClass(err))
+			left.Class = provider.ItemClass(err)
 			return left, stopSentence(err)
 		}
 		*me = &u
@@ -257,6 +259,7 @@ func (p *Provider) removeStray(ctx context.Context, mr string, n *apiCreatedNote
 	}
 	if _, err := p.do(ctx, request{method: http.MethodDelete, path: mr + "/notes/" + idStr(n.ID)}); err != nil {
 		p.logger.Debug("gitlab stray note could not be deleted", "class", errClass(err))
+		left.Class = provider.ItemClass(err)
 		return left, stopSentence(err)
 	}
 	p.logger.Debug("gitlab stray note deleted")

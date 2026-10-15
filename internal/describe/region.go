@@ -98,7 +98,12 @@ func isMarker(text string, l textLine, marker string) bool {
 //   - Exactly one start marker line followed by one end marker line: the
 //     bytes from the beginning of the start line to the end of the end
 //     line's content are replaced. The terminator of the end line and
-//     everything before and after are untouched, byte for byte.
+//     everything before and after are untouched, byte for byte, except
+//     that the region is always preceded by one blank line: when the text
+//     before the start marker is not empty and does not end in a blank
+//     line, the missing line terminators are added in front of the region
+//     (the marker of a link reference definition cannot interrupt a
+//     paragraph, so it would join the author's last paragraph).
 //   - Anything else (two or more starts, an end before a start, an end
 //     without a start, a start without an end, a second end): errDamagedRegion
 //     and no text.
@@ -128,7 +133,8 @@ func ApplyRegion(text, body string) (out string, replaced bool, err error) {
 	case len(starts) == 0 && len(ends) == 0:
 		return text + separator(text, eol) + region, false, nil
 	case len(starts) == 1 && len(ends) == 1 && starts[0] < ends[0]:
-		return text[:lines[starts[0]].start] + region + text[lines[ends[0]].end:], true, nil
+		before := text[:lines[starts[0]].start]
+		return before + separator(before, eol) + region + text[lines[ends[0]].end:], true, nil
 	}
 	return "", false, errDamagedRegion
 }
@@ -174,7 +180,17 @@ func hasQuickActionLine(text string) bool {
 }
 
 // separator returns the line terminators to put between text and a block
-// appended to it so that one blank line separates them.
+// that follows it so that one blank line separates them; an empty text needs
+// none.
+//
+// DESIGN-QUESTION (WP-8a item 3): the spec says the region is "always
+// preceded by one blank line". The first run already appended it that way;
+// a region that is already there, but directly after a line of the author's
+// text (the author's edit, or an earlier build), gets the missing line
+// terminators too, which are bytes added outside the region. The author's
+// own bytes are never changed or removed, and the second run adds nothing.
+// A text that ends in two or more terminators gets nothing, so a blank
+// line the author left is never doubled. Recommendation: keep.
 func separator(text, eol string) string {
 	if text == "" {
 		return ""

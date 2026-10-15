@@ -141,6 +141,25 @@ func ItemError(err error) string {
 	return genericItemError
 }
 
+// ItemClass returns InlineResult.Class: the class of a *Error and, when it
+// has one, its HTTP status ("rate_limited 403"), "unknown" for any other
+// error, and "" without an error. It is the text the providers' errClass
+// logs.
+func ItemClass(err error) string {
+	if err == nil {
+		return ""
+	}
+	var pe *Error
+	if errors.As(err, &pe) {
+		s := string(pe.Class)
+		if pe.Status != 0 {
+			s += " " + strconv.Itoa(pe.Status)
+		}
+		return s
+	}
+	return "unknown"
+}
+
 // RejectedReason is the InlineResult.Reason of an item whose own request
 // failed with err (the item was attempted alone, or its outcome is known):
 // InlineReasonUnanchorable when the server answered with a refusal of the

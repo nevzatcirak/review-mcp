@@ -238,10 +238,10 @@ func (p *Provider) PostInlineComments(ctx context.Context, ref provider.PRRef, p
 		return nil, err
 	}
 	results := make([]provider.InlineResult, len(items))
-	posted, stopMsg := 0, ""
+	posted, stopMsg, stopClass := 0, "", ""
 	for i, it := range items {
 		if stopMsg != "" {
-			results[i] = provider.InlineResult{Error: stopMsg, Reason: provider.InlineReasonFailed}
+			results[i] = provider.InlineResult{Error: stopMsg, Reason: provider.InlineReasonFailed, Class: stopClass}
 			continue
 		}
 		in := struct {
@@ -255,9 +255,9 @@ func (p *Provider) PostInlineComments(ctx context.Context, ref provider.PRRef, p
 			ID int64 `json:"id"`
 		}
 		if err := p.client.SendJSON(ctx, http.MethodPost, pp+"/comments", in, &out); err != nil {
-			results[i] = provider.InlineResult{Error: provider.ItemError(err), Reason: provider.RejectedReason(err, false)}
+			results[i] = provider.InlineResult{Error: provider.ItemError(err), Reason: provider.RejectedReason(err, false), Class: provider.ItemClass(err)}
 			if provider.StopsBatch(err) {
-				stopMsg = results[i].Error
+				stopMsg, stopClass = results[i].Error, results[i].Class
 			}
 			continue
 		}

@@ -848,3 +848,45 @@ func TestRunCarriesProviderDiffNotes(t *testing.T) {
 		t.Errorf("notes = %q", res.Notes)
 	}
 }
+
+// nextLLM is a fake model client with a fallback chain: CompleteNext serves
+// next once (ok false when next is "").
+type nextLLM struct {
+	*fakeLLM
+	next      string
+	nextUsers []string
+}
+
+func (n *nextLLM) CompleteNext(_ context.Context, _, user string) (*llm.Response, bool, error) {
+	n.nextUsers = append(n.nextUsers, user)
+	if n.next == "" {
+		return nil, false, nil
+	}
+	return &llm.Response{Content: n.next}, true, nil
+}
+
+// TestRunUnparseableNextModel (X-38, v2.1 spec V-6 §3.2 item 3): an answer
+// still unusable after the re-ask sends the original prompt once to the
+// next model of the chain; its usable answer is the review. Without a next
+// model the run fails as before.
+func TestRunUnparseableNextModel(t *testing.T) {
+	h := newHarness("not yaml: [", "review: just text")
+	n := &nextLLM{fakeLLM: h.llm, next: answerWith(onAdded)}
+	h.deps.LLM = n
+	res, err := Run(context.Background(), h.deps, Args{PRURL: testPRURL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Review.KeyIssuesToReview) != 1 || res.Metadata.LLMCalls != 3 {
+		t.Errorf("findings %d, calls %d", len(res.Review.KeyIssuesToReview), res.Metadata.LLMCalls)
+	}
+	if len(n.nextUsers) != 1 || n.nextUsers[0] != h.llm.calls[0].user {
+		t.Errorf("the next model did not get the original prompt once")
+	}
+
+	h = newHarness("not yaml: [", "review: just text")
+	h.deps.LLM = &nextLLM{fakeLLM: h.llm}
+	if _, err := Run(context.Background(), h.deps, Args{PRURL: testPRURL}); !errors.Is(err, ErrUnparseable) {
+		t.Errorf("no next model: err = %v", err)
+	}
+}

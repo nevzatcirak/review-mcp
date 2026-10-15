@@ -1,6 +1,8 @@
 package review
 
 import (
+	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -207,6 +209,48 @@ func TestCarryForwardNotFocused(t *testing.T) {
 	for _, n := range res.Notes {
 		if strings.Contains(n, "carried forward") {
 			t.Errorf("focused run notes %q", n)
+		}
+	}
+}
+
+// TestInlineFailureClass (WP-8a): publish.inline.failure_class is the class
+// text of the first failed inline item; empty when none failed or when the
+// first failed without a provider class. It is a fixed class string: the
+// provider's message never reaches it.
+func TestInlineFailureClass(t *testing.T) {
+	const secret = "token abc123 in a provider message"
+	fail := func(class string) func(int, provider.InlineComment) provider.InlineResult {
+		return func(_ int, it provider.InlineComment) provider.InlineResult {
+			if it.Path == incPathSame {
+				return provider.InlineResult{Error: secret, Class: class, Reason: provider.InlineReasonFailed}
+			}
+			return provider.InlineResult{Posted: true, ID: "901", URL: "https://your-gitea.example/c/901"}
+		}
+	}
+	for _, tc := range []struct {
+		name   string
+		mutate func(*fakeProvider)
+		want   string
+		failed int
+	}{
+		{"no failure", func(*fakeProvider) {}, "", 0},
+		{"one item failed", func(f *fakeProvider) { f.inlineResult = fail("rate_limited 403") }, "rate_limited 403", 1},
+		{"failed without a class", func(f *fakeProvider) { f.inlineResult = fail("") }, "", 1},
+		{"the whole call failed", func(f *fakeProvider) {
+			f.inlineErr = &provider.Error{Class: provider.ClassUpstream, Status: 502, Hint: secret}
+		}, "upstream 502", 2},
+		{"an unclassified error", func(f *fakeProvider) { f.inlineErr = errors.New(secret) }, "unknown", 2},
+	} {
+		h := carryHarness(answerWith(onSame, onEdited))
+		tc.mutate(h.prov)
+		full := false
+		res := runOK(t, h, Args{PRURL: testPRURL, Publish: true, Incremental: &full})
+		in := res.Publish.Inline
+		if in == nil || in.Failed != tc.failed || in.FailureClass != tc.want {
+			t.Errorf("%s: inline = %+v, want %d failed, class %q", tc.name, in, tc.failed, tc.want)
+		}
+		if b, _ := json.Marshal(res.Publish); strings.Contains(string(b), secret) {
+			t.Errorf("%s: the provider's message is in the result", tc.name)
 		}
 	}
 }

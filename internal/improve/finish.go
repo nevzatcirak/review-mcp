@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 
+	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 	"github.com/nevzatcirak/review-mcp/internal/yamlrepair"
@@ -325,14 +326,29 @@ func call[T any](ctx context.Context, pl *Plan, deps Deps, p Prompts, reaskUser 
 	conv func(map[string]any) (T, error)) (T, callInfo, error) {
 	var info callInfo
 	var zero T
-	for attempt := range 2 {
+	var unusable error
+	for attempt := range 3 {
 		user := p.User
-		if attempt == 1 {
-			user = reaskUser
-			info.reasked = true
+		var resp *llm.Response
+		var err error
+		switch attempt {
+		case 0, 1:
+			if attempt == 1 {
+				user = reaskUser
+				info.reasked = true
+			}
+			resp, err = deps.LLM.Complete(ctx, p.System, user)
+			info.calls++
+		default:
+			// Still unusable after the re-ask: the next model of the
+			// chain gets the original prompt once (X-38).
+			var ok bool
+			resp, ok, err = llmrun.CompleteNext(ctx, deps.LLM, p.System, user)
+			if err == nil && !ok {
+				return zero, info, ErrUnparseable.WithCause(unusable)
+			}
+			info.calls++
 		}
-		resp, err := deps.LLM.Complete(ctx, p.System, user)
-		info.calls++
 		if err != nil {
 			return zero, info, err
 		}
@@ -346,7 +362,8 @@ func call[T any](ctx context.Context, pl *Plan, deps Deps, p Prompts, reaskUser 
 		if err == nil {
 			return v, info, nil
 		}
-		if attempt == 1 {
+		unusable = err
+		if attempt == 2 {
 			return zero, info, ErrUnparseable.WithCause(err)
 		}
 	}

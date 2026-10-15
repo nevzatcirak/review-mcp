@@ -12,6 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 )
 
@@ -219,4 +220,39 @@ func TestGuidanceServe(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = cs.Close() })
 	checkGuidance(t, cs)
+}
+
+// TestRateLimitGuidance (X-37, v2.1 spec V-6 §2.4): with
+// llm.requests_per_minute or llm.max_concurrent_requests set, the
+// instructions and the prompt add the queueing sentence after "in parallel
+// if you can"; without either the text does not change.
+func TestRateLimitGuidance(t *testing.T) {
+	cfg := config.Defaults()
+	if got := instructionsFor(cfg); got != serverInstructions {
+		t.Errorf("instructions changed without a limit:\n%s", got)
+	}
+	if got := instructionsFor(nil); got != serverInstructions {
+		t.Errorf("instructions changed without a configuration:\n%s", got)
+	}
+	for _, set := range []func(*config.Config){
+		func(c *config.Config) { c.LLM.RequestsPerMinute = 10 },
+		func(c *config.Config) { c.LLM.MaxConcurrentRequests = 2 },
+	} {
+		cfg := config.Defaults()
+		set(cfg)
+		got := instructionsFor(cfg)
+		if !strings.Contains(got, "in parallel if you can. "+rateLimitGuidance+" Merge the findings") {
+			t.Errorf("instructions lack the sentence after \"in parallel if you can\":\n%s", got)
+		}
+	}
+	const url = "https://your-gitea.example/octo/demo/pulls/7"
+	focuses := []string{"security", "architecture", "performance", "tests"}
+	if got := multiPerspectiveText(url, focuses, false); got != wantMultiPerspective {
+		t.Errorf("prompt changed without a limit:\n%s", got)
+	}
+	want := strings.Replace(wantMultiPerspective, "(for example in subagents). ",
+		"(for example in subagents). "+rateLimitGuidance+" ", 1)
+	if got := multiPerspectiveText(url, focuses, true); got != want {
+		t.Errorf("prompt with a limit:\n%s\nwant\n%s", got, want)
+	}
 }

@@ -148,7 +148,7 @@ func TestPublishInlineFailuresKeepTheReview(t *testing.T) {
 				f.inlineErr = &provider.Error{Class: provider.ClassUpstream, Status: 502}
 			},
 			wantSeq:   []string{"post", "inline", "edit"},
-			wantSum:   &InlineSummary{Failed: 2},
+			wantSum:   &InlineSummary{Failed: 2, FailureClass: "upstream 502"},
 			wantNotes: []string{"2 findings could not be posted as inline comments and are listed in the overview only."},
 		},
 		{

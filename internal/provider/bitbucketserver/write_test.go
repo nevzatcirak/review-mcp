@@ -367,6 +367,9 @@ func TestPostInlineCommentsPerItemOutcome(t *testing.T) {
 	if !got[0].Posted || got[1].Posted || got[1].Error != "the server sent an unexpected response (HTTP 400)" || !got[2].Posted || got[2].ID != "502" {
 		t.Fatalf("results = %+v", got)
 	}
+	if got[0].Class != "" || got[1].Class != "protocol 400" || got[2].Class != "" {
+		t.Errorf("classes = %q, %q, %q, want only the failed item's, \"protocol 400\"", got[0].Class, got[1].Class, got[2].Class)
+	}
 
 	f2 := newFake(t, "")
 	f2.registerIdentity(botName, botID)
@@ -376,7 +379,7 @@ func TestPostInlineCommentsPerItemOutcome(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range got {
-		if r.Posted || r.Error != "authentication failed: check the token and its scopes (HTTP 403)" {
+		if r.Posted || r.Error != "authentication failed: check the token and its scopes (HTTP 403)" || r.Class != "auth 403" {
 			t.Errorf("result = %+v", r)
 		}
 	}

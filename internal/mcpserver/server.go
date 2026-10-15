@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -117,12 +118,35 @@ const serverInstructions = "review-mcp reviews, describes and discusses pull req
 	"publish from a focused run: pr_review refuses focus together with publish=true. The multi_perspective_review " +
 	"prompt gives these steps for one pull request."
 
+// rateLimitGuidance is the sentence the instructions and the
+// multi_perspective_review prompt add after "in parallel if you can" when a
+// client-side rate limit is configured (X-37, v2.1 spec V-6 §2.4).
+const rateLimitGuidance = "The server queues model calls to stay within its configured rate limit, so parallel " +
+	"focused reviews wait for each other instead of failing."
+
+// rateLimitConfigured reports whether llm.requests_per_minute or
+// llm.max_concurrent_requests is set.
+func rateLimitConfigured(cfg *config.Config) bool {
+	return cfg != nil && (cfg.LLM.RequestsPerMinute > 0 || cfg.LLM.MaxConcurrentRequests > 0)
+}
+
+// instructionsFor is serverInstructions with rateLimitGuidance after "in
+// parallel if you can" when a client-side rate limit is configured; without
+// one the text does not change.
+func instructionsFor(cfg *config.Config) string {
+	if !rateLimitConfigured(cfg) {
+		return serverInstructions
+	}
+	return strings.Replace(serverInstructions, "in parallel if you can; merge the findings",
+		"in parallel if you can. "+rateLimitGuidance+" Merge the findings", 1)
+}
+
 // New builds an MCP server with every tool and the prompt registered. The transport is
 // chosen by the caller, so a future HTTP mode can reuse it.
 func New(deps Deps) *mcp.Server {
 	s := mcp.NewServer(
 		&mcp.Implementation{Name: tools.ServerName, Version: version.Info().Version},
-		&mcp.ServerOptions{Logger: sdkLogger(deps.Logger, deps.Serve), Instructions: serverInstructions},
+		&mcp.ServerOptions{Logger: sdkLogger(deps.Logger, deps.Serve), Instructions: instructionsFor(deps.Config)},
 	)
 	if deps.Serve {
 		s.AddReceivingMiddleware(concurrencyGate(deps))
@@ -139,7 +163,7 @@ func New(deps Deps) *mcp.Server {
 	if deps.background() {
 		registerJobResult(s, deps)
 	}
-	registerMultiPerspectivePrompt(s)
+	registerMultiPerspectivePrompt(s, rateLimitConfigured(deps.Config))
 	return s
 }
 

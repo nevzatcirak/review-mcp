@@ -3,6 +3,7 @@ package llm
 import (
 	"errors"
 	"strconv"
+	"time"
 )
 
 // ErrorClass is the X-6 allowlist class of an LLM client error.
@@ -52,6 +53,11 @@ type Error struct {
 	// Sentence, when set, replaces the class sentence (the probe's fixed
 	// sentences, which carry their own hint).
 	Sentence string
+	// reason is an internal reason of a rate-limited failure
+	// (reasonWaitTooLong), and wait the needed wait it refused; neither is
+	// part of the sentence.
+	reason string
+	wait   time.Duration
 }
 
 var sentences = map[ErrorClass]string{

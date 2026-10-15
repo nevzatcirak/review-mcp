@@ -47,6 +47,16 @@ type LLM struct {
 	// WaitSeconds is how long a stdio pr_review or pr_ask call waits for its
 	// result before it answers with a job id (X-16); serve mode ignores it.
 	WaitSeconds int `toml:"wait_seconds" json:"wait_seconds"`
+	// RequestsPerMinute is the most HTTP requests (every attempt, retries
+	// included) started in any 60-second window, per endpoint and shared by
+	// every call of the process (X-37); 0 is no client limit.
+	RequestsPerMinute int `toml:"requests_per_minute" json:"requests_per_minute"`
+	// MaxConcurrentRequests is the most requests in flight at once, per
+	// endpoint (X-37); 0 is unlimited.
+	MaxConcurrentRequests int `toml:"max_concurrent_requests" json:"max_concurrent_requests"`
+	// MaxRateWaitSeconds is the longest one wait for the rate limit may be
+	// (X-37); a longer needed wait is not waited for.
+	MaxRateWaitSeconds int `toml:"max_rate_wait_seconds" json:"max_rate_wait_seconds"`
 }
 
 // Gitea configures the Gitea provider; it is enabled iff BaseURL is set.
@@ -277,6 +287,7 @@ func Defaults() *Config {
 			MaxRetries:          1,
 			TokenEstimateFactor: 0.3,
 			WaitSeconds:         45,
+			MaxRateWaitSeconds:  60,
 		},
 		Output: Output{Language: "en-US"},
 		Diff: Diff{

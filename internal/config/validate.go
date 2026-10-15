@@ -34,6 +34,13 @@ const (
 // wait_seconds tool argument (X-16): ten minutes.
 const MaxWaitSeconds = 600
 
+// Upper bounds of the rate-limit keys (X-37, v2.1 spec V-6 §2.1).
+const (
+	MaxRequestsPerMinute  = 100000
+	MaxConcurrentRequests = 256
+	MaxRateWaitSeconds    = 600
+)
+
 // validate checks the layered configuration, normalizes URLs in place and
 // records every problem and warning.
 func (l *loader) validate() {
@@ -305,6 +312,15 @@ func (l *loader) validateLLM() {
 	}
 	if !l.bad["llm.wait_seconds"] && (c.WaitSeconds < 0 || c.WaitSeconds > MaxWaitSeconds) {
 		l.problem("llm.wait_seconds: %d is out of range (0-%d)", c.WaitSeconds, MaxWaitSeconds)
+	}
+	if !l.bad["llm.requests_per_minute"] && (c.RequestsPerMinute < 0 || c.RequestsPerMinute > MaxRequestsPerMinute) {
+		l.problem("llm.requests_per_minute: %d is out of range (0-%d)", c.RequestsPerMinute, MaxRequestsPerMinute)
+	}
+	if !l.bad["llm.max_concurrent_requests"] && (c.MaxConcurrentRequests < 0 || c.MaxConcurrentRequests > MaxConcurrentRequests) {
+		l.problem("llm.max_concurrent_requests: %d is out of range (0-%d)", c.MaxConcurrentRequests, MaxConcurrentRequests)
+	}
+	if !l.bad["llm.max_rate_wait_seconds"] && (c.MaxRateWaitSeconds < 0 || c.MaxRateWaitSeconds > MaxRateWaitSeconds) {
+		l.problem("llm.max_rate_wait_seconds: %d is out of range (0-%d)", c.MaxRateWaitSeconds, MaxRateWaitSeconds)
 	}
 	if f := c.TokenEstimateFactor; !l.bad["llm.token_estimate_factor"] && !(f >= 0 && f <= 2) {
 		l.problem("llm.token_estimate_factor: %v is out of range (0-2)", f)

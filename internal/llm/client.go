@@ -73,6 +73,11 @@ func WithClock(now func() time.Time) Option {
 	return func(c *Client) { c.now = now }
 }
 
+// withRegistry replaces the process-wide limiter registry (tests).
+func withRegistry(r *registry) Option {
+	return func(c *Client) { c.registry = r }
+}
+
 // WithProbeTimeout replaces the 10 s timeout of ResolveContextWindow.
 func WithProbeTimeout(d time.Duration) Option {
 	return func(c *Client) { c.probeTimeout = d }
@@ -94,6 +99,10 @@ type Client struct {
 	maxBytes     int64
 	sleep        func(context.Context, time.Duration) error
 	now          func() time.Time
+	// registry holds the endpoint's limiter (X-37); limiter is this
+	// client's, looked up once in New.
+	registry *registry
+	limiter  *limiter
 }
 
 // redirectError marks a refused redirect.
@@ -133,6 +142,7 @@ func New(cfg config.LLM, key config.Secret, logger *slog.Logger, opts ...Option)
 		maxBytes:     MaxResponseBytes,
 		sleep:        sleepCtx,
 		now:          time.Now,
+		registry:     limiters,
 	}
 	tr, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
@@ -144,6 +154,7 @@ func New(cfg config.LLM, key config.Secret, logger *slog.Logger, opts ...Option)
 	for _, o := range opts {
 		o(c)
 	}
+	c.limiter = c.registry.lookup(u, key, cfg)
 	return c, nil
 }
 
@@ -361,6 +372,11 @@ func (c *Client) Complete(ctx context.Context, system, user string) (*Response, 
 		if !le.Class.Retryable() || attempt >= maxRetries {
 			return nil, le
 		}
+		if le.reason == reasonWaitTooLong {
+			// The limiter already found the needed wait too long: no retry
+			// may wait for it either (§2.2 item 4).
+			return nil, le
+		}
 		delay := backoff[min(attempt, len(backoff)-1)]
 		if retryAfter > 0 {
 			delay = min(retryAfter, MaxRetryAfter)
@@ -379,6 +395,16 @@ func (c *Client) attempt(ctx context.Context, attempt int, system, user string) 
 	if err != nil {
 		return nil, 0, &Error{Class: ClassProtocol, Detail: "request could not be encoded"}
 	}
+	// Every attempt, retries included, takes a place in the endpoint's
+	// limits (X-37) and holds it until its response is read.
+	if _, err := c.limiter.acquire(ctx, c.now, c.sleep, c.logger); err != nil {
+		var long *errWaitTooLong
+		if errors.As(err, &long) {
+			return nil, 0, &Error{Class: ClassRateLimited, reason: reasonWaitTooLong, wait: long.need}
+		}
+		return nil, 0, &Error{Class: ClassTransport, Detail: "canceled"}
+	}
+	defer c.limiter.release()
 	full := c.baseStr + chatPath
 	rctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()

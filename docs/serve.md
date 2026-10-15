@@ -83,7 +83,11 @@ or an environment variable. The `--listen` flag overrides `serve.listen`.
 Validation rules in serve mode:
 
 - `REVIEW_MCP_GITEA_TOKEN`, `REVIEW_MCP_BITBUCKET_SERVER_TOKEN`, `REVIEW_MCP_GITHUB_TOKEN` and `REVIEW_MCP_GITLAB_TOKEN` must be unset.
-- With `llm_key_source = header`, `REVIEW_MCP_LLM_API_KEY` must be unset.
+- With `llm_key_source = header`, `REVIEW_MCP_LLM_API_KEY` must be unset, and so
+  must every `REVIEW_MCP_LLM_FALLBACK_<N>_API_KEY` ([Fallback
+  models](setup.md#fallback-models)): a server-side fallback key would let every
+  caller spend the operator's key. A fallback then uses the caller's key on the
+  primary's base URL and no key on any other host.
 - With `llm_key_source = server`, both `REVIEW_MCP_LLM_API_KEY` and
   `REVIEW_MCP_SERVE_ACCESS_TOKEN` are required (the access token keeps the
   server's LLM key from being used by anyone who finds the URL).

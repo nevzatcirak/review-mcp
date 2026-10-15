@@ -363,7 +363,7 @@ log as an error class (`REVIEW_MCP_LOG_LEVEL=debug`). See
 
 | Sentence | Where | Cause and what to do |
 |---|---|---|
-| The CI results of the head commit could not be read. | `ci.note` (`ci.state` is `unreadable`); the overview line is "CI status could not be read" | Reading the head commit's statuses or checks failed, for any reason. On GitHub the token needs **Commit statuses: Read** and **Checks: Read**; with only one of them the read is partial (next row), with neither it is `unreadable`. On GitLab `read_api` (or the Reporter role) is enough; the pipelines of merged results and of a fork's project are not read, see [GitLab](#gitlab). On Gitea and Bitbucket Server the read access to the repository is enough, so check the token and the server ([Token scopes](#token-scopes)). `pr_info` shows the same sentence. The debug log line `ci: checks not read` names the error class. |
+| The CI results of the head commit could not be read. | `ci.note` (`ci.state` is `unreadable`); the overview line is "CI status could not be read" | Reading the head commit's statuses or checks failed, for any reason. On GitHub the token needs **Commit statuses: Read** and **Checks: Read**; with only one of them the read is partial (next row), with neither it is `unreadable`. On GitLab the `api` scope (or the Reporter role) is enough; the pipelines of merged results and of a fork's project are not read, see [GitLab](#gitlab). On Gitea and Bitbucket Server the read access to the repository is enough, so check the token and the server ([Token scopes](#token-scopes)). `pr_info` shows the same sentence. The debug log line `ci: checks not read` names the error class. |
 | Only part of the CI results could be read with this token (check runs or commit statuses). | `ci.note`; the overview line ends with "; only part of the CI results could be read with this token" | GitHub only: the token may read the check runs but not the commit statuses, or the reverse (one list answered 401, 403 or 404). `state` and the counts cover the list that was read, so a failing check in the other list is not seen. Give a fine-grained token both **Checks: Read** and **Commit statuses: Read** ([Token scopes](#token-scopes)); the debug log line `github checks: ... not readable` names which list and the error class. |
 | The host reported more CI checks than could be read; the counts and the list are incomplete. | `ci.note`; the overview line ends with "; more checks exist than were read" | The commit has more than 500 checks. The counts and `state` cover what was read, so a failing check among the unread ones is not seen. Nothing to change in review-mcp; look at the CI page. |
 | The CI results were left out of the prompt to stay within the CI token budget. | `notes` | The CI block did not fit `review.max_ci_tokens`, or the context window left no room for the diff beside it (the CI block is the last optional block to go). The `ci` object and the overview line are unaffected. Raise `review.max_ci_tokens`, or use a larger `llm.context_window`. |
@@ -464,6 +464,44 @@ head and the cache still holds the recorded commit; otherwise it is
 `api:contents`, which gives the same answer with more requests. And a review
 that is partial has no "Reviewed commit" line: it records nothing, so the next
 incremental run is a full review ([why](review.md#the-record-of-the-last-review)).
+
+## Rate-limit and fallback notes
+
+`pr_review`, `pr_improve`, `pr_describe` and `pr_ask` add these fixed
+sentences to the notes of a result. `metadata.rate_limit_waits` and
+`metadata.rate_limit_wait_ms` (always set) count the requests that waited for
+the LLM endpoint's rate limit and their total wait; `metadata.model`,
+`metadata.models_used` and `metadata.fallback_calls` (always set) say which
+models served the run. Setup: [Rate limits](setup.md#rate-limits) and
+[Fallback models](setup.md#fallback-models). The notes are in the tool result,
+not in a comment the run published.
+
+| Sentence | Cause and what to do |
+|---|---|
+| The LLM endpoint's rate limit delayed this run by N s. | The run waited at least one second in total for the endpoint's rate limit: for `llm.requests_per_minute` or `llm.max_concurrent_requests`, or for a cool-down after an HTTP 429. Not a problem. If it is too long for you, raise the gateway's limit, lower the number of runs at once, or add a [fallback model](setup.md#fallback-models). |
+| N model calls were served by a fallback model (`second-model`) because the primary model was unavailable (rate limited). (singular: "1 model call was served by ...") | A fallback served N calls of the run. The model is the first fallback that served a call, and the reason in the brackets is that of the first move: `rate limited`, `server error`, `timed out`, `unreachable` or `unusable answer` (its answer stayed unusable after the re-ask). Check the primary model's endpoint for that reason. |
+| The fallback model `x` was skipped for N calls because the prompt does not fit its context window. (singular: "... for 1 call ...") | The prompt plus the fallback's maximum output is larger than its context window, so it was not asked for that call and the next fallback was tried. Set `context_window` of that fallback to its real window, use a larger model, or accept the skip. |
+
+| Error sentence | Cause and what to do |
+|---|---|
+| the LLM endpoint rate-limited the request. The endpoint asked for a wait longer than llm.max_rate_wait_seconds (N s). | The gateway's 429 (or its reset header) asked for a wait longer than `llm.max_rate_wait_seconds`, N being that key's value; the call is not delayed that long. Raise `llm.max_rate_wait_seconds` (up to 600), or configure a [fallback model](setup.md#fallback-models), which takes over in this case. No header value and no URL are in the sentence. |
+| the LLM endpoint rate-limited the request. Staying within llm.requests_per_minute would need a wait longer than llm.max_rate_wait_seconds (N s). | Your own `llm.requests_per_minute` queue would need a wait longer than `llm.max_rate_wait_seconds`: more calls are waiting for the limit than fit in that wait. Raise `llm.max_rate_wait_seconds`, run fewer calls at once, or raise `llm.requests_per_minute` if your gateway allows it. |
+| (the sentence of the first model's error) All N fallback models failed as well. | Every model tried failed. The sentence before is the **first** model's error (its class and HTTP status), and N is the number of fallbacks that were tried and failed (a fallback skipped for size is not counted). For example a fallback on another host without its own key answers 401; see [Fallback models](setup.md#fallback-models). |
+
+**These failures do not move to a fallback.** The call ends with its own error
+and no fallback is asked: authentication (`llm_auth`, HTTP 401 or 403), a refused
+request (`llm_bad_request`), not found (`llm_not_found`; a wrong model name is a
+configuration error and must surface, not hide behind a fallback), a request too
+long for the model's context window (`llm_context_too_long`), an unexpected
+response (`llm_protocol`) and a canceled call or an expired deadline. Fix the
+configuration the sentence names.
+
+### 429 from the gateway
+
+| Symptom | What to do |
+|---|---|
+| The review fails with "the LLM endpoint rate-limited the request" (HTTP 429), mostly when several reviews run at once, for example the parallel focused runs of a multi-perspective review. | Set `llm.requests_per_minute` (`REVIEW_MCP_LLM_REQUESTS_PER_MINUTE`) to your gateway's per-minute limit, a little below it when other clients share the key. The calls then queue instead of failing. Optionally set `llm.max_concurrent_requests` too. See [Rate limits](setup.md#rate-limits). |
+| It still happens with a limit set. | The limit covers one review-mcp process. Another process or client against the same gateway has its own; lower the value, or add a [fallback model](setup.md#fallback-models). |
 
 ## `multi_perspective_review` argument errors
 
@@ -630,10 +668,11 @@ problem instead, see below.
 
 `authentication failed: check the token and its scopes (HTTP 401)` or
 `(HTTP 403)`. **What to do:** check that the token is valid and has not
-expired. A personal access token needs `read_api` (read) or `api` (publish,
-reply, create comments, edit the description), and `read_repository` for the
-repository context; a project or group access token needs the role Reporter
-(read) or Developer (publish) and belongs to one project or group only. A
+expired. A personal access token must be a legacy one with the scopes `api`
+(read, publish, reply, create comments, edit the description) and
+`read_repository` (repository context); a project or group access token needs
+the role Reporter (read) or Developer (publish) and belongs to one project or
+group only. A
 project or group the token cannot see answers `the requested resource was not
 found` (HTTP 404). See [GitLab](gitlab.md#token).
 
@@ -709,7 +748,7 @@ These are the `error` of an inline comment (`pr_review`, `pr_improve`,
 | Sentence | Meaning and what to do |
 |---|---|
 | `no approval rule applies to this merge request` (`required_approvals` is `0`) | GitLab reported `approvals_required` of 0: no approval rule applies. Not an error. |
-| `not readable with this token` (`required_approvals` is `null`) | `/approvals` could not be read or has no `approvals_required`. The reviewers from `/reviewers` are still listed, without approvers who are not reviewers. Check the token's scope (`read_api`) and the role. |
+| `not readable with this token` (`required_approvals` is `null`) | `/approvals` could not be read or has no `approvals_required`. The reviewers from `/reviewers` are still listed, without approvers who are not reviewers. Check the token's scope (`api`) and the role. |
 | `The reviews could not be read, so the reviewers are not listed.` | `/reviewers` failed with something other than a `404`. The merge and approval facts are still returned. |
 | `The merge status could not be read.` | An open merge request came without `detailed_merge_status`. `mergeable` is `null`; run again. |
 
@@ -826,10 +865,10 @@ setting to check may follow.
 |---|---|---|
 | the LLM endpoint rejected the credentials | `llm_auth` (HTTP 401/403) | `REVIEW_MCP_LLM_API_KEY`. |
 | the LLM endpoint or model was not found | `llm_not_found` (HTTP 404) | `llm.base_url` (it must end where `/chat/completions` is appended) and `llm.model`. |
-| the LLM endpoint rate-limited the request | `llm_rate_limited` (HTTP 429) | Retried up to `llm.max_retries` times; wait, or raise it. |
+| the LLM endpoint rate-limited the request | `llm_rate_limited` (HTTP 429) | The endpoint is cooled down for every caller and the call is retried after the cool-down, up to `llm.max_rate_retries` times (apart from `llm.max_retries`). To avoid it, set `llm.requests_per_minute`; see [429 from the gateway](#429-from-the-gateway). The sentences with a wait longer than `llm.max_rate_wait_seconds` are under [Rate-limit and fallback notes](#rate-limit-and-fallback-notes). |
 | the request is too long for the model's context window | `llm_context_too_long` | `llm.context_window` is larger than the model really accepts; lower it. |
 | the LLM endpoint rejected the request | `llm_bad_request` | Often an unsupported sampling setting; the hint names the keys you set (`llm.temperature`, `llm.seed`, `llm.reasoning_effort`, `llm.max_output_tokens`). Unset them. |
-| the LLM endpoint reported an internal error | `llm_upstream` (HTTP 5xx) | The endpoint failed; see its logs. Retried like 429. |
+| the LLM endpoint reported an internal error | `llm_upstream` (HTTP 5xx) | The endpoint failed; see its logs. Retried up to `llm.max_retries` times, then a [fallback model](setup.md#fallback-models) is asked when one is configured. |
 | the LLM request timed out | `llm_timeout` | The default `llm.timeout_seconds` is 300; raise it, lower `diff.max_tokens`, or use a faster model. Large reviews on slow models take minutes. |
 | the LLM endpoint does not list the configured model; check llm.model | `llm_not_found` | The endpoint's model list (`GET {llm.base_url}/models`) has no entry whose `id` equals `llm.model` exactly. Fix `llm.model`, or set `llm.context_window` to skip the lookup. |
 | the LLM endpoint does not report the model's context window; set llm.context_window | `llm_protocol` | `llm.context_window` is unset and the endpoint's entry for the model has none of `max_model_len`, `context_length`, `context_window`, `max_context_length` (training-size fields are never used). Set `llm.context_window` to the window your server runs; for Ollama, its `num_ctx`. |
@@ -1152,7 +1191,7 @@ table also covers the configuration, argument and serve-mode errors.
 | the server sent an unexpected response | `protocol` | Base URL points at something that is not the provider API (for GitHub also `github.api_url`); the hint `the comment id is ambiguous on GitHub` is explained under [GitHub](#github); the hints `a link in the response points outside the configured API base` and `the created discussion's note was not reported` under [GitLab](#a-link-points-outside-the-api-base); a hint such as `empty body` or `invalid comment id` means `pr_comment_reply` got a blank `body` or a `comment_id` that is not a positive integer. |
 | the LLM endpoint rejected the credentials | `llm_auth` | `REVIEW_MCP_LLM_API_KEY` (stdio, or serve with `llm_key_source = server`) or the `X-Review-MCP-LLM-API-Key` header. |
 | the LLM endpoint or model was not found | `llm_not_found` | `llm.base_url` and `llm.model`. |
-| the LLM endpoint rate-limited the request | `llm_rate_limited` | Wait; `llm.max_retries`. |
+| the LLM endpoint rate-limited the request | `llm_rate_limited` | Set `llm.requests_per_minute`; see [429 from the gateway](#429-from-the-gateway). |
 | the request is too long for the model's context window | `llm_context_too_long` | `llm.context_window` is larger than the endpoint really accepts. |
 | the LLM endpoint rejected the request | `llm_bad_request` | Unset the sampling keys named in the hint (`llm.temperature`, `llm.seed`, `llm.reasoning_effort`, `llm.max_output_tokens`). |
 | the LLM endpoint reported an internal error | `llm_upstream` | The endpoint failed; see its logs. |
@@ -1243,11 +1282,11 @@ A3) has verified them.
   one of them the CI results are partial with a note, without both the CI
   state is `unreadable` with a note, and the rest still works. A
   classic token's `repo` scope covers them. See [GitHub](github.md#token).
-- **GitLab:** a personal access token with `read_api` (read) or `api`
-  (publishing, `pr_comment_reply`, `pr_comment_create` and the description
-  edit), plus `read_repository` for the repository context; or a project or
-  group access token with the role Reporter (read) or Developer (publish). See
-  [GitLab](gitlab.md#token).
+- **GitLab:** a legacy personal access token with the scopes `api` (reading,
+  publishing, `pr_comment_reply`, `pr_comment_create` and the description
+  edit) and `read_repository` (the repository context); or a project or group
+  access token with the role Reporter (read) or Developer (publish) and the
+  same scopes. See [GitLab](gitlab.md#token).
 - **Bitbucket Server / Data Center:** an HTTP access token with repository
   read permission, plus write permission only for comments and for
   `pr_describe` with `publish_mode=description`, which updates the pull
@@ -1258,8 +1297,8 @@ A3) has verified them.
   read access above is enough (the commit status or build status of the head
   commit, the guidelines file and the directory listings at the target
   branch). On GitHub the guidelines and the listings need Contents (read); the
-  CI results need the two permissions named under GitHub. On GitLab `read_api`
-  (or the Reporter role) covers all of it.
+  CI results need the two permissions named under GitHub. On GitLab the `api`
+  scope (or the Reporter role) covers all of it.
 
 Which call fails tells you which scope is missing: if `diag pr` works but
 `diag comment` fails with `authentication failed`, the token is valid but

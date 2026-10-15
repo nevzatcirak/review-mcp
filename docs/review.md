@@ -1160,7 +1160,12 @@ guidance and nothing the server runs for you:
   findings and publish=true, which publishes them without another model call.
   Never publish from a focused run: pr_review refuses focus together with
   publish=true. The multi_perspective_review prompt gives these steps for one
-  pull request."
+  pull request." When `llm.requests_per_minute` or `llm.max_concurrent_requests`
+  is set, the sentence after "in parallel if you can" becomes "... in parallel
+  if you can. The server queues model calls to stay within its configured rate
+  limit, so parallel focused reviews wait for each other instead of failing.
+  Merge the findings ..."; the prompt adds the same sentence to its first step.
+  Without either setting the text does not change.
 - The `pr_review` **tool description** ends with: "For a thorough review, run it
   with focus for several areas without publish, merge the findings, then call
   it once with findings and publish=true, which publishes them without a model
@@ -1240,6 +1245,26 @@ again and returns one of:
 
 A client that prefers polling passes `wait_seconds: 0` and gets the running
 status at once.
+
+**Rate-limit waits and jobs.** With a client-side rate limit
+(`llm.requests_per_minute`, `llm.max_concurrent_requests`, or an endpoint that
+answers 429; see [Rate limits](setup.md#rate-limits)) a call may wait for its
+turn, up to `llm.max_rate_wait_seconds` (default 60) for each wait. That time
+counts toward `wait_seconds`: a call that is still waiting after it answers
+with the running status and a `job_id` like any slow call, and `job_result`
+collects it. The result then reports the waits in `metadata.rate_limit_waits`
+and `metadata.rate_limit_wait_ms`, with the note "The LLM endpoint's rate limit
+delayed this run by N s." from one second of waiting on.
+
+**Parallel focused reviews with a limit.** With `llm.requests_per_minute` set to
+your gateway's limit, the parallel focused runs of a [multi-perspective
+review](#focused-reviews-and-the-merged-publish) share it: the model calls are
+queued first come first served, so four runs at once on a limit of 10 per
+minute all succeed instead of failing with HTTP 429, and the later ones report
+a wait. Without a limit they may run into the gateway's 429, which then cools
+the endpoint down for every run and is retried up to `llm.max_rate_retries`
+times. A [fallback model](setup.md#fallback-models) takes over when the waits
+would be longer than `llm.max_rate_wait_seconds`.
 
 **Why the client timeout no longer matters.** Every call, `pr_review` and each
 `job_result`, answers within `wait_seconds`, however long the model takes. At

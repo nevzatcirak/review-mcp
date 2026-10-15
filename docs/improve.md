@@ -808,7 +808,7 @@ runs review-mcp must be able to:
 | GitLab | `api` scope (personal access token) or the Developer role (project or group access token): post and edit notes | the same: post discussions |
 
 Reading needs only a read token (`read:repository`, `read:issue` and
-`read:user` on Gitea, repository read on Bitbucket Server, Pull requests read on GitHub, `read_api` or Reporter on GitLab). `read:user` is also
+`read:user` on Gitea, repository read on Bitbucket Server, Pull requests read on GitHub, the `api` scope or Reporter on GitLab). `read:user` is also
 what lets review-mcp tell its own comments from other people's, for the
 discussion block and the duplicate check, so a token without it gets "The
 existing PR discussion could not be read; suggestions may repeat it." and, with

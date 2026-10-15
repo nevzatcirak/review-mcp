@@ -5,6 +5,76 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Planned as `2.1.0-rc.3` (the npm dist-tag `next`; `latest` stays on 2.0.0).
+Client-side rate limiting and a fallback model chain (V-6, X-37, X-38), plus
+housekeeping from the GitLab acceptance. A setup that sets none of the new keys
+behaves as before. Guides: [Rate limits](docs/setup.md#rate-limits) and
+[Fallback models](docs/setup.md#fallback-models).
+
+### Added
+
+- Rate limiting (X-37, WP-8b).
+  - `llm.requests_per_minute` (default 0, no client limit) and
+    `llm.max_concurrent_requests` (default 0, unlimited) keep the model calls
+    of the whole process within a limit per endpoint, so parallel focused
+    reviews wait for each other instead of failing with HTTP 429. Waiters are
+    served first come first served. Set `llm.requests_per_minute` to your
+    gateway's per-minute limit.
+  - An HTTP 429 cools the whole endpoint down for every caller (`Retry-After`,
+    else `x-ratelimit-reset-requests`, else 10 s doubling, at most 600 s) and
+    is retried up to `llm.max_rate_retries` (default 4) times, apart from
+    `llm.max_retries`. A wait longer than `llm.max_rate_wait_seconds` (default
+    60) is not waited for.
+  - The result reports `metadata.rate_limit_waits` and
+    `metadata.rate_limit_wait_ms`, and the note "The LLM endpoint's rate limit
+    delayed this run by N s." The server instructions and the
+    `multi_perspective_review` prompt say that calls are queued when a limit is
+    set.
+- Fallback model chain (X-38, WP-8c).
+  - Up to three `[[llm.fallback]]` models (or
+    `REVIEW_MCP_LLM_FALLBACK_<N>_*`) are tried in order when a call cannot be
+    served: after the retries are used up for a server error, a timeout or an
+    unreachable endpoint, when it stays rate limited, or when its answer is
+    still unusable after the re-ask. The run stays on the model it fell back
+    to. Authentication, a refused request, not found, a request too long for
+    the context window, an unexpected response and a canceled call do not move
+    on.
+  - A fallback uses its own `REVIEW_MCP_LLM_FALLBACK_<N>_API_KEY`; without one
+    it uses the primary key only on the primary's base URL and sends no key to
+    another host. In serve mode with `serve.llm_key_source = header` a
+    server-side fallback key is refused.
+  - The result reports `metadata.models_used` and `metadata.fallback_calls`,
+    `metadata.model` is the model that served the last call, and notes say why
+    a fallback served calls or was skipped for size. When every model fails,
+    the first model's error is reported with "All N fallback models failed as
+    well." `server_info` lists the fallbacks and their key sources.
+- `publish.inline.failure_class`: the provider error class and HTTP status of
+  the first inline comment that could not be posted, for example
+  `rate_limited 403` (WP-8a).
+
+### Changed
+
+- GitLab: use a legacy personal access token with the scopes `api` and
+  `read_repository`. GitLab refused fine-grained personal access tokens and the
+  `read_api` scope in testing, and `read_api` cannot publish. The setup guide,
+  the GitLab guide and the troubleshooting guide say so (WP-8a, WP-8d).
+- An HTTP 429 from the model endpoint is no longer retried with the 30-second
+  `Retry-After` cap and `llm.max_retries`; see Rate limiting above.
+
+### Fixed
+
+- `pr_improve` verifies a suggestion whose quote differs from the file only in
+  leading tabs versus spaces, or in trailing white space (WP-8a).
+- GitLab: a commit status without a `target_url` and with an id links its job
+  page (WP-8a).
+- `pr_describe` always keeps a blank line before the region it writes into the
+  description (WP-8a).
+- The note "N findings listed only in the earlier overview were not carried
+  into this publish." is reported only when the overview was edited or a
+  replacement was posted (WP-8a).
+
 ## [2.1.0-rc.2]
 
 Second v2.1 release candidate (the npm dist-tag `next`; `latest` stays on

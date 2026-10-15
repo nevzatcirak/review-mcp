@@ -313,6 +313,6 @@ Commit statuses read and Checks read (a classic token needs no more than the
 branch protection needs Administration read, without which the count comes from
 the rulesets alone, with a note. Gitea and Bitbucket Server need nothing extra
 for `ci`: the read access above covers the commit status and the build status.
-GitLab: `read_api` (a personal access token) or the Reporter role (a project or
+GitLab: the `api` scope (a legacy personal access token) or the Reporter role (a project or
 group access token); that covers the approvals and the commit statuses too.
 The full endpoint list is in the [Setup guide](setup.md#what-each-token-needs).

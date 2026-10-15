@@ -25,7 +25,7 @@ code must not anticipate them beyond the seams named here.
 | DQ-6 | `pr_review` output format | Markdown text content + MCP `structuredContent` with declared output schema | Decided |
 | DQ-7 | YAML vs JSON | YAML with block scalars + repair chain | Decided |
 | DQ-8 | Repair-chain scope | Reduced, table-driven chain (10 tactics); each tactic canary-proven | Decided |
-| DQ-9 | Parse-failure retry / fallback models | Single model in v1; one same-model re-ask on parse failure; fallback chain deferred | Decided |
+| DQ-9 | Parse-failure retry / fallback models | Single model in v1; one same-model re-ask on parse failure; fallback chain deferred in v1, **done in v2.1 by X-38** | Decided; chain implemented (X-38) |
 | DQ-10 | Diff representation | One parsed hunk model, multiple renderers (decided now); `/improve` view choice deferred | Partly decided |
 | DQ-11 | Anchor acquisition for `/improve` | — | Deferred to v2 |
 | DQ-12 | Verification source of truth | Hybrid (head file if complete, else patch walk) — applies to v1 finding snippets | Decided |
@@ -79,6 +79,8 @@ code must not anticipate them beyond the seams named here.
 | X-34 | GitLab provider (v2 rc.6, Y-17 to Y-21; WP-6a to WP-6e) | gitlab.com and self-managed GitLab 16.0 or newer over REST API v4 with a personal, project or group access token (`PRIVATE-TOKEN`) and no assumed host (`gitlab.base_url` has no default and may carry a context path; the API base is always `{base}/api/v4`); nested groups; the diff from `GET .../diffs` against `diff_refs.base_sha` (`gitlab:diff_refs`), one revision for diff, contents and positions; resolvable discussions; inline findings as one discussion each with a stray-note guard; native suggestion blocks (`suggestion:-0+N`); `pr_info` from `/reviewers`, `/approvals` and `detailed_merge_status`; CI from the head commit's commit statuses; description edit with the draft-title prefixes; repository context with Basic `oauth2` | Implemented; DESIGN-QUESTIONs settled on PR #25 (architect) |
 | X-35 | Quick-action safety on GitLab (v2 rc.6; WP-6c, WP-6d) | Every published body stays slash-sanitised on a provider with `QuickActions`, with one refinement for native suggestion blocks (inside a `suggestion` fence only a line that could be a command, `/` plus a letter, digit or underscore, gets the space) and one refusal for description edits (a line the author wrote that could run as a quick action refuses description mode before any write); a suggestion whose code has such a line is shown as the diff block with a fixed paragraph. The rule never depends on how GitLab parses code blocks; the column-0 assumption is checked live (Q5b) | Implemented; DESIGN-QUESTIONs settled on PR #25 (architect) |
 | X-36 | Incremental review (v2.1 rc.1, V-1; WP-7a to WP-7e; carried findings rc.2, WP-7f) | `pr_review` can review only the files whose content changed since the last review review-mcp published: the overview records the reviewed head in a hidden line above its marker, the next run compares every file of the diff between that commit and the head by content (`git:diff` from the repository-context cache, else `api:contents`), unchanged files never reach the model and are reported as `unchanged_since_review`, nothing is posted when nothing changed; overview-only findings of unchanged files are carried forward (WP-7f); off by default (`review.incremental`), `pr_review` only | Implemented; DESIGN-QUESTIONs settled on PR #26 (architect) |
+| X-37 | Client-side rate limiting (v2.1 rc.3, V-6; WP-8b) | review-mcp keeps its own model calls within `llm.requests_per_minute` and `llm.max_concurrent_requests`, per endpoint (the base URL plus an HMAC of the API key under a per-process salt), shared by every tool call of the process; first come first served; an HTTP 429 cools the whole endpoint down (`Retry-After`, else `x-ratelimit-reset-requests`, else 10 s doubling, at most 600 s) and is retried up to `llm.max_rate_retries`; a needed wait above `llm.max_rate_wait_seconds` is not waited for; waits are reported in the result; off by default | Implemented; DESIGN-QUESTIONs settled on PR #30 (architect) |
+| X-38 | Fallback model chain (v2.1 rc.3, V-6; WP-8c) | Up to three `[[llm.fallback]]` models tried in order when a call cannot be served (retries used up for 5xx, timeout or transport; stays rate limited; an answer still unusable after the re-ask); not for auth, bad request, not found, context too long, protocol or a canceled call; sticky per run; a fallback that does not fit the prompt is skipped; the primary key is never sent to another host; the result reports `models_used` and `fallback_calls` | Implemented; DESIGN-QUESTIONs settled on PR #30 (architect) |
 
 ---
 
@@ -89,7 +91,7 @@ disagreed. Resolved as follows:
 
 | Conflict | Resolution | Governing decision |
 |---|---|---|
-| Fallback models: B/D assume a fallback chain, G drops it | **Dropped for v1.** Each fallback model would need its own context window, multiplying required config. The `FallbackEligible` sentinel error is still implemented so the chain is a mechanical v1.x addition. | DQ-9 |
+| Fallback models: B/D assume a fallback chain, G drops it | **Dropped for v1.** Each fallback model would need its own context window, multiplying required config. The `FallbackEligible` sentinel error is still implemented so the chain is a mechanical v1.x addition. **Done in v2.1 (X-38)**; a fallback's context window is optional and resolved from its endpoint (X-15). | DQ-9, X-38 |
 | Dynamic context: A says static-only, G keeps the key | **Static-only, no key.** Unimplemented keys are not reserved; the upstream name returns when the feature does. | DQ-1 |
 | Temperature default: C/D keep 0.2, G sends only explicit values | **Explicit-only.** The setup guide's example config sets `temperature = 0.2` as a recommendation, so upstream-tuned behavior is one documented line away. | DQ-26 |
 | Error detail: D wants detailed errors on, G drops the key | **No knob.** Sanitized, allowlist-classified messages are always returned; raw provider text never is. | X-6 |
@@ -154,7 +156,7 @@ implementation must do or must not do).
   1. Transport-level failure (HTTP 429, 5xx, timeout, connection error): retry the same request up to `llm.max_retries` times (default 1), honoring `Retry-After` up to a bounded cap.
   2. Parse failure after the full repair chain (no non-empty `review` mapping): **one** same-model re-ask with the same prompt plus a terse note that the previous output was not valid YAML; temperature unchanged.
   3. Anything else, or a second parse failure: terminal, reported per X-6.
-  Fallback models (`llm.fallback_models`) are deferred to v1.x.
+  Fallback models (`llm.fallback_models`) are deferred to v1.x. **Done in v2.1 by X-38**, as `[[llm.fallback]]` (`llm.fallback_models` was never implemented).
 - **Rationale:** Most v1 users have one endpoint and one model; upstream's design would turn a single parse failure into a hard failure for them. A fallback chain needs per-model context windows, which v1's config deliberately avoids.
 - **Consequences:** Documented deviation from upstream (the re-ask). The `FallbackEligible` sentinel (`errors.Is`) exists from day one for "diff does not fit / empty after budgeting / unparseable", so adding the chain later is mechanical. Request preparation is per-attempt and fully request-scoped (no shared mutable state — required anyway for per-user tokens).
 
@@ -774,6 +776,47 @@ implementation must do or must not do).
 - **Backlog:** treat a truncated model answer as partial (it then records no commit either); run detection before the repository-context fetch decision so `git:diff` is used whenever the cache can serve it; retry carried findings as inline comments when the cause of the earlier failure is gone (WP-7f carries them overview-only); carry the earlier held findings through a merged publish; incremental `pr_improve` with the same detection; a prompt block listing review-mcp's own earlier findings on the changed files (with V-9).
 - **Consequences:** the `pr_review` input schema gains `incremental`, the result schema `incremental` (with `carried_findings`, rc.2), `coverage.unchanged_files` and `carried_from` on a key issue (rc.2); the tool description changes. Not verified on a real host: that the cache keeps the old commit between runs (Q5), and a real incremental publish on each provider (spec §5, Q1 to Q6).
 
+#### X-37 — Client-side rate limiting (added v2.1 rc.3; WP-8b)
+- **Origin:** the owner's V-6 (design note `docs/design/v2-design.md` §9; spec `docs/plan/v2.1-V6-spec.md`): one of the owner's AI gateways allows 10 requests per minute (the limit may change), and the parallel focused reviews of X-33 kept failing with HTTP 429.
+- **Owner defaults (approved 2026-10-15):** the limiter covers one process (one MCP client session; a machine-wide limiter across processes is backlog); a 429 with a fallback configured waits first, then falls back (wait while the needed wait is at most `llm.max_rate_wait_seconds`; when it is longer, or the rate-limit retries are used up, move to the next model). **Architect defaults (approved by the owner 2026-10-15):** `llm.requests_per_minute` and `llm.max_concurrent_requests` default to 0 (no client limit, nothing changes for users who set nothing); `llm.max_rate_wait_seconds` 60 (0 to 600) and `llm.max_rate_retries` 4 (0 to 20); rate-limit retries do not use up `llm.max_retries`.
+- **Decision:**
+  - **Limiter.** One process-wide registry of limiters, created once; `wiring.NewLLM` stays request-scoped and looks the limiter up. Key: the normalised base URL plus an HMAC-SHA256 of the API key under a random per-process salt, so two models on the same base URL and key share a limiter (a gateway limits the key, not the model) and the key is never stored, compared in clear or logged. A sliding window of the start times of the last 60 s, an in-flight cap, waiters served first come first served, every wait ctx-aware. Every attempt (retries included) takes a place. The configuration of the first run applies; a later run with other values updates the limits in place.
+  - **429.** The endpoint's cool-down is now + D: `Retry-After` (seconds or an HTTP date), else the OpenAI-style `x-ratelimit-reset-requests` (`6s`, `1m30s`, `250ms`), else 10 s doubling per consecutive 429 and reset by a success; D is capped at 600 s. Every caller of the endpoint waits for the cool-down. A success with `x-ratelimit-remaining-requests: 0` and a parsable reset sets it too; other header families are ignored (no guessing). A 429 is retried after its cool-down up to `llm.max_rate_retries` times; the 30 s cap on `Retry-After` now applies to the other retryable classes only.
+  - **Report.** `metadata.rate_limit_waits` and `metadata.rate_limit_wait_ms` (always set) on `pr_review`, `pr_improve`, `pr_describe` and `pr_ask`; the note "The LLM endpoint's rate limit delayed this run by N s." from one second of waiting on; a refused wait says what needed it (the endpoint's cool-down, or the client's own `llm.requests_per_minute` window) and names `llm.max_rate_wait_seconds` and its configured value; with a limit set, the server instructions and the `multi_perspective_review` prompt add one sentence that parallel focused reviews are queued.
+- **WP-8b DESIGN-QUESTIONs (settled on PR #30, architect; all keep):**
+  - DQ-1: a wait for `llm.max_concurrent_requests` has no computable length, so it is not checked against `llm.max_rate_wait_seconds`; the request timeout of the requests in flight and ctx bound it.
+  - DQ-2: when two requests in flight both get a 429, the cool-down is never shortened: it ends at the later of the current end and now + D.
+  - DQ-3: `metadata.rate_limit_waits` counts each request that waited once, with its whole wait, however often it was woken.
+  - DQ-4: the waits and their note are added after the run, so they are in the tool result and not in a comment the run published.
+  - DQ-5: in "wait longer than llm.max_rate_wait_seconds (N s)" N is the configured value, not the wait the endpoint asked for (which stays in the debug log).
+  - Interim note: the sentence depends on the wait reason (`cool_down`: "The endpoint asked for a wait longer than ..."; `window`: "Staying within llm.requests_per_minute would need a wait longer than ...").
+- **Backlog:** a machine-wide limiter shared by several processes (a lock file in the cache directory); token-per-minute limits (`x-ratelimit-*-tokens`); a deterministic clock for the four-focus concurrency test if it ever flakes (its own commit).
+- **Consequences:** the config gains four `llm.*` keys; the metadata of the four model tools gains two fields; `server_info` shows the keys. Not verified on a real gateway: acceptance Q1 and Q2 (spec §4).
+
+#### X-38 — Fallback model chain (added v2.1 rc.3; WP-8c)
+- **Origin:** the owner's V-6 and DQ-9 (the chain deferred in v1; the `FallbackEligible` seam).
+- **Owner and architect defaults (approved 2026-10-15):** the chain is sticky per run (after a call falls back, the rest of that run starts at the fallback; a new run starts at the primary); a context window that does not fit a prompt makes the chain skip that fallback for that call (a run-level retry of the preparation with a larger window, the `DoesNotFit` case of DQ-9, is backlog).
+- **Decision:**
+  - **Configuration.** Up to three fallbacks, `[[llm.fallback]]` or `REVIEW_MCP_LLM_FALLBACK_<N>_<FIELD>` (model, base_url, context_window, max_output_tokens, reasoning_effort, timeout_seconds), and the secret `REVIEW_MCP_LLM_FALLBACK_<N>_API_KEY`; unset fields take the primary's value (reasoning effort unset; context window resolved from the fallback's endpoint, X-15); temperature, seed, retries and rate limits are the primary's.
+  - **Key rule (leak guard).** A fallback uses its own key; without one it uses the primary key only when its base URL equals the primary's after normalisation; on another host without its own key it sends no key and no `Authorization` header. The primary key is never sent to another host. `server_info` shows each fallback's model, redacted base URL, key source (`own`, `primary`, `none`) and context window.
+  - **When a call moves on.** The model's own retries used up for a server error, a timeout or a transport failure; it stays rate limited (rate-limit retries used up, or the needed wait is longer than `llm.max_rate_wait_seconds`); its answer is still unusable after the same-model re-ask (`ErrFallbackEligible` from the parse path): the next model gets the original prompt once. It does **not** move on for auth (401/403), a refused request (`llm_bad_request`), not found (`llm_not_found`: a wrong model name is a configuration error and must surface), a request too long for the context window (`llm_context_too_long`: the run-level fallback is backlog), an unexpected response (`llm_protocol`), a canceled call or an expired deadline, `config_invalid`.
+  - **Chain.** `wiring.NewLLM` builds an `llm.Chain` for the run, which implements the pipelines' `Completer` and has one narrow extra method, `CompleteNext`, reached through the optional interface `llmrun.NextCompleter`. Each fallback has its own limiter by X-37 (the same base URL and key share one). A fallback is skipped for a call when the prompt's estimate plus its maximum output does not fit its context window.
+  - **Report.** `metadata.model` is the model that served the last call; `metadata.models_used` the distinct models that served calls in order of first use, `metadata.fallback_calls` the calls a fallback served (both always set); the note "N model calls were served by a fallback model (`second-model`) because the primary model was unavailable (rate limited)." (the reason of the first move: `rate limited`, `server error`, `timed out`, `unreachable`, `unusable answer`); the note about a fallback skipped for size; when every model fails, the first model's error with "All N fallback models failed as well."
+- **WP-8c DESIGN-QUESTIONs (settled on PR #30, architect; all keep):**
+  - DQ-1: every `REVIEW_MCP_LLM_FALLBACK_<N>_*` variable also applies to a file entry N; a variable of an N that neither the file nor `_MODEL` creates is a validation problem.
+  - DQ-2: in serve mode with `serve.llm_key_source = header` a server-side fallback key is refused, like `REVIEW_MCP_LLM_API_KEY`; such a fallback uses the caller's key on the primary's base URL and no key elsewhere.
+  - DQ-3: the one narrow method on the Completer path is `CompleteNext`; the pipelines' `Completer` is unchanged.
+  - DQ-4: "the error of the primary" is the error of the first model the call tried (after a sticky move, the fallback the run moved to); N counts the fallbacks that were tried and failed; the note is part of the error sentence.
+  - DQ-5: `llm_not_found`, `llm_context_too_long` and `llm_protocol` do not move on (the architect: not falling back on `not_found` is right, `context_too_long` stays with the backlogged run-level fallback, `protocol` stays).
+  - DQ-6: without `llm.max_output_tokens` the output counts as the budget's 1000-token reserve in the size check; a fallback whose window cannot be resolved is skipped for the call and logged, and is not counted as a size skip.
+  - DQ-7: the fallback note keeps the spec's sentence for every reason, "unusable answer" included, and uses the count form of the other notes.
+- **Backlog:** a run-level fallback for `DoesNotFit` (prepare the run again with the first fallback whose window fits); per-tool model selection (for example a cheaper model for `pr_describe`).
+- **Consequences:** the config gains `llm.fallback` and the secrets `REVIEW_MCP_LLM_FALLBACK_<N>_API_KEY`; the metadata of the four model tools gains `models_used` and `fallback_calls`; `server_info` lists the fallbacks. Not verified on a real gateway: acceptance Q2 to Q5 (spec §4).
+
+#### V-6 housekeeping (WP-8a; DESIGN-QUESTIONs settled on PR #30, architect; all keep)
+- Suggestion verification compares leading white-space runs by depth rank, not by a tab width (a quote at other widths matches when the depth order is the same; a quote whose depth order changed does not); the suggestion fingerprint and the re-indentation of a block are unchanged. A GitLab commit status without a `target_url` and with an id links `{web}/{project}/-/jobs/{id}` (**backlog:** an external, non-job status without a `target_url` also gets that link; in practice external statuses carry a URL). The describe region is always preceded by one blank line. The merged-publish note about dropped held findings is in the written overview and taken back when nothing was written. `publish.inline.failure_class` is the class and HTTP status of the first failed inline item (`InlineResult.Class`). GitLab needs a legacy personal access token with `api` and `read_repository`.
+
+
 ---
 
 ## 5. Resulting v1 configuration surface
@@ -799,6 +842,11 @@ Secrets are environment-only (in `serve` mode, credentials come from request hea
 | `llm.max_retries` | `REVIEW_MCP_LLM_MAX_RETRIES` | 1 | Transport retries (DQ-9) |
 | `llm.token_estimate_factor` | `REVIEW_MCP_LLM_TOKEN_ESTIMATE_FACTOR` | 0.3 | DQ-5 |
 | `llm.wait_seconds` | `REVIEW_MCP_LLM_WAIT_SECONDS` | 45 | X-16; 0 to 600; stdio only; per-call `wait_seconds` argument |
+| `llm.requests_per_minute` | `REVIEW_MCP_LLM_REQUESTS_PER_MINUTE` | 0 | X-37 (v2.1); 0 to 100000; the most requests started in any 60 s, per endpoint; 0 is no client limit |
+| `llm.max_concurrent_requests` | `REVIEW_MCP_LLM_MAX_CONCURRENT_REQUESTS` | 0 | X-37; 0 to 256; the most requests in flight, per endpoint; 0 is unlimited |
+| `llm.max_rate_wait_seconds` | `REVIEW_MCP_LLM_MAX_RATE_WAIT_SECONDS` | 60 | X-37; 0 to 600; the longest one wait for the rate limit may be |
+| `llm.max_rate_retries` | `REVIEW_MCP_LLM_MAX_RATE_RETRIES` | 4 | X-37; 0 to 20; retries after HTTP 429 for one call, apart from `llm.max_retries` |
+| `llm.fallback` (`[[llm.fallback]]`) | `REVIEW_MCP_LLM_FALLBACK_<N>_{MODEL,BASE_URL,CONTEXT_WINDOW,MAX_OUTPUT_TOKENS,REASONING_EFFORT,TIMEOUT_SECONDS}` | none | X-38; N is 1 to 3 without gaps; the secret `REVIEW_MCP_LLM_FALLBACK_<N>_API_KEY` is environment-only |
 | `gitea.base_url` | `REVIEW_MCP_GITEA_BASE_URL` | — | Enables Gitea (X-2) |
 | `gitea.web_url` | `REVIEW_MCP_GITEA_WEB_URL` | — | Optional split web URL |
 | `gitea.ca_cert` | `REVIEW_MCP_GITEA_CA_CERT` | — | Optional CA bundle path |
@@ -889,7 +937,7 @@ violations are reported together in one token-free startup error.
 
 | Item | Seam that must exist in v1 |
 |---|---|
-| Fallback model chain | `FallbackEligible` sentinel; per-attempt request preparation |
+| Fallback model chain (**done in v2.1, X-38**) | `FallbackEligible` sentinel; per-attempt request preparation |
 | Dynamic context | `extend` has head-file content available |
 | Review chunking | Pipeline already produces `remaining_files` |
 | Repo-local config | Layered loader with explicit layer list |
@@ -899,7 +947,7 @@ violations are reported together in one token-free startup error.
 | `/improve` (DQ-11; DQ-13, 14, 15, 18 were decided in P7) | Hunk model with multiple renderers (DQ-10) |
 | Additional review fields | Field-descriptor table (X-4, DQ-6) |
 | Key-issue header of the GFM overview with code spans as `<code>` inside `<summary>` (X-30, WP-4b DQ-1); done in v2.1 (X-36, WP-7a) | `mdutil.EscapeHTMLKeepingCodeSpans` |
-| Tab- and space-tolerant verification of `pr_improve` quotes: a quote indented with spaces where the file uses tabs (rc.3 acceptance, item 4); anchoring and re-indentation would still need the exact real lines | `normalizeSnippet` in the verifier |
+| Tab- and space-tolerant verification of `pr_improve` quotes: a quote indented with spaces where the file uses tabs (rc.3 acceptance, item 4); **verification done in v2.1 (WP-8a, `normalizeIndent`)**; anchoring and re-indentation would still need the exact real lines | `normalizeSnippet` in the verifier |
 | A prompt block listing review-mcp's own earlier findings, so the model does not spend findings on them (X-29; phase 2F, with the V-9 benchmark) | `ownFindingsOf` (`internal/review/duplicate.go`) |
 
 ## 8. Rejected options

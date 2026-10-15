@@ -8,8 +8,11 @@
 // written to disk and nothing is logged here.
 //
 // Limits:
-//   - at most MaxRunning jobs run at once; Start refuses one more with
-//     ErrTooMany;
+//   - at most MaxRunning jobs run at once; a job started beyond that is
+//     queued (state queued) and starts in arrival order when a running job
+//     finishes. At most MaxQueued jobs wait; Start refuses one more with
+//     ErrTooMany. A queued job is never evicted and never expires, and Close
+//     fails it without running it;
 //   - at most MaxKept finished jobs are kept; when one more finishes, the
 //     job that finished first is evicted. The newest result is the one a
 //     client is most likely still polling for, and the oldest is the one
@@ -20,10 +23,12 @@
 //     Start, Get and Wait first drops the expired jobs, so no goroutine
 //     outlives Close.
 //
-// Credentials (X-10): a job never stores its run function. The run closure,
-// and the per-call config it captures, live only on the stack of the
+// Credentials (X-10): a running job never stores its run function. The run
+// closure, and the per-call config it captures, live only on the stack of the
 // goroutine that executes it, so they become garbage once the run returns.
-// A finished job holds only its result or its failure message.
+// A queued job holds nothing but its run closure (and the values of its
+// start context) until it starts or Close fails it; the store drops both
+// then. A finished job holds only its result or its failure message.
 package jobs
 
 import (
@@ -40,6 +45,8 @@ import (
 const (
 	// MaxRunning is the number of jobs that may run at once.
 	MaxRunning = 4
+	// MaxQueued is the number of jobs that may wait for a free slot.
+	MaxQueued = 32
 	// MaxKept is the number of finished jobs kept for Get and Wait.
 	MaxKept = 64
 	// TTL is how long a finished job is kept after it finished.
@@ -48,7 +55,7 @@ const (
 
 // Fixed client-facing sentences (X-6).
 const (
-	TooManySentence = "too many background jobs are running; wait for one to finish"
+	TooManySentence = "too many background jobs are running or waiting; wait for one to finish"
 	UnknownSentence = "unknown or expired job_id"
 	ClosedSentence  = "review-mcp is shutting down; no new background job can start"
 )
@@ -77,6 +84,7 @@ type State string
 
 // Job states.
 const (
+	StateQueued  State = "queued"
 	StateRunning State = "running"
 	StateDone    State = "done"
 	StateFailed  State = "failed"
@@ -101,8 +109,12 @@ type Snapshot[R any] struct {
 	// Stage is the last progress stage the run reported ("" before the
 	// first one).
 	Stage string
-	// Elapsed is the time since the job started, or its whole run time
-	// once it finished.
+	// Position is the 1-based place of a queued job in the queue (0 in
+	// every other state).
+	Position int
+	// Elapsed is the time since the job was queued while it waits, the
+	// time since it started while it runs, and its whole run time once it
+	// finished (for a queued job that Close failed, its time in the queue).
 	Elapsed time.Duration
 	// Result is the run's result (StateDone only).
 	Result R
@@ -131,7 +143,9 @@ type Store[R any] struct {
 	mu      sync.Mutex
 	closed  bool
 	running int
-	jobs    map[string]*job[R]
+	// queue holds the queued jobs in arrival order.
+	queue []*job[R]
+	jobs  map[string]*job[R]
 }
 
 type job[R any] struct {
@@ -140,6 +154,9 @@ type job[R any] struct {
 	started  time.Time
 	finished time.Time
 	state    State
+	// ctx and run are held only while the job is queued.
+	ctx context.Context
+	run RunFunc[R]
 	// stages are the distinct stages the run reported, in order; the
 	// last one is the current stage. A run has a handful of them.
 	stages  []string
@@ -160,12 +177,21 @@ func New[R any](opts Options) *Store[R] {
 	return &Store[R]{now: now, base: base, cancel: cancel, jobs: map[string]*job[R]{}}
 }
 
-// Close cancels the context of every running job and makes Start fail with
+// Close cancels the context of every running job, fails every queued job
+// with ClosedSentence without running it, and makes Start fail with
 // ErrClosed. It does not wait for the runs to return: a job never keeps the
 // process alive. Finished jobs stay readable. Close is idempotent.
 func (s *Store[R]) Close() {
 	s.mu.Lock()
 	s.closed = true
+	now := s.now()
+	for _, j := range s.queue {
+		j.state, j.message = StateFailed, ClosedSentence
+		j.finished = now
+		j.ctx, j.run = nil, nil
+		close(j.changed)
+	}
+	s.queue = nil
 	s.mu.Unlock()
 	s.cancel()
 }
@@ -174,9 +200,10 @@ func (s *Store[R]) Close() {
 // kept with the job and reported in its snapshots (the tool layer stores the
 // tool name). The job's context keeps
 // the values of ctx (the caller's request context) but not its cancellation
-// or deadline: it ends only when the store is closed. It fails with
-// ErrTooMany when MaxRunning jobs are running, and with ErrClosed after
-// Close.
+// or deadline: it ends only when the store is closed. When MaxRunning jobs
+// are running the job is queued and starts, in arrival order, when one
+// finishes; Start fails with ErrTooMany only when MaxQueued jobs already
+// wait, and with ErrClosed after Close.
 func (s *Store[R]) Start(ctx context.Context, tag string, run RunFunc[R]) (string, error) {
 	s.mu.Lock()
 	s.sweepLocked()
@@ -184,7 +211,7 @@ func (s *Store[R]) Start(ctx context.Context, tag string, run RunFunc[R]) (strin
 		s.mu.Unlock()
 		return "", ErrClosed
 	}
-	if s.running >= MaxRunning {
+	if s.running >= MaxRunning && len(s.queue) >= MaxQueued {
 		s.mu.Unlock()
 		return "", ErrTooMany
 	}
@@ -193,14 +220,34 @@ func (s *Store[R]) Start(ctx context.Context, tag string, run RunFunc[R]) (strin
 		id:      id,
 		tag:     tag,
 		started: s.now(),
-		state:   StateRunning,
+		state:   StateQueued,
+		ctx:     context.WithoutCancel(ctx),
+		run:     run,
 		changed: make(chan struct{}),
 	}
 	s.jobs[id] = j
-	s.running++
+	if s.running >= MaxRunning {
+		s.queue = append(s.queue, j)
+	} else {
+		s.launchLocked(j)
+	}
 	s.mu.Unlock()
+	return id, nil
+}
 
-	jctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+// launchLocked starts j now: it runs on its own goroutine, and the store lets
+// go of the closure and the start context. For a job that waited, started
+// becomes the moment it starts, so Elapsed is the run time only from then.
+func (s *Store[R]) launchLocked(j *job[R]) {
+	j.state = StateRunning
+	j.started = s.now()
+	s.running++
+	// A start wakes the waiters; the stage list is unchanged.
+	close(j.changed)
+	j.changed = make(chan struct{})
+	run, base := j.run, j.ctx
+	j.run, j.ctx = nil, nil
+	jctx, cancel := context.WithCancel(base)
 	stop := context.AfterFunc(s.base, cancel)
 	go func() {
 		defer cancel()
@@ -208,7 +255,6 @@ func (s *Store[R]) Start(ctx context.Context, tag string, run RunFunc[R]) (strin
 		result, err := run(jctx, func(stage string) { s.setStage(j, stage) })
 		s.finish(j, result, err)
 	}()
-	return id, nil
 }
 
 // Get returns a snapshot of the job, or ErrUnknown when there is no job
@@ -273,7 +319,7 @@ func (s *Store[R]) WaitProgress(ctx context.Context, id string, d time.Duration,
 		if ctxErr != nil {
 			return snap, ctxErr
 		}
-		if snap.State != StateRunning || timeout == nil || timedOut {
+		if (snap.State != StateRunning && snap.State != StateQueued) || timeout == nil || timedOut {
 			return snap, nil
 		}
 		select {
@@ -310,6 +356,11 @@ func (s *Store[R]) finish(j *job[R], result R, err error) {
 	}
 	s.running--
 	close(j.changed)
+	if !s.closed && len(s.queue) > 0 {
+		next := s.queue[0]
+		s.queue = s.queue[1:]
+		s.launchLocked(next)
+	}
 	s.sweepLocked()
 	s.evictLocked()
 }
@@ -319,7 +370,14 @@ func (s *Store[R]) snapshotLocked(j *job[R]) Snapshot[R] {
 	if len(j.stages) > 0 {
 		snap.Stage = j.stages[len(j.stages)-1]
 	}
-	if j.state == StateRunning {
+	if j.state == StateQueued {
+		for i, q := range s.queue {
+			if q == j {
+				snap.Position = i + 1
+			}
+		}
+	}
+	if j.state == StateQueued || j.state == StateRunning {
 		snap.Elapsed = s.now().Sub(j.started)
 	} else {
 		snap.Elapsed = j.finished.Sub(j.started)
@@ -330,24 +388,28 @@ func (s *Store[R]) snapshotLocked(j *job[R]) Snapshot[R] {
 	return snap
 }
 
-// sweepLocked drops the finished jobs whose TTL has run out.
+// over reports whether j has finished (done or failed).
+func (j *job[R]) over() bool { return j.state != StateQueued && j.state != StateRunning }
+
+// sweepLocked drops the finished jobs whose TTL has run out. A queued job
+// never expires.
 func (s *Store[R]) sweepLocked() {
 	now := s.now()
 	for id, j := range s.jobs {
-		if j.state != StateRunning && !now.Before(j.finished.Add(TTL)) {
+		if j.over() && !now.Before(j.finished.Add(TTL)) {
 			delete(s.jobs, id)
 		}
 	}
 }
 
 // evictLocked drops the finished jobs that finished first until at most
-// MaxKept are left. Running jobs are never dropped.
+// MaxKept are left. Queued and running jobs are never dropped.
 func (s *Store[R]) evictLocked() {
 	for {
 		var oldest *job[R]
 		kept := 0
 		for _, j := range s.jobs {
-			if j.state == StateRunning {
+			if !j.over() {
 				continue
 			}
 			kept++

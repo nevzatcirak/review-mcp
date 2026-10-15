@@ -508,9 +508,10 @@ func TestJobFailureKeepsTheFixedSentence(t *testing.T) {
 	}
 }
 
-// TestJobFifthConcurrentRunIsRefused: four runs may go on at once; the
-// fifth call gets the fixed sentence and nothing of it runs.
-func TestJobFifthConcurrentRunIsRefused(t *testing.T) {
+// TestJobFifthConcurrentRunIsQueued: four runs go on at once; the fifth call
+// is accepted, its run waits for a free slot and sends no LLM request until
+// one finishes.
+func TestJobFifthConcurrentRunIsQueued(t *testing.T) {
 	g := newFakeGiteaHost(t)
 	l, gate := newGatedLLMHost(t, 200, askAnswer)
 	c := startRaw(t, withJobs(t, realDeps(reviewEnv(g, l), nil), nil))
@@ -521,12 +522,9 @@ func TestJobFifthConcurrentRunIsRefused(t *testing.T) {
 		ids = append(ids, mustRunning(t, c.tool("pr_ask", args, nil), "answer").JobID)
 	}
 	gate.waitArrived(t, jobs.MaxRunning)
-	r := decodeRaw(t, c.tool("pr_ask", args, nil))
-	if !r.IsError || r.text() != "too many background jobs are running; wait for one to finish" {
-		t.Fatalf("fifth call = %+v %q", r, r.text())
-	}
+	ids = append(ids, mustRunning(t, c.tool("pr_ask", args, nil), "answer").JobID)
 	if n := len(l.recorded()); n != jobs.MaxRunning {
-		t.Errorf("LLM requests = %d, want %d (the fifth must not run)", n, jobs.MaxRunning)
+		t.Errorf("LLM requests = %d, want %d (the fifth waits for a slot)", n, jobs.MaxRunning)
 	}
 
 	gate.release()

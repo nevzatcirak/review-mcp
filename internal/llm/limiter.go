@@ -382,7 +382,7 @@ func (r *registry) lookup(base *url.URL, key config.Secret, cfg config.LLM) *lim
 		r.salt = make([]byte, 32)
 		_, _ = rand.Read(r.salt)
 	})
-	k := normalBase(base)
+	k := config.NormalBaseURL(base)
 	if key.IsSet() {
 		m := hmac.New(sha256.New, r.salt)
 		m.Write([]byte(key.Reveal()))
@@ -400,25 +400,4 @@ func (r *registry) lookup(base *url.URL, key config.Secret, cfg config.LLM) *lim
 	r.mu.Unlock()
 	l.setLimits(limitsOf(cfg))
 	return l
-}
-
-// normalBase is the base URL as the registry compares it: the scheme and
-// host in lower case, without a default port, without credentials, query or
-// fragment, and the path without a trailing slash.
-func normalBase(u *url.URL) string {
-	host := strings.ToLower(u.Hostname())
-	if strings.Contains(host, ":") {
-		host = "[" + host + "]"
-	}
-	if p := u.Port(); p != "" && p != defaultPort(u.Scheme) {
-		host += ":" + p
-	}
-	return strings.ToLower(u.Scheme) + "://" + host + strings.TrimRight(u.EscapedPath(), "/")
-}
-
-func defaultPort(scheme string) string {
-	if strings.EqualFold(scheme, "https") {
-		return "443"
-	}
-	return "80"
 }

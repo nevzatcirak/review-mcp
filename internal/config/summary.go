@@ -19,6 +19,8 @@ type Summary struct {
 	Providers []ProviderSummary `json:"providers"`
 	// Warnings are the load warnings.
 	Warnings []string `json:"warnings"`
+	// Fallbacks lists the fallback models (X-38), in order.
+	Fallbacks []FallbackSummary `json:"fallbacks"`
 }
 
 // SummaryValue is one effective value and the layer that supplied it.
@@ -45,6 +47,7 @@ func (c *Config) Summary(r *Report) Summary {
 		Secrets:   make(map[string]string, len(secretTable)),
 		Providers: []ProviderSummary{},
 		Warnings:  []string{},
+		Fallbacks: c.fallbackSummaries(),
 	}
 	for _, e := range table {
 		src := OriginDefault

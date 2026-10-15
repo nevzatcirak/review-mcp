@@ -91,8 +91,40 @@ func TestTableMatchesStruct(t *testing.T) {
 		}
 	}
 	for key := range leaves {
-		if !seenKey[key] {
+		// The fallback entries are a list; fallbackFields covers them
+		// (below), with REVIEW_MCP_LLM_FALLBACK_<N>_<FIELD> variables.
+		if !seenKey[key] && key != fallbackSection {
 			t.Errorf("Config field %s has no table row (no env variable)", key)
+		}
+	}
+
+	// Fallback entries: one fallbackFields row per file field of
+	// LLMFallback, at that field; the API key is a secret, never in the file.
+	ft := reflect.TypeOf(LLMFallback{})
+	var f LLMFallback
+	for i := 0; i < ft.NumField(); i++ {
+		sf := ft.Field(i)
+		tag := strings.Split(sf.Tag.Get("toml"), ",")[0]
+		if tag == "-" {
+			if sf.Type != reflect.TypeOf(Secret{}) {
+				t.Errorf("LLMFallback.%s is not in the file but not a Secret", sf.Name)
+			}
+			continue
+		}
+		found := false
+		for _, ff := range fallbackFields {
+			if ff.key == tag {
+				found = true
+				if reflect.ValueOf(ff.ptr(&f)).Pointer() != reflect.ValueOf(&f).Elem().Field(i).Addr().Pointer() {
+					t.Errorf("fallback field %s points at the wrong LLMFallback field", tag)
+				}
+				if ff.env != strings.ToUpper(tag) {
+					t.Errorf("fallback field %s: env suffix %s", tag, ff.env)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("LLMFallback field %s has no fallbackFields row", tag)
 		}
 	}
 

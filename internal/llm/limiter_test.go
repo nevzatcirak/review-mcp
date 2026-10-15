@@ -317,8 +317,8 @@ func TestRegistry(t *testing.T) {
 	if !strings.Contains(logs.String(), "endpoint=https://llm.example/v1") || !strings.Contains(logs.String(), "reason=window") {
 		t.Errorf("log lacks the endpoint or reason:\n%s", logs.String())
 	}
-	if normalBase(u) != "https://llm.example/v1" {
-		t.Errorf("normalBase = %q", normalBase(u))
+	if config.NormalBaseURL(u) != "https://llm.example/v1" {
+		t.Errorf("normalBase = %q", config.NormalBaseURL(u))
 	}
 }
 

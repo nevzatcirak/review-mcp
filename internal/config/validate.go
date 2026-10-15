@@ -279,6 +279,7 @@ func (l *loader) validateLLM() {
 	if l.mode != ModeServe && !l.cfg.Secrets.LLMAPIKey.IsSet() {
 		l.problem("%s is required (secret; environment only)", envLLMAPIKey)
 	}
+	l.validateFallbacks()
 
 	switch {
 	case l.bad["llm.context_window"]:

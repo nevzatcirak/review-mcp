@@ -5,6 +5,7 @@ package tools
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -80,6 +81,7 @@ func ServerInfo(cfg *config.Config, rep *config.Report, loadErr error) ServerInf
 	bi := version.Info()
 	sum := cfg.Summary(rep)
 	reportContextWindow(&sum, cfg)
+	reportFallbackWindows(&sum, cfg)
 	reportRepoContext(&sum, cfg)
 
 	res := ServerInfoResult{
@@ -129,6 +131,23 @@ func reportContextWindow(sum *config.Summary, cfg *config.Config) {
 		v.Value = strconv.Itoa(n) + " (" + src + ")"
 	}
 	sum.Values[key] = v
+}
+
+// reportFallbackWindows shows how the context window of each fallback model
+// whose context_window is unset is (or will be) resolved from its endpoint
+// (X-15, X-38), as reportContextWindow does for the primary; it never makes
+// a request.
+func reportFallbackWindows(sum *config.Summary, cfg *config.Config) {
+	for i := range sum.Fallbacks {
+		if sum.Fallbacks[i].ContextWindow != nil || i >= len(cfg.LLM.Fallback) {
+			continue
+		}
+		eff := cfg.EffectiveFallback(i)
+		sum.Fallbacks[i].ContextWindow = ContextWindowAuto
+		if n, src, ok := llm.ResolvedContextWindow(eff.BaseURL, eff.Model); ok {
+			sum.Fallbacks[i].ContextWindow = strconv.Itoa(n) + " (" + src + ")"
+		}
+	}
 }
 
 // reportRepoContext shows, when context.repo.enabled is set, whether the
@@ -189,6 +208,14 @@ func RenderServerInfoMarkdown(r ServerInfoResult) string {
 			b.WriteString(" (API " + codeSpan(p.APIURL) + ")")
 		}
 		b.WriteString("\n")
+	}
+
+	if len(r.Config.Fallbacks) > 0 {
+		b.WriteString("\n## Fallback models\n\n")
+		for i, f := range r.Config.Fallbacks {
+			b.WriteString(strconv.Itoa(i+1) + ". " + codeSpan(f.Model) + " at " + codeSpan(f.BaseURL) + ", key " +
+				codeSpan(f.Key) + ", context window " + codeSpan(fmt.Sprint(f.ContextWindow)) + "\n")
+		}
 	}
 
 	if r.Serve != nil {

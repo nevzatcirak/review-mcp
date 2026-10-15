@@ -50,6 +50,7 @@ func LoadWith(src Source, opts LoadOptions) (*Config, *Report, error) {
 
 	l.loadFile()
 	l.loadEnv()
+	l.loadFallbackEnv()
 	if opts.Listen != "" {
 		cfg.Serve.Listen = opts.Listen
 		rep.Sources["serve.listen"] = OriginFlag
@@ -159,7 +160,7 @@ func (l *loader) loadFile() {
 		if underAny(key, unknownPrefixes) {
 			continue
 		}
-		if _, ok := byKey[key]; !ok {
+		if _, ok := byKey[key]; !ok && !isFallbackKey(key) {
 			rejected = true
 			unknownPrefixes = append(unknownPrefixes, key)
 			l.problem("unknown config key %q in %s", key, path)
@@ -173,6 +174,10 @@ func (l *loader) loadFile() {
 		return // do not apply a partially rejected file
 	}
 
+	if md.IsDefined("llm", "fallback") {
+		l.cfg.LLM.Fallback = fc.LLM.Fallback
+		l.rep.Sources[fallbackSection] = OriginFile
+	}
 	for _, k := range md.Keys() {
 		key := strings.Join(k, ".")
 		e, ok := byKey[key]

@@ -60,6 +60,9 @@ type LLM struct {
 	// MaxRateRetries is the number of retries after HTTP 429 for one model
 	// call, counted apart from MaxRetries (X-37).
 	MaxRateRetries int `toml:"max_rate_retries" json:"max_rate_retries"`
+	// Fallback are the fallback models, tried in order when a model call
+	// cannot be served by the current one (X-38; [[llm.fallback]]).
+	Fallback []LLMFallback `toml:"fallback" json:"fallback"`
 }
 
 // Gitea configures the Gitea provider; it is enabled iff BaseURL is set.

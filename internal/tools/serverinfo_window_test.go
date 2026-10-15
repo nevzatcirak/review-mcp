@@ -68,3 +68,42 @@ func TestServerInfoConfiguredContextWindow(t *testing.T) {
 		t.Errorf("configured window = %#v", v)
 	}
 }
+
+// TestServerInfoFallbacks (X-38, v2.1 spec V-6 §3.1): server_info lists each
+// fallback with its model, redacted base URL, key source and context window
+// (configured, or "auto (endpoint)" until resolved), and never a key.
+func TestServerInfoFallbacks(t *testing.T) {
+	env := validEnv()
+	env["REVIEW_MCP_LLM_FALLBACK_1_MODEL"] = "second-model"
+	env["REVIEW_MCP_LLM_FALLBACK_2_MODEL"] = "third-model"
+	env["REVIEW_MCP_LLM_FALLBACK_2_BASE_URL"] = "https://fallback.example/v1"
+	env["REVIEW_MCP_LLM_FALLBACK_2_CONTEXT_WINDOW"] = "128000"
+	env["REVIEW_MCP_LLM_FALLBACK_3_MODEL"] = "fourth-model"
+	env["REVIEW_MCP_LLM_FALLBACK_3_BASE_URL"] = "https://fallback.example/v1"
+	env["REVIEW_MCP_LLM_FALLBACK_3_API_KEY"] = "sk-fallback-own-key"
+	cfg, rep, err := load(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := ServerInfo(cfg, rep, nil)
+	want := []config.FallbackSummary{
+		{Model: "second-model", BaseURL: r.Config.Values["llm.base_url"].Value.(string), Key: config.KeyPrimary, ContextWindow: ContextWindowAuto},
+		{Model: "third-model", BaseURL: "https://fallback.example/v1", Key: config.KeyNone, ContextWindow: 128000},
+		{Model: "fourth-model", BaseURL: "https://fallback.example/v1", Key: config.KeyOwn, ContextWindow: ContextWindowAuto},
+	}
+	if len(r.Config.Fallbacks) != 3 {
+		t.Fatalf("fallbacks %+v", r.Config.Fallbacks)
+	}
+	for i := range want {
+		if r.Config.Fallbacks[i] != want[i] {
+			t.Errorf("fallback %d: %+v, want %+v", i+1, r.Config.Fallbacks[i], want[i])
+		}
+	}
+	md := RenderServerInfoMarkdown(r)
+	if !strings.Contains(md, "2. `third-model` at `https://fallback.example/v1`, key `none`, context window `128000`") {
+		t.Errorf("markdown:\n%s", md)
+	}
+	if strings.Contains(md, "sk-fallback-own-key") {
+		t.Error("the fallback key is in the markdown")
+	}
+}

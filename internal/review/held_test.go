@@ -427,6 +427,40 @@ func TestMergedPublishHeldLines(t *testing.T) {
 	}
 }
 
+// TestMergedPublishDroppedNoteOnlyWhenWritten (WP-8a): the note of the held
+// findings a merged publish drops is in the result only when the overview
+// was edited or a replacement was posted; with both writes failed it is
+// not, and neither is the replacement note.
+func TestMergedPublishDroppedNoteOnlyWhenWritten(t *testing.T) {
+	earlier := heldLineOf(t, heldRecord{V: 1, F: "src/util.go", S: 30, E: 31, H: "Earlier", C: "From before.", From: shaOld})
+	findings := []SuppliedFinding{supplied("src/util.go", 30, 31, "Supplied", "Off the diff.")}
+	note := noteHeldDropped(1)
+	for _, tc := range []struct {
+		name            string
+		editErr, postEr error
+		published       bool
+	}{
+		{"edited", nil, nil, true},
+		{"edit failed, replacement posted", &provider.Error{Class: provider.ClassNotOwner}, nil, true},
+		{"both writes failed", &provider.Error{Class: provider.ClassNotOwner}, &provider.Error{Class: provider.ClassUpstream, Status: 502}, false},
+	} {
+		h := newSuppliedHarness(t)
+		h.prov.pr.HeadSHA = shaHead
+		h.prov.addComment(h.prov.me, "earlier\n\n"+earlier+"\n"+reviewedLineOf(shaOld)+"\n"+OverviewMarker)
+		h.prov.editErr, h.prov.postErr = tc.editErr, tc.postEr
+		res := runOK(t, h, Args{PRURL: testPRURL, Publish: true, Findings: findings})
+		if res.Publish.Published != tc.published {
+			t.Errorf("%s: published = %v", tc.name, res.Publish.Published)
+		}
+		if got := slices.Contains(res.Notes, note); got != tc.published {
+			t.Errorf("%s: notes %q, the note present = %v, want %v", tc.name, res.Notes, got, tc.published)
+		}
+		if !tc.published && slices.Contains(res.Notes, NoteOverviewReplaced) {
+			t.Errorf("%s: notes %q name a replacement that was not posted", tc.name, res.Notes)
+		}
+	}
+}
+
 // js is the JSON form of v.
 func js(v any) string {
 	b, err := json.Marshal(v)

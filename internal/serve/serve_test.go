@@ -91,10 +91,14 @@ func TestServerInfoInServeMode(t *testing.T) {
 	}
 }
 
-// TestConcurrencyGate: a full gate fails tool calls at once with
-// server_busy; other methods are not counted.
+// TestConcurrencyGate: with serve.max_queued_calls 0 a full gate fails tool
+// calls at once with server_busy (the behaviour before WP-8e); other methods
+// are not counted.
 func TestConcurrencyGate(t *testing.T) {
-	ts := startServer(t, serverOpts{env: map[string]string{"REVIEW_MCP_SERVE_MAX_CONCURRENT_CALLS": "1"}, level: slog.LevelInfo})
+	ts := startServer(t, serverOpts{env: map[string]string{
+		"REVIEW_MCP_SERVE_MAX_CONCURRENT_CALLS": "1",
+		"REVIEW_MCP_SERVE_MAX_QUEUED_CALLS":     "0",
+	}, level: slog.LevelInfo})
 	release := make(chan struct{})
 	var releaseOnce sync.Once
 	unblock := func() { releaseOnce.Do(func() { close(release) }) }
@@ -153,6 +157,75 @@ func TestConcurrencyGate(t *testing.T) {
 	// The slot is free again.
 	if _, r := ts.callTool(t, creds("gitea-token", ""), "server_info", map[string]any{}); r.IsError {
 		t.Errorf("after release: %q", r.text())
+	}
+}
+
+// TestConcurrencyGateQueue [canary target]: with one slot and a queue of one,
+// the second call waits for the slot and succeeds when the first ends, and
+// the third, finding the slot taken and the queue full, gets server_busy.
+func TestConcurrencyGateQueue(t *testing.T) {
+	ts := startServer(t, serverOpts{env: map[string]string{
+		"REVIEW_MCP_SERVE_MAX_CONCURRENT_CALLS": "1",
+		"REVIEW_MCP_SERVE_MAX_QUEUED_CALLS":     "1",
+	}, level: slog.LevelDebug})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	defer unblock()
+	hold := func() { <-release }
+	ts.gitea.onRequest.Store(&hold)
+
+	call := func(pr int) chan toolResult {
+		ch := make(chan toolResult, 1)
+		go func() {
+			_, r := ts.callTool(t, creds("gitea-token", ""), "pr_comments", map[string]any{"pr_url": ts.prURL(pr)})
+			ch <- r
+		}()
+		return ch
+	}
+	first := call(1)
+	select {
+	case <-ts.gitea.arrived:
+	case <-time.After(20 * time.Second):
+		t.Fatal("first call never reached the provider")
+	}
+	second := call(2)
+	deadline := time.Now().Add(20 * time.Second)
+	for !strings.Contains(ts.logs.String(), "tool call waits for a free slot") {
+		if time.Now().After(deadline) {
+			t.Fatal("the second call never queued")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	select {
+	case r := <-second:
+		t.Fatalf("the second call answered while the slot was taken: %q", r.text())
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	third := call(3)
+	select {
+	case r := <-third:
+		if !r.IsError || r.text() != tools.ServerBusyMessage {
+			t.Errorf("third call: isError=%v %q, want server_busy", r.IsError, r.text())
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("third call waited, want server_busy at once: the queue is full")
+	}
+
+	unblock()
+	for name, ch := range map[string]chan toolResult{"first": first, "second": second} {
+		select {
+		case r := <-ch:
+			if r.IsError {
+				t.Errorf("%s call failed: %q", name, r.text())
+			}
+		case <-time.After(20 * time.Second):
+			t.Fatalf("%s call never answered", name)
+		}
+	}
+	if got := ts.resolves.Load(); got != 2 {
+		t.Errorf("resolver factory calls = %d, want 2 (the busy call must not run)", got)
 	}
 }
 

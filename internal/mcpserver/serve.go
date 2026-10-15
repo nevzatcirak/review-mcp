@@ -2,8 +2,10 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
+	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -42,41 +44,136 @@ func NewHTTPHandler(deps Deps) http.Handler {
 // methodCallTool is the JSON-RPC method of a tool call.
 const methodCallTool = "tools/call"
 
-// defaultConcurrentCalls sizes the gate when no configuration is present
-// (the serve.max_concurrent_calls default).
-const defaultConcurrentCalls = 4
+// Defaults of the gate when no configuration is present (the
+// serve.max_concurrent_calls and serve.max_queued_calls defaults).
+const (
+	defaultConcurrentCalls = 4
+	defaultQueuedCalls     = 32
+)
 
 // concurrencyGate limits concurrent tool calls to
 // Config.Serve.MaxConcurrentCalls (P6 §1.4 step 6). Other methods
 // (initialize, tools/list, ping, ...) are not counted. When every slot is
-// taken the call fails at once with server_busy and does not run. The
-// semaphore belongs to the one server New builds, so it is shared by every
-// request of the process and holds no request data.
+// taken the call waits for one, in arrival order, for as long as its context
+// lives; only when Config.Serve.MaxQueuedCalls calls already wait (0: none
+// may) does it fail at once with server_busy and not run (v2.1 spec V-6
+// §6.3). The gate belongs to the one server New builds, so it is shared by
+// every request of the process and holds no request data.
+//
+// DESIGN-QUESTION (WP-8e DQ-2): a call whose context ends while it waits
+// leaves the queue and returns the context's error, not a tool result: its
+// caller has gone, and a slot that was handed to it in the same instant goes
+// to the next call. server_info is a tool call and waits like the others
+// (before WP-8e it was refused with server_busy when the gate was full).
+// Recommendation: keep.
 func concurrencyGate(deps Deps) mcp.Middleware {
-	n := defaultConcurrentCalls
-	if deps.Config != nil && deps.Config.Serve.MaxConcurrentCalls > 0 {
-		n = deps.Config.Serve.MaxConcurrentCalls
+	n, queued := defaultConcurrentCalls, defaultQueuedCalls
+	if deps.Config != nil {
+		if deps.Config.Serve.MaxConcurrentCalls > 0 {
+			n = deps.Config.Serve.MaxConcurrentCalls
+		}
+		queued = deps.Config.Serve.MaxQueuedCalls
 	}
-	sem := make(chan struct{}, n)
+	gate := newSlotGate(n, queued)
 	log := logger(deps)
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 			if method != methodCallTool {
 				return next(ctx, method, req)
 			}
-			select {
-			case sem <- struct{}{}:
-				defer func() { <-sem }()
+			switch err := gate.acquire(ctx, func(waiting int) {
+				log.Debug("tool call waits for a free slot", "waiting_calls", waiting, "max_queued_calls", queued)
+			}); {
+			case err == nil:
+				defer gate.release()
 				return next(ctx, method, req)
-			default:
-				log.Debug("tool call rejected: every slot is taken", "max_concurrent_calls", n)
+			case errors.Is(err, errGateFull):
+				log.Debug("tool call rejected: every slot is taken and the queue is full",
+					"max_concurrent_calls", n, "max_queued_calls", queued)
 				return &mcp.CallToolResult{
 					IsError: true,
 					Content: []mcp.Content{&mcp.TextContent{Text: tools.UserMessage(tools.ErrServerBusy)}},
 				}, nil
+			default:
+				log.Debug("tool call left the queue: its context ended")
+				return nil, err
 			}
 		}
 	}
+}
+
+// errGateFull is acquire's refusal: every slot is taken and the queue is
+// full.
+var errGateFull = errors.New("every slot is taken and the queue is full")
+
+// slotGate is a counting semaphore whose waiters are served first come,
+// first served and whose queue is bounded.
+type slotGate struct {
+	mu      sync.Mutex
+	slots   int
+	maxWait int
+	running int
+	// waiters hold the queued calls in arrival order; a closed channel hands
+	// its call the slot of the call that released it.
+	waiters []chan struct{}
+}
+
+func newSlotGate(slots, maxWait int) *slotGate {
+	return &slotGate{slots: slots, maxWait: maxWait}
+}
+
+// acquire takes a slot, waiting for one in arrival order; onWait (when not
+// nil) is called with the number of waiting calls, this one included, once
+// the call is queued. It fails with errGateFull when no slot is free and
+// maxWait calls already wait, and with ctx's error when ctx ends while it
+// waits.
+func (g *slotGate) acquire(ctx context.Context, onWait func(waiting int)) error {
+	g.mu.Lock()
+	if g.running < g.slots && len(g.waiters) == 0 {
+		g.running++
+		g.mu.Unlock()
+		return nil
+	}
+	if len(g.waiters) >= g.maxWait {
+		g.mu.Unlock()
+		return errGateFull
+	}
+	ch := make(chan struct{})
+	g.waiters = append(g.waiters, ch)
+	waiting := len(g.waiters)
+	g.mu.Unlock()
+	if onWait != nil {
+		onWait(waiting)
+	}
+	select {
+	case <-ch:
+		return nil
+	case <-ctx.Done():
+		g.mu.Lock()
+		for i, w := range g.waiters {
+			if w == ch {
+				g.waiters = append(g.waiters[:i], g.waiters[i+1:]...)
+				g.mu.Unlock()
+				return ctx.Err()
+			}
+		}
+		g.mu.Unlock()
+		// The slot was handed over as the context ended: pass it on.
+		g.release()
+		return ctx.Err()
+	}
+}
+
+// release gives the slot to the longest waiting call, or frees it.
+func (g *slotGate) release() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if len(g.waiters) > 0 {
+		close(g.waiters[0])
+		g.waiters = g.waiters[1:]
+		return
+	}
+	g.running--
 }
 
 // llmFactory returns the LLM client factory of one call. In serve mode a call

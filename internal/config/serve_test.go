@@ -83,7 +83,7 @@ func TestWithSecretsIsShallowCopyAndLeavesOriginalUnchanged(t *testing.T) {
 
 func TestServeDefaults(t *testing.T) {
 	d := Defaults().Serve
-	want := Serve{Listen: "127.0.0.1:8787", LLMKeySource: "header", AllowedOrigins: []string{}, MaxConcurrentCalls: 4}
+	want := Serve{Listen: "127.0.0.1:8787", LLMKeySource: "header", AllowedOrigins: []string{}, MaxConcurrentCalls: 4, MaxQueuedCalls: 32}
 	if !reflect.DeepEqual(d, want) {
 		t.Errorf("serve defaults = %+v, want %+v", d, want)
 	}
@@ -272,6 +272,12 @@ func TestServeListenAndRangeRules(t *testing.T) {
 			t.Errorf("max_concurrent_calls %s: %v", n, ps)
 		}
 	}
+	for n, ok := range map[string]bool{"-1": false, "0": true, "32": true, "1024": true, "1025": false} {
+		ps := serveProblems(t, serveEnv(map[string]string{"REVIEW_MCP_SERVE_MAX_QUEUED_CALLS": n}), nil)
+		if ok != (ps == nil) || (!ok && !hasProblem(ps, "serve.max_queued_calls: "+n+" is out of range (0-1024)")) {
+			t.Errorf("max_queued_calls %s: %v", n, ps)
+		}
+	}
 	// A malformed serve value is an error in serve mode.
 	ps := serveProblems(t, serveEnv(map[string]string{"REVIEW_MCP_SERVE_MAX_CONCURRENT_CALLS": "abc"}), nil)
 	if len(ps) != 1 || !hasProblem(ps, "REVIEW_MCP_SERVE_MAX_CONCURRENT_CALLS: invalid value") {
@@ -351,7 +357,7 @@ func TestSummaryIncludesServeKeys(t *testing.T) {
 	}
 	s := cfg.Summary(rep)
 	for _, k := range []string{"serve.listen", "serve.tls_cert", "serve.tls_key", "serve.allow_insecure_http",
-		"serve.llm_key_source", "serve.allowed_origins", "serve.max_concurrent_calls"} {
+		"serve.llm_key_source", "serve.allowed_origins", "serve.max_concurrent_calls", "serve.max_queued_calls"} {
 		if _, ok := s.Values[k]; !ok {
 			t.Errorf("summary lacks %s", k)
 		}

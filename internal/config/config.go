@@ -352,6 +352,7 @@ func Defaults() *Config {
 			LLMKeySource:       LLMKeySourceHeader,
 			AllowedOrigins:     []string{},
 			MaxConcurrentCalls: 4,
+			MaxQueuedCalls:     DefaultServeQueuedCalls,
 		},
 	}
 }

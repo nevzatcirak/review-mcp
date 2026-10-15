@@ -67,6 +67,10 @@
     "truncated": false,
     "diff_trimmed": false,
     "rate_limit_waits": 0,
-    "rate_limit_wait_ms": 0
+    "rate_limit_wait_ms": 0,
+    "models_used": [
+      "test-model"
+    ],
+    "fallback_calls": 0
   }
 }

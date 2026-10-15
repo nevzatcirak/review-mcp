@@ -87,8 +87,11 @@ func ResultSchema() map[string]any {
 			"already_discussed":  integer("comment threads of the existing pull request discussion that were shown to the model (X-13); absent when 0"),
 			"rate_limit_waits":   integer("model requests that waited for the LLM endpoint's rate limit (llm.requests_per_minute, llm.max_concurrent_requests or an HTTP 429 cool-down)"),
 			"rate_limit_wait_ms": integer("total time those requests waited, in milliseconds"),
+			"models_used":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "the distinct models that served model calls, in order of first use (the primary and llm.fallback models)"},
+			"fallback_calls":     integer("model calls a fallback model (llm.fallback) served because the model before it could not"),
 		}, "model", "context_window", "prompt_tokens", "diff_tokens", "request_tokens", "fast_path", "llm_calls",
-			"repair_tactic", "reasked", "truncated", "diff_trimmed", "reviewed_at", "rate_limit_waits", "rate_limit_wait_ms"),
+			"repair_tactic", "reasked", "truncated", "diff_trimmed", "reviewed_at", "rate_limit_waits", "rate_limit_wait_ms",
+			"models_used", "fallback_calls"),
 		"ci": CISchema(),
 		"focus": str("the focus of a focused run (X-33): security, architecture, performance, ux, tests or the " +
 			"cleaned free text; absent without one"),

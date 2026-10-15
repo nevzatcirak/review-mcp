@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 )
@@ -171,5 +172,38 @@ func TestRateLimitReport(t *testing.T) {
 		if got := RateLimitNote(ms); got != want {
 			t.Errorf("RateLimitNote(%d) = %q, want %q", ms, got, want)
 		}
+	}
+}
+
+// chainReporter reports a fixed chain use.
+type chainReporter struct{ u llm.ChainUse }
+
+func (c chainReporter) Use() llm.ChainUse { return c.u }
+
+// TestFallbackReport (X-38, v2.1 spec V-6 §3.4): the models of a chain,
+// the fallback note with the first fallback and the first move's reason,
+// a size-skip note per skipped model; a client without a chain used the
+// configured model when it made calls.
+func TestFallbackReport(t *testing.T) {
+	r := Fallback(chainReporter{llm.ChainUse{Model: "second-model", ModelsUsed: []string{"primary-model", "second-model"},
+		FallbackCalls: 2, FallbackModel: "second-model", FallbackReason: llm.ReasonRateLimited,
+		SizeSkips: []llm.SizeSkip{{Model: "small-model", Calls: 1}, {Model: "tiny-model", Calls: 3}}}}, "primary-model", 3)
+	want := []string{
+		"2 model calls were served by a fallback model (`second-model`) because the primary model was unavailable (rate limited).",
+		"The fallback model `small-model` was skipped for 1 call because the prompt does not fit its context window.",
+		"The fallback model `tiny-model` was skipped for 3 calls because the prompt does not fit its context window.",
+	}
+	if r.Model != "second-model" || r.FallbackCalls != 2 || len(r.ModelsUsed) != 2 || fmt.Sprint(r.Notes) != fmt.Sprint(want) {
+		t.Errorf("report %+v", r)
+	}
+	if n := FallbackNote(1, "second-model", llm.ReasonServerError); n !=
+		"1 model call was served by a fallback model (`second-model`) because the primary model was unavailable (server error)." {
+		t.Errorf("singular note %q", n)
+	}
+	if r := Fallback(struct{}{}, "primary-model", 2); r.Model != "" || len(r.ModelsUsed) != 1 || r.ModelsUsed[0] != "primary-model" || r.Notes != nil {
+		t.Errorf("no chain: %+v", r)
+	}
+	if r := Fallback(struct{}{}, "primary-model", 0); r.ModelsUsed == nil || len(r.ModelsUsed) != 0 {
+		t.Errorf("no calls: %+v", r)
 	}
 }

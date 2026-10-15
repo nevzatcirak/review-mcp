@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -201,7 +202,7 @@ func TestRepoContextOffIsUntouched(t *testing.T) {
 		t.Errorf("coverage.repo_context = %+v", got)
 	}
 	off := offBaseline(t, h2)
-	if pl2.Prompts != off.Prompts || pl2.Result.Metadata != off.Result.Metadata {
+	if pl2.Prompts != off.Prompts || !reflect.DeepEqual(pl2.Result.Metadata, off.Result.Metadata) {
 		t.Error("a review with repository context but no symbol differs from one without it")
 	}
 }
@@ -229,7 +230,7 @@ func TestRepoContextFailureIsANote(t *testing.T) {
 				t.Error("the prompt differs from the one without repository context")
 			}
 			// Nothing is reserved when the head is not ready.
-			if pl := prepareOK(t, h); pl.Budget != off.Budget || pl.Result.Metadata != off.Result.Metadata {
+			if pl := prepareOK(t, h); pl.Budget != off.Budget || !reflect.DeepEqual(pl.Result.Metadata, off.Result.Metadata) {
 				t.Errorf("a failed fetch changed the budget or the metadata")
 			}
 			if res.Review == nil {

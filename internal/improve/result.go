@@ -292,4 +292,9 @@ type Metadata struct {
 	// milliseconds; both always set.
 	RateLimitWaits  int   `json:"rate_limit_waits"`
 	RateLimitWaitMS int64 `json:"rate_limit_wait_ms"`
+	// ModelsUsed are the distinct models that served model calls, in order
+	// of first use, and FallbackCalls the calls a fallback model served
+	// (X-38); both always set. Model is the model that served the last call.
+	ModelsUsed    []string `json:"models_used"`
+	FallbackCalls int      `json:"fallback_calls"`
 }

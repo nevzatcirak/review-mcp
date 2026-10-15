@@ -184,6 +184,13 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 		if note := llmrun.RateLimitNote(res.Metadata.RateLimitWaitMS); note != "" {
 			res.Notes = append(res.Notes, note)
 		}
+		// The models that served the run (X-38, v2.1 spec V-6 §3.4).
+		fb := llmrun.Fallback(deps.LLM, res.Metadata.Model, res.Metadata.LLMCalls)
+		if fb.Model != "" {
+			res.Metadata.Model = fb.Model
+		}
+		res.Metadata.ModelsUsed, res.Metadata.FallbackCalls = fb.ModelsUsed, fb.FallbackCalls
+		res.Notes = append(res.Notes, fb.Notes...)
 	}
 	return res, err
 }

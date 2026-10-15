@@ -5,12 +5,13 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.0-rc.3]
 
-Planned as `2.1.0-rc.3` (the npm dist-tag `next`; `latest` stays on 2.0.0).
+Third v2.1 release candidate (the npm dist-tag `next`; `latest` stays on 2.0.0).
 Client-side rate limiting and a fallback model chain (V-6, X-37, X-38), plus
 housekeeping from the GitLab acceptance. A setup that sets none of the new keys
-behaves as before. Guides: [Rate limits](docs/setup.md#rate-limits) and
+gets no client limit and no fallback; only the handling of HTTP 429 changes
+(a shared cool-down, up to `llm.max_rate_retries` retries). Guides: [Rate limits](docs/setup.md#rate-limits) and
 [Fallback models](docs/setup.md#fallback-models).
 
 ### Added
@@ -1286,6 +1287,7 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[2.1.0-rc.3]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.1.0-rc.3
 [2.1.0-rc.2]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.1.0-rc.2
 [2.1.0-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.1.0-rc.1
 [2.0.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.0.0

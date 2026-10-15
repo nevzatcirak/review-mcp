@@ -57,7 +57,11 @@ type Error struct {
 	// (reasonWaitTooLong), and wait the needed wait it refused; neither is
 	// part of the sentence.
 	reason string
-	wait   time.Duration
+	// waitReason is what needed the refused wait (waitCoolDown, the
+	// endpoint's; waitWindow, llm.requests_per_minute's); it chooses the
+	// sentence of a reasonWaitTooLong failure and is not shown otherwise.
+	waitReason string
+	wait       time.Duration
 	// maxWait is llm.max_rate_wait_seconds, named in the sentence of a
 	// reasonWaitTooLong failure.
 	maxWait time.Duration
@@ -102,8 +106,12 @@ func (e *Error) Error() string {
 		// read as the key's value (the configured longest wait), not the
 		// wait that was needed; the needed wait is an endpoint answer and
 		// stays in the debug log. Recommendation: keep.
-		s += ". The endpoint asked for a wait longer than llm.max_rate_wait_seconds (" +
-			strconv.Itoa(int(e.maxWait/time.Second)) + " s)."
+		limit := "llm.max_rate_wait_seconds (" + strconv.Itoa(int(e.maxWait/time.Second)) + " s)."
+		if e.waitReason == waitWindow {
+			s += ". Staying within llm.requests_per_minute would need a wait longer than " + limit
+		} else {
+			s += ". The endpoint asked for a wait longer than " + limit
+		}
 	}
 	return s
 }

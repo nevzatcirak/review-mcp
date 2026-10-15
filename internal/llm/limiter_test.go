@@ -595,3 +595,39 @@ func TestRateLimitWaitsReported(t *testing.T) {
 		t.Errorf("the sentence carries a URL or header value: %q", err)
 	}
 }
+
+// TestWaitTooLongSentence [canary target]: the sentence of a refused wait
+// names what needed it: the endpoint's cool-down, or the client's own
+// llm.requests_per_minute window. Both name the configured longest wait.
+func TestWaitTooLongSentence(t *testing.T) {
+	// The endpoint: a 429 asking for 90 s.
+	clk := newFakeClock()
+	rf := newRateFake(t, clk, func(_ int, h http.Header) int {
+		h.Set("Retry-After", "90")
+		return 429
+	})
+	c := rateClient(t, rf, clk, nil, 4, 60)
+	_, err := c.Complete(t.Context(), "s", "u")
+	if want := "the LLM endpoint rate-limited the request. The endpoint asked for a wait longer than " +
+		"llm.max_rate_wait_seconds (60 s)."; err == nil || err.Error() != want {
+		t.Errorf("cool-down: err = %v, want %q", err, want)
+	}
+
+	// The window: requests_per_minute 1, the second request would wait 60 s.
+	clk = newFakeClock()
+	rf = newRateFake(t, clk, func(int, http.Header) int { return 200 })
+	cfg := baseCfg(rf.srv.URL)
+	cfg.RequestsPerMinute, cfg.MaxRateWaitSeconds = 1, 10
+	c, err = New(cfg, config.NewSecret(testKey), nil, WithSleeper(clk.sleep), WithClock(clk.now), withRegistry(&registry{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Complete(t.Context(), "s", "u"); err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Complete(t.Context(), "s", "u")
+	if want := "the LLM endpoint rate-limited the request. Staying within llm.requests_per_minute would need a wait " +
+		"longer than llm.max_rate_wait_seconds (10 s)."; err == nil || err.Error() != want {
+		t.Errorf("window: err = %v, want %q", err, want)
+	}
+}

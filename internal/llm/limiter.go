@@ -130,8 +130,12 @@ type waitStat struct {
 }
 
 // errWaitTooLong is acquire's failure when the needed wait exceeds the
-// limit; need is that wait.
-type errWaitTooLong struct{ need time.Duration }
+// limit; need is that wait and why what needed it (waitCoolDown or
+// waitWindow).
+type errWaitTooLong struct {
+	need time.Duration
+	why  string
+}
 
 func (e *errWaitTooLong) Error() string { return "llm: rate-limit wait too long" }
 
@@ -162,7 +166,7 @@ func (l *limiter) acquire(ctx context.Context, now func() time.Time, sleep func(
 			l.leave(w)
 			l.mu.Unlock()
 			log.Debug("llm rate limit wait too long", "endpoint", l.endpoint, "reason", reason, "wait_ms", d.Milliseconds())
-			return st, &errWaitTooLong{need: d}
+			return st, &errWaitTooLong{need: d, why: reason}
 		}
 		if d == 0 && k == 0 && (l.limits.concurrency == 0 || l.inFlight < l.limits.concurrency) {
 			l.starts = append(l.starts, t)

@@ -81,8 +81,13 @@ func (o jobOutcome) result() (*mcp.CallToolResult, any, error) {
 type llmRun func(ctx context.Context, progress func(stage string)) (jobOutcome, error)
 
 // RunningResult is the structured content of a pr_review, pr_ask,
-// pr_describe, pr_improve or job_result call whose run is still going
-// (X-16).
+// pr_describe, pr_improve or job_result call whose run is still going or
+// still waits for a free slot (X-16, WP-8e).
+//
+// DESIGN-QUESTION (WP-8e DQ-1): the queue position of a queued job is in the
+// answer's sentence only (spec §6.2 item 2); RunningResult gets no new
+// field, so the schema changes by the one status value. Recommendation:
+// keep; add a queue_position field if a client needs to read it.
 type RunningResult struct {
 	Status         string `json:"status"`
 	JobID          string `json:"job_id"`
@@ -91,8 +96,9 @@ type RunningResult struct {
 }
 
 const (
-	// statusRunning is RunningResult.Status.
+	// statusRunning and statusQueued are the values of RunningResult.Status.
 	statusRunning = "running"
+	statusQueued  = "queued"
 	// stageStarting is the stage reported before the run reported one.
 	stageStarting = "starting"
 )
@@ -103,12 +109,12 @@ const (
 func runningSchema() map[string]any {
 	return map[string]any{
 		"type":        "object",
-		"description": "the run is still going; call job_result with job_id",
+		"description": "the run is still going or waits for a free slot; call job_result with job_id",
 		"properties": map[string]any{
-			"status":          map[string]any{"type": "string", "enum": []any{statusRunning}, "description": "always running"},
+			"status":          map[string]any{"type": "string", "enum": []any{statusRunning, statusQueued}, "description": "running, or queued while the run waits for a free slot"},
 			"job_id":          map[string]any{"type": "string", "description": "the id to pass to job_result"},
 			"stage":           map[string]any{"type": "string", "description": "the current progress stage"},
-			"elapsed_seconds": map[string]any{"type": "integer", "description": "seconds since the run started"},
+			"elapsed_seconds": map[string]any{"type": "integer", "description": "seconds since the run started, or since it was queued while it waits"},
 		},
 		"required":             []any{"status", "job_id", "stage", "elapsed_seconds"},
 		"additionalProperties": false,
@@ -183,7 +189,7 @@ func answerCall(ctx context.Context, deps Deps, req *mcp.CallToolRequest, tool s
 		return run(jctx, progress)
 	})
 	if err != nil {
-		// Too many jobs, or shutting down: a fixed sentence, nothing ran.
+		// The queue is full, or shutting down: a fixed sentence, nothing ran.
 		sc.release()
 		return nil, nil, toolError(err.Error())
 	}
@@ -193,7 +199,7 @@ func answerCall(ctx context.Context, deps Deps, req *mcp.CallToolRequest, tool s
 
 // answer waits up to wait seconds for job id and returns its result: the
 // original tool's result when done, its classified error when failed, and
-// the running status otherwise. While it waits, the job's stages become
+// the running or queued status otherwise. While it waits, the job's stages become
 // progress notifications of this request when it carries a progress token.
 func (j *Jobs) answer(ctx context.Context, req *mcp.CallToolRequest, log *slog.Logger, tool, id string, wait int) (*mcp.CallToolResult, any, error) {
 	snap, err := j.store.WaitProgress(ctx, id, time.Duration(wait)*time.Second, progressFunc(ctx, req, log, tool))
@@ -208,12 +214,14 @@ func (j *Jobs) answer(ctx context.Context, req *mcp.CallToolRequest, log *slog.L
 	case jobs.StateFailed:
 		return nil, nil, toolError(snap.Message)
 	}
-	log.Debug(tool+": still running", "job_id", id, "stage", snap.Stage, "elapsed_seconds", snap.ElapsedSeconds())
+	log.Debug(tool+": still going", "job_id", id, "state", string(snap.State), "stage", snap.Stage, "elapsed_seconds", snap.ElapsedSeconds())
 	return runningResult(snap)
 }
 
-// runningResult is the answer for a job still running: a fixed sentence
-// that names the stage, the elapsed time and the job id, and RunningResult.
+// runningResult is the answer for a job still running or queued: a fixed
+// sentence (that of a running job names the stage, the elapsed time and the
+// job id; that of a queued job the queue position and the job id), and
+// RunningResult.
 func runningResult(snap jobs.Snapshot[jobOutcome]) (*mcp.CallToolResult, any, error) {
 	noun := "review"
 	switch snap.Tag {
@@ -229,6 +237,12 @@ func runningResult(snap jobs.Snapshot[jobOutcome]) (*mcp.CallToolResult, any, er
 		stage = stageStarting
 	}
 	secs := snap.ElapsedSeconds()
+	if snap.State == jobs.StateQueued {
+		text := fmt.Sprintf("The %s is waiting for a free slot (position %d in the queue). Call `%s` with job_id `%s` to get the result.",
+			noun, snap.Position, toolJobResult, snap.ID)
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}},
+			RunningResult{Status: statusQueued, JobID: snap.ID, Stage: stage, ElapsedSeconds: secs}, nil
+	}
 	text := fmt.Sprintf("The %s is still running (stage: %s, %d s so far). Call `%s` with job_id `%s` to get the result.",
 		noun, stage, secs, toolJobResult, snap.ID)
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}},

@@ -336,3 +336,226 @@ func TestRegistryUpdatesLimits(t *testing.T) {
 		t.Errorf("limits %+v, want %+v", l.limits, want)
 	}
 }
+
+// rateFake answers with the given status and headers per request number
+// (1-based) and records the fake clock's time of each request.
+type rateFake struct {
+	*fake
+	mu    sync.Mutex
+	times []time.Time
+}
+
+func newRateFake(t *testing.T, clk *fakeClock, answer func(n int, h http.Header) int) *rateFake {
+	rf := &rateFake{}
+	rf.fake = newFake(t, func(n int, w http.ResponseWriter, _ *http.Request) {
+		rf.mu.Lock()
+		rf.times = append(rf.times, clk.now())
+		rf.mu.Unlock()
+		st := answer(n, w.Header())
+		if st == 200 {
+			writeJSON(w, 200, okJSON("ok"))
+			return
+		}
+		writeJSON(w, st, `{}`)
+	})
+	return rf
+}
+
+// rateClient is a client of rf's server with the given rate retries and
+// longest wait, on clk, with its own registry r (nil: a new one).
+func rateClient(t *testing.T, rf *rateFake, clk *fakeClock, r *registry, rateRetries, maxWait int) *Client {
+	t.Helper()
+	if r == nil {
+		r = &registry{}
+	}
+	cfg := baseCfg(rf.srv.URL)
+	cfg.MaxRateRetries, cfg.MaxRateWaitSeconds = rateRetries, maxWait
+	c, err := New(cfg, config.NewSecret(testKey), nil, WithSleeper(clk.sleep), WithClock(clk.now), withRegistry(r))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+// TestRateLimitCoolDown: a 429's delay comes from Retry-After (seconds or an
+// HTTP date), else from x-ratelimit-reset-requests, else 10 s; the call is
+// retried after it, without the 30-second cap of other classes.
+func TestRateLimitCoolDown(t *testing.T) {
+	base := newFakeClock().now()
+	for _, tc := range []struct {
+		name   string
+		header map[string]string
+		want   time.Duration
+	}{
+		{"retry-after seconds", map[string]string{"Retry-After": "45"}, 45 * time.Second},
+		{"retry-after date", map[string]string{"Retry-After": base.Add(50 * time.Second).Format(http.TimeFormat)}, 50 * time.Second},
+		{"retry-after wins", map[string]string{"Retry-After": "7", "X-Ratelimit-Reset-Requests": "20s"}, 7 * time.Second},
+		{"reset seconds", map[string]string{"X-Ratelimit-Reset-Requests": "6s"}, 6 * time.Second},
+		{"reset minutes", map[string]string{"X-Ratelimit-Reset-Requests": "1m30s"}, 90 * time.Second},
+		{"reset milliseconds", map[string]string{"X-Ratelimit-Reset-Requests": "250ms"}, 250 * time.Millisecond},
+		{"unparsable reset", map[string]string{"X-Ratelimit-Reset-Requests": "soon"}, 10 * time.Second},
+		{"no header", nil, 10 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clk := newFakeClock()
+			rf := newRateFake(t, clk, func(n int, h http.Header) int {
+				if n == 1 {
+					for k, v := range tc.header {
+						h.Set(k, v)
+					}
+					return 429
+				}
+				return 200
+			})
+			c := rateClient(t, rf, clk, nil, 4, 600)
+			if _, err := c.Complete(t.Context(), "s", "u"); err != nil {
+				t.Fatal(err)
+			}
+			if got := clk.recorded(); !slices.Equal(got, []time.Duration{tc.want}) {
+				t.Errorf("sleeps %v, want %v", got, tc.want)
+			}
+			if rf.calls() != 2 {
+				t.Errorf("%d requests, want 2", rf.calls())
+			}
+		})
+	}
+}
+
+// TestRateLimitDoubling: without headers the cool-down doubles with every
+// consecutive 429 of the endpoint and starts again after a success.
+func TestRateLimitDoubling(t *testing.T) {
+	clk := newFakeClock()
+	rf := newRateFake(t, clk, func(n int, _ http.Header) int {
+		if n <= 3 || n == 5 {
+			return 429
+		}
+		return 200
+	})
+	c := rateClient(t, rf, clk, nil, 4, 600)
+	for range 2 {
+		if _, err := c.Complete(t.Context(), "s", "u"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := []time.Duration{10 * time.Second, 20 * time.Second, 40 * time.Second, 10 * time.Second}
+	if got := clk.recorded(); !slices.Equal(got, want) {
+		t.Errorf("sleeps %v, want %v", got, want)
+	}
+}
+
+// TestRateLimitSecondCaller [canary target]: a 429 cools the endpoint down
+// for every caller: a second caller of the same endpoint waits for the
+// cool-down before it sends anything, and both calls succeed after it.
+func TestRateLimitSecondCaller(t *testing.T) {
+	clk := newFakeClock()
+	start := clk.now()
+	rf := newRateFake(t, clk, func(n int, h http.Header) int {
+		if n == 1 {
+			h.Set("Retry-After", "30")
+			return 429
+		}
+		return 200
+	})
+	r := &registry{}
+	first := rateClient(t, rf, clk, r, 4, 60)
+	second := rateClient(t, rf, clk, r, 4, 60)
+	// The first caller's request gets the 429; its retry is still to come.
+	first.cfg.MaxRateRetries = 0
+	if _, err := first.Complete(t.Context(), "s", "u"); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("first caller: %v", err)
+	}
+	if _, err := second.Complete(t.Context(), "s", "u"); err != nil {
+		t.Fatal(err)
+	}
+	rf.mu.Lock()
+	times := slices.Clone(rf.times)
+	rf.mu.Unlock()
+	if len(times) != 2 || times[1].Sub(start) < 30*time.Second {
+		t.Errorf("request times %v after %v: the second caller did not wait for the cool-down", times, start)
+	}
+	if got := clk.recorded(); !slices.Equal(got, []time.Duration{30 * time.Second}) {
+		t.Errorf("sleeps %v, want the second caller's 30s cool-down wait", got)
+	}
+}
+
+// TestRateLimitRetries: a 429 is retried up to max_rate_retries times,
+// apart from max_retries; then the rate-limited error is returned.
+func TestRateLimitRetries(t *testing.T) {
+	clk := newFakeClock()
+	rf := newRateFake(t, clk, func(_ int, h http.Header) int {
+		h.Set("Retry-After", "1")
+		return 429
+	})
+	c := rateClient(t, rf, clk, nil, 2, 60)
+	c.cfg.MaxRetries = 0
+	_, err := c.Complete(t.Context(), "s", "u")
+	var le *Error
+	if !errors.As(err, &le) || le.Class != ClassRateLimited || le.Status != 429 {
+		t.Fatalf("err = %v", err)
+	}
+	if rf.calls() != 3 {
+		t.Errorf("%d requests, want 3 (two rate retries)", rf.calls())
+	}
+	if got := clk.recorded(); !slices.Equal(got, []time.Duration{time.Second, time.Second}) {
+		t.Errorf("sleeps %v", got)
+	}
+}
+
+// TestRateLimitWaitTooLong: a 429 whose delay exceeds max_rate_wait_seconds
+// fails at once: no sleep, no retry; a delay above 600 s is capped there.
+func TestRateLimitWaitTooLong(t *testing.T) {
+	for _, tc := range []struct {
+		header string
+		need   time.Duration
+	}{{"120", 120 * time.Second}, {"3600", 600 * time.Second}} {
+		clk := newFakeClock()
+		rf := newRateFake(t, clk, func(_ int, h http.Header) int {
+			h.Set("Retry-After", tc.header)
+			return 429
+		})
+		c := rateClient(t, rf, clk, nil, 4, 60)
+		_, err := c.Complete(t.Context(), "s", "u")
+		var le *Error
+		if !errors.As(err, &le) || le.Class != ClassRateLimited || le.reason != reasonWaitTooLong || le.wait != tc.need {
+			t.Fatalf("Retry-After %s: err = %v (%+v)", tc.header, err, le)
+		}
+		if got := clk.recorded(); len(got) != 0 || rf.calls() != 1 {
+			t.Errorf("Retry-After %s: sleeps %v, %d requests", tc.header, got, rf.calls())
+		}
+	}
+}
+
+// TestRateLimitHeadersOnSuccess: a successful answer with
+// x-ratelimit-remaining-requests 0 and a reset cools the endpoint down; the
+// remaining count alone does not.
+func TestRateLimitHeadersOnSuccess(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		header map[string]string
+		want   []time.Duration
+	}{
+		{"exhausted", map[string]string{"X-Ratelimit-Remaining-Requests": "0", "X-Ratelimit-Reset-Requests": "12s"}, []time.Duration{12 * time.Second}},
+		{"requests left", map[string]string{"X-Ratelimit-Remaining-Requests": "3", "X-Ratelimit-Reset-Requests": "12s"}, nil},
+		{"no reset", map[string]string{"X-Ratelimit-Remaining-Requests": "0"}, nil},
+		{"other family", map[string]string{"X-Ratelimit-Remaining-Tokens": "0", "X-Ratelimit-Reset-Tokens": "12s"}, nil},
+	} {
+		clk := newFakeClock()
+		rf := newRateFake(t, clk, func(n int, h http.Header) int {
+			if n == 1 {
+				for k, v := range tc.header {
+					h.Set(k, v)
+				}
+			}
+			return 200
+		})
+		c := rateClient(t, rf, clk, nil, 4, 60)
+		for range 2 {
+			if _, err := c.Complete(t.Context(), "s", "u"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := clk.recorded(); !slices.Equal(got, tc.want) {
+			t.Errorf("%s: sleeps %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

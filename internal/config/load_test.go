@@ -22,6 +22,7 @@ func TestDefaultsAppliedWhenNothingSet(t *testing.T) {
 		{"llm.requests_per_minute", cfg.LLM.RequestsPerMinute, 0},
 		{"llm.max_concurrent_requests", cfg.LLM.MaxConcurrentRequests, 0},
 		{"llm.max_rate_wait_seconds", cfg.LLM.MaxRateWaitSeconds, 60},
+		{"llm.max_rate_retries", cfg.LLM.MaxRateRetries, 4},
 		{"gitea.insecure_skip_verify", cfg.Gitea.InsecureSkipVerify, false},
 		{"bitbucket_server.insecure_skip_verify", cfg.BitbucketServer.InsecureSkipVerify, false},
 		{"output.language", cfg.Output.Language, "en-US"},

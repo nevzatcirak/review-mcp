@@ -28,7 +28,9 @@ import (
 const (
 	// MaxResponseBytes caps the response body.
 	MaxResponseBytes int64 = 8 << 20
-	// MaxRetryAfter caps a server-supplied Retry-After delay.
+	// MaxRetryAfter caps a server-supplied Retry-After delay of a retryable
+	// class other than HTTP 429, whose delay is the endpoint's cool-down
+	// (X-37).
 	MaxRetryAfter = 30 * time.Second
 
 	maxRedirects = 10
@@ -357,10 +359,15 @@ func parseResponse(data []byte) (*Response, *Error) {
 // --- Complete ------------------------------------------------------------
 
 // Complete sends one system and one user message and returns the first
-// choice. Retryable classes are retried up to cfg.MaxRetries times. A
-// canceled or expired ctx stops everything and is returned as ctx.Err().
+// choice. An HTTP 429 cools the endpoint down for every caller and is
+// retried after the cool-down, up to cfg.MaxRateRetries times, while each
+// wait is at most cfg.MaxRateWaitSeconds (X-37); the other retryable
+// classes are retried up to cfg.MaxRetries times. A canceled or expired ctx
+// stops everything and is returned as ctx.Err().
 func (c *Client) Complete(ctx context.Context, system, user string) (*Response, error) {
 	maxRetries := max(c.cfg.MaxRetries, 0)
+	maxRateRetries := max(c.cfg.MaxRateRetries, 0)
+	retries, rateRetries := 0, 0
 	for attempt := 0; ; attempt++ {
 		resp, retryAfter, le := c.attempt(ctx, attempt, system, user)
 		if le == nil {
@@ -369,15 +376,26 @@ func (c *Client) Complete(ctx context.Context, system, user string) (*Response, 
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		if !le.Class.Retryable() || attempt >= maxRetries {
-			return nil, le
-		}
 		if le.reason == reasonWaitTooLong {
-			// The limiter already found the needed wait too long: no retry
-			// may wait for it either (§2.2 item 4).
+			// The limiter found the needed wait too long: no retry may
+			// wait for it either (§2.2 item 4).
 			return nil, le
 		}
-		delay := backoff[min(attempt, len(backoff)-1)]
+		if le.Class == ClassRateLimited {
+			// The 429 set the endpoint's cool-down; the next attempt's
+			// limiter wait is the retry delay (§2.2 item 7).
+			if rateRetries >= maxRateRetries {
+				return nil, le
+			}
+			rateRetries++
+			c.logger.Debug("llm retry", "class", string(le.Class), "attempt", attempt+1, "rate_retry", rateRetries)
+			continue
+		}
+		if !le.Class.Retryable() || retries >= maxRetries {
+			return nil, le
+		}
+		delay := backoff[min(retries, len(backoff)-1)]
+		retries++
 		if retryAfter > 0 {
 			delay = min(retryAfter, MaxRetryAfter)
 		}
@@ -441,9 +459,20 @@ func (c *Client) attempt(ctx context.Context, attempt int, system, user string) 
 		}
 		retryAfter := c.retryAfter(resp.Header.Get("Retry-After"))
 		le := c.statusError(status, errBody)
+		if status == http.StatusTooManyRequests {
+			// Retry-After is the endpoint's cool-down, not this request's
+			// delay: every caller waits for it (§2.2 item 5).
+			d := c.limiter.rateLimited(c.now(), resp.Header)
+			c.logger.Debug("llm rate limit cool-down", "endpoint", c.limiter.endpoint, "cool_down_ms", d.Milliseconds())
+			retryAfter = 0
+		}
 		logFail(status, le.Class)
 		return nil, retryAfter, le
 	}
+
+	// A successful status, whatever its body: the 429 doubling starts
+	// again, and an exhausted request budget cools the endpoint down.
+	c.limiter.succeeded(c.now(), resp.Header)
 
 	if resp.ContentLength > c.maxBytes {
 		le := &Error{Class: ClassProtocol, Status: status, Detail: "response exceeded the size limit"}

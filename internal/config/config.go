@@ -57,6 +57,9 @@ type LLM struct {
 	// MaxRateWaitSeconds is the longest one wait for the rate limit may be
 	// (X-37); a longer needed wait is not waited for.
 	MaxRateWaitSeconds int `toml:"max_rate_wait_seconds" json:"max_rate_wait_seconds"`
+	// MaxRateRetries is the number of retries after HTTP 429 for one model
+	// call, counted apart from MaxRetries (X-37).
+	MaxRateRetries int `toml:"max_rate_retries" json:"max_rate_retries"`
 }
 
 // Gitea configures the Gitea provider; it is enabled iff BaseURL is set.
@@ -288,6 +291,7 @@ func Defaults() *Config {
 			TokenEstimateFactor: 0.3,
 			WaitSeconds:         45,
 			MaxRateWaitSeconds:  60,
+			MaxRateRetries:      4,
 		},
 		Output: Output{Language: "en-US"},
 		Diff: Diff{

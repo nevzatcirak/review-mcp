@@ -48,6 +48,7 @@ var table = []entry{
 	{"llm.requests_per_minute", "REVIEW_MCP_LLM_REQUESTS_PER_MINUTE", func(c *Config) any { return &c.LLM.RequestsPerMinute }},
 	{"llm.max_concurrent_requests", "REVIEW_MCP_LLM_MAX_CONCURRENT_REQUESTS", func(c *Config) any { return &c.LLM.MaxConcurrentRequests }},
 	{"llm.max_rate_wait_seconds", "REVIEW_MCP_LLM_MAX_RATE_WAIT_SECONDS", func(c *Config) any { return &c.LLM.MaxRateWaitSeconds }},
+	{"llm.max_rate_retries", "REVIEW_MCP_LLM_MAX_RATE_RETRIES", func(c *Config) any { return &c.LLM.MaxRateRetries }},
 
 	{"gitea.base_url", "REVIEW_MCP_GITEA_BASE_URL", func(c *Config) any { return &c.Gitea.BaseURL }},
 	{"gitea.web_url", "REVIEW_MCP_GITEA_WEB_URL", func(c *Config) any { return &c.Gitea.WebURL }},

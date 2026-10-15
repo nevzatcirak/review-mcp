@@ -39,6 +39,7 @@ const (
 	MaxRequestsPerMinute  = 100000
 	MaxConcurrentRequests = 256
 	MaxRateWaitSeconds    = 600
+	MaxRateRetries        = 20
 )
 
 // validate checks the layered configuration, normalizes URLs in place and
@@ -321,6 +322,9 @@ func (l *loader) validateLLM() {
 	}
 	if !l.bad["llm.max_rate_wait_seconds"] && (c.MaxRateWaitSeconds < 0 || c.MaxRateWaitSeconds > MaxRateWaitSeconds) {
 		l.problem("llm.max_rate_wait_seconds: %d is out of range (0-%d)", c.MaxRateWaitSeconds, MaxRateWaitSeconds)
+	}
+	if !l.bad["llm.max_rate_retries"] && (c.MaxRateRetries < 0 || c.MaxRateRetries > MaxRateRetries) {
+		l.problem("llm.max_rate_retries: %d is out of range (0-%d)", c.MaxRateRetries, MaxRateRetries)
 	}
 	if f := c.TokenEstimateFactor; !l.bad["llm.token_estimate_factor"] && !(f >= 0 && f <= 2) {
 		l.problem("llm.token_estimate_factor: %v is out of range (0-2)", f)

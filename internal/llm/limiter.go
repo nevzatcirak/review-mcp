@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"slices"
 	"strconv"
@@ -30,6 +31,26 @@ const rateWindow = time.Minute
 const (
 	waitWindow      = "window"
 	waitConcurrency = "concurrency"
+	waitCoolDown    = "cool_down"
+)
+
+// Cool-down after HTTP 429 (§2.2 item 5).
+const (
+	// coolDownFirst is the cool-down of a 429 without a usable header; it
+	// doubles with every consecutive 429 of the endpoint.
+	coolDownFirst = 10 * time.Second
+	// maxCoolDown caps every cool-down. It is above the largest
+	// llm.max_rate_wait_seconds, so a long reset is reported, not waited
+	// for.
+	maxCoolDown = 600 * time.Second
+)
+
+// Rate-limit headers read by the limiter. Other header families are
+// ignored (§2.2 item 6).
+const (
+	headerRetryAfter        = "Retry-After"
+	headerResetRequests     = "X-Ratelimit-Reset-Requests"
+	headerRemainingRequests = "X-Ratelimit-Remaining-Requests"
 )
 
 // reasonWaitTooLong is the internal reason of a rate-limited failure whose
@@ -71,6 +92,10 @@ type limiter struct {
 	// inFlight is the number of requests started and not yet released.
 	inFlight int
 	queue    []*waiter
+	// coolUntil is the end of the endpoint's cool-down: no request starts
+	// before it. consecutive429 counts the 429s since the last success.
+	coolUntil      time.Time
+	consecutive429 int
 }
 
 // waiter is one request waiting for its turn. wake, set while it waits,
@@ -184,31 +209,114 @@ func (l *limiter) release() {
 }
 
 // waitFor is how long the waiter at queue position k must wait from t for
-// the window, and why; 0 when the window leaves room now. Every waiter
-// ahead of it is assumed to start as early as the window lets it, so a
-// waiter's wait accounts for the queue ahead (FIFO). Call with mu held,
-// after prune.
+// the cool-down and the window, and why; 0 when it may start now. Every
+// waiter ahead of it is assumed to start as early as the cool-down and the
+// window let it, so a waiter's wait accounts for the queue ahead (FIFO).
+// Call with mu held, after prune.
 func (l *limiter) waitFor(k int, t time.Time) (time.Duration, string) {
-	if l.limits.rpm == 0 {
-		return 0, ""
-	}
-	n := len(l.starts)
-	planned := make([]time.Time, 0, n+k+1)
-	planned = append(planned, l.starts...)
+	reason := ""
 	at := t
-	for range k + 1 {
-		at = t
-		if len(planned) >= l.limits.rpm {
-			if free := planned[len(planned)-l.limits.rpm].Add(rateWindow); free.After(at) {
-				at = free
+	if l.coolUntil.After(t) {
+		at, reason = l.coolUntil, waitCoolDown
+	}
+	if l.limits.rpm > 0 {
+		earliest := at
+		planned := make([]time.Time, 0, len(l.starts)+k+1)
+		planned = append(planned, l.starts...)
+		for range k + 1 {
+			at = earliest
+			if len(planned) >= l.limits.rpm {
+				if free := planned[len(planned)-l.limits.rpm].Add(rateWindow); free.After(at) {
+					at, reason = free, waitWindow
+				}
 			}
+			planned = append(planned, at)
 		}
-		planned = append(planned, at)
 	}
 	if d := at.Sub(t); d > 0 {
-		return d, waitWindow
+		return d, reason
 	}
 	return 0, ""
+}
+
+// rateLimited records an HTTP 429 of the endpoint at t (§2.2 item 5): the
+// endpoint cools down for D, from Retry-After (seconds or an HTTP date),
+// else from x-ratelimit-reset-requests, else 10 s doubled for every
+// consecutive 429 since the last success; D is capped at maxCoolDown.
+// Every request of the endpoint waits for the cool-down. It returns D.
+//
+// DESIGN-QUESTION (WP-8b DQ-2): two requests in flight may both get a 429,
+// the second with a shorter delay. The cool-down is never shortened: it
+// ends at the later of the current end and t + D, so a reset the gateway
+// announced is not cut short by a later, shorter answer. Recommendation:
+// keep.
+func (l *limiter) rateLimited(t time.Time, h http.Header) time.Duration {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.consecutive429++
+	d, ok := retryAfterDelay(h.Get(headerRetryAfter), t)
+	if !ok {
+		d, ok = resetDelay(h.Get(headerResetRequests))
+	}
+	if !ok {
+		d = coolDownFirst << min(l.consecutive429-1, 10)
+	}
+	d = min(d, maxCoolDown)
+	if end := t.Add(d); end.After(l.coolUntil) {
+		l.coolUntil = end
+	}
+	l.broadcast()
+	return d
+}
+
+// succeeded records a successful response at t (§2.2 item 6): the doubling
+// starts again, and a response that says no request is left
+// (x-ratelimit-remaining-requests: 0) with a parsable
+// x-ratelimit-reset-requests cools the endpoint down until that reset.
+func (l *limiter) succeeded(t time.Time, h http.Header) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.consecutive429 = 0
+	if strings.TrimSpace(h.Get(headerRemainingRequests)) != "0" {
+		return
+	}
+	if d, ok := resetDelay(h.Get(headerResetRequests)); ok {
+		if end := t.Add(min(d, maxCoolDown)); end.After(l.coolUntil) {
+			l.coolUntil = end
+			l.broadcast()
+		}
+	}
+}
+
+// retryAfterDelay parses a Retry-After value at t: delay-seconds or an HTTP
+// date in the future. It is not capped here.
+func retryAfterDelay(h string, t time.Time) (time.Duration, bool) {
+	h = strings.TrimSpace(h)
+	if h == "" {
+		return 0, false
+	}
+	if n, err := strconv.ParseInt(h, 10, 64); err == nil {
+		if n <= 0 {
+			return 0, false
+		}
+		return time.Duration(min(n, int64(maxCoolDown/time.Second))) * time.Second, true
+	}
+	if at, err := http.ParseTime(h); err == nil {
+		if d := at.Sub(t); d > 0 {
+			return d, true
+		}
+	}
+	return 0, false
+}
+
+// resetDelay parses an OpenAI-style x-ratelimit-reset-requests value, a
+// duration such as "6s", "1m30s" or "250ms".
+func resetDelay(h string) (time.Duration, bool) {
+	d, err := time.ParseDuration(strings.TrimSpace(h))
+	if err != nil || d <= 0 {
+		return 0, false
+	}
+	return d, true
 }
 
 // prune drops the starts that left the window at t. Call with mu held.

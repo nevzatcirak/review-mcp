@@ -32,6 +32,8 @@ func TestValidationRules(t *testing.T) {
 		{"concurrency high", map[string]string{"REVIEW_MCP_LLM_MAX_CONCURRENT_REQUESTS": "257"}, "llm.max_concurrent_requests: 257 is out of range (0-256)"},
 		{"concurrency negative", map[string]string{"REVIEW_MCP_LLM_MAX_CONCURRENT_REQUESTS": "-1"}, "llm.max_concurrent_requests: -1 is out of range (0-256)"},
 		{"rate wait high", map[string]string{"REVIEW_MCP_LLM_MAX_RATE_WAIT_SECONDS": "601"}, "llm.max_rate_wait_seconds: 601 is out of range (0-600)"},
+		{"rate retries high", map[string]string{"REVIEW_MCP_LLM_MAX_RATE_RETRIES": "21"}, "llm.max_rate_retries: 21 is out of range (0-20)"},
+		{"rate retries negative", map[string]string{"REVIEW_MCP_LLM_MAX_RATE_RETRIES": "-1"}, "llm.max_rate_retries: -1 is out of range (0-20)"},
 		{"rate wait negative", map[string]string{"REVIEW_MCP_LLM_MAX_RATE_WAIT_SECONDS": "-1"}, "llm.max_rate_wait_seconds: -1 is out of range (0-600)"},
 		{"estimate factor high", map[string]string{"REVIEW_MCP_LLM_TOKEN_ESTIMATE_FACTOR": "2.5"}, "llm.token_estimate_factor"},
 		{"locale bad", map[string]string{"REVIEW_MCP_OUTPUT_LANGUAGE": "english_US"}, "output.language"},

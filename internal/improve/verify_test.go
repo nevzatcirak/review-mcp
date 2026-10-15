@@ -281,6 +281,35 @@ func TestNormalizeSnippet(t *testing.T) {
 	}
 }
 
+// TestVerifyTabsAgainstSpaces (WP-8a): a quote that differs from the file
+// only in leading tabs versus spaces, or in trailing white space, is
+// verified; the quote itself is not rewritten; a real content difference,
+// or a line at another depth, still fails.
+func TestVerifyTabsAgainstSpaces(t *testing.T) {
+	tabFile := headFile(goFile...)
+	spaceFile := headFile("package a", "", "func h(v int) int {", "  if v > 0 {", "    return v * 2", "  }", "  return 0", "}")
+	for name, tc := range map[string]struct {
+		fp         *provider.FilePatch
+		existing   string
+		start, end int
+		want       string
+	}{
+		"tab file, space quote, range":  {tabFile, "func h(v int) int {\n    if v > 0 {\n        return v * 2\n    }", 12, 15, "ok 12-15"},
+		"tab file, space quote, search": {tabFile, "    if v > 0 {\n        return v * 2\n    }", 0, 0, "ok 13-15"},
+		"tab file, 2-space quote":       {tabFile, "  if v > 0 {\n    return v * 2\n  }", 13, 15, "ok 13-15"},
+		"space file, tab quote":         {spaceFile, "\tif v > 0 {\n\t\treturn v * 2\n\t}", 4, 6, "ok 04-06"},
+		"trailing white space":          {tabFile, "    if v > 0 {  \t\n        return v * 2 \n    }", 13, 15, "ok 13-15"},
+		"content differs":               {tabFile, "    if v > 1 {\n        return v * 2\n    }", 13, 15, UnverifiedNotFound},
+		"depth differs":                 {tabFile, "    if v > 0 {\n    return v * 2\n    }", 13, 15, UnverifiedNotFound},
+		"deeper line differs":           {tabFile, "if v > 0 {\n\t\t\treturn v * 2\n}", 13, 15, "ok 13-15"},
+	} {
+		s, e := rng(tc.start, tc.end)
+		if got := verdictString(verify(tc.fp, tc.existing, s, e)); got != tc.want {
+			t.Errorf("%s: %s, want %s", name, got, tc.want)
+		}
+	}
+}
+
 // headSampleFiles are sampleFiles with the complete head content of the two
 // reviewed files: src/app.go has the patch's new side at lines 10 to 13.
 func headSampleFiles() []provider.FilePatch {
@@ -361,5 +390,36 @@ func TestVerifiedRun(t *testing.T) {
 		if strings.Contains(n, "corrected") {
 			t.Errorf("note %q", n)
 		}
+	}
+}
+
+// TestVerifiedRunTabsAgainstSpaces (WP-8a, as seen in the GitLab
+// acceptance): the head file is indented with tabs, the model quoted it
+// with spaces; the suggestion is verified at the given range and its text
+// is not rewritten.
+func TestVerifiedRunTabsAgainstSpaces(t *testing.T) {
+	quoted := sugDelay
+	quoted.existing = "retries := 3 // " + diffMarker + "\n    delay := retries * 100\n}"
+	h := newHarness(map[int][]string{
+		0: {suggestionsAnswer(quoted)},
+		reflectKind(0): {reflectionAnswer(fb{number: 1, summary: quoted.summary, file: quoted.file, start: 11, end: 13,
+			score: 8, why: "w"})},
+	})
+	files := headSampleFiles()
+	lines := strings.Split(*files[0].HeadContent, "\n")
+	lines[11], lines[12] = "\tdelay := retries * 100", "}"
+	content := strings.Join(lines, "\n")
+	files[0].HeadContent = &content
+	h.prov.files = files
+	res := h.run(t, Args{})
+	if len(res.Suggestions) != 1 {
+		t.Fatalf("suggestions = %v", summaries(res))
+	}
+	s := res.Suggestions[0]
+	if !s.Verified || s.StartLine == nil || *s.StartLine != 11 || *s.EndLine != 13 {
+		t.Fatalf("suggestion = %+v, want verified at 11-13", s)
+	}
+	if s.ExistingCode != quoted.existing || s.ImprovedCode != quoted.improved {
+		t.Errorf("the suggestion text was rewritten: %q -> %q", s.ExistingCode, s.ImprovedCode)
 	}
 }

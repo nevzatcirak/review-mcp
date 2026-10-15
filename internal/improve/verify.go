@@ -46,7 +46,7 @@ type verdict struct {
 //
 //   - A given range (the self-review's new-file lines) that lies inside
 //     the file (1 <= start <= end <= the file's line count) and whose
-//     lines equal the existing code after normalizeSnippet is verified as
+//     lines equal the existing code after normalizeIndent is verified as
 //     it is.
 //
 //   - Otherwise, or without a range, the head file is searched for the
@@ -59,7 +59,7 @@ type verdict struct {
 //     status, a failed fetch) whose provider still listed a patch: a given
 //     range is verified, as it is, when every line of it is a new-side line
 //     of the patch (added or context, 1 <= start <= end) and those lines
-//     equal the existing code after normalizeSnippet. There is no search
+//     equal the existing code after normalizeIndent. There is no search
 //     and no correction, because uniqueness cannot be proven without the
 //     whole file: a missing range, a range with a line the patch does not
 //     show (a removed-only position, a gap between hunks) or lines that do
@@ -76,9 +76,9 @@ func verify(fp *provider.FilePatch, existing string, start, end *int) verdict {
 		return verifyPatch(fp, existing, start, end)
 	}
 	file := llmrun.FileLines(*fp.HeadContent)
-	want := normalizeSnippet(strings.Split(strings.ReplaceAll(existing, "\r\n", "\n"), "\n"))
+	want := normalizeIndent(strings.Split(strings.ReplaceAll(existing, "\r\n", "\n"), "\n"))
 	if start != nil && end != nil {
-		if s, e := *start, *end; s >= 1 && s <= e && e <= len(file) && slices.Equal(normalizeSnippet(file[s-1:e]), want) {
+		if s, e := *start, *end; s >= 1 && s <= e && e <= len(file) && slices.Equal(normalizeIndent(file[s-1:e]), want) {
 			return verdict{start: s, end: e, ok: true}
 		}
 	}
@@ -106,7 +106,7 @@ func verifyPatch(fp *provider.FilePatch, existing string, start, end *int) verdi
 		return unavailable
 	}
 	lines, ok := llmrun.PatchLines(fp.Patch, s, e)
-	if !ok || !slices.Equal(normalizeSnippet(lines), normalizeSnippet(strings.Split(strings.ReplaceAll(existing, "\r\n", "\n"), "\n"))) {
+	if !ok || !slices.Equal(normalizeIndent(lines), normalizeIndent(strings.Split(strings.ReplaceAll(existing, "\r\n", "\n"), "\n"))) {
 		return unavailable
 	}
 	return verdict{start: s, end: e, ok: true}
@@ -121,7 +121,7 @@ func search(file, want []string) (at, n int) {
 	}
 	for i := 0; i+len(want) <= len(file); i++ {
 		w := file[i : i+len(want)]
-		if !sameTrimmed(w, want) || !slices.Equal(normalizeSnippet(w), want) {
+		if !sameTrimmed(w, want) || !slices.Equal(normalizeIndent(w), want) {
 			continue
 		}
 		if n == 0 {
@@ -135,7 +135,7 @@ func search(file, want []string) (at, n int) {
 	return at, n
 }
 
-// sameTrimmed is a cheap filter before normalizeSnippet: the lines are
+// sameTrimmed is a cheap filter before normalizeIndent: the lines are
 // equal once their surrounding white space is removed.
 func sameTrimmed(a, b []string) bool {
 	for i := range a {
@@ -173,6 +173,56 @@ func normalizeSnippet(lines []string) []string {
 		for i, l := range out {
 			out[i] = strings.TrimPrefix(l, prefix)
 		}
+	}
+	return out
+}
+
+// normalizeIndent is the comparison of the verification (WP-8a): like
+// normalizeSnippet, but a line's leading white-space run is compared by its
+// depth among the runs of the snippet, so that a tab-indented file and a
+// space-indented quote of it are equal. The runs of the non-empty lines are
+// ranked by length (a tab counts as one character, like a space), shortest
+// first, and each line keeps its content after as many spaces as its rank.
+// Trailing white space and CRLF are dropped as in normalizeSnippet, a line
+// of white space only becomes empty, and the common indentation is the
+// rank 0 run. The content of a line is never changed, and neither is its
+// depth relative to the other lines: one line indented deeper than another
+// stays deeper.
+//
+// DESIGN-QUESTION (WP-8a item 1): the spec says "a tab counts as the run it
+// replaces", without a tab width. Expanding a tab to a fixed number of
+// spaces would invent one (and fail for a file indented with 2 or 8
+// spaces), so the depths are compared by rank instead: tabs and any width
+// of spaces match when every line has the same depth order. Two quotes that
+// differ only in how many spaces one level has are equal; a line moved one
+// level deeper or shallower is not. normalizeSnippet, the suggestion
+// fingerprint and the reindentation of a block keep their own rules, so a
+// verified suggestion whose quote uses other white space than the file
+// keeps its diff block (reindent refuses it) and no posted fingerprint
+// changes. Recommendation: keep.
+func normalizeIndent(lines []string) []string {
+	type line struct {
+		run  int
+		text string
+	}
+	ls := make([]line, len(lines))
+	var runs []int
+	for i, l := range lines {
+		l = strings.TrimRight(l, " \t\r")
+		text := strings.TrimLeft(l, " \t")
+		ls[i] = line{len(l) - len(text), text}
+		if text != "" && !slices.Contains(runs, len(l)-len(text)) {
+			runs = append(runs, len(l)-len(text))
+		}
+	}
+	slices.Sort(runs)
+	out := make([]string, len(lines))
+	for i, l := range ls {
+		if l.text == "" {
+			continue
+		}
+		rank, _ := slices.BinarySearch(runs, l.run)
+		out[i] = strings.Repeat(" ", rank) + l.text
 	}
 	return out
 }

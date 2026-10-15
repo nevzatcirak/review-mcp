@@ -875,14 +875,29 @@ func (pl *Plan) callPart(ctx context.Context, deps Deps, fit *fitted, i, n int) 
 	log := pl.log
 	keys := RepairKeys(pl.toggles)
 	a := &partAnswer{}
-	for attempt := range 2 {
+	var unusable error
+	for attempt := range 3 {
 		user := fit.prompts.User
-		if attempt == 1 {
-			user = fit.reaskUser
-			a.reasked = true
+		var resp *llm.Response
+		var err error
+		switch attempt {
+		case 0, 1:
+			if attempt == 1 {
+				user = fit.reaskUser
+				a.reasked = true
+			}
+			resp, err = deps.LLM.Complete(ctx, fit.prompts.System, user)
+			a.calls++
+		default:
+			// Still unusable after the re-ask: the next model of the
+			// chain gets the original prompt once (X-38).
+			var ok bool
+			resp, ok, err = llmrun.CompleteNext(ctx, deps.LLM, fit.prompts.System, user)
+			if err == nil && !ok {
+				return a, ErrUnparseable.WithCause(unusable)
+			}
+			a.calls++
 		}
-		resp, err := deps.LLM.Complete(ctx, fit.prompts.System, user)
-		a.calls++
 		if err != nil {
 			return a, err
 		}
@@ -899,7 +914,8 @@ func (pl *Plan) callPart(ctx context.Context, deps Deps, fit *fitted, i, n int) 
 		if err == nil {
 			break
 		}
-		if attempt == 1 {
+		unusable = err
+		if attempt == 2 {
 			return a, ErrUnparseable.WithCause(err)
 		}
 	}

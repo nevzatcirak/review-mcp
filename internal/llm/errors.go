@@ -3,6 +3,7 @@ package llm
 import (
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -65,6 +66,9 @@ type Error struct {
 	// maxWait is llm.max_rate_wait_seconds, named in the sentence of a
 	// reasonWaitTooLong failure.
 	maxWait time.Duration
+	// note is a fixed sentence appended to the error's own, such as the
+	// chain's "All N fallback models failed as well." (X-38).
+	note string
 }
 
 var sentences = map[ErrorClass]string{
@@ -111,6 +115,13 @@ func (e *Error) Error() string {
 			s += ". Staying within llm.requests_per_minute would need a wait longer than " + limit
 		} else {
 			s += ". The endpoint asked for a wait longer than " + limit
+		}
+	}
+	if e.note != "" {
+		if strings.HasSuffix(s, ".") {
+			s += " " + e.note
+		} else {
+			s += ". " + e.note
 		}
 	}
 	return s

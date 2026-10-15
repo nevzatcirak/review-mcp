@@ -76,6 +76,13 @@ func WithClock(now func() time.Time) Option {
 	return func(c *Client) { c.now = now }
 }
 
+// WithoutKey lets the client run without an API key: it then sends no
+// Authorization header at all. A fallback on another host without a key of
+// its own is built this way, so the primary key never reaches it (X-38).
+func WithoutKey() Option {
+	return func(c *Client) { c.noKey = true }
+}
+
 // withRegistry replaces the process-wide limiter registry (tests).
 func withRegistry(r *registry) Option {
 	return func(c *Client) { c.registry = r }
@@ -106,6 +113,8 @@ type Client struct {
 	// client's, looked up once in New.
 	registry *registry
 	limiter  *limiter
+	// noKey allows an unset key (WithoutKey).
+	noKey bool
 	// waitMu guards the rate-limit waits of this client's run (§2.3 item
 	// 1): waits counts the requests that had to wait, waited their total.
 	waitMu sync.Mutex
@@ -138,9 +147,6 @@ func New(cfg config.LLM, key config.Secret, logger *slog.Logger, opts ...Option)
 	u, err := url.Parse(cfg.BaseURL)
 	if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil {
 		return nil, errors.New("llm: invalid base URL")
-	}
-	if !key.IsSet() {
-		return nil, errors.New("llm: API key is not set")
 	}
 	if cfg.Model == "" {
 		return nil, errors.New("llm: model is not set")
@@ -175,6 +181,9 @@ func New(cfg config.LLM, key config.Secret, logger *slog.Logger, opts ...Option)
 	c.hc = &http.Client{Transport: tr, CheckRedirect: c.checkRedirect}
 	for _, o := range opts {
 		o(c)
+	}
+	if !key.IsSet() && !c.noKey {
+		return nil, errors.New("llm: API key is not set")
 	}
 	c.limiter = c.registry.lookup(u, key, cfg)
 	return c, nil
@@ -254,6 +263,10 @@ func (c *Client) checkRedirect(req *http.Request, via []*http.Request) error {
 // setAuth is the only place the API key is revealed.
 func (c *Client) setAuth(req *http.Request) {
 	req.Header.Del("Authorization")
+	if !c.key.IsSet() {
+		// A client without a key (WithoutKey) sends none.
+		return
+	}
 	req.Header.Set("Authorization", "Bearer "+c.key.Reveal())
 }
 

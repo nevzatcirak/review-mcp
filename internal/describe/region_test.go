@@ -147,3 +147,33 @@ func TestApplyRegionGluedMarkersAreText(t *testing.T) {
 		t.Errorf("got %q replaced=%v err=%v", got, replaced, err)
 	}
 }
+
+// TestApplyRegionBlankLineBefore (WP-8a): the region is always preceded by
+// one blank line, on the first run and when it replaces a region that
+// directly follows the author's text; the author's bytes stay a prefix, and
+// a second run changes nothing.
+func TestApplyRegionBlankLineBefore(t *testing.T) {
+	old := func(eol string) string {
+		return strings.ReplaceAll(RegionStart+"\nold body\n"+RegionEnd, "\n", eol)
+	}
+	for _, c := range []struct{ name, text, want string }{
+		{"no trailing newline", "Last paragraph.", "Last paragraph.\n\n" + region("\n")},
+		{"one trailing newline", "Last paragraph.\n", "Last paragraph.\n\n" + region("\n")},
+		{"region glued to the paragraph", "Last paragraph.\n" + old("\n"), "Last paragraph.\n\n" + region("\n")},
+		{"region glued, crlf", "Last paragraph.\r\n" + old("\r\n"), "Last paragraph.\r\n\r\n" + region("\r\n")},
+		{"region after a blank line", "Last paragraph.\n\n" + old("\n"), "Last paragraph.\n\n" + region("\n")},
+		{"two blank lines stay", "Last paragraph.\n\n\n" + old("\n"), "Last paragraph.\n\n\n" + region("\n")},
+		{"region first", old("\n") + "\nFooter.", region("\n") + "\nFooter."},
+		{"region first, after the text", "A\n" + old("\n") + "\nFooter.", "A\n\n" + region("\n") + "\nFooter."},
+	} {
+		got, _, err := ApplyRegion(c.text, regionBody)
+		if err != nil || got != c.want {
+			t.Errorf("%s: got %q err=%v\nwant %q", c.name, got, err, c.want)
+			continue
+		}
+		twice, replaced, err := ApplyRegion(got, regionBody)
+		if err != nil || !replaced || twice != got {
+			t.Errorf("%s: the second run changed the text: %q (replaced=%v err=%v)", c.name, twice, replaced, err)
+		}
+	}
+}

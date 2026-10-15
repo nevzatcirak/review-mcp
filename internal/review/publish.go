@@ -332,6 +332,20 @@ func postInline(ctx context.Context, log *slog.Logger, pl *Plan, items []inlineF
 	for i, it := range items {
 		ki := &pl.Result.Review.KeyIssuesToReview[it.issue]
 		if err != nil || i >= len(results) || !results[i].Posted {
+			// DESIGN-QUESTION (WP-8a item 5): FailureClass is the class of the
+			// first failed item as the provider reported it. A first item
+			// that failed without a provider error (a stray note that was
+			// left, a result the provider did not return) leaves it empty
+			// rather than taking a later item's class, since the spec names
+			// the first failed item. Recommendation: keep.
+			if sum.Failed == 0 {
+				switch {
+				case err != nil:
+					sum.FailureClass = provider.ItemClass(err)
+				case i < len(results):
+					sum.FailureClass = results[i].Class
+				}
+			}
 			sum.Failed++
 			ki.InlineStatus = InlineFailed
 			continue

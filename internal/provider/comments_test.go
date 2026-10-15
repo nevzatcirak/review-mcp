@@ -3,6 +3,7 @@ package provider
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -148,6 +149,25 @@ func TestValidateUpdatePR(t *testing.T) {
 			t.Errorf("%s: unexpected error %v", name, err)
 		case tc.hint != "" && (!errors.As(err, &pe) || pe.Class != ClassProtocol || pe.Hint != tc.hint):
 			t.Errorf("%s: err = %v, want protocol %q", name, err, tc.hint)
+		}
+	}
+}
+
+// TestItemClass: the class text of an inline failure is the error class and
+// its HTTP status, never a message.
+func TestItemClass(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want string
+	}{
+		{nil, ""},
+		{&Error{Class: ClassRateLimited, Status: 403, Hint: "secret hint"}, "rate_limited 403"},
+		{&Error{Class: ClassTransport}, "transport"},
+		{fmt.Errorf("wrapped: %w", &Error{Class: ClassUpstream, Status: 502}), "upstream 502"},
+		{errors.New("dial tcp 10.0.0.1: refused"), "unknown"},
+	} {
+		if got := ItemClass(tc.err); got != tc.want {
+			t.Errorf("ItemClass(%v) = %q, want %q", tc.err, got, tc.want)
 		}
 	}
 }

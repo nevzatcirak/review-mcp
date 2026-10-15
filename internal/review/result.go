@@ -151,6 +151,12 @@ type InlineSummary struct {
 	// Failed findings were anchorable but their inline comment could not be
 	// posted; they are in the overview only.
 	Failed int `json:"failed"`
+	// FailureClass is the provider error class and HTTP status of the first
+	// failed inline item (provider.ItemClass, for example "rate_limited
+	// 403"), the text the providers' debug logs show; empty when none failed
+	// or the first one failed without a provider error. A fixed class string,
+	// never a provider message.
+	FailureClass string `json:"failure_class,omitempty"`
 }
 
 func nonNil[T any](s []T) []T { return llmrun.NonNil(s) }

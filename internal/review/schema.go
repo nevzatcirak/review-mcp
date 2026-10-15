@@ -111,6 +111,8 @@ func ResultSchema() map[string]any {
 				"skipped_duplicate": integer("findings already posted on the pull request, not repeated"),
 				"unanchorable":      integer("findings not on a line of the diff, listed in the overview only"),
 				"failed":            integer("findings whose inline comment could not be posted, listed in the overview only"),
+				"failure_class": str("provider error class and HTTP status of the first inline comment that could not be posted, " +
+					"for example \"rate_limited 403\"; a fixed string, never a provider message; omitted when none failed"),
 			}, "posted", "skipped_duplicate", "unanchorable", "failed"),
 		}, "published"),
 	}, "pr", "enabled_fields", "review", "coverage", "notes", "metadata")

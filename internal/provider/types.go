@@ -617,9 +617,15 @@ const (
 // true, ID or URL may still be empty if the server did not report them.
 // Reason is InlineReasonPosted exactly when Posted is true, and otherwise
 // InlineReasonUnanchorable or InlineReasonFailed.
+//
+// Class is the class text of the provider error behind Error (ItemClass:
+// the error class and the HTTP status, for example "rate_limited 403"), or
+// empty when the item failed without one (a stray note that was left) or was
+// posted. It is a fixed string, never a provider message.
 type InlineResult struct {
 	Posted  bool
 	ID, URL string
 	Error   string
 	Reason  InlineReason
+	Class   string
 }

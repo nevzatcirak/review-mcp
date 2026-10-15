@@ -410,7 +410,10 @@ The overview is posted before the inline comments, so a failed inline batch
 never leaves the PR without it. A failure to post never discards the review:
 the result carries the review and a `publish` object with `published: false`
 and the reason, and `publish.inline` counts `posted`, `skipped_duplicate`,
-`unanchorable` and `failed` findings. Publishing a second time is safe for the
+`unanchorable` and `failed` findings; when an inline comment failed,
+`publish.inline.failure_class` says why in a fixed form, the provider error
+class and HTTP status of the first one that failed (for example
+`rate_limited 403`), and the overview note does not change. Publishing a second time is safe for the
 overview and for findings already posted (below), but it is still an explicit
 write each time.
 

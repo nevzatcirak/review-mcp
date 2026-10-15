@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
@@ -138,6 +139,37 @@ func TestPostResultSanitizesByCapability(t *testing.T) {
 		}
 		if p.body != want {
 			t.Errorf("QuickActions=%v: body = %q, want %q", qa, p.body, want)
+		}
+	}
+}
+
+// rateReporter reports fixed rate-limit waits.
+type rateReporter struct {
+	n int
+	d time.Duration
+}
+
+func (r rateReporter) RateLimitWaits() (int, time.Duration) { return r.n, r.d }
+
+// TestRateLimitReport: the waits of a reporting client, none of another;
+// the note from one second of waiting on, rounded to whole seconds.
+func TestRateLimitReport(t *testing.T) {
+	if n, ms := RateLimitWaits(rateReporter{2, 1500 * time.Millisecond}); n != 2 || ms != 1500 {
+		t.Errorf("waits %d, %d ms", n, ms)
+	}
+	if n, ms := RateLimitWaits(struct{}{}); n != 0 || ms != 0 {
+		t.Errorf("a client without the report: %d, %d ms", n, ms)
+	}
+	for ms, want := range map[int64]string{
+		0:     "",
+		999:   "",
+		1000:  "The LLM endpoint's rate limit delayed this run by 1 s.",
+		1499:  "The LLM endpoint's rate limit delayed this run by 1 s.",
+		1500:  "The LLM endpoint's rate limit delayed this run by 2 s.",
+		61200: "The LLM endpoint's rate limit delayed this run by 61 s.",
+	} {
+		if got := RateLimitNote(ms); got != want {
+			t.Errorf("RateLimitNote(%d) = %q, want %q", ms, got, want)
 		}
 	}
 }

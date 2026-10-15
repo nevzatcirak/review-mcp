@@ -111,6 +111,11 @@ type Metadata struct {
 	// the published overview when greater than 0. WP-PR-7e fills it; until
 	// then it is 0.
 	AlreadyDiscussed int `json:"already_discussed,omitempty"`
+	// RateLimitWaits is the number of model requests that waited for the
+	// endpoint's rate limit (X-37), and RateLimitWaitMS their total wait in
+	// milliseconds; both always set.
+	RateLimitWaits  int   `json:"rate_limit_waits"`
+	RateLimitWaitMS int64 `json:"rate_limit_wait_ms"`
 }
 
 // PublishResult is the outcome of publishing (step 13): the posted or

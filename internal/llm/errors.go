@@ -58,6 +58,9 @@ type Error struct {
 	// part of the sentence.
 	reason string
 	wait   time.Duration
+	// maxWait is llm.max_rate_wait_seconds, named in the sentence of a
+	// reasonWaitTooLong failure.
+	maxWait time.Duration
 }
 
 var sentences = map[ErrorClass]string{
@@ -91,6 +94,16 @@ func (e *Error) Error() string {
 	}
 	if e.Hint != "" {
 		s += "; check " + e.Hint
+	}
+	if e.reason == reasonWaitTooLong {
+		// §2.3 item 3: no header value and no URL, the configured limit only.
+		//
+		// DESIGN-QUESTION (WP-8b DQ-5): "(N s)" follows the key name, so N is
+		// read as the key's value (the configured longest wait), not the
+		// wait that was needed; the needed wait is an endpoint answer and
+		// stays in the debug log. Recommendation: keep.
+		s += ". The endpoint asked for a wait longer than llm.max_rate_wait_seconds (" +
+			strconv.Itoa(int(e.maxWait/time.Second)) + " s)."
 	}
 	return s
 }

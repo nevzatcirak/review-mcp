@@ -35,7 +35,9 @@ const (
 	promptFocusesMessage = "focuses must be a comma-separated list of security, architecture, performance, ux and tests"
 )
 
-func registerMultiPerspectivePrompt(s *mcp.Server) {
+// registerMultiPerspectivePrompt registers the prompt of X-33; queued adds
+// rateLimitGuidance to its first step (X-37).
+func registerMultiPerspectivePrompt(s *mcp.Server, queued bool) {
 	s.AddPrompt(&mcp.Prompt{
 		Name:  promptMultiPerspective,
 		Title: "Multi-perspective review",
@@ -63,7 +65,7 @@ func registerMultiPerspectivePrompt(s *mcp.Server) {
 			Description: "Multi-perspective review of one pull request",
 			Messages: []*mcp.PromptMessage{{
 				Role:    "user",
-				Content: &mcp.TextContent{Text: multiPerspectiveText(prURL, focuses)},
+				Content: &mcp.TextContent{Text: multiPerspectiveText(prURL, focuses, queued)},
 			}},
 		}, nil
 	})
@@ -123,8 +125,9 @@ func jsonText(v any) string {
 }
 
 // multiPerspectiveText is the prompt's user message: the recipe of X-33 for
-// one pull request. prURL appears only inside JSON strings.
-func multiPerspectiveText(prURL string, focuses []string) string {
+// one pull request. prURL appears only inside JSON strings. queued adds
+// rateLimitGuidance after "in parallel if you can" (X-37).
+func multiPerspectiveText(prURL string, focuses []string, queued bool) string {
 	type call struct {
 		PRURL string `json:"pr_url"`
 		Focus string `json:"focus"`
@@ -133,7 +136,11 @@ func multiPerspectiveText(prURL string, focuses []string) string {
 	b.WriteString("Review the pull request " + jsonText(prURL) + " from several perspectives with the review-mcp " +
 		"tools, then publish one merged review.\n\n")
 	b.WriteString("1. Run one focused review per area with pr_review, in parallel if you can (for example in " +
-		"subagents). Use these arguments, and do not set publish: a focused review never publishes.\n")
+		"subagents). ")
+	if queued {
+		b.WriteString(rateLimitGuidance + " ")
+	}
+	b.WriteString("Use these arguments, and do not set publish: a focused review never publishes.\n")
 	for _, f := range focuses {
 		b.WriteString("   - " + jsonText(call{PRURL: prURL, Focus: f}) + "\n")
 	}

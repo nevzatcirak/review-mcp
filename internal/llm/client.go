@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
@@ -105,6 +106,25 @@ type Client struct {
 	// client's, looked up once in New.
 	registry *registry
 	limiter  *limiter
+	// waitMu guards the rate-limit waits of this client's run (§2.3 item
+	// 1): waits counts the requests that had to wait, waited their total.
+	waitMu sync.Mutex
+	waits  int
+	waited time.Duration
+}
+
+// RateLimitWaits returns the rate-limit waits of the client so far: how
+// many requests had to wait for the endpoint's limits, and the total wait
+// (X-37). A Client serves one tool call, so these are the run's.
+//
+// DESIGN-QUESTION (WP-8b DQ-3): the spec names a count of waits. A request
+// may be woken several times while it waits (another request started, a
+// cool-down began); it counts once, with its whole wait. Recommendation:
+// keep.
+func (c *Client) RateLimitWaits() (int, time.Duration) {
+	c.waitMu.Lock()
+	defer c.waitMu.Unlock()
+	return c.waits, c.waited
 }
 
 // redirectError marks a refused redirect.
@@ -415,10 +435,18 @@ func (c *Client) attempt(ctx context.Context, attempt int, system, user string) 
 	}
 	// Every attempt, retries included, takes a place in the endpoint's
 	// limits (X-37) and holds it until its response is read.
-	if _, err := c.limiter.acquire(ctx, c.now, c.sleep, c.logger); err != nil {
+	st, err := c.limiter.acquire(ctx, c.now, c.sleep, c.logger)
+	if st.waits > 0 {
+		c.waitMu.Lock()
+		c.waits++
+		c.waited += st.waited
+		c.waitMu.Unlock()
+	}
+	if err != nil {
 		var long *errWaitTooLong
 		if errors.As(err, &long) {
-			return nil, 0, &Error{Class: ClassRateLimited, reason: reasonWaitTooLong, wait: long.need}
+			return nil, 0, &Error{Class: ClassRateLimited, reason: reasonWaitTooLong, wait: long.need,
+				maxWait: time.Duration(max(c.cfg.MaxRateWaitSeconds, 0)) * time.Second}
 		}
 		return nil, 0, &Error{Class: ClassTransport, Detail: "canceled"}
 	}

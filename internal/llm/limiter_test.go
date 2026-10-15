@@ -559,3 +559,39 @@ func TestRateLimitHeadersOnSuccess(t *testing.T) {
 		}
 	}
 }
+
+// TestRateLimitWaitsReported: the client counts its requests that waited and
+// their total wait; a refused wait says which limit it exceeded, with no
+// header value and no URL.
+func TestRateLimitWaitsReported(t *testing.T) {
+	clk := newFakeClock()
+	rf := newRateFake(t, clk, func(n int, h http.Header) int {
+		switch n {
+		case 1:
+			h.Set("Retry-After", "5")
+			return 429
+		case 3:
+			h.Set("Retry-After", "90")
+			return 429
+		}
+		return 200
+	})
+	c := rateClient(t, rf, clk, nil, 4, 60)
+	if _, err := c.Complete(t.Context(), "s", "u"); err != nil {
+		t.Fatal(err)
+	}
+	if n, d := c.RateLimitWaits(); n != 1 || d != 5*time.Second {
+		t.Errorf("after one wait: %d waits, %v", n, d)
+	}
+	_, err := c.Complete(t.Context(), "s", "u")
+	want := "the LLM endpoint rate-limited the request. The endpoint asked for a wait longer than llm.max_rate_wait_seconds (60 s)."
+	if err == nil || err.Error() != want {
+		t.Errorf("err = %v, want %q", err, want)
+	}
+	if n, d := c.RateLimitWaits(); n != 1 || d != 5*time.Second {
+		t.Errorf("a refused wait was counted: %d waits, %v", n, d)
+	}
+	if strings.Contains(err.Error(), rf.srv.URL) || strings.Contains(err.Error(), "90") {
+		t.Errorf("the sentence carries a URL or header value: %q", err)
+	}
+}

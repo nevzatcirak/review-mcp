@@ -188,4 +188,9 @@ type Metadata struct {
 	Reasked      bool   `json:"reasked"`
 	Truncated    bool   `json:"truncated"`
 	DiffTrimmed  bool   `json:"diff_trimmed"`
+	// RateLimitWaits is the number of model requests that waited for the
+	// endpoint's rate limit (X-37), and RateLimitWaitMS their total wait in
+	// milliseconds; both always set.
+	RateLimitWaits  int   `json:"rate_limit_waits"`
+	RateLimitWaitMS int64 `json:"rate_limit_wait_ms"`
 }

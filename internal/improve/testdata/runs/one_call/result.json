@@ -91,6 +91,8 @@
     "reasked": false,
     "truncated": false,
     "diff_trimmed": false,
-    "already_discussed": 1
+    "already_discussed": 1,
+    "rate_limit_waits": 0,
+    "rate_limit_wait_ms": 0
   }
 }

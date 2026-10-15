@@ -448,12 +448,15 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			inc = &Incremental{Mode: IncrementalUnchanged, Since: last, Strategy: r.Strategy, UnchangedFiles: unchanged}
 			return pl.unchangedPlan(ctx, deps, args, window, rd, inc, noteNoFileChanged(last)), nil
 		default:
-			// DESIGN-QUESTION (WP-7f DQ-4): a focused run (X-33) may be
-			// incremental; the spec carries in every run of mode incremental,
-			// so a focused run lists the carried findings too, whatever their
-			// area. They carry carried_from, so a client that merges focused
-			// runs can tell them apart. Recommendation: keep.
-			pl.carried = pl.carryForward(d, r)
+			// A focused run (X-33) carries nothing (WP-7f DQ-4, overridden):
+			// it never publishes, every focused run of the same head would
+			// list the same carried findings (N copies in the client's merged
+			// set), and SuppliedFinding has no carried_from, so a carried
+			// finding passed back would become a fresh one (planned inline,
+			// recorded with the wrong "from").
+			if args.Focus == "" {
+				pl.carried = pl.carryForward(d, r)
+			}
 			if n := len(pl.carried); n > 0 {
 				incNotes = append(incNotes, noteCarried(n))
 			}

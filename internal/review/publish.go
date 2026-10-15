@@ -137,6 +137,11 @@ func publish(ctx context.Context, deps Deps, args Args, pl *Plan) {
 				// files no model saw (X-36). Also written to a replacement
 				// overview when the edit fails.
 				res.Reviewed.SHA = found.reviewed
+				// The client's set replaces the found overview's findings
+				// (spec v2.1 §7.2 item 6): its held findings are dropped.
+				if n := len(found.held); n > 0 {
+					res.Notes = append(res.Notes, noteHeldDropped(n))
+				}
 			}
 			editOverview(ctx, log, pl, found, items, sum, render)
 			return

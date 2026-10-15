@@ -1090,10 +1090,15 @@ backslash before its `[`. Then:
   in the pull request, or that is deleted.
 
 A full run carries nothing (it reviews every file again), and an `unchanged`
-run publishes nothing, so the overview keeps its held lines. A merged
-`findings` publish records its own overview-only findings, with the commit it
-carries over; it does not carry the found overview's held lines, since the
-client's findings replace the overview's.
+run publishes nothing, so the overview keeps its held lines. A focused run
+(`focus`) carries nothing either, even in mode `incremental`: it never
+publishes, every focused run of the same head would list the same carried
+findings again, and a carried finding passed back in `findings` would become
+a new one. A merged `findings` publish records its own overview-only
+findings, with the commit it carries over; it does not carry the found
+overview's held lines, since the client's findings replace the overview's,
+and the note "N findings listed only in the earlier overview were not carried
+into this publish." counts the ones it drops.
 
 In mode `incremental` the "nothing found" statements speak of the reviewed
 files only ("No key issues found in the reviewed files", and the same for

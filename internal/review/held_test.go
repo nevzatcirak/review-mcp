@@ -393,24 +393,37 @@ func TestHeldLinesIgnoredAreLoggedAsCounts(t *testing.T) {
 // TestMergedPublishHeldLines (X-33): a merged publish records its own
 // overview-only findings, from the commit it carries over; the found
 // overview's held lines are not carried (the client's set replaces its
-// findings). Without a found commit it records none.
+// findings), and a note counts them. Without a found commit it records none.
 func TestMergedPublishHeldLines(t *testing.T) {
-	earlier := heldLineOf(t, heldRecord{V: 1, F: "src/util.go", S: 30, E: 31, H: "Earlier", C: "From before.", From: shaOld})
+	earlier := heldLineOf(t, heldRecord{V: 1, F: "src/util.go", S: 30, E: 31, H: "Earlier", C: "From before.", From: shaOld}) +
+		"\n" + heldLineOf(t, heldRecord{V: 1, F: "src/app.go", S: 5, E: 5, H: "Also earlier", C: "Also from before.", From: shaOld})
 	findings := []SuppliedFinding{supplied("src/util.go", 30, 31, "Supplied", "Off the diff.")}
 	h := newSuppliedHarness(t)
 	h.prov.pr.HeadSHA = shaHead
 	h.prov.addComment(h.prov.me, "earlier\n\n"+earlier+"\n"+reviewedLineOf(shaOld)+"\n"+OverviewMarker)
-	runOK(t, h, Args{PRURL: testPRURL, Publish: true, Findings: findings})
+	res := runOK(t, h, Args{PRURL: testPRURL, Publish: true, Findings: findings})
 	want := []heldRecord{{V: 1, F: "src/util.go", S: 30, E: 31, H: "Supplied", C: "Off the diff.", From: shaOld}}
 	if got := heldFound(t, h); !slices.Equal(got, want) {
 		t.Errorf("read %+v, want %+v", got, want)
 	}
+	note := "2 findings listed only in the earlier overview were not carried into this publish."
+	if !slices.Contains(res.Notes, note) {
+		t.Errorf("notes %q lack %q", res.Notes, note)
+	}
+	if n := noteHeldDropped(1); n != "1 finding listed only in the earlier overview was not carried into this publish." {
+		t.Errorf("singular note %q", n)
+	}
 
 	h = newSuppliedHarness(t)
 	h.prov.pr.HeadSHA = shaHead
-	runOK(t, h, Args{PRURL: testPRURL, Publish: true, Findings: findings})
+	res = runOK(t, h, Args{PRURL: testPRURL, Publish: true, Findings: findings})
 	if strings.Contains(h.prov.posted[0], "review-mcp:held:") {
 		t.Errorf("held lines without a carried-over commit:\n%s", h.prov.posted[0])
+	}
+	for _, n := range res.Notes {
+		if strings.Contains(n, "earlier overview") {
+			t.Errorf("note %q without an earlier overview", n)
+		}
 	}
 }
 

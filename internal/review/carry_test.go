@@ -186,3 +186,27 @@ func TestCarryForwardOnlyIncremental(t *testing.T) {
 		t.Errorf("deleted file: incremental %+v, findings %+v", res.Incremental, res.Review.KeyIssuesToReview)
 	}
 }
+
+// TestCarryForwardNotFocused: a focused incremental run carries nothing,
+// although the overview holds a record of an unchanged file (WP-7f DQ-4,
+// overridden).
+func TestCarryForwardNotFocused(t *testing.T) {
+	recB := heldRecord{V: 1, F: incPathSame, S: 3, E: 3, H: "B", C: "On B.", From: shaOld}
+	h := carryHarness(answerWith())
+	h.moveHead(shaHead, incSameHead, incEditedHead)
+	h.prov.addComment(h.prov.me, "earlier\n\n"+heldLineOf(t, recB)+"\n"+reviewedLineOf(shaOld)+"\n"+OverviewMarker)
+	args := incArgs(false)
+	args.Focus = "security"
+	res := runOK(t, h, args)
+	if res.Incremental == nil || res.Incremental.Mode != IncrementalChanged || res.Incremental.CarriedFindings != 0 {
+		t.Fatalf("incremental = %+v", res.Incremental)
+	}
+	if len(res.Review.KeyIssuesToReview) != 0 {
+		t.Errorf("focused run carried %+v", res.Review.KeyIssuesToReview)
+	}
+	for _, n := range res.Notes {
+		if strings.Contains(n, "carried forward") {
+			t.Errorf("focused run notes %q", n)
+		}
+	}
+}

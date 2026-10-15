@@ -25,7 +25,10 @@ when the next incremental run edited the overview.
     review of `abc1234`, listed here only)". The model does not see them and
     they are never posted inline. Findings of changed, removed or deleted
     files are dropped. Result: `carried_from` on each such key issue,
-    `incremental.carried_findings`, and a note.
+    `incremental.carried_findings`, and a note. A focused run carries
+    nothing.
+  - A merged `findings` publish drops the earlier overview's held findings
+    and says so in a note.
 
 ### Fixed
 

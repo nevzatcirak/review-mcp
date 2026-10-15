@@ -637,6 +637,11 @@ repository context; a project or group access token needs the role Reporter
 project or group the token cannot see answers `the requested resource was not
 found` (HTTP 404). See [GitLab](gitlab.md#token).
 
+**A fine-grained personal access token, or `read_api`.** In testing GitLab
+refused both with this same 401 or 403, although the token was valid. Create a
+**legacy personal access token** with the scopes `api` and `read_repository`
+([Setup, GitLab](setup.md#gitlab)) and set it as `REVIEW_MCP_GITLAB_TOKEN`.
+
 ### The diff is not ready
 
 ```text
@@ -1108,6 +1113,7 @@ sentence, for example `authentication failed: check the token and its scopes (HT
 | the pull request URL does not match any configured provider | `url_not_configured` | The URL's scheme, host, port or path prefix matches no configured base URL (or Gitea `web_url`). Compare it with `REVIEW_MCP_GITEA_BASE_URL` / `REVIEW_MCP_BITBUCKET_SERVER_BASE_URL` / `REVIEW_MCP_GITHUB_BASE_URL` / `REVIEW_MCP_GITLAB_BASE_URL`, including `http` vs `https`, the port, and a Bitbucket context path. No request was sent. |
 | the URL matches a configured provider but is not a pull request URL | `url_malformed` | Use the PR page URL: `.../{owner}/{repo}/pulls/{n}` (Gitea), `.../{owner}/{repo}/pull/{n}` (GitHub), `.../{namespace}/{project}/-/merge_requests/{iid}` (GitLab; the `/-/` is required, and only `/diffs`, `/commits` or `/pipelines` may follow the number) or `.../projects/{KEY}/repos/{slug}/pull-requests/{id}` (Bitbucket Server; `/users/{user}/repos/...` for personal repositories). Do not put credentials in the URL. |
 | authentication failed: check the token and its scopes | `auth` (HTTP 401/403) | The token is wrong, expired, or lacks a scope; see the token scopes below. Also check that the token belongs to the provider whose URL you used. |
+| authentication failed: check the token and its scopes (GitLab, with a fine-grained personal access token or the `read_api` scope) | `auth` (HTTP 401/403) | GitLab refused both in testing although the token was valid. Use a legacy personal access token with `api` and `read_repository` ([Setup, GitLab](setup.md#gitlab), [Authentication failed on GitLab](#authentication-failed-on-gitlab)). |
 | the requested resource was not found | `not_found` (HTTP 404) | The repository or PR does not exist, or the token's user cannot see it (many servers answer 404 for a hidden repository). On Bitbucket Server, a wrong context path also gives 404. |
 | the server rate-limited the request | `rate_limited` (HTTP 429, or 403 on GitHub and GitLab) | Wait and retry; check any rate limits or a reverse proxy in front of the server. On GitHub and GitLab the sentence ends with the reset time when it is known; see [GitHub](#github) and [GitLab](#gitlab). |
 | the server reported an internal error | `upstream` (HTTP 5xx) | The provider (or a proxy in front of it) failed. Look at the server's own logs. On GitLab the hint `the merge request's diff is not ready yet; try again in a moment` is not a server failure; see [GitLab](#the-diff-is-not-ready). |

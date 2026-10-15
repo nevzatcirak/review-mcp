@@ -278,9 +278,13 @@ through a token and the REST API v4. The full reference is [GitLab](gitlab.md).
 
 1. Create the token. Three kinds work, and all are sent as `PRIVATE-TOKEN`:
    - **Personal access token** (**Preferences, Access tokens** in your
-     profile). Scope `read_api` for read-only use, `api` to publish and for
-     `pr_comment_reply` and `pr_comment_create`. Add `read_repository` for the
-     [repository context](repo-context.md).
+     profile). **Use a legacy personal access token with the scopes `api` and
+     `read_repository`**: GitLab refused fine-grained personal access tokens
+     and the `read_api` scope in testing. `api` covers reading, publishing,
+     `pr_comment_reply` and `pr_comment_create`; `read_repository` is for the
+     [repository context](repo-context.md). If the tool answers `authentication
+     failed` (HTTP 401 or 403) with a fine-grained token or `read_api`, see
+     [Authentication failed on GitLab](troubleshooting.md#authentication-failed-on-gitlab).
    - **Project access token** or **group access token** (**Settings, Access
      tokens** of the project or group). Role **Reporter** for reads,
      **Developer** to publish. Scopes as for a personal token. The token's user

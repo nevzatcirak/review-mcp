@@ -78,6 +78,7 @@ or an environment variable. The `--listen` flag overrides `serve.listen`.
 | `serve.llm_key_source` | `REVIEW_MCP_SERVE_LLM_KEY_SOURCE` | `header` | `header`: each caller sends the LLM key; `server`: the server's own `REVIEW_MCP_LLM_API_KEY` is used |
 | `serve.allowed_origins` | `REVIEW_MCP_SERVE_ALLOWED_ORIGINS` | empty | comma-separated exact origins, lower case |
 | `serve.max_concurrent_calls` | `REVIEW_MCP_SERVE_MAX_CONCURRENT_CALLS` | `4` | 1 to 64 |
+| `serve.max_queued_calls` | `REVIEW_MCP_SERVE_MAX_QUEUED_CALLS` | `32` | 0 to 1024; tool calls that may wait for a free slot; `0` refuses at once |
 | (secret, no file key) | `REVIEW_MCP_SERVE_ACCESS_TOKEN` | unset | required when `llm_key_source = server`; enforced in either mode when set |
 
 Validation rules in serve mode:
@@ -238,10 +239,15 @@ until all of them pass:
    with `WWW-Authenticate: Bearer`.
 5. **Credential headers:** a malformed value gets 400 (see above).
 6. **Concurrency:** tool calls (not the protocol handshake) take one of
-   `serve.max_concurrent_calls` slots. When all are taken, the call fails at
-   once with `the server is busy: retry shortly` (class `server_busy`)
-   instead of queuing. Retry shortly, or raise `serve.max_concurrent_calls`
-   (1 to 64; each running call can hold a long LLM request).
+   `serve.max_concurrent_calls` slots. When all are taken, the call waits for
+   a free slot, in arrival order, for as long as the client keeps the request
+   open. Only when `serve.max_queued_calls` calls (default 32) already wait
+   does the call fail at once with `the server is busy: retry shortly` (class
+   `server_busy`); with `serve.max_queued_calls = 0` every call that finds
+   the slots taken fails like that. A call that waits sends nothing to the
+   provider or the model until it has a slot. Raise `serve.max_concurrent_calls`
+   (1 to 64; each running call can hold a long LLM request) to run more at
+   once, or `serve.max_queued_calls` (0 to 1024) to let more wait.
 
 ### Endpoints
 

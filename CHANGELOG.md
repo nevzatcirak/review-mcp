@@ -5,6 +5,34 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Planned as `2.1.0-rc.4`. Background jobs and serve-mode tool calls wait for a
+free slot instead of being refused (X-39, WP-8e); found by the rc.3 acceptance,
+where the fifth of five parallel focused reviews failed. Guides: [Slow
+endpoints](docs/review.md#slow-endpoints) and the [serve guide](docs/serve.md).
+
+### Changed
+
+- A fifth background job (`pr_review`, `pr_ask`, `pr_describe`, `pr_improve`)
+  is queued instead of refused and starts, first come first served, when one of
+  the four running jobs finishes. A call whose run still waits when
+  `wait_seconds` ends answers with the new status `queued`: "The review is
+  waiting for a free slot (position N in the queue). Call `job_result` with
+  job_id `...` to get the result." `wait_seconds` counts the queue time. Up to 32
+  jobs wait; one more gets "too many background jobs are running or waiting;
+  wait for one to finish" (was: "...running; wait..."). Ending the server fails
+  the queued jobs without running them.
+- Serve mode: a tool call that finds every `serve.max_concurrent_calls` slot
+  taken waits for one, in arrival order, instead of failing at once with
+  `server_busy`.
+
+### Added
+
+- `serve.max_queued_calls` (`REVIEW_MCP_SERVE_MAX_QUEUED_CALLS`, default 32,
+  0 to 1024) caps the waiting tool calls; above it the call gets `server_busy`
+  as before, and 0 keeps the old behaviour of refusing at once.
+
 ## [2.1.0-rc.3]
 
 Third v2.1 release candidate (the npm dist-tag `next`; `latest` stays on 2.0.0).

@@ -294,14 +294,17 @@ func TestVerifyTabsAgainstSpaces(t *testing.T) {
 		start, end int
 		want       string
 	}{
-		"tab file, space quote, range":  {tabFile, "func h(v int) int {\n    if v > 0 {\n        return v * 2\n    }", 12, 15, "ok 12-15"},
-		"tab file, space quote, search": {tabFile, "    if v > 0 {\n        return v * 2\n    }", 0, 0, "ok 13-15"},
-		"tab file, 2-space quote":       {tabFile, "  if v > 0 {\n    return v * 2\n  }", 13, 15, "ok 13-15"},
-		"space file, tab quote":         {spaceFile, "\tif v > 0 {\n\t\treturn v * 2\n\t}", 4, 6, "ok 04-06"},
-		"trailing white space":          {tabFile, "    if v > 0 {  \t\n        return v * 2 \n    }", 13, 15, "ok 13-15"},
-		"content differs":               {tabFile, "    if v > 1 {\n        return v * 2\n    }", 13, 15, UnverifiedNotFound},
-		"depth differs":                 {tabFile, "    if v > 0 {\n    return v * 2\n    }", 13, 15, UnverifiedNotFound},
-		"deeper line differs":           {tabFile, "if v > 0 {\n\t\t\treturn v * 2\n}", 13, 15, "ok 13-15"},
+		"tab file, space quote, range":   {tabFile, "func h(v int) int {\n    if v > 0 {\n        return v * 2\n    }", 12, 15, "ok 12-15"},
+		"tab file, space quote, search":  {tabFile, "    if v > 0 {\n        return v * 2\n    }", 0, 0, "ok 13-15"},
+		"tab file, 2-space quote":        {tabFile, "  if v > 0 {\n    return v * 2\n  }", 13, 15, "ok 13-15"},
+		"space file, tab quote":          {spaceFile, "\tif v > 0 {\n\t\treturn v * 2\n\t}", 4, 6, "ok 04-06"},
+		"trailing white space":           {tabFile, "    if v > 0 {  \t\n        return v * 2 \n    }", 13, 15, "ok 13-15"},
+		"content differs":                {tabFile, "    if v > 1 {\n        return v * 2\n    }", 13, 15, UnverifiedNotFound},
+		"depth differs":                  {tabFile, "    if v > 0 {\n    return v * 2\n    }", 13, 15, UnverifiedNotFound},
+		"same depth order, other widths": {tabFile, "if v > 0 {\n\t\t\treturn v * 2\n}", 13, 15, "ok 13-15"},
+		// The file has the first and last line at the same depth; the quote
+		// puts the last one a level deeper, so the depth order changed.
+		"depth order changed": {tabFile, "if v > 0 {\n    return v * 2\n        }", 13, 15, UnverifiedNotFound},
 	} {
 		s, e := rng(tc.start, tc.end)
 		if got := verdictString(verify(tc.fp, tc.existing, s, e)); got != tc.want {

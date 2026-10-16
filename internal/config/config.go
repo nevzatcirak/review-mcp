@@ -179,6 +179,11 @@ type Review struct {
 	RequirePerformance    bool   `toml:"require_performance" json:"require_performance"`
 	RequireEffortEstimate bool   `toml:"require_effort_estimate" json:"require_effort_estimate"`
 	ExtraInstructions     string `toml:"extra_instructions" json:"extra_instructions"`
+	// RepoInstructions is review.extra_instructions of the repository config
+	// (X-40), already cut: guidance from the repository's maintainers that
+	// goes into the prompt after ExtraInstructions, fenced as untrusted. Only
+	// a run's merged copy of the configuration has it; it is not a key.
+	RepoInstructions string `toml:"-" json:"-"`
 	// InlineFindings posts each anchorable finding as an inline comment when
 	// a review is published (X-11).
 	InlineFindings bool `toml:"inline_findings" json:"inline_findings"`
@@ -234,6 +239,9 @@ type Review struct {
 // Ask configures the pr_ask tool.
 type Ask struct {
 	ExtraInstructions string `toml:"extra_instructions" json:"extra_instructions"`
+	// RepoInstructions is ask.extra_instructions of the repository config
+	// (X-40); see Review.RepoInstructions.
+	RepoInstructions string `toml:"-" json:"-"`
 }
 
 // Improve configures the pr_improve tool (v2 spec §1.9, X-27).

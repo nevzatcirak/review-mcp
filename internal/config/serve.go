@@ -38,6 +38,14 @@ const (
 	MaxServeConcurrentCalls = 64
 )
 
+// Bounds and default of serve.max_queued_calls (v2.1 spec V-6 §6.3): the
+// tool calls that may wait for a free slot; 0 refuses at once.
+const (
+	MinServeQueuedCalls     = 0
+	MaxServeQueuedCalls     = 1024
+	DefaultServeQueuedCalls = 32
+)
+
 // Serve configures the serve transport (P6 spec §1.2). Only serve mode reads
 // or validates it.
 type Serve struct {
@@ -48,6 +56,7 @@ type Serve struct {
 	LLMKeySource       string   `toml:"llm_key_source" json:"llm_key_source"`
 	AllowedOrigins     []string `toml:"allowed_origins" json:"allowed_origins"`
 	MaxConcurrentCalls int      `toml:"max_concurrent_calls" json:"max_concurrent_calls"`
+	MaxQueuedCalls     int      `toml:"max_queued_calls" json:"max_queued_calls"`
 }
 
 // TLSEnabled reports whether both TLS files are configured.
@@ -171,6 +180,9 @@ func (l *loader) validateServe() {
 
 	if n := s.MaxConcurrentCalls; !l.bad["serve.max_concurrent_calls"] && (n < MinServeConcurrentCalls || n > MaxServeConcurrentCalls) {
 		l.problem("serve.max_concurrent_calls: %d is out of range (%d-%d)", n, MinServeConcurrentCalls, MaxServeConcurrentCalls)
+	}
+	if n := s.MaxQueuedCalls; !l.bad["serve.max_queued_calls"] && (n < MinServeQueuedCalls || n > MaxServeQueuedCalls) {
+		l.problem("serve.max_queued_calls: %d is out of range (%d-%d)", n, MinServeQueuedCalls, MaxServeQueuedCalls)
 	}
 }
 

@@ -1246,6 +1246,29 @@ again and returns one of:
 A client that prefers polling passes `wait_seconds: 0` and gets the running
 status at once.
 
+**Queued jobs.** Four background runs go on at once. A call started while four run is not
+refused: its run is queued and starts, first come first served, when one of
+the four finishes. This is what lets the five focus areas of a [multi-perspective
+review](#focused-reviews-and-the-merged-publish) run in parallel: the fifth
+focused review waits for a slot instead of failing.
+
+`wait_seconds` counts from the call, queue time included. A call whose run is
+still waiting for a slot when it ends answers with the status `queued`, not an
+error. The text is
+
+```text
+The review is waiting for a free slot (position 1 in the queue). Call `job_result` with job_id `job_…` to get the result.
+```
+
+and the structured content is
+`{"status": "queued", "job_id": "job_…", "stage": "starting", "elapsed_seconds": 12}`
+(`elapsed_seconds` counts from the moment the run was queued). `job_result`
+on a queued job waits as on a running one and reports the same status, then
+the result once the run is done. A queued job is never dropped and never
+expires; ending the server fails it without running it. Up to 32 runs wait;
+one more gets "too many background jobs are running or waiting; wait for one
+to finish".
+
 **Rate-limit waits and jobs.** With a client-side rate limit
 (`llm.requests_per_minute`, `llm.max_concurrent_requests`, or an endpoint that
 answers 429; see [Rate limits](setup.md#rate-limits)) a call may wait for its
@@ -1278,8 +1301,10 @@ Good to know:
 
 - With `publish=true` the run itself posts the comments, so they appear even
   if `job_result` is never called.
-- At most 4 reviews and answers run in the background at once. A fifth call
-  gets "too many background jobs are running; wait for one to finish".
+- At most 4 reviews, answers, descriptions and suggestion runs go on in the
+  background at once. A fifth waits for a free slot (see [Slow
+  endpoints](#slow-endpoints)); only when 32 more are already waiting does a call get
+  "too many background jobs are running or waiting; wait for one to finish".
 - A finished result is kept for 30 minutes, and at most 64 results are kept
   (the oldest goes first). After that, or for an id the server never issued,
   `job_result` answers "unknown or expired job_id". Results live in the

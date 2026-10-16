@@ -68,15 +68,15 @@ func instant(res *result) RunFunc[*result] {
 	return func(context.Context, func(string)) (*result, error) { return res, nil }
 }
 
-// waitFinished waits (in real time) for a job to leave the running state.
+// waitFinished waits (in real time) for a job to finish.
 func waitFinished(t *testing.T, s *Store[*result], id string) Snapshot[*result] {
 	t.Helper()
 	snap, err := s.Wait(context.Background(), id, 5*time.Second)
 	if err != nil {
 		t.Fatalf("Wait(%s): %v", id, err)
 	}
-	if snap.State == StateRunning {
-		t.Fatalf("job %s still running after 5 s", id)
+	if snap.State == StateRunning || snap.State == StateQueued {
+		t.Fatalf("job %s still %s after 5 s", id, snap.State)
 	}
 	return snap
 }
@@ -108,9 +108,20 @@ func TestIDFormatAndUniqueness(t *testing.T) {
 	}
 }
 
-func TestFifthJobRefusedUntilOneFinishes(t *testing.T) {
-	s := New[*result](Options{})
-	defer s.Close()
+// hasStarted reports whether the blocker's run has begun, giving a run that
+// should have started a moment to do so.
+func hasStarted(b *blocker, wait time.Duration) bool {
+	select {
+	case <-b.started:
+		return true
+	case <-time.After(wait):
+		return false
+	}
+}
+
+// fillRunning starts MaxRunning blockers and waits until all of them run.
+func fillRunning(t *testing.T, s *Store[*result]) ([]*blocker, []string) {
+	t.Helper()
 	var blockers []*blocker
 	var ids []string
 	for i := range MaxRunning {
@@ -119,24 +130,227 @@ func TestFifthJobRefusedUntilOneFinishes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("job %d: %v", i+1, err)
 		}
+		if !hasStarted(b, 5*time.Second) {
+			t.Fatalf("job %d did not start", i+1)
+		}
 		blockers = append(blockers, b)
 		ids = append(ids, id)
 	}
+	return blockers, ids
+}
 
-	_, err := s.Start(context.Background(), "test", instant(&result{}))
-	if !errors.Is(err, ErrTooMany) {
-		t.Fatalf("5th Start error = %v, want ErrTooMany", err)
+// TestFifthJobIsQueuedUntilOneFinishes [canary target]: with MaxRunning jobs
+// running, one more is queued at position 1 instead of refused, and starts
+// when one finishes.
+func TestFifthJobIsQueuedUntilOneFinishes(t *testing.T) {
+	s := New[*result](Options{})
+	defer s.Close()
+	blockers, ids := fillRunning(t, s)
+
+	fifth := newBlocker()
+	id, err := s.Start(context.Background(), "test", fifth.run(&result{Text: "fifth"}))
+	if err != nil {
+		t.Fatalf("5th Start error = %v, want it queued", err)
 	}
-	if err.Error() != "too many background jobs are running; wait for one to finish" {
-		t.Errorf("5th Start message = %q", err.Error())
+	snap, err := s.Get(id)
+	if err != nil || snap.State != StateQueued || snap.Position != 1 {
+		t.Fatalf("5th job = %+v, %v; want queued at position 1", snap, err)
+	}
+	if hasStarted(fifth, 50*time.Millisecond) {
+		t.Fatal("the 5th job started while four were running")
 	}
 
 	close(blockers[0].release)
 	waitFinished(t, s, ids[0])
-	if _, err := s.Start(context.Background(), "test", instant(&result{})); err != nil {
-		t.Fatalf("Start after one finished: %v", err)
+	if !hasStarted(fifth, 5*time.Second) {
+		t.Fatal("the queued job did not start when a running one finished")
+	}
+	if snap, _ := s.Get(id); snap.State != StateRunning || snap.Position != 0 {
+		t.Errorf("started job = %+v, want running at position 0", snap)
+	}
+	close(fifth.release)
+	if snap := waitFinished(t, s, id); snap.State != StateDone || snap.Result.Text != "fifth" {
+		t.Errorf("queued job finished as %+v", snap)
 	}
 	for _, b := range blockers[1:] {
+		close(b.release)
+	}
+}
+
+// TestQueuedJobsStartInArrivalOrder [canary target]: three queued jobs start
+// first come, first served, one per finished running job, and the positions
+// move up.
+func TestQueuedJobsStartInArrivalOrder(t *testing.T) {
+	s := New[*result](Options{})
+	defer s.Close()
+	blockers, ids := fillRunning(t, s)
+
+	var queued []*blocker
+	var qids []string
+	for i := range 3 {
+		b := newBlocker()
+		id, err := s.Start(context.Background(), "test", b.run(&result{Text: fmt.Sprint("q", i)}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		queued, qids = append(queued, b), append(qids, id)
+	}
+	for i, id := range qids {
+		if snap, _ := s.Get(id); snap.State != StateQueued || snap.Position != i+1 {
+			t.Fatalf("queued job %d = %+v, want position %d", i, snap, i+1)
+		}
+	}
+
+	for k := range 3 {
+		close(blockers[k].release)
+		waitFinished(t, s, ids[k])
+		if !hasStarted(queued[k], 5*time.Second) {
+			t.Fatalf("queued job %d did not start after %d finished", k, k+1)
+		}
+		for later := k + 1; later < 3; later++ {
+			if hasStarted(queued[later], 20*time.Millisecond) {
+				t.Fatalf("queued job %d started before job %d", later, k)
+			}
+			if snap, _ := s.Get(qids[later]); snap.State != StateQueued || snap.Position != later-k {
+				t.Fatalf("queued job %d = %+v, want position %d", later, snap, later-k)
+			}
+		}
+	}
+	for _, b := range append(queued, blockers[3]) {
+		close(b.release)
+	}
+}
+
+// TestQueueIsBounded: MaxQueued jobs wait; one more is refused with the new
+// sentence and nothing of it runs.
+func TestQueueIsBounded(t *testing.T) {
+	s := New[*result](Options{})
+	defer s.Close()
+	blockers, _ := fillRunning(t, s)
+	for i := range MaxQueued {
+		if _, err := s.Start(context.Background(), "test", instant(&result{})); err != nil {
+			t.Fatalf("queued job %d: %v", i+1, err)
+		}
+	}
+	ran := false
+	_, err := s.Start(context.Background(), "test", func(context.Context, func(string)) (*result, error) {
+		ran = true
+		return &result{}, nil
+	})
+	if !errors.Is(err, ErrTooMany) {
+		t.Fatalf("Start beyond the queue error = %v, want ErrTooMany", err)
+	}
+	if err.Error() != "too many background jobs are running or waiting; wait for one to finish" {
+		t.Errorf("message = %q", err.Error())
+	}
+	for _, b := range blockers {
+		close(b.release)
+	}
+	if ran {
+		t.Error("the refused job ran")
+	}
+}
+
+// TestCloseFailsQueuedJobsWithoutRunningThem: Close fails every queued job
+// with the shutdown sentence; none of them runs.
+func TestCloseFailsQueuedJobsWithoutRunningThem(t *testing.T) {
+	s := New[*result](Options{})
+	blockers, _ := fillRunning(t, s)
+	var ran sync.Map
+	var qids []string
+	for i := range 3 {
+		id, err := s.Start(context.Background(), "test", func(context.Context, func(string)) (*result, error) {
+			ran.Store(i, true)
+			return &result{}, nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		qids = append(qids, id)
+	}
+	s.Close()
+	for _, id := range qids {
+		snap := waitFinished(t, s, id)
+		if snap.State != StateFailed || snap.Message != ClosedSentence || snap.Position != 0 {
+			t.Errorf("queued job after Close = %+v", snap)
+		}
+	}
+	// The running jobs' contexts ended, which lets them return and frees
+	// their slots; nothing may start from the queue then.
+	for _, b := range blockers {
+		close(b.release)
+	}
+	time.Sleep(50 * time.Millisecond)
+	ran.Range(func(k, _ any) bool {
+		t.Errorf("queued job %v ran after Close", k)
+		return true
+	})
+}
+
+// TestQueuedJobIsNeverEvictedOrExpired: queued jobs survive the 64-result cap
+// and the result TTL; their elapsed time counts from the moment they were
+// queued, and from their start it is the run time only.
+func TestQueuedJobIsNeverEvictedOrExpired(t *testing.T) {
+	clock := newFakeClock()
+	s := New[*result](Options{Now: clock.Now})
+	defer s.Close()
+	blockers, ids := fillRunning(t, s)
+	q := newBlocker()
+	qid, err := s.Start(context.Background(), "test", q.run(&result{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock.Advance(TTL + time.Minute)
+	if snap, err := s.Get(qid); err != nil || snap.State != StateQueued || snap.ElapsedSeconds() != int((TTL+time.Minute)/time.Second) {
+		t.Fatalf("queued job after the TTL = %+v, %v", snap, err)
+	}
+	// Finish more jobs than the store keeps while the queued one waits.
+	close(blockers[0].release)
+	waitFinished(t, s, ids[0])
+	if !hasStarted(q, 5*time.Second) {
+		t.Fatal("the queued job did not start")
+	}
+	if snap, _ := s.Get(qid); snap.State != StateRunning || snap.Elapsed != 0 {
+		t.Fatalf("started job = %+v, want running with 0 elapsed", snap)
+	}
+	clock.Advance(3 * time.Second)
+	if snap, _ := s.Get(qid); snap.ElapsedSeconds() != 3 {
+		t.Errorf("elapsed after start = %d s, want 3", snap.ElapsedSeconds())
+	}
+
+	close(q.release)
+	for _, b := range blockers[1:] {
+		close(b.release)
+	}
+}
+
+// TestEvictionAndSweepSkipQueuedJobs: the 64-result cap and the TTL sweep
+// look at finished jobs only; a queued job survives both.
+func TestEvictionAndSweepSkipQueuedJobs(t *testing.T) {
+	clock := newFakeClock()
+	s := New[*result](Options{Now: clock.Now})
+	defer s.Close()
+	blockers, _ := fillRunning(t, s)
+	qid, err := s.Start(context.Background(), "test", instant(&result{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	for i := range MaxKept + 6 {
+		id := fmt.Sprint("job_old", i)
+		s.jobs[id] = &job[*result]{id: id, state: StateDone, started: clock.Now(), finished: clock.Now().Add(time.Duration(i) * time.Second)}
+	}
+	s.evictLocked()
+	kept := len(s.jobs)
+	s.mu.Unlock()
+	if want := MaxKept + MaxRunning + 1; kept != want {
+		t.Errorf("jobs after eviction = %d, want %d (the cap counts finished jobs only)", kept, want)
+	}
+	clock.Advance(2 * TTL)
+	if snap, err := s.Get(qid); err != nil || snap.State != StateQueued {
+		t.Errorf("queued job after the sweep = %+v, %v", snap, err)
+	}
+	for _, b := range blockers {
 		close(b.release)
 	}
 }
@@ -517,6 +731,45 @@ func TestFinishedJobDropsItsRun(t *testing.T) {
 	}
 }
 
+// TestQueuedJobDropsItsRunWhenItEnds: a job that waited in the queue lets go
+// of its closure and the config it captured once it finished, as a job that
+// started at once does (X-10 unchanged).
+func TestQueuedJobDropsItsRunWhenItEnds(t *testing.T) {
+	type callConfig struct{ Token string }
+	s := New[*result](Options{})
+	defer s.Close()
+	blockers, _ := fillRunning(t, s)
+	queue := func() (string, weak.Pointer[callConfig]) {
+		cfg := &callConfig{Token: "FAKE-token-not-a-secret"}
+		id, err := s.Start(context.Background(), "test", func(context.Context, func(string)) (*result, error) {
+			return &result{Text: fmt.Sprint(len(cfg.Token))}, nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id, weak.Make(cfg)
+	}
+	id, ref := queue()
+	if ref.Value() == nil {
+		t.Fatal("the queued job does not hold its closure")
+	}
+	close(blockers[0].release)
+	if snap := waitFinished(t, s, id); snap.State != StateDone {
+		t.Fatalf("job = %+v", snap)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for ref.Value() != nil && time.Now().Before(deadline) {
+		runtime.GC()
+		time.Sleep(5 * time.Millisecond)
+	}
+	if ref.Value() != nil {
+		t.Fatal("the per-call config is still reachable after the queued job finished")
+	}
+	for _, b := range blockers[1:] {
+		close(b.release)
+	}
+}
+
 // TestJobHoldsNoFunction is the deterministic half of the check above: the
 // job record has no field that could keep the run closure (or the context
 // tree that ends with the run) reachable.
@@ -526,7 +779,11 @@ func TestJobHoldsNoFunction(t *testing.T) {
 	for i := range typ.NumField() {
 		f := typ.Field(i)
 		if f.Type.Kind() == reflect.Func || f.Type.Kind() == reflect.Interface || f.Type == ctxType {
-			t.Errorf("job.%s (%s) could keep the run or its context reachable", f.Name, f.Type)
+			// A queued job holds its closure and start context (X-10 as
+			// amended by WP-8e); the store clears both when it starts.
+			if f.Name != "run" && f.Name != "ctx" {
+				t.Errorf("job.%s (%s) could keep the run or its context reachable", f.Name, f.Type)
+			}
 		}
 	}
 }

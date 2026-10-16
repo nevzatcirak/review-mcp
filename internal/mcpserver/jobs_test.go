@@ -508,9 +508,35 @@ func TestJobFailureKeepsTheFixedSentence(t *testing.T) {
 	}
 }
 
-// TestJobFifthConcurrentRunIsRefused: four runs may go on at once; the
-// fifth call gets the fixed sentence and nothing of it runs.
-func TestJobFifthConcurrentRunIsRefused(t *testing.T) {
+// mustQueued checks a queued result (WP-8e spec §6.2) at the given queue
+// position and returns it.
+func mustQueued(t *testing.T, raw json.RawMessage, noun string, position int) RunningResult {
+	t.Helper()
+	r := decodeRaw(t, raw)
+	if r.IsError {
+		t.Fatalf("want a queued result, got the error %q", r.text())
+	}
+	var st RunningResult
+	dec := json.NewDecoder(bytes.NewReader(r.Structured))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&st); err != nil || st.Status != "queued" {
+		t.Fatalf("want the queued status, got %s (%v)", r.Structured, err)
+	}
+	if !jobIDRE.MatchString(st.JobID) || st.ElapsedSeconds < 0 {
+		t.Fatalf("queued status = %+v", st)
+	}
+	want := fmt.Sprintf("The %s is waiting for a free slot (position %d in the queue). Call `job_result` with job_id `%s` to get the result.",
+		noun, position, st.JobID)
+	if r.text() != want {
+		t.Fatalf("queued text = %q\nwant         %q", r.text(), want)
+	}
+	return st
+}
+
+// TestJobFifthConcurrentRunIsQueued: four runs go on at once; the fifth call
+// is accepted, its run waits for a free slot and sends no LLM request until
+// one finishes.
+func TestJobFifthConcurrentRunIsQueued(t *testing.T) {
 	g := newFakeGiteaHost(t)
 	l, gate := newGatedLLMHost(t, 200, askAnswer)
 	c := startRaw(t, withJobs(t, realDeps(reviewEnv(g, l), nil), nil))
@@ -521,12 +547,10 @@ func TestJobFifthConcurrentRunIsRefused(t *testing.T) {
 		ids = append(ids, mustRunning(t, c.tool("pr_ask", args, nil), "answer").JobID)
 	}
 	gate.waitArrived(t, jobs.MaxRunning)
-	r := decodeRaw(t, c.tool("pr_ask", args, nil))
-	if !r.IsError || r.text() != "too many background jobs are running; wait for one to finish" {
-		t.Fatalf("fifth call = %+v %q", r, r.text())
-	}
+	fifth := mustQueued(t, c.tool("pr_ask", args, nil), "answer", 1)
+	ids = append(ids, fifth.JobID)
 	if n := len(l.recorded()); n != jobs.MaxRunning {
-		t.Errorf("LLM requests = %d, want %d (the fifth must not run)", n, jobs.MaxRunning)
+		t.Errorf("LLM requests = %d, want %d (the fifth waits for a slot)", n, jobs.MaxRunning)
 	}
 
 	gate.release()
@@ -537,6 +561,78 @@ func TestJobFifthConcurrentRunIsRefused(t *testing.T) {
 	}
 	if r := decodeRaw(t, c.tool("pr_ask", map[string]any{"pr_url": reviewPRURL(g), "question": askQuestion}, nil)); r.IsError {
 		t.Errorf("a call after the jobs finished: %q", r.text())
+	}
+}
+
+// TestJobQueuedWaitEndsWithTheQueuedSentence: a call whose
+// wait_seconds ends while its job is still queued answers with the queued
+// sentence and the job id; job_result on it reports the same status, and
+// once a slot is free the run finishes with the ordinary result.
+func TestJobQueuedWaitEndsWithTheQueuedSentence(t *testing.T) {
+	g := newFakeGiteaHost(t)
+	l, gate := newGatedLLMHost(t, 200, askAnswer)
+	c := startRaw(t, withJobs(t, realDeps(reviewEnv(g, l), nil), nil))
+	args := map[string]any{"pr_url": reviewPRURL(g), "question": askQuestion, "wait_seconds": 0}
+	for range jobs.MaxRunning {
+		mustRunning(t, c.tool("pr_ask", args, nil), "answer")
+	}
+	gate.waitArrived(t, jobs.MaxRunning)
+
+	args["wait_seconds"] = 1
+	start := time.Now()
+	queued := mustQueued(t, c.tool("pr_ask", args, nil), "answer", 1)
+	if d := time.Since(start); d < time.Second {
+		t.Errorf("the call answered after %v, want it to wait wait_seconds", d)
+	}
+	again := mustQueued(t, c.tool("job_result", map[string]any{"job_id": queued.JobID, "wait_seconds": 0}, nil), "answer", 1)
+	if again.JobID != queued.JobID {
+		t.Errorf("job_result answered for %s, want %s", again.JobID, queued.JobID)
+	}
+	// A second queued job takes position 2.
+	args["wait_seconds"] = 0
+	mustQueued(t, c.tool("pr_ask", args, nil), "answer", 2)
+
+	gate.release()
+	r := decodeRaw(t, c.tool("job_result", map[string]any{"job_id": queued.JobID, "wait_seconds": 30}, nil))
+	if r.IsError || bytes.Contains(r.Structured, []byte(`"queued"`)) || !strings.Contains(r.text(), askAnswerMarker) {
+		t.Errorf("job_result after a slot freed = %+v %q", r, r.text())
+	}
+}
+
+// TestJobFiveConcurrentFocusedReviewsAllSucceed: the five focus areas of a
+// multi-perspective review, called in parallel on one stdio server, all
+// succeed; the fifth waits for a slot instead of being refused.
+func TestJobFiveConcurrentFocusedReviewsAllSucceed(t *testing.T) {
+	g := newFakeGiteaHost(t)
+	l, gate := newGatedLLMHost(t, 200, goodAnswer)
+	deps := withJobs(t, realDeps(reviewEnv(g, l), nil), nil)
+	focuses := []string{"security", "architecture", "performance", "ux", "tests"}
+	sessions := make([]*mcp.ClientSession, len(focuses))
+	for i := range sessions {
+		sessions[i] = connect(t, deps)
+	}
+	var wg sync.WaitGroup
+	results := make([]*mcp.CallToolResult, len(focuses))
+	for i, f := range focuses {
+		wg.Go(func() {
+			results[i] = callTool(t, sessions[i], "pr_review", map[string]any{"pr_url": reviewPRURL(g), "focus": f, "wait_seconds": 60})
+		})
+	}
+	gate.waitArrived(t, jobs.MaxRunning)
+	time.Sleep(100 * time.Millisecond)
+	if n := len(l.recorded()); n != jobs.MaxRunning {
+		t.Errorf("model requests while the gate is closed = %d, want %d (the fifth waits)", n, jobs.MaxRunning)
+	}
+	gate.release()
+	wg.Wait()
+	for i, res := range results {
+		if res.IsError {
+			t.Errorf("focus %s: %s", focuses[i], textOf(t, res))
+			continue
+		}
+		if s := mustJSON(t, res.StructuredContent); strings.Contains(s, `"status":"queued"`) || strings.Contains(s, `"status":"running"`) {
+			t.Errorf("focus %s answered with %s, want the review", focuses[i], s)
+		}
 	}
 }
 

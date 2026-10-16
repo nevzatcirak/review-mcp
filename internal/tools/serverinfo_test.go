@@ -376,7 +376,8 @@ func TestServerInfoReportsServeKeys(t *testing.T) {
 		t.Errorf("serve.listen = %+v", v)
 	}
 	md := RenderServerInfoMarkdown(r)
-	if !strings.Contains(md, "`serve.access_token`: set") || !strings.Contains(md, "`serve.max_concurrent_calls` = `4` (default)") {
+	if !strings.Contains(md, "`serve.access_token`: set") || !strings.Contains(md, "`serve.max_concurrent_calls` = `4` (default)") ||
+		!strings.Contains(md, "`serve.max_queued_calls` = `32` (default)") {
 		t.Errorf("markdown lacks the serve keys:\n%s", md)
 	}
 	raw, _ := json.Marshal(r)

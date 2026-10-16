@@ -136,6 +136,7 @@ var table = []entry{
 	{"serve.llm_key_source", "REVIEW_MCP_SERVE_LLM_KEY_SOURCE", func(c *Config) any { return &c.Serve.LLMKeySource }},
 	{"serve.allowed_origins", "REVIEW_MCP_SERVE_ALLOWED_ORIGINS", func(c *Config) any { return &c.Serve.AllowedOrigins }},
 	{"serve.max_concurrent_calls", "REVIEW_MCP_SERVE_MAX_CONCURRENT_CALLS", func(c *Config) any { return &c.Serve.MaxConcurrentCalls }},
+	{"serve.max_queued_calls", "REVIEW_MCP_SERVE_MAX_QUEUED_CALLS", func(c *Config) any { return &c.Serve.MaxQueuedCalls }},
 }
 
 // secretEntry binds a secret to its environment variable. Secrets have no

@@ -5,9 +5,10 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.0-rc.4]
 
-Planned as `2.1.0-rc.4`. Background jobs and serve-mode tool calls wait for a
+Fourth v2.1 release candidate (the npm dist-tag `next`; `latest` stays on 2.0.0).
+Background jobs and serve-mode tool calls wait for a
 free slot instead of being refused (X-39, WP-8e); found by the rc.3 acceptance,
 where the fifth of five parallel focused reviews failed. Guides: [Slow
 endpoints](docs/review.md#slow-endpoints) and the [serve guide](docs/serve.md).
@@ -1315,6 +1316,7 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[2.1.0-rc.4]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.1.0-rc.4
 [2.1.0-rc.3]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.1.0-rc.3
 [2.1.0-rc.2]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.1.0-rc.2
 [2.1.0-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.1.0-rc.1

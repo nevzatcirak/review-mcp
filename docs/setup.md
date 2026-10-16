@@ -413,7 +413,7 @@ parallel calls wait for each other instead of failing.
 |---|---|---|---|
 | `llm.requests_per_minute` | `REVIEW_MCP_LLM_REQUESTS_PER_MINUTE` | 0 (no limit), 0 to 100000 | The most HTTP requests (every attempt, retries included) started in any 60-second window, per endpoint. |
 | `llm.max_concurrent_requests` | `REVIEW_MCP_LLM_MAX_CONCURRENT_REQUESTS` | 0 (unlimited), 0 to 256 | The most requests in flight at once, per endpoint. |
-| `llm.max_rate_wait_seconds` | `REVIEW_MCP_LLM_MAX_RATE_WAIT_SECONDS` | 60, 0 to 600 | The longest one wait for the rate limit may be (a limiter slot, a cool-down or a 429's delay). A longer needed wait is not waited for: the call fails, or moves to a [fallback model](#fallback-models) when one is configured. |
+| `llm.max_rate_wait_seconds` | `REVIEW_MCP_LLM_MAX_RATE_WAIT_SECONDS` | 60, 0 to 600 | The longest wait for the endpoint's own rate limit (after HTTP 429 or a reset header) before the call fails or moves to a [fallback model](#fallback-models). It does not bound the waits in review-mcp's own queue (`llm.requests_per_minute`, `llm.max_concurrent_requests`). |
 | `llm.max_rate_retries` | `REVIEW_MCP_LLM_MAX_RATE_RETRIES` | 4, 0 to 20 | Retries after HTTP 429 for one model call, counted apart from `llm.max_retries`. |
 
 **Set `llm.requests_per_minute` to your gateway's per-minute limit**, and a
@@ -429,7 +429,11 @@ How it works:
   client session) against the same gateway has its own.
 - A request starts when fewer than `requests_per_minute` started in the last
   60 seconds and fewer than `max_concurrent_requests` are in flight; otherwise
-  it waits, first come first served.
+  it waits, first come first served. This wait is review-mcp's own and is not
+  bounded by `llm.max_rate_wait_seconds`: a queue of five parallel reviews on a
+  limit of 2 per minute simply takes a few minutes, and the later reviews
+  report the delay. It ends when the request may start or the call is
+  canceled.
 - An HTTP 429 puts the whole endpoint into a cool-down, so every caller waits
   for it instead of each retrying into the limit. Its length is `Retry-After`
   (seconds or a date), else the `x-ratelimit-reset-requests` header (`6s`,
@@ -437,7 +441,10 @@ How it works:
   row, at most 600 s. A successful answer that says no request is left
   (`x-ratelimit-remaining-requests: 0`) with a reset also cools the endpoint
   down. The call is retried after the cool-down, up to `llm.max_rate_retries`
-  times. The 30-second cap on `Retry-After` of other errors does not apply to
+  times. A cool-down longer than `llm.max_rate_wait_seconds` is not waited for:
+  the call fails with "The endpoint asked for a wait longer than ...", or moves
+  to a fallback model. With a window wait and a cool-down at once, only the time
+  until the cool-down ends is compared with the key. The 30-second cap on `Retry-After` of other errors does not apply to
   429.
 - Every wait stops when the call is canceled. The result reports the waits
   (`metadata.rate_limit_waits`, `metadata.rate_limit_wait_ms`) and, from one
@@ -493,7 +500,7 @@ the primary's base URL and no key on any other host. With
 - the model's own retries are used up for a server error (5xx), a timeout or a
   transport failure (the endpoint is unreachable);
 - it stays rate limited: its rate-limit retries are used up, or the needed wait
-  is longer than `llm.max_rate_wait_seconds` (waits first, then falls back);
+  is longer than `llm.max_rate_wait_seconds` (waits first, then falls back); only the endpoint's cool-down counts, not review-mcp's own queue;
 - its answer is still unusable after the one re-ask that the tools make
   (`pr_review`, `pr_improve`, `pr_describe`): the next model gets the original
   prompt once.

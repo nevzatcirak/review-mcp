@@ -5,6 +5,37 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0]
+
+Fourth stable release. The code is the same as `2.1.0-rc.5`. The release
+candidates were accepted in use: incremental review in record #28, rate limiting,
+fallback models and queued work in record #32, on throwaway pull requests in this
+repository. The `2.1.0-rc.1` to `2.1.0-rc.5` sections of CHANGELOG.md list everything
+that went into 2.1.0 since 2.0.0. Nothing in the tools or in the configuration of
+2.0.0 is removed or renamed: a 2.0.0 setup keeps working. The one change of
+behaviour without new keys is the handling of HTTP 429, which now cools the whole
+endpoint down and retries up to `llm.max_rate_retries` times.
+
+### Highlights
+
+- Incremental review (`review.incremental` or `incremental=true`): `pr_review`
+  reviews only the files whose content changed since its last published review,
+  compared by content, so rebases and force-pushes need no special case. Findings
+  that were listed in the overview only are carried forward for files that did
+  not change.
+- Rate limiting: `llm.requests_per_minute` and `llm.max_concurrent_requests` keep
+  every model call of the process within your gateway's limits. Parallel focused
+  reviews wait their turn instead of failing with HTTP 429, and an HTTP 429 cools
+  the endpoint down for every caller.
+- Fallback models: up to three, tried in order when the current model is
+  unreachable, times out, fails on the server or stays rate limited. The primary
+  API key is never sent to another host.
+- Queued work: background jobs beyond four, and serve-mode calls beyond
+  `serve.max_concurrent_calls`, wait for a free slot instead of being refused.
+- Smaller fixes: tab and space tolerant suggestion verification, GitLab CI job
+  links, the reason inline comments failed (`publish.inline.failure_class`), and
+  legacy-token guidance for GitLab.
+
 ## [2.1.0-rc.5]
 
 Fifth v2.1 release candidate (the npm dist-tag `next`; `latest` stays on 2.0.0).
@@ -1342,6 +1373,7 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[2.1.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.1.0
 [2.1.0-rc.5]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.1.0-rc.5
 [2.1.0-rc.4]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.1.0-rc.4
 [2.1.0-rc.3]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.1.0-rc.3

@@ -5,9 +5,10 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.0-rc.5]
 
-Planned as `2.1.0-rc.5`. `llm.max_rate_wait_seconds` bounds only the endpoint's
+Fifth v2.1 release candidate (the npm dist-tag `next`; `latest` stays on 2.0.0).
+`llm.max_rate_wait_seconds` bounds only the endpoint's
 own waits (X-37 amendment, WP-8f); found by the rc.4 acceptance, where the fifth
 of five parallel focused reviews on `llm.requests_per_minute = 2` failed at once
 because its place in review-mcp's own queue needed about 120 s. Guide:
@@ -1341,6 +1342,7 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[2.1.0-rc.5]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.1.0-rc.5
 [2.1.0-rc.4]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.1.0-rc.4
 [2.1.0-rc.3]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.1.0-rc.3
 [2.1.0-rc.2]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.1.0-rc.2

@@ -79,6 +79,7 @@ func (l *loader) validate() {
 	}
 	l.validateImprove()
 	l.validateContextRepo()
+	l.validateRepoConfig()
 	if _, err := logging.ParseLevel(c.Log.Level); err != nil {
 		l.problem("log.level: %v", err)
 	}
@@ -550,4 +551,15 @@ func regexpReason(err error) string {
 		return string(se.Code)
 	}
 	return "invalid pattern"
+}
+
+// validateRepoConfig checks repo_config.path: a cleaned relative path
+// without ".." (the rules of a guidelines path). The value is not echoed.
+func (l *loader) validateRepoConfig() {
+	if l.bad["repo_config.path"] {
+		return
+	}
+	if reason := guidelinesPathProblem(l.cfg.RepoConfig.Path); reason != "" {
+		l.problem("repo_config.path: %s", reason)
+	}
 }

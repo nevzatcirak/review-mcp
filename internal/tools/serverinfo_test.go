@@ -110,6 +110,7 @@ func TestServerInfoListsPublishSettings(t *testing.T) {
 		{"llm.wait_seconds", "45", "default"},
 		{"diff.max_tokens", "24000", "env"},
 		{"llm.timeout_seconds", "300", "default"},
+		{"repo_config.enabled", "true", "default"},
 	} {
 		if _, ok := r.Config.Values[w.key]; !ok {
 			t.Errorf("config values lack %s", w.key)

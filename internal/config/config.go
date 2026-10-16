@@ -27,6 +27,7 @@ type Config struct {
 	Ask             Ask             `toml:"ask" json:"ask"`
 	Improve         Improve         `toml:"improve" json:"improve"`
 	Context         Context         `toml:"context" json:"context"`
+	RepoConfig      RepoConfig      `toml:"repo_config" json:"repo_config"`
 	Log             Log             `toml:"log" json:"log"`
 	Serve           Serve           `toml:"serve" json:"serve"`
 	Secrets         Secrets         `toml:"-" json:"secrets"`
@@ -280,6 +281,21 @@ type ContextRepo struct {
 	MaxTokens int `toml:"max_tokens" json:"max_tokens"`
 }
 
+// RepoConfig configures the repository config file (X-40): a file in the
+// reviewed repository, read at the pull request's base revision, that can
+// tune the review within an allow-list of keys. Both keys are operator-only;
+// a repository file cannot set them.
+type RepoConfig struct {
+	// Enabled turns reading the repository config on.
+	Enabled bool `toml:"enabled" json:"enabled"`
+	// Path is the file's path, relative to the repository root, cleaned and
+	// without "..".
+	Path string `toml:"path" json:"path"`
+}
+
+// DefaultRepoConfigPath is the default of repo_config.path.
+const DefaultRepoConfigPath = ".review-mcp.toml"
+
 // Log configures logging (stderr only).
 type Log struct {
 	Level string `toml:"level" json:"level"`
@@ -348,7 +364,8 @@ func Defaults() *Config {
 			MaxHitsPerSymbol:    5,
 			MaxTokens:           2000,
 		}},
-		Log: Log{Level: "info"},
+		RepoConfig: RepoConfig{Enabled: true, Path: DefaultRepoConfigPath},
+		Log:        Log{Level: "info"},
 		Serve: Serve{
 			Listen:             DefaultServeListen,
 			LLMKeySource:       LLMKeySourceHeader,

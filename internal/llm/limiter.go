@@ -54,7 +54,7 @@ const (
 )
 
 // reasonWaitTooLong is the internal reason of a rate-limited failure whose
-// needed wait exceeds llm.max_rate_wait_seconds (§2.2 item 4). It is not
+// needed cool-down wait exceeds llm.max_rate_wait_seconds (§7.1). It is not
 // shown to clients as such.
 const reasonWaitTooLong = "wait_too_long"
 
@@ -64,7 +64,9 @@ type limits struct {
 	rpm int
 	// concurrency is llm.max_concurrent_requests; 0 is no limit.
 	concurrency int
-	// maxWait is llm.max_rate_wait_seconds.
+	// maxWait is llm.max_rate_wait_seconds: the longest wait for the
+	// endpoint's own cool-down (§7.1); the client's own window and
+	// concurrency waits are not compared with it.
 	maxWait time.Duration
 }
 
@@ -129,28 +131,35 @@ type waitStat struct {
 	waits  int
 }
 
-// errWaitTooLong is acquire's failure when the needed wait exceeds the
-// limit; need is that wait and why what needed it (waitCoolDown or
-// waitWindow).
+// errWaitTooLong is acquire's failure when the endpoint's cool-down is
+// longer than the limit; need is the time until the cool-down ends.
 type errWaitTooLong struct {
 	need time.Duration
-	why  string
 }
 
 func (e *errWaitTooLong) Error() string { return "llm: rate-limit wait too long" }
 
 // acquire waits until a request may start on the endpoint (§2.2 items 2 to
-// 4) and records its start; the caller must call release once the request
-// is done, and only when acquire returned no error. Every wait is
-// ctx-aware: a canceled ctx stops waiting at once and gives up the place in
-// the queue. Before each wait the wait is computed; when it is longer than
-// the configured maximum, acquire returns *errWaitTooLong without waiting.
+// 4, and v2.1 spec V-6 §7.1) and records its start; the caller must call
+// release once the request is done, and only when acquire returned no
+// error. Every wait is ctx-aware: a canceled ctx stops waiting at once and
+// gives up the place in the queue. Before each wait the endpoint's
+// cool-down (the time until it ends, nothing else) is compared with the
+// configured maximum; when it is longer, acquire returns *errWaitTooLong
+// without waiting.
 //
 // DESIGN-QUESTION (WP-8b DQ-1): a wait for llm.max_concurrent_requests has
 // no computable length (it lasts until a request in flight ends), so it is
 // not checked against llm.max_rate_wait_seconds; it is bounded by the
 // request timeout of the requests in flight and by ctx. Recommendation:
 // keep.
+//
+// DESIGN-QUESTION (WP-8f DQ-1): a wait for the window
+// (llm.requests_per_minute) is predictable and our own, so it is bounded by
+// ctx only, as a concurrency wait is; a request that waits for both is
+// compared on its cool-down part alone, which is not shortened by the
+// queue ahead of it. A request in the queue therefore never fails because
+// of how many requests are ahead of it. Recommendation: keep.
 func (l *limiter) acquire(ctx context.Context, now func() time.Time, sleep func(context.Context, time.Duration) error,
 	log *slog.Logger) (waitStat, error) {
 	var st waitStat
@@ -162,11 +171,11 @@ func (l *limiter) acquire(ctx context.Context, now func() time.Time, sleep func(
 		l.prune(t)
 		k := slices.Index(l.queue, w)
 		d, reason := l.waitFor(k, t)
-		if d > l.limits.maxWait {
+		if cool := l.coolDownLeft(t); cool > l.limits.maxWait {
 			l.leave(w)
 			l.mu.Unlock()
-			log.Debug("llm rate limit wait too long", "endpoint", l.endpoint, "reason", reason, "wait_ms", d.Milliseconds())
-			return st, &errWaitTooLong{need: d, why: reason}
+			log.Debug("llm rate limit wait too long", "endpoint", l.endpoint, "reason", waitCoolDown, "wait_ms", cool.Milliseconds())
+			return st, &errWaitTooLong{need: cool}
 		}
 		if d == 0 && k == 0 && (l.limits.concurrency == 0 || l.inFlight < l.limits.concurrency) {
 			l.starts = append(l.starts, t)
@@ -210,6 +219,12 @@ func (l *limiter) release() {
 	defer l.mu.Unlock()
 	l.inFlight--
 	l.broadcast()
+}
+
+// coolDownLeft is the time from t until the endpoint's cool-down ends, 0
+// when it is not cooling down. Call with mu held.
+func (l *limiter) coolDownLeft(t time.Time) time.Duration {
+	return max(l.coolUntil.Sub(t), 0)
 }
 
 // waitFor is how long the waiter at queue position k must wait from t for

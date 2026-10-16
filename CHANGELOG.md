@@ -5,6 +5,31 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Planned as `2.1.0-rc.5`. `llm.max_rate_wait_seconds` bounds only the endpoint's
+own waits (X-37 amendment, WP-8f); found by the rc.4 acceptance, where the fifth
+of five parallel focused reviews on `llm.requests_per_minute = 2` failed at once
+because its place in review-mcp's own queue needed about 120 s. Guide:
+[Rate limits](docs/setup.md#rate-limits).
+
+### Changed
+
+- A wait in review-mcp's own queue (`llm.requests_per_minute`,
+  `llm.max_concurrent_requests`) is no longer compared with
+  `llm.max_rate_wait_seconds`: it lasts until the request may start or the call
+  is canceled, and shows in the delay note and `metadata.rate_limit_wait_ms`.
+  The key bounds the endpoint's cool-down (after HTTP 429 or a reset header)
+  alone, and a request that waits for both is compared on the cool-down part.
+  Its description: the longest wait for the endpoint's own rate limit before
+  the call fails or moves to a fallback.
+
+### Removed
+
+- The error sentence "Staying within llm.requests_per_minute would need a wait
+  longer than llm.max_rate_wait_seconds (N s)." A queue position never fails a
+  call now; "The endpoint asked for a wait longer than ..." stays.
+
 ## [2.1.0-rc.4]
 
 Fourth v2.1 release candidate (the npm dist-tag `next`; `latest` stays on 2.0.0).

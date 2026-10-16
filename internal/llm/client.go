@@ -458,7 +458,7 @@ func (c *Client) attempt(ctx context.Context, attempt int, system, user string) 
 	if err != nil {
 		var long *errWaitTooLong
 		if errors.As(err, &long) {
-			return nil, 0, &Error{Class: ClassRateLimited, reason: reasonWaitTooLong, waitReason: long.why, wait: long.need,
+			return nil, 0, &Error{Class: ClassRateLimited, reason: reasonWaitTooLong, wait: long.need,
 				maxWait: time.Duration(max(c.cfg.MaxRateWaitSeconds, 0)) * time.Second}
 		}
 		return nil, 0, &Error{Class: ClassTransport, Detail: "canceled"}

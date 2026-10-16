@@ -1272,7 +1272,9 @@ to finish".
 **Rate-limit waits and jobs.** With a client-side rate limit
 (`llm.requests_per_minute`, `llm.max_concurrent_requests`, or an endpoint that
 answers 429; see [Rate limits](setup.md#rate-limits)) a call may wait for its
-turn, up to `llm.max_rate_wait_seconds` (default 60) for each wait. That time
+turn. The wait in review-mcp's own queue (`llm.requests_per_minute`,
+`llm.max_concurrent_requests`) has no limit of its own; a cool-down after a 429
+is waited for up to `llm.max_rate_wait_seconds` (default 60). That time
 counts toward `wait_seconds`: a call that is still waiting after it answers
 with the running status and a `job_id` like any slow call, and `job_result`
 collects it. The result then reports the waits in `metadata.rate_limit_waits`
@@ -1286,8 +1288,12 @@ queued first come first served, so four runs at once on a limit of 10 per
 minute all succeed instead of failing with HTTP 429, and the later ones report
 a wait. Without a limit they may run into the gateway's 429, which then cools
 the endpoint down for every run and is retried up to `llm.max_rate_retries`
-times. A [fallback model](setup.md#fallback-models) takes over when the waits
-would be longer than `llm.max_rate_wait_seconds`.
+times. With a low limit the later runs wait longer (five parallel reviews on a
+limit of 2 per minute: about 60 s for the third and fourth, 120 s for the fifth), and they
+all succeed; the waits count toward `wait_seconds`, so a slow client gets the
+`job_id` and collects the result later. A [fallback model](setup.md#fallback-models)
+takes over when the endpoint asks for a wait longer than
+`llm.max_rate_wait_seconds`.
 
 **Why the client timeout no longer matters.** Every call, `pr_review` and each
 `job_result`, answers within `wait_seconds`, however long the model takes. At

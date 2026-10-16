@@ -125,20 +125,24 @@ func TestLimiterWindowCountsRetries(t *testing.T) {
 	}
 }
 
-// TestLimiterWaitTooLong [canary target]: a wait longer than
-// max_rate_wait_seconds is not waited for: the request fails at once, the
-// sleeper records no sleep, and the place in the queue is given up.
-func TestLimiterWaitTooLong(t *testing.T) {
+// retryAfter is the header of a 429 that asks for sec seconds.
+func retryAfter(sec string) http.Header {
+	h := http.Header{}
+	h.Set("Retry-After", sec)
+	return h
+}
+
+// TestLimiterCoolDownTooLong: a cool-down of 30 s with max_rate_wait_seconds
+// 10 is not waited for: the request fails at once, the sleeper records no
+// sleep, and the place in the queue is given up.
+func TestLimiterCoolDownTooLong(t *testing.T) {
 	clk := newFakeClock()
-	l := newLimiter(limits{rpm: 1, maxWait: 10 * time.Second})
-	if _, err := l.acquire(t.Context(), clk.now, clk.sleep, discard); err != nil {
-		t.Fatal(err)
-	}
-	l.release()
+	l := newLimiter(limits{maxWait: 10 * time.Second})
+	l.rateLimited(clk.now(), retryAfter("30"))
 	_, err := l.acquire(t.Context(), clk.now, clk.sleep, discard)
 	var long *errWaitTooLong
-	if !errors.As(err, &long) || long.need != time.Minute {
-		t.Fatalf("err = %v, want a wait of 1m refused", err)
+	if !errors.As(err, &long) || long.need != 30*time.Second {
+		t.Fatalf("err = %v, want a cool-down of 30s refused", err)
 	}
 	if got := clk.recorded(); len(got) != 0 {
 		t.Errorf("slept %v", got)
@@ -150,22 +154,126 @@ func TestLimiterWaitTooLong(t *testing.T) {
 	// Through the client: rate limited at once, no request, no retry.
 	f := newFake(t, func(_ int, w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, okJSON("ok")) })
 	cfg := baseCfg(f.srv.URL)
-	cfg.RequestsPerMinute, cfg.MaxRateWaitSeconds, cfg.MaxRetries = 1, 10, 3
+	cfg.MaxRateWaitSeconds, cfg.MaxRetries = 10, 3
 	clk = newFakeClock()
-	c, err := New(cfg, config.NewSecret(testKey), nil, WithSleeper(clk.sleep), WithClock(clk.now), withRegistry(&registry{}))
+	reg := &registry{}
+	c, err := New(cfg, config.NewSecret(testKey), nil, WithSleeper(clk.sleep), WithClock(clk.now), withRegistry(reg))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Complete(t.Context(), "s", "u"); err != nil {
-		t.Fatal(err)
-	}
+	c.limiter.rateLimited(clk.now(), retryAfter("30"))
 	_, err = c.Complete(t.Context(), "s", "u")
 	var le *Error
 	if !errors.As(err, &le) || le.Class != ClassRateLimited || le.reason != reasonWaitTooLong {
 		t.Fatalf("err = %v, want rate limited, wait too long", err)
 	}
-	if got := clk.recorded(); len(got) != 0 || f.calls() != 1 {
-		t.Errorf("sleeps %v, %d requests; want none and 1", got, f.calls())
+	if got := clk.recorded(); len(got) != 0 || f.calls() != 0 {
+		t.Errorf("sleeps %v, %d requests; want none and none", got, f.calls())
+	}
+}
+
+// TestLimiterWindowWaitsAreNotBounded [canary target]: with
+// requests_per_minute 1 and max_rate_wait_seconds 1, three requests queue
+// on one slot. The second waits 60 s and the third 120 s, as planned when it
+// joined the queue; none fails, because a wait in the client's own window
+// is not compared with the key (WP-8f).
+func TestLimiterWindowWaitsAreNotBounded(t *testing.T) {
+	clk := newFakeClock()
+	l := newLimiter(limits{rpm: 1, maxWait: time.Second})
+	if _, err := l.acquire(t.Context(), clk.now, clk.sleep, discard); err != nil {
+		t.Fatal(err)
+	}
+	l.release()
+
+	// A sleeper that blocks until the waiter is woken, so the test moves
+	// the clock itself.
+	slept := make(chan time.Duration, 8)
+	block := func(ctx context.Context, d time.Duration) error {
+		slept <- d
+		<-ctx.Done()
+		return nil
+	}
+	errs := make(chan error, 2)
+	start := func() {
+		go func() {
+			_, err := l.acquire(t.Context(), clk.now, block, discard)
+			errs <- err
+		}()
+	}
+	next := func() time.Duration {
+		t.Helper()
+		select {
+		case d := <-slept:
+			return d
+		case err := <-errs:
+			t.Fatalf("a queued request failed or started early: %v", err)
+		case <-time.After(5 * time.Second):
+			t.Fatal("no waiter slept")
+		}
+		return 0
+	}
+	start()
+	if d := next(); d != time.Minute {
+		t.Fatalf("second request waits %v, want 1m0s", d)
+	}
+	start()
+	if d := next(); d != 2*time.Minute {
+		t.Fatalf("third request waits %v, want 2m0s", d)
+	}
+	wake := func() {
+		l.mu.Lock()
+		l.broadcast()
+		l.mu.Unlock()
+	}
+	clk.advance(time.Minute)
+	wake()
+	if err := <-errs; err != nil {
+		t.Fatalf("second request: %v", err)
+	}
+	// The third is woken by the second's start and waits the minute left.
+	if d := next(); d != time.Minute {
+		t.Fatalf("third request waits %v after the second started, want 1m0s", d)
+	}
+	clk.advance(time.Minute)
+	wake()
+	if err := <-errs; err != nil {
+		t.Fatalf("third request: %v", err)
+	}
+}
+
+// TestLimiterMixedWait [canary target]: a request that waits for the window
+// (30 s) and the endpoint's cool-down (5 s) is compared on the cool-down
+// alone: with max_rate_wait_seconds 10 it waits; a cool-down of 15 s with
+// the same setting fails at once.
+func TestLimiterMixedWait(t *testing.T) {
+	setup := func(coolDown string) (*limiter, *fakeClock) {
+		clk := newFakeClock()
+		l := newLimiter(limits{rpm: 1, maxWait: 10 * time.Second})
+		if _, err := l.acquire(t.Context(), clk.now, clk.sleep, discard); err != nil {
+			t.Fatal(err)
+		}
+		l.release()
+		clk.advance(30 * time.Second) // the window frees in 30 s
+		l.rateLimited(clk.now(), retryAfter(coolDown))
+		return l, clk
+	}
+
+	l, clk := setup("5")
+	if _, err := l.acquire(t.Context(), clk.now, clk.sleep, discard); err != nil {
+		t.Fatalf("a 30 s window wait with a 5 s cool-down failed: %v", err)
+	}
+	if got := clk.recorded(); !slices.Equal(got, []time.Duration{30 * time.Second}) {
+		t.Errorf("sleeps %v, want one wait of 30s", got)
+	}
+
+	l, clk = setup("15")
+	_, err := l.acquire(t.Context(), clk.now, clk.sleep, discard)
+	var long *errWaitTooLong
+	if !errors.As(err, &long) || long.need != 15*time.Second {
+		t.Fatalf("err = %v, want a cool-down of 15s refused", err)
+	}
+	if got := clk.recorded(); len(got) != 0 {
+		t.Errorf("slept %v, want none", got)
 	}
 }
 
@@ -297,12 +405,9 @@ func TestRegistry(t *testing.T) {
 	}
 
 	// A refused wait logs the endpoint, never the key or its HMAC.
-	if _, err := a.limiter.acquire(t.Context(), time.Now, sleepCtx, logger); err != nil {
-		t.Fatal(err)
-	}
-	a.limiter.release()
+	a.limiter.rateLimited(time.Now(), retryAfter("30"))
 	if _, err := a.limiter.acquire(t.Context(), time.Now, sleepCtx, logger); err == nil {
-		t.Fatal("the second request in the minute was not refused")
+		t.Fatal("a request during a cool-down longer than the maximum was not refused")
 	}
 	u, _ := url.Parse("https://llm.example/v1")
 	printed := fmt.Sprintf("%v %+v %#v %s %v %#v", r, r, r, r.String(), a.limiter, a.limiter) + logs.String()
@@ -314,7 +419,7 @@ func TestRegistry(t *testing.T) {
 			t.Errorf("the key or its HMAC is printed:\n%s", printed)
 		}
 	}
-	if !strings.Contains(logs.String(), "endpoint=https://llm.example/v1") || !strings.Contains(logs.String(), "reason=window") {
+	if !strings.Contains(logs.String(), "endpoint=https://llm.example/v1") || !strings.Contains(logs.String(), "reason=cool_down") {
 		t.Errorf("log lacks the endpoint or reason:\n%s", logs.String())
 	}
 	if config.NormalBaseURL(u) != "https://llm.example/v1" {
@@ -597,10 +702,9 @@ func TestRateLimitWaitsReported(t *testing.T) {
 }
 
 // TestWaitTooLongSentence [canary target]: the sentence of a refused wait
-// names what needed it: the endpoint's cool-down, or the client's own
-// llm.requests_per_minute window. Both name the configured longest wait.
+// names the endpoint's cool-down and the configured longest wait. There is no
+// sentence for the client's own window: it is never refused.
 func TestWaitTooLongSentence(t *testing.T) {
-	// The endpoint: a 429 asking for 90 s.
 	clk := newFakeClock()
 	rf := newRateFake(t, clk, func(_ int, h http.Header) int {
 		h.Set("Retry-After", "90")
@@ -611,23 +715,5 @@ func TestWaitTooLongSentence(t *testing.T) {
 	if want := "the LLM endpoint rate-limited the request. The endpoint asked for a wait longer than " +
 		"llm.max_rate_wait_seconds (60 s)."; err == nil || err.Error() != want {
 		t.Errorf("cool-down: err = %v, want %q", err, want)
-	}
-
-	// The window: requests_per_minute 1, the second request would wait 60 s.
-	clk = newFakeClock()
-	rf = newRateFake(t, clk, func(int, http.Header) int { return 200 })
-	cfg := baseCfg(rf.srv.URL)
-	cfg.RequestsPerMinute, cfg.MaxRateWaitSeconds = 1, 10
-	c, err = New(cfg, config.NewSecret(testKey), nil, WithSleeper(clk.sleep), WithClock(clk.now), withRegistry(&registry{}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := c.Complete(t.Context(), "s", "u"); err != nil {
-		t.Fatal(err)
-	}
-	_, err = c.Complete(t.Context(), "s", "u")
-	if want := "the LLM endpoint rate-limited the request. Staying within llm.requests_per_minute would need a wait " +
-		"longer than llm.max_rate_wait_seconds (10 s)."; err == nil || err.Error() != want {
-		t.Errorf("window: err = %v, want %q", err, want)
 	}
 }

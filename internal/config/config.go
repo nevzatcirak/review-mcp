@@ -54,8 +54,10 @@ type LLM struct {
 	// MaxConcurrentRequests is the most requests in flight at once, per
 	// endpoint (X-37); 0 is unlimited.
 	MaxConcurrentRequests int `toml:"max_concurrent_requests" json:"max_concurrent_requests"`
-	// MaxRateWaitSeconds is the longest one wait for the rate limit may be
-	// (X-37); a longer needed wait is not waited for.
+	// MaxRateWaitSeconds is the longest wait for the endpoint's own rate
+	// limit (after HTTP 429 or a reset header) before the call fails or
+	// moves to a fallback model (X-37). Waits in the client's own queue
+	// (requests_per_minute, max_concurrent_requests) are not bounded by it.
 	MaxRateWaitSeconds int `toml:"max_rate_wait_seconds" json:"max_rate_wait_seconds"`
 	// MaxRateRetries is the number of retries after HTTP 429 for one model
 	// call, counted apart from MaxRetries (X-37).

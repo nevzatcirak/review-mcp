@@ -18,6 +18,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/projctx"
 	"github.com/nevzatcirak/review-mcp/internal/prompt"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/related"
 	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 	"github.com/nevzatcirak/review-mcp/internal/repoctx"
 	"github.com/nevzatcirak/review-mcp/internal/review/incremental"
@@ -149,6 +150,11 @@ type Args struct {
 	// compliance check and nothing is discovered or read. nil means not
 	// given. A focused run and a merged publish use no issue.
 	IssueContext []issuectx.Issue
+	// Related are the normalised URLs of the related argument (X-41,
+	// related.Validate): read-only context on any configured provider.
+	// nil means not given. The tool layer refuses them with focus or
+	// findings.
+	Related []string
 }
 
 // WithConfigDefaults returns a with every option the call left unset (nil,
@@ -262,6 +268,9 @@ type Plan struct {
 	// heldNote is the note of overview-only findings without a held line
 	// that the last render of the overview added; "" for none.
 	heldNote string
+	// related are the related pull requests of the run (X-41), in argument
+	// order; nil without the argument.
+	related []*related.Item
 	// lastVerdict is the issue compliance verdict the last review's
 	// overview recorded (X-42, spec V-2 §2.4); nil for none.
 	lastVerdict *Compliance
@@ -565,6 +574,16 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		proj = projctx.ReadFor(ctx, cfg, p, ref, pr, treeDiff, rcs, log)
 	}
 	pl.proj = proj
+
+	// The related pull requests (X-41, spec V-13a §1.2): resolved through
+	// the run's resolver and read now, after the primary pull request and
+	// the repository config, with the run's filter. A failure is the item's
+	// status, never the run's error.
+	if len(args.Related) > 0 {
+		primaryURL, _ := related.Normalize(args.PRURL)
+		pl.related = related.Read(ctx, deps.Resolver, primaryURL, ref, args.Related, flt.Include,
+			cfg.Related.MaxTokens == 0, log)
+	}
 
 	// The issue the pull request implements (X-42): the issue_context
 	// argument, else the issues it names on its own host, read now. A

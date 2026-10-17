@@ -5,6 +5,37 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0]
+
+Fifth stable release. The code is the same as `2.2.0-rc.3`. The release
+candidates were accepted in use: the repository config and the `docs` focus in
+record #37, issue compliance in record #44 (which also found the defect fixed in
+`2.2.0-rc.3`), on throwaway pull requests in this repository. The
+`2.2.0-rc.1` to `2.2.0-rc.3` sections of CHANGELOG.md list everything that went
+into 2.2.0 since 2.1.0. Nothing in the tools or in the configuration of 2.1.0 is
+removed or renamed: a 2.1.0 setup keeps working. Two changes of behaviour need no
+new keys: a `.review-mcp.toml` on a repository's target branch is now read
+(`repo_config.enabled`, default `true`), and `pr_review` now checks a pull
+request against an issue it names on its own host (`review.issue_compliance`,
+default `true`), so the provider token needs read access to issues for that
+check.
+
+### Highlights
+
+- Repository config: a repository tunes its own reviews with a
+  `.review-mcp.toml` read at the target branch, within an allow-list. Numbers
+  only tighten the operator's limits, ignore lists add, and extra instructions
+  are fenced. Every result reports what was applied and what was ignored.
+- The `docs` focus, the sixth: it checks documentation against the code, finds
+  missing doc updates, wrong names and defaults, broken links and order, and
+  checks tone against `review.docs_style`.
+- Issue compliance: `pr_review` says which requirements of the pull request's
+  issue are met, not met or need a human, with one verdict, carried and updated
+  by incremental reviews. Issues come from the `issue_context` argument (for
+  example fetched by the client from a tracker MCP server) or from the
+  references the pull request makes on its own host; review-mcp never contacts
+  a tracker. `pr_describe` uses the issue as context.
+
 ## [2.2.0-rc.3]
 
 Third 2.2 release candidate (the npm dist-tag `next`; `latest` stays on
@@ -1501,6 +1532,7 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[2.2.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.2.0
 [2.2.0-rc.3]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.2.0-rc.3
 [2.2.0-rc.2]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.2.0-rc.2
 [2.2.0-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.2.0-rc.1

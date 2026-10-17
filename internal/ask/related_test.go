@@ -124,3 +124,37 @@ func TestAskRelatedEdgeCases(t *testing.T) {
 		t.Errorf("nothing to ask about: %+v", e)
 	}
 }
+
+// TestAskRelatedNeverTrimsTheDiff: over a sweep of context windows, the
+// related block is used only when the diff stays whole ("diff wins"); some
+// window must place it, so the test cannot pass by never placing it.
+func TestAskRelatedNeverTrimsTheDiff(t *testing.T) {
+	var primary, rel []provider.FilePatch
+	for i := range 12 {
+		primary = append(primary, addedPatch(fmt.Sprintf("src/file%02d.go", i), "PRIMARY", 40))
+	}
+	for i := range 4 {
+		rel = append(rel, addedPatch(fmt.Sprintf("api/handler%d.go", i), "HANDLER", 30))
+	}
+	placedOnce := false
+	for window := 3000; window <= 20000; window += 500 {
+		h := relatedHarness(rel...)
+		h.prov.files = primary
+		h.deps.Config.LLM.ContextWindow = window
+		h.deps.Config.Related.MaxTokens = 4000
+		args := h.args()
+		args.Related = []string{relatedURL}
+		res, err := Run(context.Background(), h.deps, args)
+		if err != nil {
+			continue // the window is too small for the question itself
+		}
+		placed := res.Coverage.Related[0].Status == related.StatusFull || res.Coverage.Related[0].Status == related.StatusPartial
+		if placed && res.Metadata.DiffTrimmed {
+			t.Fatalf("window %d: the related block was used and the diff trimmed", window)
+		}
+		placedOnce = placedOnce || placed
+	}
+	if !placedOnce {
+		t.Fatal("no window placed the related block")
+	}
+}

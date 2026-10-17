@@ -5,6 +5,22 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Planned as `2.2.0-rc.3` (the npm dist-tag `next`).
+
+### Fixed
+
+- `repo_config.ignored` was `null` instead of `[]` when every key of
+  `.review-mcp.toml` was applied and none was ignored, so the MCP SDK rejected
+  the results of `pr_review`, `pr_describe` and `pr_improve` ("validating tool
+  output"). It is now always a list, and so is `repo_config.applied`. An audit
+  of every tool's output schema for required lists and objects found no other
+  value that could be `null`; tests now validate the empty edge cases (no
+  findings, notes, files or suggestions; no issue references; compliance
+  `null`; a repository config that is absent or ignores nothing; `job_result`)
+  against the declared schemas.
+
 ## [2.2.0-rc.2]
 
 Second 2.2 release candidate (the npm dist-tag `next`; `latest` stays on

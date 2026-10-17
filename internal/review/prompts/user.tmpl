@@ -79,6 +79,13 @@ is rendered, so the prompt is byte-identical to the one without the feature.
 An incremental run with an issue also gets .issue_verdict right after it
 (the fixed sentence of EarlierVerdictHeader and the verdict the last
 review's overview recorded, in an adaptive code fence), when there is one.
+
+Intentional deviation (X-41, v2.3 spec V-13a §1.4): upstream has no related
+pull requests. When the caller names related pull requests and their block
+fits next to the diff, the pipeline supplies .related (the fixed sentence of
+RelatedHeader and, per related pull request, its line and numbered diff,
+contract files first, inside an adaptive code fence). It follows the issue
+blocks and precedes the discussion; without one nothing is rendered.
 */}}
 
 
@@ -105,6 +112,10 @@ PR Description:
 {{- if .issue_verdict }}
 
 {{ .issue_verdict }}
+{{- end }}
+{{- if .related }}
+
+{{ .related }}
 {{- end }}
 {{- if .discussion }}
 

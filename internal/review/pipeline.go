@@ -271,6 +271,9 @@ type Plan struct {
 	// related are the related pull requests of the run (X-41), in argument
 	// order; nil without the argument.
 	related []*related.Item
+	// relatedShown are the related items placed in the prompt, with their
+	// counts of files shown and listed.
+	relatedShown []relatedShown
 	// lastVerdict is the issue compliance verdict the last review's
 	// overview recorded (X-42, spec V-2 §2.4); nil for none.
 	lastVerdict *Compliance
@@ -788,6 +791,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	pl.Result, pl.Budget = res, budget
 	if prep.Text == "" {
 		pl.Empty = true
+		pl.markRelated(related.StatusNotPlaced, ReasonNothingToReview)
 		if rcs != nil {
 			// No model call, so no context: skipped, not off ("off" means
 			// only "disabled").
@@ -810,6 +814,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		}
 		if ok {
 			noteIssueInParts(res, issueBlock)
+			pl.markRelated(related.StatusNotPlaced, related.ReasonReviewInParts)
 			return pl, nil
 		}
 		if reserve > 0 {
@@ -828,6 +833,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 					return nil, err
 				} else if ok {
 					noteIssueInParts(res, issueBlock)
+					pl.markRelated(related.StatusNotPlaced, related.ReasonReviewInParts)
 					return pl, nil
 				}
 			}
@@ -878,6 +884,16 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			}
 		default:
 			noteIssueNotPlaced(res, issueBlock)
+		}
+	}
+	// The related block (X-41) goes next into the room the diff leaves,
+	// before the repository context; it never trims the primary diff.
+	if pin, pfit, err := pl.placeRelated(in, fit, prep.Text, budget, cfg); err != nil {
+		return nil, err
+	} else if pin.Related != in.Related {
+		in, fit = pin, pfit
+		if res.Metadata.PromptTokens, err = ScaffoldingTokens(in, factor); err != nil {
+			return nil, err
 		}
 	}
 	var repoNotes []string

@@ -92,7 +92,7 @@ func publish(ctx context.Context, deps Deps, args Args, pl *Plan) {
 			if res.Issue != nil {
 				verdict = res.Issue.Compliance
 			}
-			return withTrailer(deps.RenderProvider(res, caps), issueLine(verdict), held, res.Reviewed.SHA)
+			return withTrailer(deps.RenderProvider(res, caps), issueLine(verdict), pl.relatedRecordLine(), held, res.Reviewed.SHA)
 		}
 	}
 

@@ -276,6 +276,9 @@ type Plan struct {
 	relatedShown []relatedShown
 	// relatedReported: reportRelated added the related notes.
 	relatedReported bool
+	// lastRelated is the related record of the last review's overview
+	// (X-41); nil for none.
+	lastRelated *relatedRecord
 	// lastVerdict is the issue compliance verdict the last review's
 	// overview recorded (X-42, spec V-2 §2.4); nil for none.
 	lastVerdict *Compliance
@@ -460,6 +463,18 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		maxTotal: config.EffectiveMaxTotalFindings(cfg.Review, maxFindings), cfg: cfg, args: args, repo: rc}
 	supplied := args.Findings != nil
 
+	// The related pull requests (X-41, spec V-13a §1.2): resolved through
+	// the run's resolver and read now, after the primary pull request and
+	// the repository config and before the issue, with the run's filter. A
+	// failure is the item's status, never the run's error. They are read
+	// before the incremental lookup, which compares them with the last
+	// review's record (spec §2.3).
+	if len(args.Related) > 0 {
+		primaryURL, _ := related.Normalize(args.PRURL)
+		pl.related = related.Read(ctx, deps.Resolver, primaryURL, ref, args.Related, flt.Include,
+			cfg.Related.MaxTokens == 0, log)
+	}
+
 	// An incremental review (X-36) continues from the commit the last
 	// review recorded in review-mcp's own overview. Without one the review
 	// is full. When it is the current head, nothing changed: the run ends
@@ -469,6 +484,15 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	last := ""
 	if on, explicit := incrementalWanted(cfg, args); on {
 		last, incNotes = pl.lastReviewed(ctx, explicit)
+		// A related pull request that changed since the last review (or one
+		// that could not be read now) makes the review full: a doubt is
+		// always a change (spec V-13a §2.3 item 3).
+		if last != "" && pl.relatedChanged() {
+			last = ""
+			pl.held = nil
+			incNotes = append(incNotes, NoteRelatedChanged)
+			log.Debug("review: related pull requests changed since the last review; reviewing in full")
+		}
 		if last != "" && last == ValidReviewedSHA(pr.HeadSHA) {
 			all := incremental.Result{Files: make([]incremental.File, len(d.Files))}
 			for i, f := range d.Files {
@@ -583,16 +607,6 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		proj = projctx.ReadFor(ctx, cfg, p, ref, pr, treeDiff, rcs, log)
 	}
 	pl.proj = proj
-
-	// The related pull requests (X-41, spec V-13a §1.2): resolved through
-	// the run's resolver and read now, after the primary pull request and
-	// the repository config, with the run's filter. A failure is the item's
-	// status, never the run's error.
-	if len(args.Related) > 0 {
-		primaryURL, _ := related.Normalize(args.PRURL)
-		pl.related = related.Read(ctx, deps.Resolver, primaryURL, ref, args.Related, flt.Include,
-			cfg.Related.MaxTokens == 0, log)
-	}
 
 	// The issue the pull request implements (X-42): the issue_context
 	// argument, else the issues it names on its own host, read now. A

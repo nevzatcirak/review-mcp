@@ -53,6 +53,9 @@ type heldRecord struct {
 	H    string `json:"h"`
 	C    string `json:"c"`
 	From string `json:"from"`
+	// R is the related pull request's URL of a finding located there
+	// (X-41, v2.3 spec V-13a §2.3 item 1); absent otherwise.
+	R string `json:"r,omitempty"`
 }
 
 // noteNotCarried: overview-only findings that got no held line (the
@@ -121,7 +124,8 @@ func heldLines(res *Result, sha string) (lines []string, unrecorded int) {
 			from = ki.CarriedFrom
 		}
 		rec := heldRecord{V: heldVersion, F: ki.RelevantFile, S: ki.StartLine, E: ki.EndLine,
-			H: cutBytes(ki.IssueHeader, maxHeldHeaderBytes), C: cutBytes(ki.IssueContent, maxHeldContentBytes), From: from}
+			H: cutBytes(ki.IssueHeader, maxHeldHeaderBytes), C: cutBytes(ki.IssueContent, maxHeldContentBytes), From: from,
+			R: ki.Related}
 		line, ok := encodeHeld(rec)
 		switch {
 		case !ok || full:
@@ -174,7 +178,7 @@ func decodeHeld(payload string) (heldRecord, bool) {
 // "from" a full lower-case commit id.
 func (r heldRecord) valid() bool {
 	return r.V == heldVersion && heldPath(r.F) && r.S >= 0 && r.E >= 0 && (r.S == 0 || r.E == 0 || r.E >= r.S) &&
-		len(r.H) <= maxHeldHeaderBytes && len(r.C) <= maxHeldContentBytes && isReviewedSHA(r.From)
+		len(r.H) <= maxHeldHeaderBytes && len(r.C) <= maxHeldContentBytes && isReviewedSHA(r.From) && validRelatedURL(r.R, true)
 }
 
 // heldPath reports whether p is a path a held record may name.

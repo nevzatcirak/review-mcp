@@ -419,22 +419,6 @@ func TestRelatedCoverageAndNotes(t *testing.T) {
 	})
 }
 
-// TestRelatedUnchangedIncremental: an incremental run with nothing changed
-// reads no related pull request and accounts for each as not placed.
-func TestRelatedUnchangedIncremental(t *testing.T) {
-	h := incHarness(shaHead)
-	on := true
-	res, err := Run(context.Background(), h.deps, Args{PRURL: testPRURL, Incremental: &on, Related: []string{relatedURL}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	validateResult(t, res)
-	if res.Incremental.Mode != IncrementalUnchanged || len(res.Coverage.Related) != 1 ||
-		res.Coverage.Related[0] != (RelatedItem{URL: relatedURL, Status: "not_placed", Reason: ReasonNothingToReview}) {
-		t.Errorf("mode %s, related %+v", res.Incremental.Mode, res.Coverage.Related)
-	}
-}
-
 // TestRelatedInstruction: with a placed related block the system prompt
 // carries the cross-repository instruction and the optional related field
 // of KeyIssuesComponentLink; without one (no argument, or a block that was

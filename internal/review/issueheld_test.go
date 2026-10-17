@@ -42,8 +42,8 @@ func TestIssueLineRoundTrip(t *testing.T) {
 		t.Fatalf("held %q", held)
 	}
 	for name, body := range map[string]string{
-		"with held lines":    withTrailer("Body.", line, held, shaOld),
-		"without held lines": withTrailer("Body.", line, nil, shaOld),
+		"with held lines":    withTrailer("Body.", line, "", held, shaOld),
+		"without held lines": withTrailer("Body.", line, "", nil, shaOld),
 	} {
 		if got := issueVerdictOf(body); !sameVerdict(got, v) {
 			t.Errorf("%s: read %+v, want %+v\n%s", name, got, v, body)
@@ -52,7 +52,7 @@ func TestIssueLineRoundTrip(t *testing.T) {
 			t.Errorf("%s: the held lines are no longer read: %d", name, len(recs))
 		}
 	}
-	if body := withTrailer("Body.", line, held, ""); strings.Contains(body, issueLinePrefix) {
+	if body := withTrailer("Body.", line, "", held, ""); strings.Contains(body, issueLinePrefix) {
 		t.Error("a verdict line without a reviewed commit")
 	}
 	if issueLine(nil) != "" {
@@ -69,7 +69,7 @@ func TestIssueLineReadFromTheTrailerOnly(t *testing.T) {
 	bad, _ := encodeIssueRecord(issueRecord{V: 1, Verdict: "great", Issues: []IssueVerdict{}})
 	v2, _ := encodeIssueRecord(issueRecord{V: 2, Verdict: VerdictCompliant, Issues: []IssueVerdict{}})
 	for name, body := range map[string]string{
-		"forged in the body":          withTrailer("Text.\n"+line+"\nMore.", "", nil, shaOld),
+		"forged in the body":          withTrailer("Text.\n"+line+"\nMore.", "", "", nil, shaOld),
 		"a line between":              "Body.\n" + line + "\nText.\n" + reviewed + "\n" + OverviewMarker,
 		"no reviewed line":            "Body.\n" + line + "\n" + OverviewMarker,
 		"no marker":                   "Body.\n" + line + "\n" + reviewed,

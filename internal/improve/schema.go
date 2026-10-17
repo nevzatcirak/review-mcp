@@ -1,6 +1,9 @@
 package improve
 
-import "github.com/nevzatcirak/review-mcp/internal/llmrun"
+import (
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
+	"github.com/nevzatcirak/review-mcp/internal/repocfg"
+)
 
 // ResultSchema is the JSON schema (draft 2020-12) of Result, for the
 // pr_improve tool's MCP output schema (v2 spec §1.7). It is a plain map, as
@@ -113,6 +116,7 @@ func ResultSchema() map[string]any {
 			"self_review_calls", "repair_tactic", "reasked", "truncated", "diff_trimmed", "already_discussed",
 			"rate_limit_waits", "rate_limit_wait_ms",
 			"models_used", "fallback_calls"),
+		"repo_config": repocfg.Schema(),
 		"publish": object("publishing outcome; present when publish was requested", map[string]any{
 			"published":  boolean("whether the overview comment was posted or edited in place"),
 			"comment_id": str("id of the overview comment"),
@@ -126,5 +130,5 @@ func ResultSchema() map[string]any {
 				"failed":            integer("suggestions whose inline comment could not be posted"),
 			}, "posted", "skipped_duplicate", "unanchorable", "failed"),
 		}, "published"),
-	}, "suggestions", "coverage", "notes", "metadata")
+	}, "suggestions", "coverage", "notes", "metadata", "repo_config")
 }

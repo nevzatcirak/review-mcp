@@ -31,6 +31,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 )
 
@@ -246,22 +247,9 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	factor := cfg.LLM.TokenEstimateFactor
-	language := cfg.Output.Language
-	if args.OutputLanguage != "" {
-		language = args.OutputLanguage
-	}
-	maxChunks := args.MaxChunks
-	if maxChunks <= 0 {
-		maxChunks = cfg.Review.MaxChunks
-	}
 
 	// Resolve, fetch the PR, its filtered diff and its commit messages.
 	progress(deps, StageFetching)
-	flt, err := filter.New(cfg)
-	if err != nil {
-		return nil, err
-	}
 	ref, p, err := deps.Resolver.Resolve(args.PRURL)
 	if err != nil {
 		return nil, err
@@ -273,6 +261,24 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		return nil, err
 	}
 	pr, err := p.GetPullRequest(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+
+	// The repository config (X-40): read once at the base revision, then the
+	// run continues on the merged copy of the configuration.
+	rc := repocfg.ForRun(ctx, log, cfg, p, ref, pr)
+	cfg = rc.Config
+	factor := cfg.LLM.TokenEstimateFactor
+	language := cfg.Output.Language
+	if args.OutputLanguage != "" {
+		language = args.OutputLanguage
+	}
+	maxChunks := args.MaxChunks
+	if maxChunks <= 0 {
+		maxChunks = cfg.Review.MaxChunks
+	}
+	flt, err := filter.New(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +339,10 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			Model: cfg.LLM.Model, ContextWindow: window, PromptTokens: promptTokens,
 			DiffTokens: prep.Tokens, FastPath: prep.FastPath, CommitMessages: len(commits),
 		},
+		RepoConfig: rc.Result,
 	}
+	// The notes of the repository config come first (X-40).
+	res.Notes = append(res.Notes, rc.Notes...)
 	// Changed files the provider could not list at all (GitHub lists at
 	// most 3000) are named by its fixed note.
 	res.Notes = append(res.Notes, d.Notes...)

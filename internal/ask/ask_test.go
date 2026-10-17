@@ -47,8 +47,23 @@ type fakeProvider struct {
 	// diffNotes are the provider's Diff.Notes.
 	diffNotes []string
 
+	// repoFiles are the files GetFileAt serves, keyed "<path>@<rev>", and
+	// reads the calls it got in the same form.
+	repoFiles map[string]string
+	reads     []string
+
 	calls  int
 	posted []string
+}
+
+// GetFileAt serves repoFiles, keyed "<path>@<rev>"; anything else is not
+// found, as on a real host. reads records every call the same way.
+func (f *fakeProvider) GetFileAt(_ context.Context, _ provider.PRRef, path, rev string) ([]byte, error) {
+	f.reads = append(f.reads, path+"@"+rev)
+	if c, ok := f.repoFiles[path+"@"+rev]; ok {
+		return []byte(c), nil
+	}
+	return nil, &provider.Error{Class: provider.ClassNotFound, Status: 404}
 }
 
 func (f *fakeProvider) Capabilities() provider.Capabilities { return provider.Capabilities{GFM: true} }
@@ -158,7 +173,7 @@ func newHarness(answers ...string) *harness {
 	h := &harness{logs: &bytes.Buffer{}}
 	h.prov = &fakeProvider{
 		pr: provider.PullRequest{Title: "Retry " + titleMarker, Description: "Adds a retry. " + descMarker,
-			SourceBranch: "feature/" + branchMarker, HeadSHA: "abc"},
+			SourceBranch: "feature/" + branchMarker, HeadSHA: "abc", BaseSHA: "base0"},
 		files: sampleFiles(),
 	}
 	h.resolver = &fakeResolver{p: h.prov}

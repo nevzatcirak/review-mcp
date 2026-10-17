@@ -35,6 +35,10 @@ type PromptInput struct {
 	// argument, else ask.extra_instructions), before the output-language
 	// instruction is added.
 	ExtraInstructions string
+	// RepoInstructions is the rendered block of the repository's extra
+	// instructions (projctx.RepoGuidance); empty omits it. It follows the
+	// extra instructions in the system prompt.
+	RepoInstructions string
 	// Language is the effective output language (the per-call argument,
 	// else output.language). Empty means en-US.
 	Language string
@@ -72,6 +76,7 @@ func (in *PromptInput) vars() map[string]any {
 	}
 	return map[string]any{
 		"extra_instructions": prompt.WithOutputLanguage(in.ExtraInstructions, in.Language),
+		"repo_instructions":  in.RepoInstructions,
 		"title":              in.Title,
 		"branch":             in.Branch,
 		"description":        in.Description,

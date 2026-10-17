@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
+	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 )
 
 // Notes the pipeline adds (v2 spec §3). They are fixed sentences with
@@ -128,6 +129,9 @@ type Result struct {
 	Metadata Metadata `json:"metadata"`
 	// Publish is set when publishing was requested.
 	Publish *PublishResult `json:"publish,omitempty"`
+	// RepoConfig is what the repository config (X-40) contributed; always
+	// set.
+	RepoConfig repocfg.Result `json:"repo_config"`
 }
 
 // PublishResult is the outcome of publishing (v2 spec §4): the comment

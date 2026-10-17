@@ -107,7 +107,7 @@ func TestPRAskToolDefinition(t *testing.T) {
 		outProps = append(outProps, k)
 	}
 	sort.Strings(outProps)
-	if got := strings.Join(outProps, ","); got != "answer,coverage,metadata,notes,publish,question" {
+	if got := strings.Join(outProps, ","); got != "answer,coverage,metadata,notes,publish,question,repo_config" {
 		t.Errorf("output schema properties = %s", got)
 	}
 }

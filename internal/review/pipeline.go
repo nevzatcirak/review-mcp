@@ -17,6 +17,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/projctx"
 	"github.com/nevzatcirak/review-mcp/internal/prompt"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 	"github.com/nevzatcirak/review-mcp/internal/repoctx"
 	"github.com/nevzatcirak/review-mcp/internal/review/incremental"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
@@ -226,7 +227,13 @@ type Plan struct {
 	RepoReport *repoctx.Report
 	// proj is the project context (X-32), whose coverage a review in parts
 	// carries too.
-	proj        *projctx.Context
+	proj *projctx.Context
+	// cfg is the run's merged configuration and args the call's arguments
+	// with the configuration's defaults filled in (X-40); repo is the
+	// repository config the merge came from.
+	cfg         *config.Config
+	args        Args
+	repo        *repocfg.Outcome
 	ref         provider.PRRef
 	p           provider.Provider
 	pr          *provider.PullRequest
@@ -315,6 +322,9 @@ func run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	// From here the run uses the configuration merged with the repository
+	// config and the arguments completed from it (X-40).
+	deps.Config, args = pl.cfg, pl.args
 	if args.Findings != nil {
 		// A merged publish (X-33): the client's findings take the place of
 		// the model's answer, and no model is called.
@@ -357,6 +367,33 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
+
+	// Step 2: resolve and read the PR.
+	progress(deps, StageFetching)
+	ref, p, err := deps.Resolver.Resolve(args.PRURL)
+	if err != nil {
+		return nil, err
+	}
+	// The context window comes from llm.context_window or, when unset, from
+	// the endpoint (X-15). The probe runs before any provider request, so a
+	// failing probe sends nothing to the provider.
+	window, _, err := llmrun.ContextWindow(ctx, cfg, deps.LLM)
+	if err != nil {
+		return nil, err
+	}
+	pr, err := p.GetPullRequest(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+
+	// The repository config (X-40) is read once, at the base revision, now
+	// that the pull request is known and before anything depends on the
+	// settings: the run continues on the merged copy of the configuration,
+	// and the options the call left unset take their defaults from it.
+	rc := repocfg.ForRun(ctx, log, cfg, p, ref, pr)
+	cfg = rc.Config
+	deps.Config = cfg
+	args = args.WithConfigDefaults(cfg)
 	toggles := TogglesFrom(cfg.Review)
 	factor := cfg.LLM.TokenEstimateFactor
 	maxFindings := cfg.Review.MaxFindings
@@ -375,25 +412,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	if args.OutputLanguage != "" {
 		language = args.OutputLanguage
 	}
-
-	// Step 2: resolve, fetch the PR and its filtered diff.
-	progress(deps, StageFetching)
 	flt, err := filter.New(cfg)
-	if err != nil {
-		return nil, err
-	}
-	ref, p, err := deps.Resolver.Resolve(args.PRURL)
-	if err != nil {
-		return nil, err
-	}
-	// The context window comes from llm.context_window or, when unset, from
-	// the endpoint (X-15). The probe runs before any provider request, so a
-	// failing probe sends nothing to the provider.
-	window, _, err := llmrun.ContextWindow(ctx, cfg, deps.LLM)
-	if err != nil {
-		return nil, err
-	}
-	pr, err := p.GetPullRequest(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -406,7 +425,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// run's one read of the threads and of the token's user with the
 	// discussion and the publish.
 	pl := &Plan{ref: ref, p: p, pr: pr, d: d, toggles: toggles, maxFindings: maxFindings, log: log, flt: flt,
-		maxTotal: config.EffectiveMaxTotalFindings(cfg.Review, maxFindings)}
+		maxTotal: config.EffectiveMaxTotalFindings(cfg.Review, maxFindings), cfg: cfg, args: args, repo: rc}
 	supplied := args.Findings != nil
 
 	// An incremental review (X-36) continues from the commit the last
@@ -533,6 +552,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		Toggles:           toggles,
 		MaxFindings:       maxFindings,
 		ExtraInstructions: extra,
+		RepoInstructions:  projctx.RepoGuidance(cfg.RepoConfig.Path, cfg.Review.RepoInstructions),
 		Language:          language,
 		Title:             pr.Title,
 		Branch:            pr.SourceBranch,
@@ -677,7 +697,10 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		},
 		Focus:       args.Focus,
 		Incremental: inc,
+		RepoConfig:  rc.Result,
 	}
+	// The notes of the repository config come first (X-40).
+	res.Notes = append(res.Notes, rc.Notes...)
 	// Changed files the provider could not list at all (GitHub lists at
 	// most 3000) are named by its fixed note.
 	res.Notes = append(res.Notes, d.Notes...)

@@ -140,7 +140,7 @@ func TestPRImproveToolDefinition(t *testing.T) {
 		outProps = append(outProps, k)
 	}
 	sort.Strings(outProps)
-	if got := strings.Join(outProps, ","); got != "coverage,metadata,notes,publish,suggestions" {
+	if got := strings.Join(outProps, ","); got != "coverage,metadata,notes,publish,repo_config,suggestions" {
 		t.Errorf("output schema properties = %s", got)
 	}
 }

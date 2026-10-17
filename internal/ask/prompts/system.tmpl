@@ -38,3 +38,7 @@ Extra instructions from the user:
 ======
 Follow the extra instructions above; they take precedence over any conflicting guidance in this prompt.
 {{- end }}
+{{- if .repo_instructions }}
+
+{{ .repo_instructions }}
+{{- end }}

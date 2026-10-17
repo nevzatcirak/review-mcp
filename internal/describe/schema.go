@@ -1,6 +1,9 @@
 package describe
 
-import "github.com/nevzatcirak/review-mcp/internal/llmrun"
+import (
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
+	"github.com/nevzatcirak/review-mcp/internal/repocfg"
+)
 
 // ResultSchema is the JSON schema (draft 2020-12) of Result, for the
 // pr_describe tool's MCP output schema (v2 spec §3.6). It is a plain map, as
@@ -98,6 +101,7 @@ func ResultSchema() map[string]any {
 		}, "model", "context_window", "prompt_tokens", "diff_tokens", "request_tokens", "fast_path", "llm_calls",
 			"commit_messages", "repair_tactic", "reasked", "truncated", "diff_trimmed", "rate_limit_waits", "rate_limit_wait_ms",
 			"models_used", "fallback_calls"),
+		"repo_config": repocfg.Schema(),
 		"publish": object("publishing outcome; present when publish was requested", map[string]any{
 			"published":     boolean("whether the comment was posted or edited, or the description region was written"),
 			"comment_id":    str("id of the description comment; publish_mode=comment only"),
@@ -107,5 +111,5 @@ func ResultSchema() map[string]any {
 			"updated":       boolean("true when the comment of an earlier run was edited in place, or the region of an earlier run was replaced, instead of a new comment being posted or a region appended"),
 			"title_updated": boolean("true when update_title replaced the pull request title"),
 		}, "published", "mode"),
-	}, "title", "type", "description", "files", "coverage", "notes", "metadata")
+	}, "title", "type", "description", "files", "coverage", "notes", "metadata", "repo_config")
 }

@@ -99,7 +99,7 @@ Amended by the spec (2026-10-14): minimum GitLab 16.0, so the `/changes` fallbac
 
 ## 9. After 2.0 — v2.1 and later (owner decision 2026-10-10; scope only, each item gets a design note)
 
-Taken in full by the owner. **Order inside v2.1 (owner decision 2026-10-14):** V-1 incremental review → V-6 fallback model chain → V-5 repository config → V-2/V-3 issue compliance → V-8 deeper local analysis → V-4 CI mode → V-7 container image. Each opens with a small housekeeping package from the backlog where one is due. v2.1 work is not merged into `main` before `v2.0.0` is tagged.
+Taken in full by the owner. **Order inside v2.1 (owner decision 2026-10-14):** V-1 incremental review → V-6 fallback model chain → V-5 repository config → V-2/V-3 issue compliance → V-8 deeper local analysis → V-4 CI mode → V-7 container image. **Amended 2026-10-17:** V-1 and V-6 shipped as 2.1.0; the rest ships as 2.2.x (V-5 spec §0 item 6), and V-13 linked pull requests (§10) joins the order: V-5 → V-2/V-3 → **V-13a** → V-8 → **V-13b** → V-4 → V-7. Each opens with a small housekeeping package from the backlog where one is due. v2.1 work is not merged into `main` before `v2.0.0` is tagged.
 
 | Item | Content | Target |
 |---|---|---|
@@ -115,3 +115,43 @@ Taken in full by the owner. **Order inside v2.1 (owner decision 2026-10-14):** V
 | V-10 | **`pr_tests`:** missing tests for the changed code, verified like `pr_improve` suggestions | v2.2 |
 | V-11 | **`pr_labels` and changelog suggestion** | v2.2 |
 | V-12 | **More providers** (Bitbucket Cloud, Azure DevOps) | v3 candidate, on demand |
+| V-13 | **Linked pull requests and consumer impact:** review a pull request together with related pull requests or repositories in other repositories (a UI and its backend, two services that call each other's APIs); design in §10 | 2.2.x: V-13a after V-2/V-3, V-13b after V-8 |
+
+## 10. V-13 — Linked pull requests and consumer impact (owner decisions 2026-10-17; design note, binding spec follows)
+
+**Problem.** A change often spans repositories: a backend renames a field and the UI must follow, or one service changes an endpoint another service calls. A review of one pull request alone then fails in two ways: it misses a break (each side looks clean alone), or it reports a break that the companion pull request already handles.
+
+**Owner decisions (2026-10-17):**
+1. **Primary plus context (option B).** A review always has one primary pull request, and only the primary is published to. Related items are read-only context. A joint "review the whole set and publish everywhere" tool is not built; a client reviews a set by calling the tool once per pull request with the others as related, guided by an MCP prompt.
+2. **Related items are named explicitly** by the user or the client agent (tool argument). review-mcp does not discover them on its own from descriptions, branch names or issue keys.
+3. **Consumer impact without a companion pull request is in scope (V-13b).**
+4. Placement: V-13a after V-2/V-3 (it reuses the fenced, budgeted external-context block), V-13b after V-8 (it reuses the read-only local view in other repositories).
+
+Decision number: **X-41** (reserved; recorded in the decisions doc by the V-13a docs package).
+
+### 10.1 V-13a — Related pull requests
+
+- **Argument.** `related: [url, ...]` on `pr_review` and `pr_ask` (later `pr_describe` and `pr_improve`), at most 4 items. Each item is a pull request URL. (A repository URL is accepted only from V-13b on.)
+- **Resolution and trust.** Every URL resolves through the same resolver as the primary and must belong to a configured provider; the base URL is pinned exactly as for the primary (no token ever goes to a host that is not configured). Providers may differ (the UI on GitLab, the backend on Bitbucket Server); each item uses its own provider's token. An item that cannot be resolved or read is reported in a note and in `coverage.related` with a fixed reason; the review continues without it. The primary itself, or a duplicate, in `related` is ignored with a note.
+- **What is read.** For each related pull request: title, state (open, merged, closed, draft), target branch, head SHA and the diff through the existing diff pipeline. Descriptions and comments are not read in V-13a (pull request text steers the model, as seen in the v2 acceptance runs).
+- **Budget.** Related context has its own share of the prompt budget, below the primary diff and above the repository-context block. Inside it, contract files come first (API descriptions such as OpenAPI, protobuf, GraphQL and JSON Schema files, then files whose path or name suggests routes, controllers, DTOs, models or API clients; the list is a fixed, documented table, extended by repository config from V-5 where allowed), then the other changed files' hunks, then a file list for what does not fit. Anything left out is reported: `coverage.related: [{url, status: full|partial|failed, files_included, files_listed}]` and a note. Never silent.
+- **Prompt.** Related diffs are fenced as untrusted data with their repository and pull request named. The model is asked for cross-repository findings: contract mismatches (a field, route, status code, message or schema changed on one side and not the other), compatibility during rollout, and the order in which the pull requests must be merged and deployed. A finding located in a related pull request is never anchored inline on the primary; it goes to the overview with a link to the place in the related pull request. A finding on the primary's own lines is anchored as usual.
+- **`pr_info`.** With `related`, it reports each related pull request's state and target branch, and a blocker-style note when the set is inconsistent (for example, a related pull request merged while the primary it depends on is still open is reported as information; review-mcp does not know the dependency direction unless the review stated it).
+- **Incremental review (X-36).** The reviewed-commit record also lists the related pull requests' URLs and head SHAs. If the related set differs from the recorded one, or any related head SHA changed, the run falls back to a full review with a note ("a related pull request changed since the last review"). A doubt is always a change.
+- **MCP prompt.** `review_linked_prs`: given a set of URLs, review each one with the others as `related`, one call per pull request, each publishing to its own pull request (the X-33 rule "one publisher per pull request" holds).
+- **Serve mode.** Allowed; every provider used needs its token from the caller as today. A related item on a provider for which the caller sent no token fails with the fixed reason "no credentials for this provider".
+- **CI mode (V-4).** The headless command accepts `--related URL` (repeatable); there is no discovery there either.
+- **Information flow.** Content of a related repository may reach the model and appear in a comment on the primary pull request, whose audience can differ. Since the user names the items, this is the user's choice; the setup guide states it plainly, and the result lists which related items were read.
+
+### 10.2 V-13b — Consumer impact (repositories without a companion pull request)
+
+- **Repository items.** `related` also accepts a repository URL (optionally with a branch, default: its default branch). The repository is read at a pinned commit (the branch head at the start of the run, reported in the result), never a pull request head of it, through the repository-context machinery (X-22 rules: credentials only through the child environment, no token on disk or in argv, fixed failure reasons) and the V-8 read-only view. Nothing in it is built or run (R-1).
+- **What is checked.** From the primary diff, review-mcp derives the changed contract surface deterministically: changed contract files and the changed identifiers in them (paths, operation IDs, field and message names), plus changed exported symbols where the existing symbol extraction can name them. It searches each related repository for those identifiers (git grep, bounded, path-confined), and with V-8's tool loop the model may ask for further reads and searches inside that repository. The hits are fenced context; findings point to the consumer's file and line by link, never inline on the primary.
+- **Declared relations in the repository config.** The reviewed repository's `.review-mcp.toml` (base revision, X-40) may declare related repositories and their contract paths, used as the default `related` list when the call passes none. Because this makes the server read another repository with the user's token on the strength of a file in the repository, it is **off unless the operator enables it** (`related.from_repo_config`, operator-only, default false), the declared URLs must resolve to a configured provider (they can never add a host), and the result names every repository read this way. Explicit tool arguments always win and are always allowed.
+- **Limits.** At most 4 related items in total per run; per-repository time, byte and match caps; every cap that cuts something is reported in `coverage.related` and a note.
+- **Honesty.** A search with no hits is reported as "no use of the changed identifiers found in <repo> at <sha>", never as "no consumer impact", because dynamic or generated uses are invisible to text search.
+
+### 10.3 Not in V-13
+- Discovery of related items from descriptions, branch names, issue keys or commit trailers (owner decision 2; may be offered later as a suggestion list, never as automatic reads).
+- Publishing to related pull requests from a single call.
+- Running contract tests or building any repository (R-1).

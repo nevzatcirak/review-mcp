@@ -171,6 +171,7 @@ func New(deps Deps) *mcp.Server {
 		registerJobResult(s, deps)
 	}
 	registerMultiPerspectivePrompt(s, deps)
+	registerLinkedPrompt(s, deps)
 	return s
 }
 

@@ -192,6 +192,14 @@ func TestApplyExtraInstructions(t *testing.T) {
 	}
 }
 
+func TestApplyDocsStyleReplaces(t *testing.T) {
+	base, o := applyText(t, "[review]\ndocs_style = \""+strings.Repeat("x", 1000)+"\"\n")
+	if len(o.Config.Review.DocsStyle) != 1000 || base.Review.DocsStyle != "" ||
+		!slices.Equal(o.Result.Applied, []string{"review.docs_style"}) {
+		t.Errorf("docs_style %d bytes, applied %q", len(o.Config.Review.DocsStyle), o.Result.Applied)
+	}
+}
+
 func TestApplyFocusesAreKept(t *testing.T) {
 	_, o := applyText(t, "[review]\nfocuses = [\"security\", \"tests\"]\n")
 	if !slices.Equal(o.Focuses, []string{"security", "tests"}) || !slices.Contains(o.Result.Applied, "review.focuses") {
@@ -229,6 +237,8 @@ func TestApplyInvalidValues(t *testing.T) {
 		{"review.focuses", "[review]\nfocuses = \"security\""},
 		{"review.focuses", "[review]\nfocuses = [\"\"]"},
 		{"review.focuses", "[review]\nfocuses = [3]"},
+		{"review.docs_style", "[review]\ndocs_style = 3"},
+		{"review.docs_style", "[review]\ndocs_style = \"" + strings.Repeat("x", 1001) + "\""},
 	} {
 		base, o := applyText(t, tc.file)
 		if !reflect.DeepEqual(o.Config, base) || len(o.Result.Applied) != 0 || o.Focuses != nil {

@@ -12,6 +12,9 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/filter"
+	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 )
@@ -43,7 +46,7 @@ const (
 	// cannot carry a free text that holds a comma, and a typo of a known
 	// value would silently become a weak free-text focus. A free-text focus
 	// stays available through pr_review's focus argument.
-	promptFocusesMessage = "focuses must be a comma-separated list of security, architecture, performance, ux and tests"
+	promptFocusesMessage = "focuses must be a comma-separated list of security, architecture, performance, ux, tests and docs"
 )
 
 // registerMultiPerspectivePrompt registers the prompt of X-33; queued adds
@@ -58,7 +61,8 @@ func registerMultiPerspectivePrompt(s *mcp.Server, deps Deps) {
 		Arguments: []*mcp.PromptArgument{
 			{Name: "pr_url", Description: "URL of the pull request", Required: true},
 			{Name: "focuses", Description: "comma-separated focus areas out of security, architecture, " +
-				"performance, ux and tests (default: review.focuses of the repository config, else " + defaultFocuses + ")"},
+				"performance, ux, tests and docs (default: review.focuses of the repository config, else " + defaultFocuses +
+				", with docs added when the pull request changes a documentation file)"},
 		},
 	}, func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 		var args map[string]string
@@ -108,21 +112,20 @@ func promptPRURL(raw string) (string, bool) {
 	return u.String(), true
 }
 
-// defaultFocusesFor returns the focuses of a prompt call that gave none:
-// review.focuses of the pull request's repository config when it is present
-// and valid, the built-in default otherwise (X-40). It resolves the URL,
-// reads the pull request and reads the file at its base revision, and
-// nothing else. Any failure (a degraded configuration, a URL that matches
-// no provider, a missing credential, a read error) falls back to the
-// default without an error, and so does a read that is not done within
-// promptReadTimeout; with repo_config.enabled false nothing is read. In
-// serve mode the credentials are those of the request.
+// defaultFocusesFor returns the focuses of a prompt call that gave none
+// (X-40, v2.1 spec V-5 §3 item 1 and §3a item 5): review.focuses of the pull
+// request's repository config when it is present and valid; otherwise the
+// built-in default, with docs added when the pull request changes a
+// documentation file. It resolves the URL, reads the pull request, reads
+// the file at its base revision and, only when the file gives no list,
+// lists the changed files (GetDiff with every file filtered out, so no
+// content is fetched); nothing else. Any failure (a degraded configuration,
+// a URL that matches no provider, a missing credential, a read error) falls
+// back to the built-in default without an error, and so does a read that is
+// not done within promptReadTimeout; with repo_config.enabled false nothing
+// is read. In serve mode the credentials are those of the request.
 func defaultFocusesFor(ctx context.Context, deps Deps, req *mcp.GetPromptRequest, prURL string) []string {
-	pc := promptContext{}
-	if repo := repoFocuses(ctx, deps, req, prURL); repo != nil {
-		pc.repoFocuses = repo
-	}
-	return builtinFocuses(pc)
+	return builtinFocuses(readPromptContext(ctx, deps, req, prURL))
 }
 
 // promptContext is what the default focus list is chosen from.
@@ -130,22 +133,32 @@ type promptContext struct {
 	// repoFocuses are the validated review.focuses of the repository
 	// config; nil when there are none or they are not valid.
 	repoFocuses []string
+	// docsChanged: the pull request changes a documentation file
+	// (filter.IsDocumentation) that the ignore rules keep. It is only looked
+	// up when repoFocuses is nil.
+	docsChanged bool
 }
 
 // builtinFocuses is the default list of a prompt call that gave no
-// focuses: the repository's list when it has one, defaultFocuses otherwise.
+// focuses: the repository's list when it has one; otherwise defaultFocuses,
+// with docs added when the pull request changes a documentation file.
 func builtinFocuses(pc promptContext) []string {
 	if pc.repoFocuses != nil {
 		return pc.repoFocuses
 	}
-	return strings.Split(defaultFocuses, ",")
+	out := strings.Split(defaultFocuses, ",")
+	if pc.docsChanged {
+		out = append(out, review.FocusDocs)
+	}
+	return out
 }
 
-// repoFocuses reads review.focuses of the repository config of prURL; nil
-// when there is no usable list.
-func repoFocuses(ctx context.Context, deps Deps, req *mcp.GetPromptRequest, prURL string) []string {
+// readPromptContext reads what builtinFocuses needs for prURL; the zero
+// value when nothing could be read.
+func readPromptContext(ctx context.Context, deps Deps, req *mcp.GetPromptRequest, prURL string) promptContext {
+	var pc promptContext
 	if deps.LoadErr != nil || deps.Config == nil || deps.NewResolver == nil || !deps.Config.RepoConfig.Enabled {
-		return nil
+		return pc
 	}
 	var header http.Header
 	if req != nil && req.Extra != nil {
@@ -153,7 +166,7 @@ func repoFocuses(ctx context.Context, deps Deps, req *mcp.GetPromptRequest, prUR
 	}
 	cfg, err := deps.configForHeader(header)
 	if err != nil {
-		return nil
+		return pc
 	}
 	sc := newScope(deps, cfg, false)
 	defer sc.release()
@@ -161,14 +174,37 @@ func repoFocuses(ctx context.Context, deps Deps, req *mcp.GetPromptRequest, prUR
 	defer cancel()
 	ref, p, err := sc.resolver.Resolve(prURL)
 	if err != nil {
-		return nil
+		return pc
 	}
 	pr, err := p.GetPullRequest(ctx, ref)
 	if err != nil {
-		return nil
+		return pc
 	}
 	out := repocfg.ForRun(ctx, logger(deps), cfg, p, ref, pr)
-	return validRepoFocuses(out.Focuses)
+	if pc.repoFocuses = validRepoFocuses(out.Focuses); pc.repoFocuses != nil {
+		return pc
+	}
+	pc.docsChanged = changesDocumentation(ctx, out.Config, p, ref, pr)
+	return pc
+}
+
+// changesDocumentation reports whether the pull request changes a
+// documentation file that the ignore rules of cfg keep. It lists the changed
+// files through GetDiff with an Include that records each path and keeps
+// none, so the provider fetches no file content. A failure is false.
+func changesDocumentation(ctx context.Context, cfg *config.Config, p provider.Provider, ref provider.PRRef, pr *provider.PullRequest) bool {
+	flt, err := filter.New(cfg)
+	if err != nil {
+		return false
+	}
+	found := false
+	_, err = p.GetDiff(ctx, ref, pr, provider.DiffOptions{Include: func(path string) bool {
+		if !found && flt.Include(path) && filter.IsDocumentation(path) {
+			found = true
+		}
+		return false
+	}})
+	return err == nil && found
 }
 
 // validRepoFocuses returns list as known focus values (without regard to

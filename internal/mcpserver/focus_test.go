@@ -57,7 +57,7 @@ func TestPRReviewFindingsRefusals(t *testing.T) {
 		{"too many findings", map[string]any{"findings": many, "publish": true},
 			"findings must hold at most 20 items (twice review.max_total_findings); merge repeats before publishing"},
 		{"invalid focus", map[string]any{"focus": "two\nlines"},
-			"focus must be one of security, architecture, performance, ux or tests, or a description of 1 to 200 characters without line breaks or control characters"},
+			"focus must be one of security, architecture, performance, ux, tests or docs, or a description of 1 to 200 characters without line breaks or control characters"},
 	} {
 		c.args["pr_url"] = reviewPRURL(g)
 		res := callTool(t, cs, "pr_review", c.args)

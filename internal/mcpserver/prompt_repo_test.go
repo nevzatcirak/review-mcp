@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -34,6 +35,31 @@ type promptFake struct {
 	prErr   error
 	prCalls int
 	reads   []string // "<path>@<rev>"
+	// changed are the paths GetDiff lists; diffErr fails it. diffs counts
+	// the calls and kept the files the Include of a call kept.
+	changed []string
+	diffErr error
+	diffs   int
+	kept    int
+}
+
+func (f *promptFake) GetDiff(_ context.Context, _ provider.PRRef, _ *provider.PullRequest, opts provider.DiffOptions) (*provider.Diff, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.diffs++
+	if f.diffErr != nil {
+		return nil, f.diffErr
+	}
+	d := &provider.Diff{}
+	for _, p := range f.changed {
+		if opts.Include != nil && !opts.Include(p) {
+			d.Skipped = append(d.Skipped, provider.SkippedFile{Path: p, Reason: provider.SkipFiltered})
+			continue
+		}
+		f.kept++
+		d.Files = append(d.Files, provider.FilePatch{Path: p})
+	}
+	return d, nil
 }
 
 const (
@@ -245,5 +271,53 @@ func TestPromptReadsAreBounded(t *testing.T) {
 	}
 	if saved != 10*time.Second {
 		t.Errorf("promptReadTimeout = %v, want 10 s", saved)
+	}
+}
+
+// TestPromptAddsDocsWhenDocumentationChanges: without focuses and without
+// review.focuses, docs joins the built-in default when the pull request
+// changes a documentation file the ignore rules keep; the listing fetches no
+// file content.
+func TestPromptAddsDocsWhenDocumentationChanges(t *testing.T) {
+	withDocs := append(slices.Clone(builtinDefault), "docs")
+	for _, tc := range []struct {
+		name string
+		f    *promptFake
+		want []string
+	}{
+		{"a guide changed", &promptFake{changed: []string{"internal/llm/client.go", "docs/setup.md"}}, withDocs},
+		{"a README changed", &promptFake{changed: []string{"README"}}, withDocs},
+		{"code only", &promptFake{changed: []string{"internal/llm/client.go"}}, builtinDefault},
+		{"doc file ignored", &promptFake{changed: []string{"vendor/lib/README.md", "main.go"}}, builtinDefault},
+		{"listing fails", &promptFake{changed: []string{"README.md"}, diffErr: &provider.Error{Class: provider.ClassUpstream}}, builtinDefault},
+		{"repository list wins", &promptFake{changed: []string{"README.md"}, file: "[review]\nfocuses = [\"security\"]\n"}, []string{"security"}},
+		{"repository list with docs", &promptFake{changed: []string{"main.go"}, file: "[review]\nfocuses = [\"docs\", \"tests\"]\n"}, []string{"docs", "tests"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cs := promptSession(t, tc.f)
+			if text := promptText(t, cs, map[string]string{"pr_url": promptPR}); text != wantFocuses(tc.want...) {
+				t.Errorf("message = %s", text)
+			}
+			if tc.f.kept != 0 {
+				t.Errorf("the listing kept %d files: content would be fetched", tc.f.kept)
+			}
+		})
+	}
+	// The repository's list is used without listing the files.
+	f := &promptFake{changed: []string{"README.md"}, file: "[review]\nfocuses = [\"ux\"]\n"}
+	promptText(t, promptSession(t, f), map[string]string{"pr_url": promptPR})
+	if f.diffs != 0 {
+		t.Errorf("the files were listed %d times although the repository gives the list", f.diffs)
+	}
+	// Given focuses are used as given: no docs is added and nothing is read.
+	f = &promptFake{changed: []string{"README.md"}}
+	if text := promptText(t, promptSession(t, f), map[string]string{"pr_url": promptPR, "focuses": "tests"}); text != wantFocuses("tests") ||
+		f.diffs != 0 || f.prCalls != 0 {
+		t.Errorf("given focuses: message %s, diffs %d, pr reads %d", text, f.diffs, f.prCalls)
+	}
+	// docs is a focus value of the argument too.
+	f = &promptFake{}
+	if text := promptText(t, promptSession(t, f), map[string]string{"pr_url": promptPR, "focuses": "Docs,security"}); text != wantFocuses("docs", "security") {
+		t.Errorf("message = %s", text)
 	}
 }

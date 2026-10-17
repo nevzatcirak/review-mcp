@@ -230,6 +230,11 @@ type Review struct {
 	// changed since the last review review-mcp published on it (X-36);
 	// pr_review's incremental argument replaces it for a call.
 	Incremental bool `toml:"incremental" json:"incremental"`
+	// DocsStyle describes the documentation style of the project for the
+	// docs focus (v2.1 spec V-5 §3a): at most MaxDocsStyleBytes, given to the
+	// model fenced, and only in a review with focus docs. "" is no style: the
+	// model then compares with the existing documentation only.
+	DocsStyle string `toml:"docs_style" json:"docs_style"`
 	// IncrementalMaxFiles is the most files the change detection of an
 	// incremental review compares through the provider's API (X-36); a
 	// pull request with more files is reviewed in full, with a note.

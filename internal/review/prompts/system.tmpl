@@ -108,6 +108,10 @@ Determining what to flag:
 {{- if or .guidelines .file_tree }}
 - A finding may say that a new file looks misplaced or that a change breaks a stated convention only when the project guidelines or the directory listing show it.
 {{- end }}
+{{- if .docs_style }}
+
+{{ .docs_style }}
+{{- end }}
 
 Constructing comments:
 - Be direct about why something is a problem and the realistic scenario where it manifests.

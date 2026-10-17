@@ -58,6 +58,7 @@ func TestDefaultsAppliedWhenNothingSet(t *testing.T) {
 		{"review.max_total_findings", cfg.Review.MaxTotalFindings, 10},
 		{"review.incremental", cfg.Review.Incremental, false},
 		{"review.incremental_max_files", cfg.Review.IncrementalMaxFiles, 300},
+		{"review.docs_style", cfg.Review.DocsStyle, ""},
 		{"ask.extra_instructions", cfg.Ask.ExtraInstructions, ""},
 		{"improve.max_suggestions", cfg.Improve.MaxSuggestions, 8},
 		{"improve.max_suggestions_per_part", cfg.Improve.MaxSuggestionsPerPart, 4},

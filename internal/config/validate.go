@@ -77,6 +77,9 @@ func (l *loader) validate() {
 		l.problem("review.incremental_max_files: %d is out of range (%d-%d)", c.Review.IncrementalMaxFiles,
 			MinIncrementalMaxFiles, MaxIncrementalMaxFiles)
 	}
+	if !l.bad["review.docs_style"] && len(c.Review.DocsStyle) > MaxDocsStyleBytes {
+		l.problem("review.docs_style: %d bytes, at most %d are allowed", len(c.Review.DocsStyle), MaxDocsStyleBytes)
+	}
 	l.validateImprove()
 	l.validateContextRepo()
 	l.validateRepoConfig()
@@ -87,6 +90,9 @@ func (l *loader) validate() {
 		l.validateServe()
 	}
 }
+
+// MaxDocsStyleBytes is the longest review.docs_style (v2.1 spec V-5 §3a).
+const MaxDocsStyleBytes = 1000
 
 // Bounds of review.guidelines_paths (X-32).
 const (

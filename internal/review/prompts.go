@@ -42,6 +42,9 @@ type PromptInput struct {
 	// extra instructions in the system prompt, and is part of the
 	// scaffolding.
 	RepoInstructions string
+	// DocsStyle is the rendered documentation-style block (docsStyleBlock);
+	// empty omits it. Only a review with focus docs has one.
+	DocsStyle string
 	// Language is the effective output language (the per-call argument,
 	// else output.language). Empty means en-US.
 	Language string
@@ -101,6 +104,7 @@ func (in *PromptInput) vars() map[string]any {
 	return map[string]any{
 		"extra_instructions": prompt.WithOutputLanguage(in.ExtraInstructions, in.Language),
 		"repo_instructions":  in.RepoInstructions,
+		"docs_style":         in.DocsStyle,
 		"schema":             SchemaText(in.Toggles, in.MaxFindings),
 		"example":            ExampleYAML(in.Toggles),
 		"date":               in.Date,

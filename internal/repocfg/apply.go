@@ -206,6 +206,12 @@ func applyKey(o *Outcome, key string, v any) keyResult {
 		return setInstructions(v, &c.Review.RepoInstructions)
 	case "ask.extra_instructions":
 		return setInstructions(v, &c.Ask.RepoInstructions)
+	case "review.docs_style":
+		s, ok := v.(string)
+		if !ok || len(s) > config.MaxDocsStyleBytes {
+			return keyInvalid
+		}
+		c.Review.DocsStyle = s
 	case "review.focuses":
 		l, ok := stringList(v)
 		if !ok || len(l) > MaxFocuses || slices.ContainsFunc(l, func(s string) bool { return !validFocusText(s) }) {

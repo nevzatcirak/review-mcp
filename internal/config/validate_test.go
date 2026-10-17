@@ -71,6 +71,7 @@ func TestValidationRules(t *testing.T) {
 		{"repo config path parent", map[string]string{"REVIEW_MCP_REPO_CONFIG_PATH": "../review.toml"}, `repo_config.path: must not contain "." or ".." segments`},
 		{"repo config path unclean", map[string]string{"REVIEW_MCP_REPO_CONFIG_PATH": "a//b.toml"}, "repo_config.path: must not contain an empty segment"},
 		{"repo config path backslash", map[string]string{"REVIEW_MCP_REPO_CONFIG_PATH": `a\b.toml`}, `repo_config.path: must use "/" as the separator`},
+		{"docs style too long", map[string]string{"REVIEW_MCP_REVIEW_DOCS_STYLE": strings.Repeat("x", 1001)}, "review.docs_style: 1001 bytes, at most 1000 are allowed"},
 		{"log level", map[string]string{"REVIEW_MCP_LOG_LEVEL": "loud"}, "log.level: invalid log level"},
 		{"repo cache dir relative", map[string]string{"REVIEW_MCP_CONTEXT_REPO_CACHE_DIR": "cache/repos"}, `context.repo.cache_dir: "cache/repos" must be an absolute path`},
 		{"repo idle days zero", map[string]string{"REVIEW_MCP_CONTEXT_REPO_IDLE_DAYS": "0"}, "context.repo.idle_days: 0 is out of range (1-365)"},

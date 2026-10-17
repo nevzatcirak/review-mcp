@@ -7,7 +7,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/filter"
 	"github.com/nevzatcirak/review-mcp/internal/mdutil"
+	"github.com/nevzatcirak/review-mcp/internal/projctx"
+	"github.com/nevzatcirak/review-mcp/internal/provider"
 )
 
 // The known values of the focus argument (X-33).
@@ -17,11 +20,13 @@ const (
 	FocusPerformance  = "performance"
 	FocusUX           = "ux"
 	FocusTests        = "tests"
+	// FocusDocs reviews documentation against the code (v2.1 spec V-5 §3a).
+	FocusDocs = "docs"
 )
 
 // FocusValues are the known focus values, in the order the tool documents
 // them.
-var FocusValues = []string{FocusSecurity, FocusArchitecture, FocusPerformance, FocusUX, FocusTests}
+var FocusValues = []string{FocusSecurity, FocusArchitecture, FocusPerformance, FocusUX, FocusTests, FocusDocs}
 
 // MaxFocusRunes is the longest free-text focus, in runes (X-33).
 const MaxFocusRunes = 200
@@ -46,6 +51,44 @@ var focusSentences = map[string]string{
 	FocusTests: "This review covers tests only: changed behaviour without a test, tests that do not check what " +
 		"they claim to, missing edge and failure cases, flaky constructs (sleeps, order or time dependence, shared " +
 		"state), and tests tied to implementation details instead of behaviour.",
+	FocusDocs: "This review covers documentation only: statements in changed documentation (README, guides, " +
+		"CHANGELOG, configuration and API references, doc comments in code) that contradict the code in this pull " +
+		"request or in the repository context; behaviour the code changes without the matching documentation " +
+		"update; names of options, flags, keys, functions, paths, defaults and messages that do not match the code; " +
+		"broken links or anchors; steps that are missing or out of order; and wording, terminology and tone that " +
+		"differ from the rest of the documentation or from the documentation style given below. When the code a " +
+		"statement describes is not shown, do not guess: report only contradictions you can see.",
+}
+
+// NoteDocsWithoutRepoContext is the note of a review with focus docs whose
+// diff changes documentation files only while repository context is off
+// (v2.1 spec V-5 §3a item 3, verbatim).
+const NoteDocsWithoutRepoContext = "Repository context is off, so documentation was checked against the code in " +
+	"this pull request only."
+
+// docsStyleBlock is the documentation-style block of a review: the fenced
+// review.docs_style for focus docs, "" for every other focus and when no
+// style is set (there is no default style).
+func docsStyleBlock(focus, style string) string {
+	if focus != FocusDocs {
+		return ""
+	}
+	return projctx.DocsStyle(style)
+}
+
+// docsOnlyWithoutContext reports whether a review with focus docs gets
+// NoteDocsWithoutRepoContext: repository context is off and every file of
+// the diff is a documentation file (filter.IsDocumentation).
+func docsOnlyWithoutContext(focus string, repoContext bool, files []provider.FilePatch) bool {
+	if focus != FocusDocs || repoContext || len(files) == 0 {
+		return false
+	}
+	for _, f := range files {
+		if !filter.IsDocumentation(f.Path) {
+			return false
+		}
+	}
+	return true
 }
 
 // focusOnly is the system-prompt sentence that follows every focus
@@ -154,7 +197,7 @@ func invalidArgument(msg string) *Error { return &Error{Class: ClassInvalidArgum
 var (
 	// ErrFocusInvalid: the focus is neither a known value nor a usable free
 	// text.
-	ErrFocusInvalid = invalidArgument("focus must be one of security, architecture, performance, ux or tests, " +
+	ErrFocusInvalid = invalidArgument("focus must be one of security, architecture, performance, ux, tests or docs, " +
 		"or a description of 1 to 200 characters without line breaks or control characters")
 	// ErrFocusPublish: a focused run never publishes (spec 2F §4.1,
 	// verbatim).

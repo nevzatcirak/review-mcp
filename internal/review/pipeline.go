@@ -553,6 +553,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		MaxFindings:       maxFindings,
 		ExtraInstructions: extra,
 		RepoInstructions:  projctx.RepoGuidance(cfg.RepoConfig.Path, cfg.Review.RepoInstructions),
+		DocsStyle:         docsStyleBlock(args.Focus, cfg.Review.DocsStyle),
 		Language:          language,
 		Title:             pr.Title,
 		Branch:            pr.SourceBranch,
@@ -714,6 +715,9 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		res.Notes = append(res.Notes, NoteCILeftOut)
 	}
 	res.Notes = append(res.Notes, proj.Notes()...)
+	if docsOnlyWithoutContext(args.Focus, cfg.Context.Repo.Enabled, d.Files) {
+		res.Notes = append(res.Notes, NoteDocsWithoutRepoContext)
+	}
 	res.Coverage.Guidelines, res.Coverage.FileTree = proj.Coverage()
 	for _, f := range enabledFields(toggles) {
 		res.EnabledFields = append(res.EnabledFields, f.key)

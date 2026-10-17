@@ -197,6 +197,12 @@ func applyKey(o *Outcome, key string, v any) keyResult {
 		return setBool(v, &c.Review.FileTree)
 	case "review.incremental":
 		return setBool(v, &c.Review.Incremental)
+	case "related.contract_globs":
+		l, ok := stringList(v)
+		if !ok || slices.ContainsFunc(l, func(s string) bool { return config.GlobProblem(s) != "" }) {
+			return keyInvalid
+		}
+		c.Related.ContractGlobs = addUnique(c.Related.ContractGlobs, l)
 	case "review.issue_compliance":
 		return setBool(v, &c.Review.IssueCompliance)
 	case "review.max_findings":

@@ -344,3 +344,22 @@ func TestApplyListsAreNeverNil(t *testing.T) {
 		}
 	}
 }
+
+// TestApplyRelatedContractGlobsAreAdded: the repository's
+// related.contract_globs are added to the operator's, without duplicates;
+// an invalid glob makes the key invalid.
+func TestApplyRelatedContractGlobsAreAdded(t *testing.T) {
+	base := operatorConfig()
+	base.Related.ContractGlobs = []string{"*.messages.ts"}
+	o := Apply(base, readBase(t, "[related]\ncontract_globs = [\"shared/types/**\", \"*.messages.ts\"]\n"))
+	if want := []string{"*.messages.ts", "shared/types/**"}; !slices.Equal(o.Config.Related.ContractGlobs, want) {
+		t.Errorf("globs %q, want %q", o.Config.Related.ContractGlobs, want)
+	}
+	if !slices.Equal(o.Result.Applied, []string{"related.contract_globs"}) || len(base.Related.ContractGlobs) != 1 {
+		t.Errorf("applied %q, operator globs %q", o.Result.Applied, base.Related.ContractGlobs)
+	}
+	_, o = applyText(t, "[related]\ncontract_globs = [\"[bad\"]\nmax_tokens = 1\n")
+	if !slices.Equal(o.Result.Ignored, []string{"related.max_tokens", "related.contract_globs"}) {
+		t.Errorf("ignored %q: max_tokens is not allowed and the glob is invalid", o.Result.Ignored)
+	}
+}

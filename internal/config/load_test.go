@@ -59,6 +59,8 @@ func TestDefaultsAppliedWhenNothingSet(t *testing.T) {
 		{"review.incremental", cfg.Review.Incremental, false},
 		{"review.incremental_max_files", cfg.Review.IncrementalMaxFiles, 300},
 		{"review.docs_style", cfg.Review.DocsStyle, ""},
+		{"review.issue_compliance", cfg.Review.IssueCompliance, true},
+		{"review.max_issue_tokens", cfg.Review.MaxIssueTokens, 2000},
 		{"ask.extra_instructions", cfg.Ask.ExtraInstructions, ""},
 		{"improve.max_suggestions", cfg.Improve.MaxSuggestions, 8},
 		{"improve.max_suggestions_per_part", cfg.Improve.MaxSuggestionsPerPart, 4},

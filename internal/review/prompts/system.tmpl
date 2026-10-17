@@ -31,6 +31,11 @@ Changes from upstream (spec P4 §4.2):
   changed since the last review are in the diff) gets one more bullet after
   the notes on the diff format, the fixed sentence of spec v2.1 §4 item 3;
   without it nothing is rendered;
+- intentional deviation (X-42): a run with an issue block in the user prompt
+  gets one more paragraph after "Determining what to flag" (the fixed
+  sentence of IssueComplianceSentence), and the schema and the example gain
+  the optional issue_compliance field and its two classes (compliance.go);
+  without an issue nothing is rendered;
 - the schema classes and the example come from the field-descriptor table
   (.schema, .example; internal/review/fields.go);
 - intentional deviation (X-12, spec P7 §4.1): a performance_concerns field,
@@ -111,6 +116,10 @@ Determining what to flag:
 {{- if .docs_style }}
 
 {{ .docs_style }}
+{{- end }}
+{{- if .issue_instruction }}
+
+{{ .issue_instruction }}
 {{- end }}
 
 Constructing comments:

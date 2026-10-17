@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/issuectx"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 )
 
@@ -23,6 +24,11 @@ func TestPRReviewArgsValidate(t *testing.T) {
 		{"underscore", PRReviewArgs{OutputLanguage: "tr_TR"}, InvalidOutputLanguageMessage},
 		{"zero", PRReviewArgs{MaxFindings: n(0)}, InvalidMaxFindingsMessage},
 		{"21", PRReviewArgs{MaxFindings: n(21)}, InvalidMaxFindingsMessage},
+		{"issue context", PRReviewArgs{IssueContext: []issuectx.Input{{Key: "PROJ-1", Title: "Retry"}}}, ""},
+		{"issue context without a title", PRReviewArgs{IssueContext: []issuectx.Input{{Key: "PROJ-1"}}},
+			"issue_context[1].title is required"},
+		{"issue context with a bad url", PRReviewArgs{IssueContext: []issuectx.Input{{Key: "PROJ-1", Title: "T",
+			URL: "ftp://tracker.example/PROJ-1"}}}, "issue_context[1].url must be an http or https URL"},
 	}
 	for _, c := range cases {
 		err := c.a.Validate()
@@ -58,5 +64,24 @@ func TestPreparePRReviewRefusesModesFirst(t *testing.T) {
 	}
 	if built != 0 {
 		t.Errorf("the LLM client was built %d times", built)
+	}
+}
+
+// TestPreparePRReviewIssueContext: an invalid issue_context is refused
+// before the LLM client is built; a valid one reaches the pipeline cleaned.
+func TestPreparePRReviewIssueContext(t *testing.T) {
+	built := 0
+	deps := ReviewDeps{
+		Config: config.Defaults(),
+		NewLLM: func(*config.Config, *slog.Logger) (review.Completer, error) {
+			built++
+			return nil, errors.New("not reached")
+		},
+	}
+	_, err := PreparePRReview(deps, PRReviewArgs{PRURL: "https://your-gitea.example/octo/demo/pulls/7",
+		IssueContext: []issuectx.Input{{Key: "", Title: "T"}}})
+	var ae *ArgumentError
+	if !errors.As(err, &ae) || UserMessage(err) != "issue_context[1].key is required" || built != 0 {
+		t.Errorf("err = %v, built %d", err, built)
 	}
 }

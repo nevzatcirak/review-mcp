@@ -166,6 +166,14 @@ func (g *guidelines) blockOf(k int) string {
 	return block
 }
 
+// Fenced is fencedBlock for the other packages that put untrusted text in a
+// prompt (the issue of X-42): the shared fencing helper.
+func Fenced(header, body string) string { return fencedBlock(header, body) }
+
+// CleanText is cleanText for the other packages that put untrusted text in
+// a prompt (the issue of X-42).
+func CleanText(s string) string { return cleanText(s) }
+
 // fencedBlock is a header line and the body in a fence the body cannot
 // close, without a trailing newline: the shape of every block of untrusted
 // repository text in a prompt (the guidelines, the repository guidance).

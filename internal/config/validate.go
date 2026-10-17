@@ -77,6 +77,10 @@ func (l *loader) validate() {
 		l.problem("review.incremental_max_files: %d is out of range (%d-%d)", c.Review.IncrementalMaxFiles,
 			MinIncrementalMaxFiles, MaxIncrementalMaxFiles)
 	}
+	if !l.bad["review.max_issue_tokens"] && (c.Review.MaxIssueTokens < 0 || c.Review.MaxIssueTokens > MaxIssueTokens) {
+		l.problem("review.max_issue_tokens: %d is out of range (0-%d; 0 turns issue compliance off)", c.Review.MaxIssueTokens,
+			MaxIssueTokens)
+	}
 	if !l.bad["review.docs_style"] && len(c.Review.DocsStyle) > MaxDocsStyleBytes {
 		l.problem("review.docs_style: %d bytes, at most %d are allowed", len(c.Review.DocsStyle), MaxDocsStyleBytes)
 	}
@@ -90,6 +94,9 @@ func (l *loader) validate() {
 		l.validateServe()
 	}
 }
+
+// MaxIssueTokens is the largest review.max_issue_tokens (X-42).
+const MaxIssueTokens = 20000
 
 // MaxDocsStyleBytes is the longest review.docs_style (v2.1 spec V-5 §3a).
 const MaxDocsStyleBytes = 1000

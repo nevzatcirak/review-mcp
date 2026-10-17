@@ -194,6 +194,8 @@ func applyKey(o *Outcome, key string, v any) keyResult {
 		return setBool(v, &c.Review.FileTree)
 	case "review.incremental":
 		return setBool(v, &c.Review.Incremental)
+	case "review.issue_compliance":
+		return setBool(v, &c.Review.IssueCompliance)
 	case "review.max_findings":
 		return tighten(v, 1, 20, &c.Review.MaxFindings, false)
 	case "review.max_total_findings":

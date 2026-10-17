@@ -239,6 +239,13 @@ type Review struct {
 	// incremental review compares through the provider's API (X-36); a
 	// pull request with more files is reviewed in full, with a note.
 	IncrementalMaxFiles int `toml:"incremental_max_files" json:"incremental_max_files"`
+	// IssueCompliance checks a review against the issue its pull request
+	// implements, when there is one (X-42): the issue_context argument, or
+	// the issues the pull request names on its own host.
+	IssueCompliance bool `toml:"issue_compliance" json:"issue_compliance"`
+	// MaxIssueTokens is the token budget of all issue text of one prompt
+	// together (X-42); 0 turns issue compliance off.
+	MaxIssueTokens int `toml:"max_issue_tokens" json:"max_issue_tokens"`
 }
 
 // Ask configures the pr_ask tool.
@@ -362,6 +369,8 @@ func Defaults() *Config {
 			MaxChunks:             8,
 			MaxTotalFindings:      10,
 			IncrementalMaxFiles:   300,
+			IssueCompliance:       true,
+			MaxIssueTokens:        2000,
 		},
 		Improve: Improve{
 			MaxSuggestions:        8,

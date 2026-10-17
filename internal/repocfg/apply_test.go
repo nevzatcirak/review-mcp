@@ -85,6 +85,7 @@ func TestApplyReplaceKeys(t *testing.T) {
 		"[review]", `guidelines_paths = ["docs/GUIDE.md"]`,
 		"require_tests = false", "require_security = false", "require_performance = false", "require_effort_estimate = false",
 		"inline_findings = false", "persistent_overview = false", "ci_status = false", "file_tree = false", "incremental = true",
+		"issue_compliance = false",
 	}, "\n"))
 	c := o.Config
 	if c.Output.Language != "tr" || !slices.Equal(c.Diff.IgnoreGeneratedFrameworks, []string{"protobuf"}) ||
@@ -93,10 +94,10 @@ func TestApplyReplaceKeys(t *testing.T) {
 	}
 	r := c.Review
 	if r.RequireTests || r.RequireSecurity || r.RequirePerformance || r.RequireEffortEstimate || r.InlineFindings ||
-		r.PersistentOverview || r.CIStatus || r.FileTree || !r.Incremental {
+		r.PersistentOverview || r.CIStatus || r.FileTree || !r.Incremental || r.IssueCompliance {
 		t.Errorf("bool keys not replaced: %+v", r)
 	}
-	if o.Result.Status != StatusApplied || len(o.Result.Applied) != 12 {
+	if o.Result.Status != StatusApplied || len(o.Result.Applied) != 13 {
 		t.Errorf("result %+v", o.Result)
 	}
 }

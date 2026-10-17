@@ -67,6 +67,15 @@ code fence). It follows the repository context and precedes the part line
 and the diff; a known focus value and no focus render nothing here, so the
 prompt is byte-identical to the one without the feature (the known values'
 sentences are in the system prompt).
+
+Intentional deviation (X-42, v2.2 spec V-2 §2.2): upstream's related-ticket
+block is removed above; issue compliance has its own. When the run has an
+issue (the issue_context argument or an issue the pull request names on its
+own host) and the block fits next to the diff, the pipeline supplies .issue
+(already rendered: the fixed sentence of issuectx.Header and the issues
+inside an adaptive code fence, budgeted by review.max_issue_tokens). It
+follows the description and precedes the discussion; without one nothing
+is rendered, so the prompt is byte-identical to the one without the feature.
 */}}
 
 
@@ -85,6 +94,10 @@ PR Description:
 ======
 {{ trim .description }}
 ======
+{{- end }}
+{{- if .issue }}
+
+{{ .issue }}
 {{- end }}
 {{- if .discussion }}
 

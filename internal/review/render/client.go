@@ -58,6 +58,9 @@ func Client(res *review.Result) string {
 			facts = append(facts, v.noPerf())
 		}
 	}
+	if _, value, ok := complianceRow(res); ok {
+		facts = append(facts, textCompliance+": "+value)
+	}
 	if len(facts) > 0 {
 		b.WriteString("\n")
 		for _, f := range facts {
@@ -69,6 +72,10 @@ func Client(res *review.Result) string {
 	}
 	if v.showPerf && v.hasPerf {
 		b.WriteString("\n### " + textPerf + "\n\n" + proseText(*v.perf) + "\n")
+	}
+	if c := compliance(res); c != nil && len(c.Issues) > 0 {
+		b.WriteString("\n")
+		writePlainCompliance(&b, res, "### "+textCompliance)
 	}
 	if v.showIssues && v.hasReview {
 		writeClientIssues(&b, v.issues, v.noIssues())

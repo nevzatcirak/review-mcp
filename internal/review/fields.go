@@ -68,6 +68,10 @@ type Toggles struct {
 	Tests          bool
 	Security       bool
 	Performance    bool
+	// Issue asks for issue_compliance (X-42): the prompt carries an issue.
+	// It is not a configuration toggle: the pipeline sets it when it places
+	// the issue block, and TogglesFrom leaves it off.
+	Issue bool
 }
 
 // TogglesFrom reads the toggles from the review configuration.
@@ -84,6 +88,10 @@ type Review struct {
 	KeyIssuesToReview       []KeyIssue `json:"key_issues_to_review"`
 	SecurityConcerns        *string    `json:"security_concerns,omitempty"`
 	PerformanceConcerns     *string    `json:"performance_concerns,omitempty"`
+	// IssueCompliance is the validated issue_compliance of a run with an
+	// issue (X-42). The result reports it in its issue object, so it is not
+	// part of the review's JSON.
+	IssueCompliance *Compliance `json:"-"`
 }
 
 // HasSecurityConcerns reports whether the security field is enabled, present
@@ -352,13 +360,20 @@ func SchemaText(t Toggles, maxFindings int) string {
 	for _, e := range keyIssueFields {
 		fmt.Fprintf(&b, "\n    %s: %s = Field(description=\"%s\")", e.key, e.pyType, e.description)
 	}
-	b.WriteString("\n\nclass Review(BaseModel):")
+	b.WriteString("\n\n")
+	if t.Issue {
+		b.WriteString(complianceClasses)
+	}
+	b.WriteString("class Review(BaseModel):")
 	for _, f := range enabledFields(t) {
 		kw := "description="
 		if f.positional {
 			kw = ""
 		}
 		fmt.Fprintf(&b, "\n    %s: %s = Field(%s\"%s\")", f.key, f.pyType, kw, f.description(maxFindings))
+	}
+	if t.Issue {
+		b.WriteString(complianceField)
 	}
 	b.WriteString("\n\nclass PRReview(BaseModel):\n    review: Review")
 	return b.String()
@@ -371,6 +386,9 @@ func ExampleYAML(t Toggles) string {
 	b.WriteString(RootKey + ":")
 	for _, f := range enabledFields(t) {
 		b.WriteString("\n  " + f.key + ":" + f.example)
+	}
+	if t.Issue {
+		b.WriteString(complianceExample)
 	}
 	return b.String()
 }
@@ -459,7 +477,9 @@ func (c *Conversion) warn(s string) { c.Warnings = append(c.Warnings, s) }
 // returns an error matching ErrFallbackEligible. Everything else is
 // warn-only: a missing or unusable optional field is left nil with a
 // warning, unusable findings and findings beyond maxFindings are dropped
-// with a note. Fields the toggles disable are ignored.
+// with a note. Fields the toggles disable are ignored. With t.Issue the
+// answer's issue_compliance is validated too (convertCompliance); a missing
+// or unusable one adds NoteComplianceDropped.
 func Convert(data map[string]any, t Toggles, maxFindings int) (*Review, *Conversion, error) {
 	root, ok := data[RootKey].(map[string]any)
 	if !ok || len(root) == 0 {
@@ -475,6 +495,17 @@ func Convert(data map[string]any, t Toggles, maxFindings int) (*Review, *Convers
 		}
 		if w := f.convert(v, r, c, maxFindings); w != "" {
 			c.warn(f.key + ": " + w)
+		}
+	}
+	if t.Issue {
+		// Optional and warn-only like the other fields, but the user is told
+		// when the run has no verdict after all.
+		comp, ok := convertCompliance(root[KeyIssueCompliance])
+		if ok {
+			r.IssueCompliance = comp
+		} else {
+			c.warn(KeyIssueCompliance + ": missing or unusable")
+			c.Notes = append(c.Notes, NoteComplianceDropped)
 		}
 	}
 	return r, c, nil

@@ -29,6 +29,7 @@ var allowList = []string{
 	"ask.extra_instructions",
 	"review.focuses",
 	"review.docs_style",
+	"review.issue_compliance",
 }
 
 var allowed = func() map[string]bool {

@@ -11,6 +11,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/diffpipe"
 	"github.com/nevzatcirak/review-mcp/internal/filter"
+	"github.com/nevzatcirak/review-mcp/internal/issuectx"
 	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
@@ -143,6 +144,11 @@ type Args struct {
 	// of a pull request without an earlier review. A merged publish
 	// (Findings) ignores it.
 	Incremental *bool
+	// IssueContext are the validated issues of the issue_context argument
+	// (issuectx.Validate, X-42): when given, they are the only issues of the
+	// compliance check and nothing is discovered or read. nil means not
+	// given. A focused run and a merged publish use no issue.
+	IssueContext []issuectx.Issue
 }
 
 // WithConfigDefaults returns a with every option the call left unset (nil,
@@ -302,6 +308,11 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 		}
 		res.Metadata.ModelsUsed, res.Metadata.FallbackCalls = fb.ModelsUsed, fb.FallbackCalls
 		res.Notes = append(res.Notes, fb.Notes...)
+		if res.Issue == nil {
+			// A run that never reached the issue (nothing changed since the
+			// last review) reports none.
+			res.Issue = issueResultOf(nil)
+		}
 	}
 	return res, err
 }
@@ -552,6 +563,24 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 	pl.proj = proj
 
+	// The issue the pull request implements (X-42): the issue_context
+	// argument, else the issues it names on its own host, read now. A
+	// focused run and a merged publish read none (spec §2.5). The block is
+	// budgeted here and placed after the diff, in the room it leaves.
+	//
+	// DESIGN-QUESTION (WP-10b DQ-5): issue_context with focus or findings,
+	// or with issue compliance off (review.issue_compliance false, also from
+	// the repository file, or review.max_issue_tokens 0), is ignored without
+	// an error or a note, as the spec's "no section" reads. Recommendation:
+	// keep for focus and findings (the multi_perspective_review recipe passes
+	// the same arguments to every run); a note for compliance turned off
+	// could follow if clients are confused by the missing section.
+	ic := issuectx.None()
+	if !supplied && args.Focus == "" {
+		ic = issuectx.Gather(ctx, cfg, p, ref, pr, args.IssueContext, log)
+	}
+	issueBlock := ic.Render(cfg.Review.MaxIssueTokens, factor)
+
 	// Step 3: description.
 	in := PromptInput{
 		Toggles:           toggles,
@@ -704,6 +733,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		Focus:       args.Focus,
 		Incremental: inc,
 		RepoConfig:  rc.Result,
+		Issue:       issueResultOf(ic),
 	}
 	// The notes of the repository config come first (X-40).
 	res.Notes = append(res.Notes, rc.Notes...)
@@ -720,6 +750,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		res.Notes = append(res.Notes, NoteCILeftOut)
 	}
 	res.Notes = append(res.Notes, proj.Notes()...)
+	res.Notes = append(res.Notes, ic.Notes...)
 	if docsOnlyWithoutContext(args.Focus, cfg.Context.Repo.Enabled, d.Files) {
 		res.Notes = append(res.Notes, NoteDocsWithoutRepoContext)
 	}
@@ -756,6 +787,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			return nil, err
 		}
 		if ok {
+			noteIssueNotPlaced(res, issueBlock)
 			return pl, nil
 		}
 		if reserve > 0 {
@@ -773,6 +805,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 				if ok, err = pl.planParts(ctx, dIn, in, maxChunks, rcs, 0); err != nil {
 					return nil, err
 				} else if ok {
+					noteIssueNotPlaced(res, issueBlock)
 					return pl, nil
 				}
 			}
@@ -783,6 +816,37 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	fit, err := fitPrompts(in, prep.Text, budget)
 	if err != nil {
 		return nil, err
+	}
+	// The issue block goes first into the room the diff leaves, before the
+	// repository context: it is placed only when the prompt then still fits
+	// without trimming the diff (the diff wins), and it asks for
+	// issue_compliance.
+	//
+	// DESIGN-QUESTION (WP-10b DQ-4): the spec places the block "after the
+	// diff context and before the discussion" in the prompt, and in the
+	// budget "like the repository-context block". In the user prompt it
+	// follows the description (where upstream had its related-ticket block)
+	// and precedes the discussion; in the budget it is placed before the
+	// repository context, which then gets the room that is left: the issue
+	// is capped by review.max_issue_tokens and its verdict is part of the
+	// result, while the repository context is supporting material.
+	// Recommendation: keep.
+	if issueBlock != "" {
+		cand := in
+		cand.Issue, cand.Toggles.Issue = issueBlock, true
+		f, ferr := fitPrompts(cand, prep.Text, budget)
+		switch {
+		case ferr != nil && !errors.Is(ferr, tokens.ErrDoesNotFit):
+			return nil, ferr
+		case ferr == nil && fit.keptLines < 0 && f.keptLines < 0:
+			in, fit = cand, f
+			pl.toggles.Issue = true
+			if res.Metadata.PromptTokens, err = ScaffoldingTokens(in, factor); err != nil {
+				return nil, err
+			}
+		default:
+			noteIssueNotPlaced(res, issueBlock)
+		}
 	}
 	var repoNotes []string
 	if rcs != nil {
@@ -823,6 +887,21 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	res.Notes = append(res.Notes, llmrun.PartialNotes(&res.Coverage, budget)...)
 	res.Notes = append(res.Notes, repoNotes...)
 	return pl, nil
+}
+
+// noteIssueNotPlaced adds the note of an issue block that is not in the
+// prompt (spec §2.2 item 4): it did not fit next to the diff.
+//
+// DESIGN-QUESTION (WP-10b DQ-3): a review in parts (X-19) shows each model
+// call a part of the diff only, so no call can judge the issue against the
+// whole change, and verdicts of parts cannot be merged into one. Such a run
+// checks no compliance and gets the same note: the issue did not fit next
+// to the diff, which is what makes it a review in parts. Recommendation:
+// keep; a compliance call over the merged findings could follow later.
+func noteIssueNotPlaced(res *Result, block string) {
+	if block != "" {
+		res.Notes = append(res.Notes, issuectx.NoteDidNotFit)
+	}
 }
 
 // finish runs steps 7 to 13 of a non-empty plan: one model call per part,
@@ -879,6 +958,9 @@ func (pl *Plan) finish(ctx context.Context, deps Deps, args Args) (*Result, erro
 			res.Notes = append(res.Notes, NoteReasked)
 		}
 		res.Notes = append(res.Notes, a.conv.Notes...)
+		if res.Issue != nil {
+			res.Issue.Compliance = rev.IssueCompliance
+		}
 	} else {
 		rev = pl.mergeParts(answers, classes)
 	}

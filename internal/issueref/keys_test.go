@@ -30,6 +30,17 @@ func TestDetectKeys(t *testing.T) {
 		{name: "inside a word", desc: "xPROJ-16 PROJ-17x PROJ_18-1", want: nil},
 		{name: "starting with a digit", desc: "1PROJ-19", want: nil},
 		{name: "a key next to a URL", desc: "PROJ-20 https://tracker.example/browse/PROJ-21", want: []string{"PROJ-20"}},
+		{name: "encodings", title: "Read UTF-8 and ISO-8859 input", desc: "Also ANSI-1252 and PROJ-22.",
+			want: []string{"PROJ-22"}},
+		{name: "algorithms", branch: "feature/SHA-256-AES-128", desc: "RSA-2048 and MD-5 keys; tracked in OPS-4.",
+			want: []string{"OPS-4"}},
+		{name: "standards and specifications", desc: "Per RFC-9110, ISO-8601, IEEE-754, ECMA-262, ES-2022, PEP-8 and JSR-310.",
+			want: nil},
+		{name: "security identifiers", desc: "Fixes CVE-2024 (CWE-79) for SEC-12.", want: []string{"SEC-12"}},
+		{name: "protocols and time zones", desc: "HTTP-2 over TLS-1 and SSL-3; UTC-5 and GMT-3.", want: nil},
+		{name: "stop words do not use up the cap", desc: "UTF-8 SHA-1 ISO-1 RFC-1 CVE-1 CWE-1 A1-1 B1-2 C1-3 D1-4 E1-5 F1-6",
+			want: []string{"A1-1", "B1-2", "C1-3", "D1-4", "E1-5"}},
+		{name: "a prefix that only starts like one", desc: "UTFX-1 SHAR-2 MDX-3", want: []string{"UTFX-1", "SHAR-2", "MDX-3"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -1,6 +1,6 @@
 # Acceptance fixture for repository config (X-40). Throwaway branch.
 [output]
-language = "tr"
+language = "en"
 
 [ignore]
 glob = ["**/*_gen.go"]

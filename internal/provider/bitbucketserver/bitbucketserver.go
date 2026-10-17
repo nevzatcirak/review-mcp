@@ -54,6 +54,10 @@ func NewFactory() Factory { return Factory{} }
 // Kind implements provider.Factory.
 func (Factory) Kind() provider.Kind { return provider.KindBitbucketServer }
 
+// Capabilities implements provider.CapabilityReporter: the capabilities of
+// every Provider New builds, without building one.
+func (Factory) Capabilities() provider.Capabilities { return (*Provider)(nil).Capabilities() }
+
 // ParsePRPath implements provider.Factory. remainder is escaped and starts
 // with "/"; it must be /projects/{KEY}/repos/{slug}/pull-requests/{id} or
 // /users/{user}/repos/{slug}/pull-requests/{id} (namespace "~{user}"),
@@ -178,7 +182,9 @@ func (p *Provider) CloseIdleConnections() {
 // Kind implements provider.Provider.
 func (*Provider) Kind() provider.Kind { return provider.KindBitbucketServer }
 
-// Capabilities implements provider.Provider.
+// Capabilities implements provider.Provider. Bitbucket Server has no issue
+// tracker: Issues is false and the provider does not implement
+// provider.IssueReader.
 func (*Provider) Capabilities() provider.Capabilities {
 	return provider.Capabilities{
 		GFM: false, MarkdownTables: true, Labels: false, InlineComments: true,

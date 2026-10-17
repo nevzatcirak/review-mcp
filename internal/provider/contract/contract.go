@@ -69,6 +69,11 @@ type Traits struct {
 	// has no effect, and the listing_limit case checks only that a complete
 	// listing is not marked Incomplete.
 	NoListingLimit bool
+	// SeparateIssueNumbers is true for a provider whose host numbers issues
+	// and pull requests apart (GitLab): its issue endpoint never answers
+	// with a pull request, so a pull request's number reads as not_found
+	// there instead of not_an_issue.
+	SeparateIssueNumbers bool
 }
 
 // Declarer is implemented by a Fixture that declares Traits.
@@ -113,6 +118,7 @@ func Run(t *testing.T, f Fixture) {
 		{"checks", s.checks},
 		{"file_at", s.fileAt},
 		{"list_dir", s.listDir},
+		{"issues", s.issues},
 		{"errors", s.errorCases},
 	}
 	for _, c := range cases {

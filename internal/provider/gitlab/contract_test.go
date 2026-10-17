@@ -142,6 +142,8 @@ func (ctFixture) Traits() contract.Traits {
 		BaseStrategies:  BaseStrategies(),
 		CheckStrategies: CheckStrategies(),
 		NoStaleReviews:  true,
+		// Issues and merge requests are numbered apart.
+		SeparateIssueNumbers: true,
 	}
 }
 
@@ -398,10 +400,41 @@ func (g *ctGitLab) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.serveRaw(w, r, strings.TrimSuffix(strings.TrimPrefix(path, ctProject+"/repository/files/"), "/raw"))
 	case path == ctProject+"/repository/tree" || path == ctProjectByID+"/repository/tree":
 		g.serveTree(w, r)
+	case strings.HasPrefix(path, ctAPI+"/projects/group%2Fsub%2F") && strings.Count(path, "/") == 7 &&
+		strings.Split(path, "/")[6] == "issues":
+		g.serveIssue(w, strings.TrimPrefix(strings.Split(path, "/")[5], "group%2Fsub%2F"), strings.Split(path, "/")[7])
 	default:
 		g.t.Errorf("unexpected request %s %s", r.Method, path)
 		contract.WriteError(w, http.StatusNotFound)
 	}
+}
+
+// serveIssue answers GET /projects/group%2Fsub%2F{repo}/issues/{iid} like
+// GitLab: label names as strings, state "opened" or "closed", and no answer
+// for a merge request's number (issues and merge requests are numbered
+// apart).
+func (g *ctGitLab) serveIssue(w http.ResponseWriter, repo, number string) {
+	is, status := g.pr.IssueAnswer("project", repo, number)
+	if is == nil {
+		contract.WriteError(w, status)
+		return
+	}
+	if is.PullRequest {
+		contract.WriteError(w, http.StatusNotFound)
+		return
+	}
+	state := "opened"
+	if is.Closed {
+		state = "closed"
+	}
+	out := map[string]any{
+		"id": 5000 + is.Number, "iid": is.Number, "title": is.Title, "state": state, "labels": append([]string{}, is.Labels...),
+		"web_url": "https://gitlab.example.com/gitlab/group/sub/" + repo + "/-/issues/" + number, "description": nil,
+	}
+	if is.Body != "" {
+		out["description"] = is.Body
+	}
+	ctJSON(w, http.StatusOK, out)
 }
 
 // serveRaw answers a raw file request at the merge base or the head. The

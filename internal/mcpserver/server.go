@@ -193,6 +193,13 @@ func registerServerInfo(s *mcp.Server, deps Deps) {
 			return nil, tools.ServerInfoResult{}, toolError(tools.UserMessage(err))
 		}
 		res := tools.ServerInfo(cfg, deps.Report, deps.LoadErr)
+		if deps.LoadErr == nil && deps.NewResolver != nil {
+			// Building a resolver performs no network I/O.
+			r := deps.NewResolver(cfg, deps.Logger)
+			res.SetProviderCapabilities(func(kind string) (provider.Capabilities, bool) {
+				return r.Capabilities(provider.Kind(kind))
+			})
+		}
 		if deps.Serve {
 			res.Serve = &tools.ServeInfo{
 				Transport:      tools.TransportServe,

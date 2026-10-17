@@ -14,6 +14,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/gitctx"
 	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/mdutil"
+	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/version"
 )
 
@@ -38,6 +39,9 @@ type ProviderInfo struct {
 	// APIURL is set only when the provider calls an API base other than
 	// BaseURL (GitHub, GitLab).
 	APIURL string `json:"api_url,omitempty" jsonschema:"API base URL when it differs from base_url (GitHub, GitLab), with credentials and query values removed"`
+	// Issues is set by the caller from the provider's capabilities
+	// (SetProviderCapabilities); false when they are not known.
+	Issues bool `json:"issues" jsonschema:"whether review-mcp reads the issues of this provider's own tracker (issue compliance)"`
 }
 
 // ServerInfoResult is the structured result of the server_info tool.
@@ -108,6 +112,18 @@ func ServerInfo(cfg *config.Config, rep *config.Report, loadErr error) ServerInf
 		}
 	}
 	return res
+}
+
+// SetProviderCapabilities fills each provider's capability fields from caps,
+// which returns the capabilities of a provider kind ("gitea", "github", ...)
+// and whether they are known. It performs no network I/O as long as caps
+// does none.
+func (r *ServerInfoResult) SetProviderCapabilities(caps func(kind string) (provider.Capabilities, bool)) {
+	for i := range r.Providers {
+		if c, ok := caps(r.Providers[i].Kind); ok {
+			r.Providers[i].Issues = c.Issues
+		}
+	}
 }
 
 // ContextWindowAuto is the llm.context_window value server_info reports
@@ -206,6 +222,9 @@ func RenderServerInfoMarkdown(r ServerInfoResult) string {
 		b.WriteString("- " + codeSpan(p.Kind) + ": " + codeSpan(p.BaseURL))
 		if p.APIURL != "" {
 			b.WriteString(" (API " + codeSpan(p.APIURL) + ")")
+		}
+		if p.Issues {
+			b.WriteString(", reads issues")
 		}
 		b.WriteString("\n")
 	}

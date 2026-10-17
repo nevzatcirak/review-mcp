@@ -40,6 +40,10 @@ func NewFactory() Factory { return Factory{} }
 // Kind implements provider.Factory.
 func (Factory) Kind() provider.Kind { return provider.KindGitea }
 
+// Capabilities implements provider.CapabilityReporter: the capabilities of
+// every Provider New builds, without building one.
+func (Factory) Capabilities() provider.Capabilities { return (*Provider)(nil).Capabilities() }
+
 // ParsePRPath implements provider.Factory. remainder is escaped and starts
 // with "/"; it must be /{owner}/{repo}/pulls/{n}, optionally followed by more
 // segments.
@@ -157,7 +161,7 @@ func (*Provider) Kind() provider.Kind { return provider.KindGitea }
 func (*Provider) Capabilities() provider.Capabilities {
 	return provider.Capabilities{
 		GFM: true, MarkdownTables: true, Labels: true, InlineComments: true,
-		InlineThreadResolution: true, DescriptionEdit: true,
+		InlineThreadResolution: true, DescriptionEdit: true, Issues: true,
 	}
 }
 

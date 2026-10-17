@@ -26,7 +26,7 @@ func TestKindAndCapabilities(t *testing.T) {
 	}
 	want := provider.Capabilities{
 		GFM: true, MarkdownTables: true, Labels: true, InlineComments: true,
-		InlineThreadResolution: true, DescriptionEdit: true,
+		InlineThreadResolution: true, DescriptionEdit: true, Issues: true,
 	}
 	if p.Capabilities() != want {
 		t.Fatalf("capabilities = %+v", p.Capabilities())

@@ -1171,6 +1171,15 @@ func (s *suite) checkFailures(t *testing.T, p provider.Provider, ref provider.PR
 			checkClean(t, c.name, err)
 		})
 	}
+	if r, ok := p.(provider.IssueReader); ok {
+		t.Run("GetIssue", func(t *testing.T) {
+			_, err := r.GetIssue(ctx, provider.IssueRef{Namespace: ref.Namespace, Repo: ref.Repo, Number: 12})
+			if !errors.Is(err, class) {
+				t.Errorf("GetIssue: error %v, want class %s", err, class.Class)
+			}
+			checkClean(t, "GetIssue", err)
+		})
+	}
 
 	t.Run("PostInlineComments", func(t *testing.T) {
 		items := []provider.InlineComment{{Path: pathModified, Line: 6, LineType: provider.LineAdded, Body: "Inline."}}

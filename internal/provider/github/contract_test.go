@@ -449,10 +449,44 @@ func (g *ctGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.serveContents(w, r, strings.TrimPrefix(strings.TrimPrefix(path, ctRepo+"/contents"), "/"))
 	case strings.HasSuffix(path, "/check-runs"), strings.HasSuffix(path, "/status"):
 		g.serveChecks(w, r, path)
+	case strings.HasPrefix(path, ctAPI+"/repos/octo/") && strings.Count(path, "/") == 7 &&
+		strings.Split(path, "/")[6] == "issues":
+		g.serveIssue(w, strings.Split(path, "/")[5], strings.Split(path, "/")[7])
 	default:
 		g.t.Errorf("unexpected request %s %s", r.Method, path)
 		contract.WriteError(w, http.StatusNotFound)
 	}
+}
+
+// serveIssue answers GET /repos/octo/{repo}/issues/{n} like GitHub: a pull
+// request's number answers with the issue fields and pull_request set.
+func (g *ctGitHub) serveIssue(w http.ResponseWriter, repo, number string) {
+	is, status := g.pr.IssueAnswer("demo", repo, number)
+	if is == nil {
+		contract.WriteError(w, status)
+		return
+	}
+	labels := []any{}
+	for _, l := range is.Labels {
+		labels = append(labels, map[string]any{"id": len(labels) + 1, "name": l})
+	}
+	state := "open"
+	if is.Closed {
+		state = "closed"
+	}
+	out := map[string]any{
+		"number": is.Number, "title": is.Title, "state": state, "labels": labels, "user": ctUser(g.pr.Author),
+		"html_url": "https://github.example.com/octo/" + repo + "/issues/" + number,
+	}
+	out["body"] = nil
+	if is.Body != "" {
+		out["body"] = is.Body
+	}
+	if is.PullRequest {
+		out["html_url"] = "https://github.example.com/octo/" + repo + "/pull/" + number
+		out["pull_request"] = map[string]any{"html_url": out["html_url"]}
+	}
+	ctJSON(w, http.StatusOK, out)
 }
 
 // patchPull applies PATCH /pulls/7. Like GitHub it changes only the fields

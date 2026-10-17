@@ -333,6 +333,9 @@ func (g *ctGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.serveIssueComments(w, r)
 	case strings.HasPrefix(path, ctRepo+"/issues/comments/"):
 		g.serveIssueComment(w, r, strings.TrimPrefix(path, ctRepo+"/issues/comments/"))
+	case get && strings.HasPrefix(path, "/api/v1/repos/octo/") && strings.Count(path, "/") == 7 &&
+		strings.Split(path, "/")[6] == "issues":
+		g.serveIssue(w, strings.Split(path, "/")[5], strings.Split(path, "/")[7])
 	case path == ctPull+"/reviews":
 		g.serveReviews(w, r)
 	case get && strings.HasPrefix(path, ctPull+"/reviews/") && strings.HasSuffix(path, "/comments"):
@@ -352,6 +355,34 @@ func (g *ctGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.t.Errorf("unexpected request %s %s", r.Method, path)
 		contract.WriteError(w, http.StatusNotFound)
 	}
+}
+
+// serveIssue answers GET /repos/octo/{repo}/issues/{n} like Gitea: the body
+// is a string, pull_request is null for an issue and set for a pull
+// request's number.
+func (g *ctGitea) serveIssue(w http.ResponseWriter, repo, number string) {
+	is, status := g.pr.IssueAnswer("demo", repo, number)
+	if is == nil {
+		contract.WriteError(w, status)
+		return
+	}
+	labels := []any{}
+	for _, l := range is.Labels {
+		labels = append(labels, map[string]any{"id": len(labels) + 1, "name": l, "color": "ee0701"})
+	}
+	state := "open"
+	if is.Closed {
+		state = "closed"
+	}
+	out := map[string]any{
+		"number": is.Number, "title": is.Title, "body": is.Body, "state": state, "labels": labels,
+		"html_url": ctWeb + "/octo/" + repo + "/issues/" + number, "pull_request": nil,
+	}
+	if is.PullRequest {
+		out["html_url"] = ctWeb + "/octo/" + repo + "/pulls/" + number
+		out["pull_request"] = map[string]any{"merged": false}
+	}
+	ctJSON(w, http.StatusOK, out)
 }
 
 // patchPR is PATCH /pulls/{n}: like Gitea's EditPullRequestOption, a field

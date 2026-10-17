@@ -462,6 +462,11 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	fetched := false
 	if cfg.Context.Repo.Enabled && !supplied {
 		rcs = repoctx.Open(cfg, deps.RepoContext, ref, p, pr.HeadSHA, d.Files, d.Skipped, flt, log)
+		if args.Focus == FocusDocs {
+			// The names the changed documentation mentions are looked up
+			// too (v2.1 spec V-5 §3a item 3).
+			rcs.LookUpDocNames()
+		}
 		if len(rcs.Symbols(d.Files)) > 0 {
 			progress(deps, StageRepoContext)
 			fetched = rcs.Ready(ctx) == ""

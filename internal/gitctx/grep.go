@@ -489,6 +489,12 @@ func chooseHits(sym Symbol, raw []rawHit, max int) []rawHit {
 	}
 	want := filter.Language(sym.Path)
 	same := func(p string) bool { return filter.Language(p) == want }
+	if sym.Path == "" {
+		// A name with no source file (one that documentation mentions,
+		// repoctx.DocNames): uses in code come before uses in other
+		// documentation.
+		same = func(p string) bool { return !filter.IsDocumentation(p) }
+	}
 	sort.SliceStable(files, func(i, j int) bool {
 		if si, sj := same(files[i]), same(files[j]); si != sj {
 			return si

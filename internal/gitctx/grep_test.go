@@ -697,6 +697,20 @@ func TestChooseHits(t *testing.T) {
 	}
 }
 
+// TestChooseHitsForADocName: a name with no source file (one documentation
+// mentions) takes its uses in code before those in documentation.
+func TestChooseHitsForADocName(t *testing.T) {
+	h := func(path string, line int) rawHit { return rawHit{symbol: "S", path: path, line: line} }
+	raw := []rawHit{h("a.md", 1), h("README", 2), h("z.py", 3), h("b.go", 4)}
+	var got []string
+	for _, x := range chooseHits(Symbol{Name: "S"}, raw, 3) {
+		got = append(got, x.path)
+	}
+	if strings.Join(got, " ") != "b.go z.py README" {
+		t.Errorf("doc name hits: %v", got)
+	}
+}
+
 func TestCutLine(t *testing.T) {
 	if got := cutLine("abc\r"); got != "abc" {
 		t.Errorf("cutLine = %q", got)

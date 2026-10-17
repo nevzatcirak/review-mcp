@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nevzatcirak/review-mcp/internal/gitctx"
 	"github.com/nevzatcirak/review-mcp/internal/projctx"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 )
@@ -115,5 +116,26 @@ func TestDocsOnlyNoteWithoutRepositoryContext(t *testing.T) {
 	if docsOnlyWithoutContext(FocusDocs, true, files) || docsOnlyWithoutContext(FocusDocs, false, nil) ||
 		!docsOnlyWithoutContext(FocusDocs, false, files) {
 		t.Error("docsOnlyWithoutContext: repository context on, or an empty diff, makes no note")
+	}
+}
+
+// TestDocsFocusLooksUpDocumentationNames: with repository context on, a docs
+// review searches the names the changed documentation mentions; another
+// focus does not.
+func TestDocsFocusLooksUpDocumentationNames(t *testing.T) {
+	files := []provider.FilePatch{docsFile("docs/setup.md")}
+	h, fb := repoHarness(files, map[string][]gitctx.Hit{"llm.model": {useHit("llm.model", "internal/config/config.go", 40)}})
+	pl := prepareWith(t, h, Args{Focus: "docs"})
+	if len(fb.queries) != 1 || !slices.Equal(fb.symbolsOf(0), []string{"llm.model"}) {
+		t.Fatalf("queries %+v", fb.queries)
+	}
+	if !strings.Contains(pl.Prompts.User, "internal/config/config.go") || slices.Contains(pl.Result.Notes, NoteDocsWithoutRepoContext) {
+		t.Errorf("the use is not in the prompt, or the note is there: notes %q", pl.Result.Notes)
+	}
+
+	h, fb = repoHarness(files, nil)
+	prepareWith(t, h, Args{Focus: "security"})
+	if len(fb.queries) != 0 || fb.ensures != 0 {
+		t.Errorf("another focus searched documentation names: %d queries, %d fetches", len(fb.queries), fb.ensures)
 	}
 }

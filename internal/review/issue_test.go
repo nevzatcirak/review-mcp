@@ -406,8 +406,9 @@ func TestIssueNotInAMergedPublish(t *testing.T) {
 }
 
 // TestIssueReviewInParts: a review in parts checks no compliance: no part
-// shows the issue, none is asked for a verdict, and the note says the issue
-// did not fit next to the diff (WP-10b DQ-3).
+// shows the issue, none is asked for a verdict, and the note says that the
+// pull request was reviewed in parts, not that the issue did not fit next to
+// the diff (WP-10b DQ-3).
 func TestIssueReviewInParts(t *testing.T) {
 	h, f := chunkHarness(t, nil)
 	h.prov.pr.WebURL = testPRURL
@@ -426,7 +427,14 @@ func TestIssueReviewInParts(t *testing.T) {
 			t.Errorf("part %d carries the issue", i+1)
 		}
 	}
-	if !slices.Contains(res.Notes, issuectx.NoteDidNotFit) || res.Issue.Compliance != nil {
+	const want = "The pull request was reviewed in parts; issue compliance needs the whole change at once and was not checked."
+	if !slices.Contains(res.Notes, want) || slices.Contains(res.Notes, issuectx.NoteDidNotFit) || res.Issue.Compliance != nil {
 		t.Errorf("notes %q, compliance %+v", res.Notes, res.Issue.Compliance)
+	}
+	if slices.Contains(res.Notes, NoteIssueInParts) && strings.Count(strings.Join(res.Notes, "\n"), "issue compliance") != 1 {
+		t.Errorf("more than one issue note: %q", res.Notes)
+	}
+	if res.Issue.Source != issuectx.SourceProvider || len(res.Issue.Refs) != 1 || res.Issue.Refs[0].Outcome != issuectx.OutcomeUsed {
+		t.Errorf("issue = %+v: the issue is still read and reported", res.Issue)
 	}
 }

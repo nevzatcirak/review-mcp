@@ -790,7 +790,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			return nil, err
 		}
 		if ok {
-			noteIssueNotPlaced(res, issueBlock)
+			noteIssueInParts(res, issueBlock)
 			return pl, nil
 		}
 		if reserve > 0 {
@@ -808,7 +808,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 				if ok, err = pl.planParts(ctx, dIn, in, maxChunks, rcs, 0); err != nil {
 					return nil, err
 				} else if ok {
-					noteIssueNotPlaced(res, issueBlock)
+					noteIssueInParts(res, issueBlock)
 					return pl, nil
 				}
 			}
@@ -904,16 +904,25 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 
 // noteIssueNotPlaced adds the note of an issue block that is not in the
 // prompt (spec §2.2 item 4): it did not fit next to the diff.
-//
-// DESIGN-QUESTION (WP-10b DQ-3): a review in parts (X-19) shows each model
-// call a part of the diff only, so no call can judge the issue against the
-// whole change, and verdicts of parts cannot be merged into one. Such a run
-// checks no compliance and gets the same note: the issue did not fit next
-// to the diff, which is what makes it a review in parts. Recommendation:
-// keep; a compliance call over the merged findings could follow later.
 func noteIssueNotPlaced(res *Result, block string) {
 	if block != "" {
 		res.Notes = append(res.Notes, issuectx.NoteDidNotFit)
+	}
+}
+
+// NoteIssueInParts: a review in parts (X-19) checks no issue compliance.
+const NoteIssueInParts = "The pull request was reviewed in parts; issue compliance needs the whole change at once and was not checked."
+
+// noteIssueInParts adds NoteIssueInParts for a run with an issue that is
+// reviewed in parts. Each model call of such a run sees a part of the diff
+// only, so none can judge the issue against the whole change, and verdicts
+// of parts cannot be merged into one: the issue goes into no part's prompt
+// and no verdict is asked for (WP-10b DQ-3, settled in the architect review:
+// the behaviour is kept and the note says why). A compliance call over the
+// merged result of the parts is on the backlog.
+func noteIssueInParts(res *Result, block string) {
+	if block != "" {
+		res.Notes = append(res.Notes, NoteIssueInParts)
 	}
 }
 

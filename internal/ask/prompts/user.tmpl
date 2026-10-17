@@ -20,6 +20,13 @@ the entries "[path:line] uses symbol" with their snippets inside an
 adaptive code fence). It follows the main-language line and precedes the
 diff; without one nothing is rendered, so the prompt is byte-identical to
 the one without the feature.
+
+Intentional deviation (X-41, v2.3 spec V-13a §3.1): when the caller names
+related pull requests and their block fits next to the diff, the pipeline
+supplies .related (the fixed sentence of related.Header and, per related
+pull request, its line and plain diff, contract files first, inside an
+adaptive code fence). It precedes the repository context; without one
+nothing is rendered.
 */ -}}
 PR Info:
 
@@ -36,6 +43,10 @@ Description:
 {{- if .language }}
 
 Main PR language: '{{ .language }}'
+{{- end }}
+{{- if .related }}
+
+{{ .related }}
 {{- end }}
 {{- if .repo_context }}
 

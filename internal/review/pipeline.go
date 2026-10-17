@@ -273,7 +273,7 @@ type Plan struct {
 	related []*related.Item
 	// relatedShown are the related items placed in the prompt, with their
 	// counts of files shown and listed.
-	relatedShown []relatedShown
+	relatedShown []related.Section
 	// relatedReported: reportRelated added the related notes.
 	relatedReported bool
 	// lastRelated is the related record of the last review's overview

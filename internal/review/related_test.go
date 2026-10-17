@@ -102,8 +102,8 @@ func TestRelatedBlockIsPlaced(t *testing.T) {
 			t.Errorf("the block lacks %q", want)
 		}
 	}
-	if it := pl.related[0]; it.Status != related.StatusFull || len(pl.relatedShown) != 1 || pl.relatedShown[0].listed != 0 ||
-		pl.relatedShown[0].included != 3 {
+	if it := pl.related[0]; it.Status != related.StatusFull || len(pl.relatedShown) != 1 || pl.relatedShown[0].Listed != 0 ||
+		pl.relatedShown[0].Included != 3 {
 		t.Errorf("item %+v, shown %+v", it, pl.relatedShown)
 	}
 	if pl.Result.Metadata.DiffTrimmed {
@@ -204,7 +204,7 @@ func TestRelatedHalvedShare(t *testing.T) {
 		case related.StatusPartial:
 			// Full share would have shown everything: a partial result
 			// with this share can only come from the halved one.
-			if pl.relatedShown[0].listed > 0 {
+			if pl.relatedShown[0].Listed > 0 {
 				placedHalf = true
 			}
 		}

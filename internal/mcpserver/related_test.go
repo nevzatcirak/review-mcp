@@ -229,3 +229,55 @@ func TestRelatedArgumentErrors(t *testing.T) {
 		t.Errorf("%d requests for refused arguments", n)
 	}
 }
+
+// TestAskRelatedValidates: pr_ask reads a related merge request on another
+// provider with that provider's token and reports coverage.related; its
+// results validate against the declared output schema in every case
+// (without the argument, read, a host that is not configured, and off).
+func TestAskRelatedValidates(t *testing.T) {
+	g, gl, l := newFakeGiteaHost(t), newFakeGitLabHost(t), newFakeLLMHost(t, 200, "It matches.")
+	unconfigured, hits := countingHost(t)
+	cs := connect(t, realDeps(relatedEnv(g, gl, l), nil))
+	schemas := outputSchemas(t, cs)
+	glURL, noURL := gl.srv.URL+"/grp/svc/-/merge_requests/3", unconfigured.URL+"/grp/svc/-/merge_requests/9"
+
+	out := callValid(t, cs, schemas, "pr_ask", map[string]any{"pr_url": reviewPRURL(g), "question": "Does it match?"})
+	if rel := list(t, out["coverage"].(map[string]any), "related"); len(rel) != 0 {
+		t.Errorf("without the argument: %v", rel)
+	}
+
+	out = callValid(t, cs, schemas, "pr_ask", map[string]any{"pr_url": reviewPRURL(g), "question": "Does it match?",
+		"related": []any{glURL, noURL}})
+	rel := list(t, out["coverage"].(map[string]any), "related")
+	first, _ := rel[0].(map[string]any)
+	second, _ := rel[1].(map[string]any)
+	if len(rel) != 2 || first["status"] != "full" || first["head_sha"] != relatedHead || second["reason"] != "url_not_configured" {
+		t.Errorf("coverage.related %v", rel)
+	}
+	if hits.Load() != 0 {
+		t.Error("the host that is not configured got a request")
+	}
+	if !strings.Contains(l.lastBody(), relatedDiffMarker) {
+		t.Error("the related diff did not reach the model")
+	}
+
+	env := relatedEnv(g, gl, l)
+	env["REVIEW_MCP_RELATED_MAX_TOKENS"] = "0"
+	cs = connect(t, realDeps(env, nil))
+	out = callValid(t, cs, outputSchemas(t, cs), "pr_ask", map[string]any{"pr_url": reviewPRURL(g), "question": "Does it match?",
+		"related": []any{glURL}})
+	first, _ = list(t, out["coverage"].(map[string]any), "related")[0].(map[string]any)
+	if first["status"] != "not_placed" || first["reason"] != "off" {
+		t.Errorf("off: %v", first)
+	}
+}
+
+// lastBody is the body of the last request the fake server recorded.
+func (f *fakeServer) lastBody() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.bodies) == 0 {
+		return ""
+	}
+	return f.bodies[len(f.bodies)-1]
+}

@@ -5,9 +5,9 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.3.0-rc.1]
 
-Planned as `2.3.0-rc.1` (the npm dist-tag `next`; `latest` stays on 2.2.0).
+First 2.3 release candidate (the npm dist-tag `next`; `latest` stays on 2.2.0).
 `pr_review`, `pr_ask` and `pr_info` take related pull requests: up to four pull
 requests on any configured provider, read as context only (X-41, V-13a). The
 reviewed pull request stays the only one under review and the only one
@@ -1586,6 +1586,7 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[2.3.0-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.3.0-rc.1
 [2.2.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.2.0
 [2.2.0-rc.3]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.2.0-rc.3
 [2.2.0-rc.2]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.2.0-rc.2

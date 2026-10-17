@@ -30,6 +30,9 @@ const (
 	// ClassConflict reports a request that conflicts with the current state
 	// of the pull request or comment, after any retry.
 	ClassConflict ErrorClass = "conflict"
+	// ClassNotAnIssue refuses an issue read whose number names a pull
+	// request (X-42).
+	ClassNotAnIssue ErrorClass = "not_an_issue"
 )
 
 // Class sentinels for errors.Is.
@@ -46,6 +49,7 @@ var (
 	ErrProtocol           = &Error{Class: ClassProtocol}
 	ErrNotOwner           = &Error{Class: ClassNotOwner}
 	ErrConflict           = &Error{Class: ClassConflict}
+	ErrNotAnIssue         = &Error{Class: ClassNotAnIssue}
 )
 
 // Error is a sanitized provider error. It never carries response bodies,
@@ -70,6 +74,7 @@ var sentences = map[ErrorClass]string{
 	ClassProtocol:           "the server sent an unexpected response",
 	ClassNotOwner:           "the comment was not written by the token's user, so it was not changed",
 	ClassConflict:           "the request conflicts with the current state on the server",
+	ClassNotAnIssue:         "the number names a pull request, not an issue",
 }
 
 // Error returns the fixed sentence for the class, then " (HTTP n)" when

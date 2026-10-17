@@ -27,6 +27,12 @@ described in several parts, each part's prompt gets one line (.part_header,
 the fixed sentence of PartHeader) right before the diff, telling the model
 which part it sees. With one part nothing is rendered, so the prompt is
 byte-identical to the one without the feature.
+
+Intentional deviation (X-42, v2.2 spec V-2 §3.1): with an issue (the
+issue_context argument or an issue the pull request names on its own host)
+that fits next to the diff, the pipeline supplies .issue (the fixed
+sentence of issuectx.Header and the issues inside an adaptive code fence)
+after the previous description; without one nothing is rendered.
 */}}
 
 PR Info:
@@ -38,6 +44,10 @@ Previous description:
 =====
 {{ trim .description }}
 =====
+{{- end }}
+{{- if .issue }}
+
+{{ .issue }}
 {{- end }}
 
 Branch: '{{ .branch }}'

@@ -18,6 +18,7 @@ end of the pull request description (see [Publishing](#publishing)).
 | `publish_mode` | no | Where `publish` writes: `comment` (the default) or `description`. |
 | `update_title` | no | With `publish=true` and `publish_mode=description`, also replaces the pull request title with the generated one. Default `false`. |
 | `wait_seconds` | no | How long the call waits for the description before it answers with a `job_id`, 0 to 600; replaces `llm.wait_seconds` (default 45). stdio only; see [Slow endpoints](#slow-endpoints). |
+| `issue_context` | no | The issue or ticket the pull request implements, as for `pr_review`: 1 to 3 items with `key` and `title` (required), and `description`, `acceptance_criteria` and `url`. When given, no issue is looked up on the provider. See [The issue as context](#the-issue-as-context). |
 
 There are no extra instructions for this tool, and no setting for the number
 of files or parts beyond the ones the other tools use (`review.max_chunks`,
@@ -37,8 +38,9 @@ its own comment, or the region it owns, and never anything else.
 
 The result has two parts: the description as portable markdown (the text
 content; no raw HTML) and the same data as structured content (`title`,
-`type`, `description`, `files`, `coverage`, `notes`, `metadata` and, when
-publishing was requested, `publish`). While it runs, a client that sent a
+`type`, `description`, `files`, `coverage`, `notes`, `metadata`, `issue`
+(see [The issue as context](#the-issue-as-context)) and, when publishing was
+requested, `publish`). While it runs, a client that sent a
 progress token receives the stages `fetching`, `preparing diff`,
 `calling model` and `rendering`. A description in parts reports
 `calling model (part 1 of 3)`, `calling model (part 2 of 3)` and so on instead
@@ -100,6 +102,33 @@ configured context window; raise llm.context_window
 sent to the model. If nothing reviewable remains after filtering, the model is
 not called, the description is empty and the notes say "No reviewable changes
 after filtering."
+
+## The issue as context
+
+`pr_describe` uses the issue the pull request implements as context, the same
+way `pr_review` finds and reads it
+([Issue compliance](review.md#issue-compliance)): the `issue_context`
+argument, else the issues the pull request names on its own host (GitHub,
+Gitea, GitLab). The issue goes into the prompt fenced under the same sentence,
+within `review.max_issue_tokens`, and only in the room the diff leaves. The
+system prompt adds that it is context only: the description may name it
+("Implements #12"), but `pr_describe` makes **no compliance verdict**. A
+description in parts gives the issue to its last call, which writes the title
+and the summary, not to the parts; the files' summaries win over the issue
+there, as the diff does in a single call, so the issue is left out (with the
+note) before a summary is. The notes are worded for a description and never
+speak of a compliance check:
+
+| Note | When |
+|---|---|
+| Issue #12 could not be read and was not used as context. | An issue the pull request names could not be read (a 404 or a 403 alike). |
+| The issue text was longer than review.max_issue_tokens allows and was cut. | The issues together were over the budget and were cut at line boundaries. |
+| The issue did not fit the context window next to the diff and was not used as context. | The issue would have made the diff (or, in parts, the files' summaries) shorter, so it was left out. |
+| The pull request names PROJ-123; pass it as issue_context to use it as context. | A tracker key in the title, branch name or description, and no `issue_context`. |
+
+See [Troubleshooting](troubleshooting.md#issue-compliance-notes). The result's
+`issue` has `source`, `refs` and `detected_keys`, without `compliance`.
+`review.issue_compliance = false` turns it off here too.
 
 ## Reading the result
 

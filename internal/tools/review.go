@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/issuectx"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 	"github.com/nevzatcirak/review-mcp/internal/review/render"
 )
@@ -51,6 +52,9 @@ type PRReviewArgs struct {
 	// Incremental is nil when the argument was not given; review.
 	// incremental then decides (X-36).
 	Incremental *bool
+	// IssueContext is the issue_context argument (X-42); nil or empty when
+	// not given.
+	IssueContext []issuectx.Input
 }
 
 // Validate checks the optional arguments before any network call. It returns
@@ -61,6 +65,9 @@ func (a PRReviewArgs) Validate() error {
 	}
 	if a.MaxFindings != nil && (*a.MaxFindings < MinMaxFindings || *a.MaxFindings > MaxMaxFindings) {
 		return &ArgumentError{InvalidMaxFindingsMessage}
+	}
+	if _, err := issuectx.Validate(a.IssueContext); err != nil {
+		return &ArgumentError{err.Error()}
 	}
 	return nil
 }
@@ -110,6 +117,8 @@ func PreparePRReview(deps ReviewDeps, a PRReviewArgs) (*ReviewCall, error) {
 	if a.MaxFindings != nil {
 		args.MaxFindings = *a.MaxFindings
 	}
+	// Validate checked the items; this only converts them.
+	args.IssueContext, _ = issuectx.Validate(a.IssueContext)
 	// The modes of X-33 are checked before anything is built: a focused
 	// call with publish=true, or findings without it, is refused before any
 	// provider or model request.

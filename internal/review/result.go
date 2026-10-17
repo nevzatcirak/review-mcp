@@ -52,6 +52,11 @@ type Result struct {
 	// RepoConfig is what the repository config (X-40) contributed; always
 	// set.
 	RepoConfig repocfg.Result `json:"repo_config"`
+	// Issue is the issue part of the run (X-42): where the issue came from,
+	// its references, the detected tracker keys and the compliance verdict.
+	// Run always sets it; a pointer so that a result built elsewhere omits
+	// it.
+	Issue *IssueResult `json:"issue,omitempty"`
 	// Reviewed is the commit record of the overview (X-36). It is not part
 	// of the tool result: the renderers show it and the publish writes it.
 	Reviewed ReviewedCommit `json:"-"`

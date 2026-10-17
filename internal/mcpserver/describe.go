@@ -12,7 +12,7 @@ import (
 
 // prDescribeDescription is the tool description of pr_describe (v2 spec
 // §3.7, WP-2d). It says that publishing writes to the pull request and how.
-const prDescribeDescription = "Describes a pull request with the configured LLM: a title, the change types, a short summary and a walkthrough of the changed files. By default it only reads: nothing is written to the pull request. Publishing (publish=true) writes to the pull request: publish_mode=comment (default) posts one comment and edits it in place on later runs; publish_mode=description writes a marked region at the end of the pull request description, leaves the rest of the description unchanged and, with update_title=true, also replaces the title. The PR's title, description, branch names, commit messages and diff are sent to the configured LLM endpoint." + describePartialSentence
+const prDescribeDescription = "Describes a pull request with the configured LLM: a title, the change types, a short summary and a walkthrough of the changed files. By default it only reads: nothing is written to the pull request. Publishing (publish=true) writes to the pull request: publish_mode=comment (default) posts one comment and edits it in place on later runs; publish_mode=description writes a marked region at the end of the pull request description, leaves the rest of the description unchanged and, with update_title=true, also replaces the title. The PR's title, description, branch names, commit messages and diff are sent to the configured LLM endpoint." + issueContextSentence + describePartialSentence
 
 // describePartialSentence ends the pr_describe description (X-18, Y-7).
 const describePartialSentence = " If the result says the description is partial, tell the user how many files were not described and never present the walkthrough as covering those files."
@@ -22,12 +22,13 @@ const describePartialSentence = " If the result says the description is partial,
 const prDescribeJobSentence = " A description that takes longer than wait_seconds answers with a job_id instead: call job_result for the result."
 
 type prDescribeInput struct {
-	PRURL          string `json:"pr_url" jsonschema:"URL of the pull request, on a configured Gitea, Bitbucket Server, GitHub or GitLab host"`
-	OutputLanguage string `json:"output_language,omitempty" jsonschema:"locale code for the description text, for example en-US or tr-TR; replaces output.language for this call"`
-	Publish        bool   `json:"publish,omitempty" jsonschema:"write the description to the pull request (default false): a comment, or a marked region of the PR description; see publish_mode"`
-	PublishMode    string `json:"publish_mode,omitempty" jsonschema:"where publish writes: comment (default) or description (a marked region of the PR description)"`
-	UpdateTitle    bool   `json:"update_title,omitempty" jsonschema:"with publish and publish_mode=description, also replace the PR title with the generated one (default false)"`
-	WaitSeconds    *int   `json:"wait_seconds,omitempty" jsonschema:"seconds to wait for the result before answering with a job_id for job_result, 0 to 600; replaces llm.wait_seconds (default 45) for this call; ignored in serve mode"`
+	PRURL          string             `json:"pr_url" jsonschema:"URL of the pull request, on a configured Gitea, Bitbucket Server, GitHub or GitLab host"`
+	OutputLanguage string             `json:"output_language,omitempty" jsonschema:"locale code for the description text, for example en-US or tr-TR; replaces output.language for this call"`
+	Publish        bool               `json:"publish,omitempty" jsonschema:"write the description to the pull request (default false): a comment, or a marked region of the PR description; see publish_mode"`
+	PublishMode    string             `json:"publish_mode,omitempty" jsonschema:"where publish writes: comment (default) or description (a marked region of the PR description)"`
+	UpdateTitle    bool               `json:"update_title,omitempty" jsonschema:"with publish and publish_mode=description, also replace the PR title with the generated one (default false)"`
+	WaitSeconds    *int               `json:"wait_seconds,omitempty" jsonschema:"seconds to wait for the result before answering with a job_id for job_result, 0 to 600; replaces llm.wait_seconds (default 45) for this call; ignored in serve mode"`
+	IssueContext   []issueContextItem `json:"issue_context,omitempty" jsonschema:"The issue or ticket this pull request implements, for example fetched from a tracker MCP server. Used as context for the description, which may name it; no compliance verdict is made. 1 to 3 issues; when given, no issue is looked up on the provider"`
 }
 
 func registerPRDescribe(s *mcp.Server, deps Deps) {
@@ -66,7 +67,7 @@ func registerPRDescribe(s *mcp.Server, deps Deps) {
 			Logger:   log,
 		}, tools.PRDescribeArgs{
 			PRURL: in.PRURL, OutputLanguage: in.OutputLanguage, Publish: in.Publish,
-			PublishMode: in.PublishMode, UpdateTitle: in.UpdateTitle,
+			PublishMode: in.PublishMode, UpdateTitle: in.UpdateTitle, IssueContext: issueContext(in.IssueContext),
 		})
 		wait := 0
 		if err == nil && deps.background() {

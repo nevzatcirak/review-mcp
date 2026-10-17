@@ -1,6 +1,7 @@
 package describe
 
 import (
+	"github.com/nevzatcirak/review-mcp/internal/issuectx"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 )
@@ -102,6 +103,8 @@ func ResultSchema() map[string]any {
 			"commit_messages", "repair_tactic", "reasked", "truncated", "diff_trimmed", "rate_limit_waits", "rate_limit_wait_ms",
 			"models_used", "fallback_calls"),
 		"repo_config": repocfg.Schema(),
+		"issue": issuectx.ResultSchema("the issue the description used as context (X-42): where it came from, its " +
+			"references and the detected tracker keys; pr_describe makes no compliance verdict. Always set by pr_describe"),
 		"publish": object("publishing outcome; present when publish was requested", map[string]any{
 			"published":     boolean("whether the comment was posted or edited, or the description region was written"),
 			"comment_id":    str("id of the description comment; publish_mode=comment only"),

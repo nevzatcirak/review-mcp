@@ -66,6 +66,10 @@ func NewFactory() Factory { return Factory{} }
 // Kind implements provider.Factory.
 func (Factory) Kind() provider.Kind { return provider.KindGitHub }
 
+// Capabilities implements provider.CapabilityReporter: the capabilities of
+// every Provider New builds, without building one.
+func (Factory) Capabilities() provider.Capabilities { return (*Provider)(nil).Capabilities() }
+
 // ParsePRPath implements provider.Factory. remainder is escaped and starts
 // with "/"; it must be /{owner}/{repo}/pull/{n}, optionally followed by more
 // segments (such as /files or /commits; a "#..." fragment never reaches
@@ -193,7 +197,7 @@ func (*Provider) Kind() provider.Kind { return provider.KindGitHub }
 // (a partial PATCH, no version).
 func (*Provider) Capabilities() provider.Capabilities {
 	return provider.Capabilities{GFM: true, MarkdownTables: true, Labels: true, InlineComments: true,
-		SuggestionBlocks: true, SuggestionStyle: provider.SuggestionStyleRange, DescriptionEdit: true}
+		SuggestionBlocks: true, SuggestionStyle: provider.SuggestionStyleRange, DescriptionEdit: true, Issues: true}
 }
 
 // BaseStrategies returns the provider.PullRequest.BaseStrategy values this

@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/provider"
 )
 
 const (
@@ -386,4 +387,40 @@ func TestServerInfoReportsServeKeys(t *testing.T) {
 		t.Error("access token leaked")
 	}
 	assertNoSecrets(t, r, md)
+}
+
+// TestServerInfoProviderCapabilities: SetProviderCapabilities fills each
+// provider's issues flag from the capabilities it is given; a kind whose
+// capabilities are not known keeps false. The markdown names the providers
+// that read issues.
+func TestServerInfoProviderCapabilities(t *testing.T) {
+	cfg, rep, err := load(validEnv())
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	r := ServerInfo(cfg, rep, nil)
+	for _, p := range r.Providers {
+		if p.Issues {
+			t.Fatalf("%s reports issue reads before its capabilities are known", p.Kind)
+		}
+	}
+	r.SetProviderCapabilities(func(kind string) (provider.Capabilities, bool) {
+		switch kind {
+		case "github":
+			return provider.Capabilities{Issues: true}, true
+		case "bitbucket_server":
+			return provider.Capabilities{}, true
+		}
+		return provider.Capabilities{Issues: true}, false
+	})
+	for _, p := range r.Providers {
+		if p.Issues != (p.Kind == "github") {
+			t.Errorf("%s: issues %v, want %v", p.Kind, p.Issues, p.Kind == "github")
+		}
+	}
+	md := RenderServerInfoMarkdown(r)
+	if !strings.Contains(md, "(API `https://github.example.com/ghe/api/v3`), reads issues\n") ||
+		strings.Count(md, "reads issues") != 1 {
+		t.Errorf("markdown providers:\n%s", md)
+	}
 }

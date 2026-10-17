@@ -1,6 +1,7 @@
 package review
 
 import (
+	"github.com/nevzatcirak/review-mcp/internal/issuectx"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 )
@@ -97,6 +98,7 @@ func ResultSchema() map[string]any {
 			"models_used", "fallback_calls"),
 		"ci":          CISchema(),
 		"repo_config": repocfg.Schema(),
+		"issue":       IssueSchema(),
 		"focus": str("the focus of a focused run (X-33): security, architecture, performance, ux, tests, docs or the " +
 			"cleaned free text; absent without one"),
 		"incremental": object("whether the whole pull request or only the files that changed since the last review were reviewed (X-36); always set by pr_review", map[string]any{
@@ -158,4 +160,46 @@ func CISchema() map[string]any {
 			}, "name", "state", "url")},
 		"note": str("fixed text; set when state is unreadable or the host reported more checks than were read"),
 	}, "state", "counts", "checks")
+}
+
+// IssueSchema is the JSON schema of IssueResult (X-42), for the pr_review
+// output schema.
+func IssueSchema() map[string]any {
+	str := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
+	enum := func(desc string, values ...string) map[string]any {
+		e := make([]any, len(values))
+		for i, v := range values {
+			e[i] = v
+		}
+		return map[string]any{"type": "string", "enum": e, "description": desc}
+	}
+	strList := func(desc string) map[string]any {
+		return map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": desc}
+	}
+	object := func(desc string, props map[string]any, required ...string) map[string]any {
+		req := []any{}
+		for _, r := range required {
+			req = append(req, r)
+		}
+		return map[string]any{"type": "object", "description": desc, "properties": props,
+			"required": req, "additionalProperties": false}
+	}
+	ref := issuectx.RefSchema()
+	verdict := object("the verdict on one issue", map[string]any{
+		"ref":                str("the issue as the model named it"),
+		"met":                strList("requirements the pull request meets (at most 10, each at most 300 bytes)"),
+		"not_met":            strList("requirements the pull request does not meet"),
+		"needs_verification": strList("requirements a human has to verify"),
+	}, "ref", "met", "not_met", "needs_verification")
+	compliance := object("the model's verdict on the issue; null when no issue was checked", map[string]any{
+		"issues":  map[string]any{"type": "array", "items": verdict, "description": "one entry per issue"},
+		"verdict": enum("the overall verdict", Verdicts...),
+	}, "issues", "verdict")
+	compliance["type"] = []any{"object", "null"}
+	return object("issue compliance (X-42): the issue the pull request should implement and the verdict; always set by pr_review", map[string]any{
+		"source":        enum("provider: issues the pull request names on its own host; argument: the issue_context argument; none: no issue was used", "provider", "argument", "none"),
+		"refs":          map[string]any{"type": "array", "items": ref, "description": "the issue references of the run, with their outcomes"},
+		"detected_keys": strList("tracker keys such as PROJ-123 that the pull request names when no issue_context was given; review-mcp never reads them: pass the issue as issue_context"),
+		"compliance":    compliance,
+	}, "source", "refs", "detected_keys", "compliance")
 }

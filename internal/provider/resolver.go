@@ -50,6 +50,32 @@ type Resolver struct {
 	built []Provider
 }
 
+// CapabilityReporter is implemented by a Factory that knows the
+// capabilities of its providers without building one (the four provider
+// factories do): server_info reports them per provider.
+type CapabilityReporter interface {
+	Capabilities() Capabilities
+}
+
+// Capabilities returns the capabilities of the enabled provider of kind, as
+// its factory reports them (CapabilityReporter). ok is false when kind is
+// not enabled, or its factory is missing or does not report them. It
+// performs no network I/O.
+func (r *Resolver) Capabilities(kind Kind) (Capabilities, bool) {
+	if r == nil {
+		return Capabilities{}, false
+	}
+	for _, c := range r.candidates {
+		if c.kind != kind {
+			continue
+		}
+		if rep, ok := c.factory.(CapabilityReporter); ok {
+			return rep.Capabilities(), true
+		}
+	}
+	return Capabilities{}, false
+}
+
 // IdleCloser is implemented by a Provider (or any per-call client) that owns
 // an HTTP transport whose idle connections can be released.
 type IdleCloser interface {

@@ -49,6 +49,9 @@ type Spec struct {
 	// whole tree (path to content): the commit of an earlier review that an
 	// incremental review compares with (X-36). See TreeAt.
 	Revisions map[string]map[string]string
+	// Issues are the issues of the host's tracker (X-42), in the pull
+	// request's repository or in OtherRepo; see IssueAnswer.
+	Issues []Issue
 	// Env is the harness side of the Spec: not pull request data.
 	Env Env
 }

@@ -88,7 +88,11 @@ func publish(ctx context.Context, deps Deps, args Args, pl *Plan) {
 			// inline post changes between two renders; so does their note.
 			held, unrecorded := heldLines(res, res.Reviewed.SHA)
 			pl.setHeldNote(unrecorded)
-			return withTrailer(deps.RenderProvider(res, caps), held, res.Reviewed.SHA)
+			var verdict *Compliance
+			if res.Issue != nil {
+				verdict = res.Issue.Compliance
+			}
+			return withTrailer(deps.RenderProvider(res, caps), issueLine(verdict), held, res.Reviewed.SHA)
 		}
 	}
 

@@ -7,6 +7,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/describe"
 	describerender "github.com/nevzatcirak/review-mcp/internal/describe/render"
+	"github.com/nevzatcirak/review-mcp/internal/issuectx"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 )
 
@@ -32,6 +33,9 @@ type PRDescribeArgs struct {
 	// PublishModeDescription.
 	PublishMode string
 	UpdateTitle bool
+	// IssueContext is the issue_context argument (X-42); nil or empty when
+	// not given.
+	IssueContext []issuectx.Input
 }
 
 // Validate checks the arguments before any network call, in order: the
@@ -53,6 +57,9 @@ func (a PRDescribeArgs) Validate() error {
 	}
 	if a.UpdateTitle && (!a.Publish || mode != PublishModeDescription) {
 		return &ArgumentError{InvalidUpdateTitleMessage}
+	}
+	if _, err := issuectx.Validate(a.IssueContext); err != nil {
+		return &ArgumentError{err.Error()}
 	}
 	return nil
 }
@@ -93,9 +100,11 @@ func PreparePRDescribe(deps DescribeDeps, a PRDescribeArgs) (*DescribeCall, erro
 		return nil, err
 	}
 	deps.Resolver = resolver
+	// Validate checked the items; this only converts them.
+	issues, _ := issuectx.Validate(a.IssueContext)
 	return &DescribeCall{deps: deps, client: client, args: describe.Args{
 		PRURL: a.PRURL, OutputLanguage: a.OutputLanguage,
-		Publish: a.Publish, PublishMode: a.PublishMode, UpdateTitle: a.UpdateTitle,
+		Publish: a.Publish, PublishMode: a.PublishMode, UpdateTitle: a.UpdateTitle, IssueContext: issues,
 	}}, nil
 }
 

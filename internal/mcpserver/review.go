@@ -9,6 +9,7 @@ import (
 
 	"github.com/nevzatcirak/review-mcp/internal/describe"
 	"github.com/nevzatcirak/review-mcp/internal/improve"
+	"github.com/nevzatcirak/review-mcp/internal/issuectx"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 	"github.com/nevzatcirak/review-mcp/internal/tools"
 )
@@ -16,12 +17,22 @@ import (
 // prReviewDescription is the tool description from spec P4 §6.1.
 //
 // In stdio mode the description gains prReviewJobSentence (X-16).
-const prReviewDescription = "Reviews a pull request with the configured LLM and returns a structured review (key issues, effort, tests, security, performance) with code excerpts. Set publish=true to also post it: one overview comment that later runs edit in place, and the findings on changed lines as inline comments. The PR's title, description, existing comments and diff are sent to the configured LLM endpoint." + focusSentence + partialSentence
+const prReviewDescription = "Reviews a pull request with the configured LLM and returns a structured review (key issues, effort, tests, security, performance) with code excerpts. Set publish=true to also post it: one overview comment that later runs edit in place, and the findings on changed lines as inline comments. The PR's title, description, existing comments and diff are sent to the configured LLM endpoint." + focusSentence + issueContextSentence + partialSentence
 
 // focusSentence points at the focused-review pattern of X-33 (spec 2F
 // §4.3): the same recipe as serverInstructions and the
 // multi_perspective_review prompt.
 const focusSentence = " For a thorough review, run it with focus for several areas without publish, merge the findings, then call it once with findings and publish=true, which publishes them without a model call; a focused run never publishes."
+
+// issueContextSentence is the client guidance of V-3 (X-42, v2.2 spec V-2
+// §3 item 2, verbatim, with its leading space): the pr_review and
+// pr_describe descriptions and the server instructions carry it. The
+// multi_perspective_review prompt does not.
+const issueContextSentence = " " + issueContextGuidance
+
+// issueContextGuidance is issueContextSentence without its leading space.
+const issueContextGuidance = "If the pull request names an issue in a tracker you can reach (for example through a " +
+	"tracker MCP server), fetch it and pass it as issue_context; review-mcp never contacts trackers itself."
 
 // partialSentence ends the pr_review, pr_ask and job_result descriptions
 // (X-18). The job sentence of stdio mode follows it.
@@ -41,10 +52,36 @@ type prReviewInput struct {
 	WaitSeconds       *int   `json:"wait_seconds,omitempty" jsonschema:"seconds to wait for the result before answering with a job_id for job_result, 0 to 600; replaces llm.wait_seconds (default 45) for this call; ignored in serve mode"`
 	Focus             string `json:"focus,omitempty" jsonschema:"review only one area: security, architecture, performance, ux, tests, docs, or a description of at most 200 characters; the findings then cover that area only. A focused review never publishes: combine it with publish=true and the call is refused"`
 	// Findings is nil when the argument is absent and empty for [].
-	Findings            []prReviewFinding `json:"findings,omitempty" jsonschema:"publish these findings instead of calling the model: the merged and de-duplicated findings of focused runs, in the shape of review.key_issues_to_review. Needs publish=true and no focus; at most twice review.max_total_findings items. Items whose file is not in the diff or whose lines are not positive are dropped with a note, exact repeats are merged, and the list is capped at review.max_total_findings"`
-	SecurityConcerns    string            `json:"security_concerns,omitempty" jsonschema:"with findings, the overview's security concerns text (No when there are none), for example from a focused security run; at most 5000 characters"`
-	PerformanceConcerns string            `json:"performance_concerns,omitempty" jsonschema:"with findings, the overview's performance concerns text (No when there are none), for example from a focused performance run; at most 5000 characters"`
-	Incremental         *bool             `json:"incremental,omitempty" jsonschema:"review only the files whose content changed since the last review review-mcp published on this pull request; when nothing changed, the model is not called and nothing is posted. Without an earlier review the whole pull request is reviewed. Ignored with findings; replaces review.incremental for this call"`
+	Findings            []prReviewFinding  `json:"findings,omitempty" jsonschema:"publish these findings instead of calling the model: the merged and de-duplicated findings of focused runs, in the shape of review.key_issues_to_review. Needs publish=true and no focus; at most twice review.max_total_findings items. Items whose file is not in the diff or whose lines are not positive are dropped with a note, exact repeats are merged, and the list is capped at review.max_total_findings"`
+	SecurityConcerns    string             `json:"security_concerns,omitempty" jsonschema:"with findings, the overview's security concerns text (No when there are none), for example from a focused security run; at most 5000 characters"`
+	PerformanceConcerns string             `json:"performance_concerns,omitempty" jsonschema:"with findings, the overview's performance concerns text (No when there are none), for example from a focused performance run; at most 5000 characters"`
+	Incremental         *bool              `json:"incremental,omitempty" jsonschema:"review only the files whose content changed since the last review review-mcp published on this pull request; when nothing changed, the model is not called and nothing is posted. Without an earlier review the whole pull request is reviewed. Ignored with findings; replaces review.incremental for this call"`
+	IssueContext        []issueContextItem `json:"issue_context,omitempty" jsonschema:"The issue or ticket this pull request implements, for example fetched from a tracker MCP server. Used to check that the change does what the issue asks. 1 to 3 issues; when given, no issue is looked up on the provider. Ignored with focus or findings"`
+}
+
+// issueContextItem is one item of the issue_context argument (X-42). The
+// sizes are checked by issuectx.Validate, which names the field of an
+// over-long value and never quotes it.
+type issueContextItem struct {
+	Key         string `json:"key" jsonschema:"the issue's key or number, for example PROJ-123; at most 64 characters"`
+	Title       string `json:"title" jsonschema:"the issue's title; at most 300 characters"`
+	Description string `json:"description,omitempty" jsonschema:"the issue's description; at most 20000 characters"`
+	// AcceptanceCriteria is a string or a list of strings.
+	AcceptanceCriteria any    `json:"acceptance_criteria,omitempty" jsonschema:"the issue's acceptance criteria: a string or a list of strings, at most 10000 characters in total"`
+	URL                string `json:"url,omitempty" jsonschema:"the issue's web page, an http or https URL"`
+}
+
+// issueContext converts the issue_context argument; nil stays nil.
+func issueContext(in []issueContextItem) []issuectx.Input {
+	if in == nil {
+		return nil
+	}
+	out := make([]issuectx.Input, len(in))
+	for i, it := range in {
+		out[i] = issuectx.Input{Key: it.Key, Title: it.Title, Description: it.Description,
+			AcceptanceCriteria: it.AcceptanceCriteria, URL: it.URL}
+	}
+	return out
 }
 
 // prReviewFinding is one item of the findings argument (X-33).
@@ -170,7 +207,7 @@ func registerPRReview(s *mcp.Server, deps Deps) {
 			MaxFindings: in.MaxFindings, Publish: in.Publish, InlineFindings: in.InlineFindings,
 			Focus: in.Focus, Findings: suppliedFindings(in.Findings),
 			SecurityConcerns: in.SecurityConcerns, PerformanceConcerns: in.PerformanceConcerns,
-			Incremental: in.Incremental,
+			Incremental: in.Incremental, IssueContext: issueContext(in.IssueContext),
 		})
 		wait := 0
 		if err == nil && deps.background() {

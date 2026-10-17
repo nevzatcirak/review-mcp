@@ -100,5 +100,10 @@
     "status": "absent",
     "applied": [],
     "ignored": []
+  },
+  "issue": {
+    "source": "none",
+    "refs": [],
+    "detected_keys": []
   }
 }

@@ -54,6 +54,17 @@ type PromptInput struct {
 	// Description is the PR description, already clipped
 	// (tokens.ClipDescription); the template trims it.
 	Description string
+	// Issue is the rendered issue block (issuectx: its fixed header and the
+	// fenced issues, X-42); empty omits it. It is untrusted text placed in
+	// the room the diff leaves, and it comes with Toggles.Issue, which asks
+	// for issue_compliance and adds IssueComplianceSentence to the system
+	// prompt.
+	Issue string
+	// EarlierVerdict is the rendered verdict of the last review
+	// (earlierVerdictBlock) of an incremental run with an issue, for the
+	// files the run does not show (spec V-2 §2.4); empty omits it. It
+	// follows the issue block.
+	EarlierVerdict string
 	// Discussion is the rendered existing-discussion block (DiscussionHeader
 	// and the fenced threads, see renderDiscussion); empty omits it. It is
 	// third-party text, and part of the scaffolding the diff budget reserves.
@@ -111,6 +122,9 @@ func (in *PromptInput) vars() map[string]any {
 		"title":              in.Title,
 		"branch":             in.Branch,
 		"description":        in.Description,
+		"issue":              in.Issue,
+		"issue_verdict":      in.EarlierVerdict,
+		"issue_instruction":  issueInstruction(in.Issue),
 		"discussion":         in.Discussion,
 		"ci":                 in.CI,
 		"guidelines":         in.Guidelines,
@@ -122,6 +136,15 @@ func (in *PromptInput) vars() map[string]any {
 		"part_header":        in.PartHeader,
 		"diff":               in.Diff,
 	}
+}
+
+// issueInstruction is the system prompt's paragraph of a run with an issue
+// block, "" otherwise.
+func issueInstruction(block string) string {
+	if block != "" {
+		return IssueComplianceSentence
+	}
+	return ""
 }
 
 // incrementalInstruction is the system prompt's sentence of an incremental

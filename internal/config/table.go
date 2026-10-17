@@ -107,6 +107,8 @@ var table = []entry{
 	{"review.incremental", "REVIEW_MCP_REVIEW_INCREMENTAL", func(c *Config) any { return &c.Review.Incremental }},
 	{"review.docs_style", "REVIEW_MCP_REVIEW_DOCS_STYLE", func(c *Config) any { return &c.Review.DocsStyle }},
 	{"review.incremental_max_files", "REVIEW_MCP_REVIEW_INCREMENTAL_MAX_FILES", func(c *Config) any { return &c.Review.IncrementalMaxFiles }},
+	{"review.issue_compliance", "REVIEW_MCP_REVIEW_ISSUE_COMPLIANCE", func(c *Config) any { return &c.Review.IssueCompliance }},
+	{"review.max_issue_tokens", "REVIEW_MCP_REVIEW_MAX_ISSUE_TOKENS", func(c *Config) any { return &c.Review.MaxIssueTokens }},
 
 	{"ask.extra_instructions", "REVIEW_MCP_ASK_EXTRA_INSTRUCTIONS", func(c *Config) any { return &c.Ask.ExtraInstructions }},
 

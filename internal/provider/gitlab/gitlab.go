@@ -82,6 +82,10 @@ func NewFactory() Factory { return Factory{} }
 // Kind implements provider.Factory.
 func (Factory) Kind() provider.Kind { return provider.KindGitLab }
 
+// Capabilities implements provider.CapabilityReporter: the capabilities of
+// every Provider New builds, without building one.
+func (Factory) Capabilities() provider.Capabilities { return (*Provider)(nil).Capabilities() }
+
 // mrTails are the segments that may follow /-/merge_requests/{iid} (a
 // "#..." fragment never reaches ParsePRPath).
 var mrTails = []string{"diffs", "commits", "pipelines"}
@@ -220,7 +224,7 @@ func (*Provider) Capabilities() provider.Capabilities {
 	return provider.Capabilities{
 		GFM: true, MarkdownTables: true, Labels: true, InlineComments: true,
 		SuggestionBlocks: true, SuggestionStyle: provider.SuggestionStyleOffset, QuickActions: true,
-		InlineThreadResolution: true, GeneralThreadResolution: true, DescriptionEdit: true,
+		InlineThreadResolution: true, GeneralThreadResolution: true, DescriptionEdit: true, Issues: true,
 	}
 }
 

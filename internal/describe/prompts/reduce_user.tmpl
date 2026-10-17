@@ -9,6 +9,10 @@ gets the files walkthrough (.walkthrough, rendered by the pipeline): per
 described file, in part order, a "## File: '<path>'" line, the file's title
 and, unless they were left out to fit the context window, its summary. The
 one re-ask inserts its note on its own line before the final line.
+
+With an issue (X-42), the user prompt carries .issue after the previous
+description and the system prompt one line saying it is context only
+(IssueSentence); without one nothing is rendered.
 */}}
 
 PR Info:
@@ -20,6 +24,10 @@ Previous description:
 =====
 {{ trim .description }}
 =====
+{{- end }}
+{{- if .issue }}
+
+{{ .issue }}
 {{- end }}
 
 Branch: '{{ .branch }}'

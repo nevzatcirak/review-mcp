@@ -57,6 +57,10 @@ type PromptInput struct {
 	// CommitMessages is the commit-message block, already numbered and
 	// clipped (CommitBlock); empty omits it.
 	CommitMessages string
+	// Issue is the rendered issue block (issuectx: the fixed sentence and
+	// the fenced issues, X-42); empty omits it. It is context only: the
+	// system prompt then carries IssueSentence, and no verdict is asked for.
+	Issue string
 	// FilesOnly selects the part-mode variant (Y-6): the answer is the
 	// pr_files walkthrough only.
 	FilesOnly bool
@@ -86,10 +90,25 @@ func (in *PromptInput) vars() map[string]any {
 		"target_branch":      in.TargetBranch,
 		"description":        in.Description,
 		"commit_messages":    in.CommitMessages,
+		"issue":              in.Issue,
+		"issue_instruction":  issueInstruction(in.Issue),
 		"files_only":         in.FilesOnly,
 		"part_header":        in.PartHeader,
 		"diff":               in.Diff,
 	}
+}
+
+// IssueSentence is the system prompt's line of a description with an issue
+// block (X-42, v2.2 spec V-2 §3.1).
+const IssueSentence = "The issue this PR should implement is given as context only: the description may name it " +
+	"(for example 'Implements #12'), but do not judge whether the PR meets it."
+
+// issueInstruction is IssueSentence with an issue block, "" otherwise.
+func issueInstruction(block string) string {
+	if block != "" {
+		return IssueSentence
+	}
+	return ""
 }
 
 // PartHeader is the line the user prompt carries before the diff when a

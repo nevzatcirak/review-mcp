@@ -117,6 +117,7 @@ func writeGFM(b *strings.Builder, res *review.Result, v *view) {
 				gfmText(*v.perf) + "\n</td></tr>\n")
 		}
 	}
+	writeGFMCompliance(b, res)
 	if n := res.Metadata.AlreadyDiscussed; n > 0 {
 		gfmRow(b, emojiDiscussed, textDiscussed, ": "+strconv.Itoa(n))
 	}
@@ -193,6 +194,9 @@ func writePlain(b *strings.Builder, res *review.Result, v *view, tables bool) {
 			rows = append(rows, row{emojiPerf + " Performance", v.noPerf()})
 		}
 	}
+	if label, value, ok := complianceRow(res); ok {
+		rows = append(rows, row{label, value})
+	}
 	if n := res.Metadata.AlreadyDiscussed; n > 0 {
 		rows = append(rows, row{emojiDiscussed + " " + textDiscussed, strconv.Itoa(n)})
 	}
@@ -215,6 +219,7 @@ func writePlain(b *strings.Builder, res *review.Result, v *view, tables bool) {
 	if v.showPerf && v.hasPerf {
 		b.WriteString("### " + emojiPerf + " " + textPerf + "\n\n" + proseText(*v.perf) + "\n\n")
 	}
+	writePlainCompliance(b, res, "### "+emojiCompliance+" "+textCompliance)
 	if !v.showIssues || !v.hasReview {
 		return
 	}

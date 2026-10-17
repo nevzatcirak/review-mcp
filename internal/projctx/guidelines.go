@@ -6,10 +6,9 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
-	"unicode"
 
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
-	"github.com/nevzatcirak/review-mcp/internal/mdutil"
+	"github.com/nevzatcirak/review-mcp/internal/prompt"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 )
@@ -122,21 +121,7 @@ func readGuidelines(ctx context.Context, src Source, rev string, s Settings, log
 // feed and tab and the bidirectional formatting characters are removed,
 // trailing space is trimmed from each line, and leading and trailing blank
 // lines are dropped.
-func cleanText(s string) string {
-	s = strings.ToValidUTF8(s, "\ufffd")
-	s = strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(s)
-	s = strings.Map(func(r rune) rune {
-		if (r != '\n' && r != '\t' && unicode.IsControl(r)) || isBidiControl(r) {
-			return -1
-		}
-		return r
-	}, s)
-	lines := strings.Split(s, "\n")
-	for i, l := range lines {
-		lines[i] = strings.TrimRightFunc(l, unicode.IsSpace)
-	}
-	return strings.Trim(strings.Join(lines, "\n"), "\n")
-}
+func cleanText(s string) string { return prompt.CleanText(s) }
 
 // render renders the block within maxTokens (tokens.Estimate of the whole
 // block: header, fence and cut line): the largest prefix of whole lines
@@ -169,12 +154,7 @@ func (g *guidelines) blockOf(k int) string {
 // fencedBlock is a header line and the body in a fence the body cannot
 // close, without a trailing newline: the shape of every block of untrusted
 // repository text in a prompt (the guidelines, the repository guidance).
-func fencedBlock(header, body string) string {
-	var b strings.Builder
-	b.WriteString(header + "\n")
-	mdutil.WriteFenced(&b, body, "", "")
-	return strings.TrimRight(b.String(), "\n")
-}
+func fencedBlock(header, body string) string { return prompt.FencedBlock(header, body) }
 
 // RepoGuidanceHeader is the line above the fenced repository guidance (X-40,
 // verbatim); path is repo_config.path.

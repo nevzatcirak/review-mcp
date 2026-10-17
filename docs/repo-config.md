@@ -52,6 +52,7 @@ The operator turns it on and off and chooses the path; both settings are
 | `review.extra_instructions`, `ask.extra_instructions` | text, at most 2,000 bytes (longer text is cut at a character boundary, with a note) | **added** after the operator's instructions, as fenced repository guidance |
 | `review.focuses` | a list out of `security`, `architecture`, `performance`, `ux`, `tests` and `docs` | the default list of the `multi_perspective_review` prompt only |
 | `review.docs_style` | text, at most 1,000 bytes | replaces; used only by the [`docs` focus](review.md#the-docs-focus) |
+| `review.issue_compliance` | true or false | replaces; false turns [issue compliance](review.md#issue-compliance) off for the repository |
 
 Every other key is ignored and named in a note. That covers `llm.*`, the
 provider sections, `context.*`, `serve.*`, `log.*`, `repo_config.*`, the other

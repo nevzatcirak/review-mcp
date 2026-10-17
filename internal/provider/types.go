@@ -253,6 +253,9 @@ type Capabilities struct {
 	GeneralThreadResolution bool
 	// DescriptionEdit: the PR description can be updated through the API.
 	DescriptionEdit bool
+	// Issues: the host has an issue tracker that the provider reads (the
+	// Provider implements IssueReader; the contract suite checks this).
+	Issues bool
 }
 
 // NativeSuggestionStyle returns the suggestion style an inline comment may

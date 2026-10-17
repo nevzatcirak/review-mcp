@@ -36,6 +36,12 @@ Changes from upstream (spec P4 §4.2):
   sentence of IssueComplianceSentence), and the schema and the example gain
   the optional issue_compliance field and its two classes (compliance.go);
   without an issue nothing is rendered;
+- intentional deviation (X-41): a run with a related block in the user
+  prompt gets one more instruction block after the issue paragraph (the
+  fixed text of RelatedInstruction: cross-repository problems, rollout
+  compatibility, merge and deploy order), and KeyIssuesComponentLink gains
+  the optional related field (R1 to R4); the example does not change;
+  without a related block nothing is rendered;
 - the schema classes and the example come from the field-descriptor table
   (.schema, .example; internal/review/fields.go);
 - intentional deviation (X-12, spec P7 §4.1): a performance_concerns field,
@@ -120,6 +126,10 @@ Determining what to flag:
 {{- if .issue_instruction }}
 
 {{ .issue_instruction }}
+{{- end }}
+{{- if .related_instruction }}
+
+{{ .related_instruction }}
 {{- end }}
 
 Constructing comments:

@@ -2,9 +2,11 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -146,6 +148,20 @@ func askResultSchema() *jsonschema.Schema {
 		st.Enum = nil
 		for _, v := range repocfg.Statuses() {
 			st.Enum = append(st.Enum, v)
+		}
+	}
+	// coverage.related (X-41) is always present in pr_ask: it gets the
+	// declared schema of pr_review's (additionalProperties false, the reason
+	// enum) and is required.
+	if cov := s.Properties["coverage"]; cov != nil {
+		var rel jsonschema.Schema
+		raw, err := json.Marshal(review.RelatedCoverageSchema())
+		if err != nil || json.Unmarshal(raw, &rel) != nil {
+			panic("coverage.related schema") // a programming error, caught by every test
+		}
+		cov.Properties["related"] = &rel
+		if !slices.Contains(cov.Required, "related") {
+			cov.Required = append(cov.Required, "related")
 		}
 	}
 	return s

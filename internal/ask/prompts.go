@@ -56,6 +56,10 @@ type PromptInput struct {
 	// RepoContext is the rendered repository-context block (repoctx.Render);
 	// empty omits it. It is repository text, and part of the scaffolding.
 	RepoContext string
+	// Related is the rendered related block (related.Block: the fixed
+	// sentence and the fenced related pull requests, X-41); empty omits it.
+	// It precedes the repository context.
+	Related string
 	// Diff is the prepared plain diff; empty for the scaffolding
 	// measurement.
 	Diff string
@@ -82,6 +86,7 @@ func (in *PromptInput) vars() map[string]any {
 		"description":        in.Description,
 		"language":           lang,
 		"repo_context":       in.RepoContext,
+		"related":            in.Related,
 		"diff":               in.Diff,
 		"questions":          in.Question,
 	}

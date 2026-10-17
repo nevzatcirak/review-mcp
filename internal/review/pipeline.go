@@ -18,6 +18,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/projctx"
 	"github.com/nevzatcirak/review-mcp/internal/prompt"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/related"
 	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 	"github.com/nevzatcirak/review-mcp/internal/repoctx"
 	"github.com/nevzatcirak/review-mcp/internal/review/incremental"
@@ -149,6 +150,11 @@ type Args struct {
 	// compliance check and nothing is discovered or read. nil means not
 	// given. A focused run and a merged publish use no issue.
 	IssueContext []issuectx.Issue
+	// Related are the normalised URLs of the related argument (X-41,
+	// related.Validate): read-only context on any configured provider.
+	// nil means not given. The tool layer refuses them with focus or
+	// findings.
+	Related []string
 }
 
 // WithConfigDefaults returns a with every option the call left unset (nil,
@@ -262,6 +268,17 @@ type Plan struct {
 	// heldNote is the note of overview-only findings without a held line
 	// that the last render of the overview added; "" for none.
 	heldNote string
+	// related are the related pull requests of the run (X-41), in argument
+	// order; nil without the argument.
+	related []*related.Item
+	// relatedShown are the related items placed in the prompt, with their
+	// counts of files shown and listed.
+	relatedShown []related.Section
+	// relatedReported: reportRelated added the related notes.
+	relatedReported bool
+	// lastRelated is the related record of the last review's overview
+	// (X-41); nil for none.
+	lastRelated *relatedRecord
 	// lastVerdict is the issue compliance verdict the last review's
 	// overview recorded (X-42, spec V-2 §2.4); nil for none.
 	lastVerdict *Compliance
@@ -315,6 +332,10 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 			// A run that never reached the issue (nothing changed since the
 			// last review) reports none.
 			res.Issue = issueResultOf(nil)
+		}
+		if res.Coverage.Related == nil {
+			// coverage.related is always present in pr_review.
+			res.Coverage.Related = []llmrun.RelatedItem{}
 		}
 	}
 	return res, err
@@ -442,6 +463,18 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		maxTotal: config.EffectiveMaxTotalFindings(cfg.Review, maxFindings), cfg: cfg, args: args, repo: rc}
 	supplied := args.Findings != nil
 
+	// The related pull requests (X-41, spec V-13a §1.2): resolved through
+	// the run's resolver and read now, after the primary pull request and
+	// the repository config and before the issue, with the run's filter. A
+	// failure is the item's status, never the run's error. They are read
+	// before the incremental lookup, which compares them with the last
+	// review's record (spec §2.3).
+	if len(args.Related) > 0 {
+		primaryURL, _ := related.Normalize(args.PRURL)
+		pl.related = related.Read(ctx, deps.Resolver, primaryURL, ref, args.Related, flt.Include,
+			cfg.Related.MaxTokens == 0, log)
+	}
+
 	// An incremental review (X-36) continues from the commit the last
 	// review recorded in review-mcp's own overview. Without one the review
 	// is full. When it is the current head, nothing changed: the run ends
@@ -451,6 +484,15 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	last := ""
 	if on, explicit := incrementalWanted(cfg, args); on {
 		last, incNotes = pl.lastReviewed(ctx, explicit)
+		// A related pull request that changed since the last review (or one
+		// that could not be read now) makes the review full: a doubt is
+		// always a change (spec V-13a §2.3 item 3).
+		if last != "" && pl.relatedChanged() {
+			last = ""
+			pl.held = nil
+			incNotes = append(incNotes, NoteRelatedChanged)
+			log.Debug("review: related pull requests changed since the last review; reviewing in full")
+		}
 		if last != "" && last == ValidReviewedSHA(pr.HeadSHA) {
 			all := incremental.Result{Files: make([]incremental.File, len(d.Files))}
 			for i, f := range d.Files {
@@ -769,6 +811,8 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	pl.Result, pl.Budget = res, budget
 	if prep.Text == "" {
 		pl.Empty = true
+		pl.markRelated(related.StatusNotPlaced, ReasonNothingToReview)
+		pl.reportRelated(res)
 		if rcs != nil {
 			// No model call, so no context: skipped, not off ("off" means
 			// only "disabled").
@@ -791,6 +835,8 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		}
 		if ok {
 			noteIssueInParts(res, issueBlock)
+			pl.markRelated(related.StatusNotPlaced, related.ReasonReviewInParts)
+			pl.reportRelated(res)
 			return pl, nil
 		}
 		if reserve > 0 {
@@ -809,6 +855,8 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 					return nil, err
 				} else if ok {
 					noteIssueInParts(res, issueBlock)
+					pl.markRelated(related.StatusNotPlaced, related.ReasonReviewInParts)
+					pl.reportRelated(res)
 					return pl, nil
 				}
 			}
@@ -861,6 +909,16 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			noteIssueNotPlaced(res, issueBlock)
 		}
 	}
+	// The related block (X-41) goes next into the room the diff leaves,
+	// before the repository context; it never trims the primary diff.
+	if pin, pfit, err := pl.placeRelated(in, fit, prep.Text, budget, cfg); err != nil {
+		return nil, err
+	} else if pin.Related != in.Related {
+		in, fit = pin, pfit
+		if res.Metadata.PromptTokens, err = ScaffoldingTokens(in, factor); err != nil {
+			return nil, err
+		}
+	}
 	var repoNotes []string
 	if rcs != nil {
 		// The block goes into the room the diff leaves (placeRepo); the
@@ -899,6 +957,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 	res.Notes = append(res.Notes, llmrun.PartialNotes(&res.Coverage, budget)...)
 	res.Notes = append(res.Notes, repoNotes...)
+	pl.reportRelated(res)
 	return pl, nil
 }
 

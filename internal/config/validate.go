@@ -87,11 +87,31 @@ func (l *loader) validate() {
 	l.validateImprove()
 	l.validateContextRepo()
 	l.validateRepoConfig()
+	l.validateRelated()
 	if _, err := logging.ParseLevel(c.Log.Level); err != nil {
 		l.problem("log.level: %v", err)
 	}
 	if l.mode == ModeServe {
 		l.validateServe()
+	}
+}
+
+// MaxRelatedTokens is the largest related.max_tokens (X-41).
+const MaxRelatedTokens = 40000
+
+// validateRelated checks related.max_tokens (0 to MaxRelatedTokens) and
+// related.contract_globs (as ignore.glob; the index is reported, not the
+// pattern).
+func (l *loader) validateRelated() {
+	r := &l.cfg.Related
+	if !l.bad["related.max_tokens"] && (r.MaxTokens < 0 || r.MaxTokens > MaxRelatedTokens) {
+		l.problem("related.max_tokens: %d is out of range (0-%d; 0 turns related pull requests off)", r.MaxTokens,
+			MaxRelatedTokens)
+	}
+	for i, g := range r.ContractGlobs {
+		if reason := GlobProblem(g); reason != "" {
+			l.problem("related.contract_globs[%d]: %s", i, reason)
+		}
 	}
 }
 

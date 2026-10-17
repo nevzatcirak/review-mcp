@@ -11,6 +11,23 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 )
 
+// RelatedItem is one related pull request in the coverage (X-41, v2.3
+// spec V-13a §1.5).
+type RelatedItem struct {
+	// URL is the URL as normalised (query and fragment dropped).
+	URL string `json:"url"`
+	// Status is full, partial, not_placed, failed or ignored.
+	Status string `json:"status"`
+	// Reason says why for failed, ignored and not_placed; "" otherwise.
+	Reason string `json:"reason,omitempty"`
+	// HeadSHA is the related pull request's head revision when it was read.
+	HeadSHA string `json:"head_sha,omitempty"`
+	// FilesIncluded counts the files shown with hunks, FilesListed those
+	// listed by path only.
+	FilesIncluded int `json:"files_included"`
+	FilesListed   int `json:"files_listed"`
+}
+
 // Coverage accounts for every changed file (X-3): the files whose diff the
 // model saw (Included, Clipped), the deleted files shown by name in place of
 // their patch (DeletedListed, X-20), the files left out for budget
@@ -56,6 +73,11 @@ type Coverage struct {
 	// RepoContext says whether repository context (RC-9) went into the
 	// prompt, and how much.
 	RepoContext RepoContext `json:"repo_context"`
+
+	// Related accounts for every item of the related argument (X-41), in
+	// argument order. pr_review always sets it ([] without the argument);
+	// the tools without the argument leave it nil, and it is omitted.
+	Related []RelatedItem `json:"related,omitzero"`
 
 	// Guidelines and FileTree say whether the project's guidelines and the
 	// listing of the touched directories (X-32) went into the prompt.

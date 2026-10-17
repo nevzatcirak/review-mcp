@@ -560,6 +560,22 @@ review-mcp never contacts another tracker and holds no tracker credential.
 | `review.issue_compliance` | `REVIEW_MCP_REVIEW_ISSUE_COMPLIANCE` | `true` | Use the issue when there is one. With `false` nothing is read or shown and `issue_context` is ignored. A repository config may set it. |
 | `review.max_issue_tokens` | `REVIEW_MCP_REVIEW_MAX_ISSUE_TOKENS` | `2000` | Token budget of all issue text of one prompt together, 0 to 20,000; 0 turns issue compliance off. |
 
+### Related pull requests
+
+`pr_review`, `pr_ask` and `pr_info` take a `related` argument: up to four pull
+requests read as context, on any configured provider
+([Related pull requests](review.md#related-pull-requests)). Each is read with
+the token of **its own** provider, so every provider you name a related pull
+request on needs its section and a token that can read that repository; a
+related pull request on a host that is not configured is never contacted.
+Nothing is ever posted to a related pull request, so a read token is enough
+for them.
+
+| Key | Environment variable | Default | Meaning |
+|---|---|---|---|
+| `related.max_tokens` | `REVIEW_MCP_RELATED_MAX_TOKENS` | `8000` | Token budget of all related pull requests of one prompt together, shared equally, 0 to 40,000; 0 turns them off (the argument is accepted, nothing is read, one note). `pr_info` reads no diff and is not limited by it. |
+| `related.contract_globs` | `REVIEW_MCP_RELATED_CONTRACT_GLOBS` | (empty) | Globs (as `ignore.glob`) of paths shown first in a related pull request, as API descriptions. A repository config adds to the list. |
+
 ### `context_window` and `max_output_tokens`
 
 - Set `context_window` to the window your server really runs, not the largest

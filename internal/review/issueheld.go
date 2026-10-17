@@ -149,6 +149,11 @@ func issueVerdictOf(body string) *Compliance {
 	for at >= 0 && heldPayload(lines[at]) != "" {
 		at--
 	}
+	// The related record line (X-41) sits between the verdict and the held
+	// lines.
+	if at >= 0 && relatedPayload(lines[at]) != "" {
+		at--
+	}
 	if at < 0 {
 		return nil
 	}

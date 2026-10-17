@@ -1,6 +1,7 @@
 package render
 
 import (
+	"html"
 	"net/url"
 	"strconv"
 	"strings"
@@ -45,6 +46,8 @@ const (
 	textListedHere       = "(listed here only)"
 	textCarriedFrom      = "(from the review of "
 	textCarriedSuffix    = ", listed here only)"
+	textInRelated        = "(in related pull request "
+	textRelatedSuffix    = ", listed here only)"
 	textDiscussed        = "Already discussed"
 	textCode             = "Code:"
 	textPublish          = "Publishing"
@@ -151,6 +154,22 @@ func listedHereOnly(i *review.KeyIssue) bool {
 // rendered); "(listed here only)" for one without an inline comment; ""
 // otherwise. The commit is a validated id, never model text.
 func listedSuffix(i *review.KeyIssue, gfm bool) string {
+	if i.Related != "" {
+		// Spec V-13a §2.2 item 4: "(in related pull request [<repo>#<number>](<pr url>), listed here only)".
+		name := i.RelatedName
+		if name == "" {
+			name = relatedName(i.Related)
+		}
+		l := safeLink(i.Related)
+		switch {
+		case l == "":
+			return textInRelated + mdutil.Inline(name) + textRelatedSuffix
+		case gfm:
+			return textInRelated + "<a href='" + html.EscapeString(l) + "'>" + html.EscapeString(name) + "</a>" + textRelatedSuffix
+		default:
+			return textInRelated + "[" + mdutil.Inline(name) + "](" + l + ")" + textRelatedSuffix
+		}
+	}
 	if i.CarriedFrom != "" {
 		sha := shortSHA(i.CarriedFrom)
 		if sha == "" {
@@ -208,9 +227,41 @@ func ReviewedLine(res *review.Result) string {
 func writeCoverage(b *strings.Builder, heading string, res *review.Result) {
 	if inc := res.Incremental; inc != nil && inc.Mode != review.IncrementalFull {
 		llmrender.IncrementalCoverage(b, heading, &res.Coverage, inc.Mode == review.IncrementalChanged)
+	} else {
+		llmrender.Coverage(b, heading, &res.Coverage)
+	}
+	writeRelated(b, res.Coverage.Related)
+}
+
+// writeRelated lists the related pull requests that were read (X-41, v2.3
+// spec V-13a §1.5 item 3), as links with their status; the others are in
+// the notes. Nothing without one.
+func writeRelated(b *strings.Builder, items []review.RelatedItem) {
+	var lines []string
+	for _, it := range items {
+		if it.HeadSHA == "" {
+			continue
+		}
+		text := literal(relatedName(it.URL))
+		if l := safeLink(it.URL); l != "" {
+			text = "[" + mdutil.Inline(relatedName(it.URL)) + "](" + l + ")"
+		}
+		status := it.Status
+		if it.Reason != "" {
+			status += " (" + it.Reason + ")"
+		}
+		lines = append(lines, "- "+text+": "+literal(status))
+	}
+	if len(lines) == 0 {
 		return
 	}
-	llmrender.Coverage(b, heading, &res.Coverage)
+	b.WriteString("\nRelated pull requests (context only; nothing was published to them):\n\n" + strings.Join(lines, "\n") + "\n")
+}
+
+// relatedName is a related URL without its scheme.
+func relatedName(u string) string {
+	u = strings.TrimPrefix(strings.TrimPrefix(u, "https://"), "http://")
+	return strings.TrimSuffix(u, "/")
 }
 
 // shortSHA is the first 7 characters of a hexadecimal commit id, or ""

@@ -132,6 +132,10 @@ var table = []entry{
 	{"repo_config.enabled", "REVIEW_MCP_REPO_CONFIG_ENABLED", func(c *Config) any { return &c.RepoConfig.Enabled }},
 	{"repo_config.path", "REVIEW_MCP_REPO_CONFIG_PATH", func(c *Config) any { return &c.RepoConfig.Path }},
 
+	// related.* rows: v2.3 spec V-13a §0 (X-41).
+	{"related.max_tokens", "REVIEW_MCP_RELATED_MAX_TOKENS", func(c *Config) any { return &c.Related.MaxTokens }},
+	{"related.contract_globs", "REVIEW_MCP_RELATED_CONTRACT_GLOBS", func(c *Config) any { return &c.Related.ContractGlobs }},
+
 	{"log.level", "REVIEW_MCP_LOG_LEVEL", func(c *Config) any { return &c.Log.Level }},
 
 	// serve.* rows: P6 spec §1.2. They are read in every mode but validated

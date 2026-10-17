@@ -492,7 +492,7 @@ func TestPRReviewToolDefinition(t *testing.T) {
 		}
 	}
 	sort.Strings(props)
-	if got := strings.Join(props, ","); got != "extra_instructions,findings,focus,incremental,inline_findings,issue_context,max_findings,output_language,performance_concerns,pr_url,publish,security_concerns,wait_seconds" {
+	if got := strings.Join(props, ","); got != "extra_instructions,findings,focus,incremental,inline_findings,issue_context,max_findings,output_language,performance_concerns,pr_url,publish,related,security_concerns,wait_seconds" {
 		t.Errorf("properties = %s", got)
 	}
 	if strings.Join(in.Required, ",") != "pr_url" {

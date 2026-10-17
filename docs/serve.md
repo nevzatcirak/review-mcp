@@ -125,6 +125,17 @@ Rules for the `X-Review-MCP-` headers:
 as `set`, `unset` or `malformed`, never its value. Use it to check that your
 client really sends the headers.
 
+### Related pull requests
+
+A [related pull request](review.md#related-pull-requests) is read with the
+caller's token for **its own** provider: a GitHub pull request reviewed with a
+GitLab merge request as context needs both `X-Review-MCP-GitHub-Token` and
+`X-Review-MCP-GitLab-Token`. The token for the reviewed pull request is still
+required, as before. A related pull request whose provider token the request
+lacks is not an error: it is reported as `failed` with the reason
+`credentials_missing`, nothing is sent to that provider, and the review runs
+without it.
+
 ## Client configuration for a remote server
 
 The server's MCP endpoint is `https://review-mcp.example.com/mcp`. Put each

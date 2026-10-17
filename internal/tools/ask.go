@@ -7,6 +7,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/ask"
 	askrender "github.com/nevzatcirak/review-mcp/internal/ask/render"
 	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/related"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 )
 
@@ -17,6 +18,9 @@ type PRAskArgs struct {
 	ExtraInstructions string
 	OutputLanguage    string
 	Publish           bool
+	// Related is the related argument (X-41): related pull request URLs as
+	// given; nil or empty when not given.
+	Related []string
 }
 
 // Validate checks the arguments before any network call: the question
@@ -29,6 +33,10 @@ func (a PRAskArgs) Validate() error {
 	}
 	if a.OutputLanguage != "" && !config.ValidLocale(a.OutputLanguage) {
 		return &ArgumentError{InvalidOutputLanguageMessage}
+	}
+	// pr_ask has no focus or findings, so the combination never applies.
+	if _, err := related.Validate(a.Related, false); err != nil {
+		return &ArgumentError{err.Error()}
 	}
 	return nil
 }
@@ -70,12 +78,15 @@ func PreparePRAsk(deps AskDeps, a PRAskArgs) (*AskCall, error) {
 		return nil, err
 	}
 	deps.Resolver = resolver
+	// Validate checked the items; this only normalises them.
+	relatedURLs, _ := related.Validate(a.Related, false)
 	return &AskCall{deps: deps, client: client, args: ask.Args{
 		PRURL:             a.PRURL,
 		Question:          a.Question,
 		ExtraInstructions: a.ExtraInstructions,
 		OutputLanguage:    a.OutputLanguage,
 		Publish:           a.Publish,
+		Related:           relatedURLs,
 	}}, nil
 }
 

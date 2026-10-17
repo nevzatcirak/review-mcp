@@ -25,6 +25,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/projctx"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/related"
 	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 	"github.com/nevzatcirak/review-mcp/internal/repoctx"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
@@ -86,6 +87,10 @@ type Args struct {
 	OutputLanguage string
 	// Publish also posts the question and answer as a PR comment.
 	Publish bool
+	// Related are the normalised URLs of the related argument (X-41,
+	// related.Validate): read-only context on any configured provider; nil
+	// means not given.
+	Related []string
 }
 
 // errNoWiring reports a caller bug: Run needs a resolver and an LLM.
@@ -158,6 +163,10 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 		}
 		res.Metadata.ModelsUsed, res.Metadata.FallbackCalls = fb.ModelsUsed, fb.FallbackCalls
 		res.Notes = append(res.Notes, fb.Notes...)
+		if res.Coverage.Related == nil {
+			// coverage.related is always present in pr_ask.
+			res.Coverage.Related = []llmrun.RelatedItem{}
+		}
 	}
 	return res, err
 }
@@ -279,6 +288,14 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The related pull requests (X-41, spec V-13a §3.1), read as pr_review
+	// reads them: through the run's resolver, with the run's filter; a
+	// failure is the item's status, never the run's error.
+	var rel []*related.Item
+	if len(args.Related) > 0 {
+		primaryURL, _ := related.Normalize(args.PRURL)
+		rel = related.Read(ctx, deps.Resolver, primaryURL, ref, args.Related, flt.Include, cfg.Related.MaxTokens == 0, log)
+	}
 	// Repository context (X-22): the head is fetched now, under its own
 	// progress stage, when the diff defines a symbol to look for. pr_ask
 	// makes one call and never reserves room for the block: the diff always
@@ -357,6 +374,8 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	pl := &Plan{Result: res, Budget: budget, ref: ref, p: p, log: log}
 	if prep.Text == "" {
 		pl.Empty = true
+		related.Mark(rel, related.StatusNotPlaced, related.ReasonNothingToReview)
+		reportRelated(res, rel, nil)
 		if rcs != nil {
 			res.Coverage.RepoContext = llmrun.RepoContext{Status: llmrun.RepoSkipped, Reason: repoctx.ReasonNothingToReview}
 		}
@@ -368,6 +387,34 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	fit, err := fitPlain(in, prep.Text, budget)
 	if err != nil {
 		return nil, err
+	}
+	// The related block (X-41) goes first into the room the diff leaves,
+	// before the repository context, in plain mode like the diff; it never
+	// trims the diff.
+	//
+	// DESIGN-QUESTION (WP-11c DQ-4): the spec gives pr_ask "the same
+	// reading, budget, fence and placement" as pr_review, whose related
+	// diffs are numbered so that a finding can name real lines. pr_ask has
+	// no findings and its own diff is plain (X-21), so its related diffs are
+	// plain too. Recommendation: keep.
+	placed, err := related.Place(rel, cfg.Related.MaxTokens, diffpipe.ModePlain, cfg, flt, fit.KeptLines < 0,
+		func(block string) (bool, error) {
+			cand := in
+			cand.Related = block
+			f, err := fitPlain(cand, prep.Text, budget)
+			if err != nil || f.KeptLines >= 0 {
+				return false, err
+			}
+			in, fit = cand, f
+			return true, nil
+		})
+	if err != nil {
+		return nil, err
+	}
+	if placed != nil {
+		if res.Metadata.PromptTokens, err = ScaffoldingTokens(in, factor); err != nil {
+			return nil, err
+		}
 	}
 	var repoNotes []string
 	if rcs != nil {
@@ -426,7 +473,15 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 	res.Notes = append(res.Notes, llmrun.PartialNotes(&res.Coverage, budget)...)
 	res.Notes = append(res.Notes, repoNotes...)
+	reportRelated(res, rel, placed)
 	return pl, nil
+}
+
+// reportRelated sets coverage.related ([] without the argument) and adds
+// the related notes (spec V-13a §1.5).
+func reportRelated(res *Result, items []*related.Item, placed []related.Section) {
+	res.Coverage.Related = related.Coverage(items, placed)
+	res.Notes = append(res.Notes, related.Notes(items, placed)...)
 }
 
 // fitPlain renders the final prompts of in for diff behind the request-size

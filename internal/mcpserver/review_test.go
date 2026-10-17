@@ -81,6 +81,10 @@ type fakeServer struct {
 	writes   []string
 	requests []string
 
+	// repoConfig is .review-mcp.toml at the base revision (mergesha); ""
+	// serves none.
+	repoConfig string
+
 	// The fake Gitea's publish state: the PR-level comments (id -> body,
 	// author login), the posted reviews and their comments.
 	comments    map[int64]giteaComment
@@ -250,6 +254,12 @@ func newFakeGiteaHost(t *testing.T) *fakeServer {
 				}
 			}
 			writeJ(files)
+		case r.Method == "GET" && p == api+"/raw/.review-mcp.toml":
+			if f.repoConfig == "" || r.URL.Query().Get("ref") != "mergesha" {
+				http.NotFound(w, r)
+				return
+			}
+			_, _ = io.WriteString(w, f.repoConfig)
 		case r.Method == "GET" && strings.HasPrefix(p, api+"/raw/") && f.large != nil:
 			content, ok := f.large[strings.TrimPrefix(p, api+"/raw/")]
 			if !ok || r.URL.Query().Get("ref") != "headsha" {

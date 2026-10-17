@@ -30,7 +30,8 @@ type Result struct {
 	Path string `json:"path"`
 	// Status is applied, nothing_applied, absent, invalid, off or unreadable.
 	Status Status `json:"status"`
-	// Applied are the keys applied, in allow-list order.
+	// Applied are the keys applied, in allow-list order. Never nil, whatever
+	// the status: the tools' output schemas require an array.
 	Applied []string `json:"applied"`
 	// Ignored are the keys ignored (a key a repository may not change, or an
 	// allowed key with an invalid value): at most MaxIgnoredNames, then
@@ -120,10 +121,12 @@ func Apply(base *config.Config, f *File) *Outcome {
 	return o
 }
 
-// capNames lists at most MaxIgnoredNames names, then "and N more".
+// capNames lists at most MaxIgnoredNames names, then "and N more". It never
+// returns nil: no names is an empty list, which the tools' output schemas
+// require as an array.
 func capNames(names []string) []string {
 	if len(names) <= MaxIgnoredNames {
-		return names
+		return append([]string{}, names...)
 	}
 	return append(slices.Clone(names[:MaxIgnoredNames]), fmt.Sprintf("and %d more", len(names)-MaxIgnoredNames))
 }

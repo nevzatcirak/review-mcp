@@ -1,6 +1,7 @@
 package repocfg
 
 import (
+	"encoding/json"
 	"reflect"
 	"slices"
 	"strings"
@@ -318,5 +319,28 @@ func TestProcessConfigurationIsNeverMutated(t *testing.T) {
 	*o.Config.LLM.Temperature = 1.5
 	if want := operatorConfig(); !reflect.DeepEqual(base, want) {
 		t.Error("the copy shares memory with the process configuration")
+	}
+}
+
+// TestApplyListsAreNeverNil: a file with only allowed, valid keys ignores
+// nothing, and Ignored is an empty list that marshals as [] (the tools'
+// output schemas require an array); Applied is never nil either.
+func TestApplyListsAreNeverNil(t *testing.T) {
+	_, o := applyText(t, "[review]\nissue_compliance = false\n")
+	if o.Result.Status != StatusApplied || o.Result.Ignored == nil || len(o.Result.Ignored) != 0 {
+		t.Fatalf("result %+v: want applied with Ignored == []string{}", o.Result)
+	}
+	raw, err := json.Marshal(o.Result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"ignored":[]`) || !strings.Contains(string(raw), `"applied":["review.issue_compliance"]`) {
+		t.Errorf("JSON %s", raw)
+	}
+	for _, text := range []string{"", "# comments only\n", "[review]\nmax_findings = \"x\"\n", "[llm]\nmodel = \"m\"\n", "not toml ["} {
+		_, o := applyText(t, text)
+		if o.Result.Applied == nil || o.Result.Ignored == nil {
+			t.Errorf("file %q: result %+v has a nil list", text, o.Result)
+		}
 	}
 }

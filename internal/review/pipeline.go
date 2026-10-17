@@ -580,7 +580,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// could follow if clients are confused by the missing section.
 	ic := issuectx.None()
 	if !supplied && args.Focus == "" {
-		ic = issuectx.Gather(ctx, cfg, p, ref, pr, args.IssueContext, log)
+		ic = issuectx.Gather(ctx, cfg, p, ref, pr, args.IssueContext, issuectx.ReviewWording, log)
 	}
 	issueBlock := ic.Render(cfg.Review.MaxIssueTokens, factor)
 

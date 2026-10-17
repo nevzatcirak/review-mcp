@@ -309,13 +309,10 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// the issues the pull request names on its own host. It is budgeted
 	// here and placed after the diff, in the room the diff leaves.
 	//
-	// DESIGN-QUESTION (WP-10c DQ-1): the notes are pr_review's, word for
-	// word (spec §3.1 "Notes as in §2.3"), so two of them name the compliance
-	// check ("was not used for the compliance check", "issue compliance was
-	// not checked") although pr_describe makes no verdict. Recommendation:
-	// keep one wording for both tools; a describe-specific wording can
-	// follow if users find it confusing.
-	ic := issuectx.Gather(ctx, cfg, p, ref, pr, args.IssueContext, log)
+	// Its notes are worded for a description (issuectx.DescribeWording):
+	// they never speak of a compliance check, which pr_describe does not
+	// make (WP-10c DQ-1, overridden in the architect review).
+	ic := issuectx.Gather(ctx, cfg, p, ref, pr, args.IssueContext, issuectx.DescribeWording, log)
 	issueBlock := ic.Render(cfg.Review.MaxIssueTokens, factor)
 	progress(deps, StagePreparingDiff)
 
@@ -423,7 +420,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 				return nil, err
 			}
 		default:
-			res.Notes = append(res.Notes, issuectx.NoteDidNotFit)
+			res.Notes = append(res.Notes, issuectx.DescribeNoteDidNotFit)
 		}
 	}
 	pl.parts = []*part{{prep: prep, fit: fit}}
@@ -608,7 +605,7 @@ func (pl *Plan) reduce(ctx context.Context, deps Deps) {
 // there, so, as the diff does in a single call, they win over the issue
 // (spec V-2 §2.2): the variants are tried in the order (summaries, issue),
 // (summaries, no issue), (titles only, issue), (titles only, no issue), and
-// a variant without the issue adds issuectx.NoteDidNotFit.
+// a variant without the issue adds issuectx.DescribeNoteDidNotFit.
 //
 // DESIGN-QUESTION (WP-10c DQ-2): in a description in parts the parts write
 // the files walkthrough only, and the reduce call writes the title and the
@@ -637,7 +634,7 @@ func (pl *Plan) reducePrompts() (p Prompts, reaskUser string, withSummaries, ok 
 			}
 			if tokens.RequestTokens(r.System, ru, b.Factor) <= limit {
 				if pl.issue != "" && issue == "" {
-					pl.Result.Notes = append(pl.Result.Notes, issuectx.NoteDidNotFit)
+					pl.Result.Notes = append(pl.Result.Notes, issuectx.DescribeNoteDidNotFit)
 				}
 				return r, ru, summaries, true
 			}

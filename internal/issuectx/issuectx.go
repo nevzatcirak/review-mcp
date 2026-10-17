@@ -51,7 +51,8 @@ const (
 	OutcomeCut        = "cut"
 )
 
-// Notes (spec §2.3 item 3, verbatim).
+// Notes of pr_review (spec §2.3 item 3, verbatim). NoteCut is pr_describe's
+// too; its other sentences are the Describe* ones.
 const (
 	// NoteCut: the issue text was cut to review.max_issue_tokens.
 	NoteCut = "The issue text was longer than review.max_issue_tokens allows and was cut."
@@ -74,6 +75,39 @@ func NoteUnreadable(ref string) string {
 func NoteKey(key string) string {
 	return "The pull request names " + key + "; pass it as issue_context to check the change against it."
 }
+
+// Sentences of pr_describe, which uses the issue as context only and makes
+// no compliance check: its notes must not speak of one (WP-10c DQ-1,
+// overridden in the architect review). The cut note is shared.
+const (
+	// DescribeNoteDidNotFit: the issue did not fit next to the diff.
+	DescribeNoteDidNotFit = "The issue did not fit the context window next to the diff and was not used as context."
+)
+
+// DescribeNoteUnreadable is pr_describe's note of an unreadable issue.
+func DescribeNoteUnreadable(ref string) string {
+	return "Issue " + ref + " could not be read and was not used as context."
+}
+
+// DescribeNoteKey is pr_describe's note of a tracker key the pull request
+// names.
+func DescribeNoteKey(key string) string {
+	return "The pull request names " + key + "; pass it as issue_context to use it as context."
+}
+
+// Wording is the sentences a tool gives its issue notes: ReviewWording for
+// pr_review's compliance check, DescribeWording for pr_describe's context.
+type Wording struct {
+	Unreadable func(ref string) string
+	Key        func(key string) string
+	DidNotFit  string
+}
+
+// The wordings of the two tools.
+var (
+	ReviewWording   = Wording{Unreadable: NoteUnreadable, Key: NoteKey, DidNotFit: NoteDidNotFit}
+	DescribeWording = Wording{Unreadable: DescribeNoteUnreadable, Key: DescribeNoteKey, DidNotFit: DescribeNoteDidNotFit}
+)
 
 // Ref is one issue reference of a run, as the result reports it.
 type Ref struct {
@@ -130,7 +164,8 @@ func On(cfg *config.Config) bool {
 	return cfg != nil && cfg.Review.IssueCompliance && cfg.Review.MaxIssueTokens > 0
 }
 
-// Gather returns the issue part of a run on pr. With compliance off it is
+// Gather returns the issue part of a run on pr; its notes use the tool's
+// wording w (ReviewWording or DescribeWording). With compliance off it is
 // None, and nothing is read. With given issues (the validated issue_context)
 // only they are used: nothing is discovered or read and no key is detected
 // (spec §0 item 3). Otherwise the tracker keys are detected, the references
@@ -140,7 +175,7 @@ func On(cfg *config.Config) bool {
 // reference that cannot be read gets a note and is skipped; a number that
 // names a pull request is skipped without one. Closed issues are used.
 func Gather(ctx context.Context, cfg *config.Config, p provider.Provider, ref provider.PRRef, pr *provider.PullRequest,
-	given []Issue, log *slog.Logger) *Context {
+	given []Issue, w Wording, log *slog.Logger) *Context {
 	c := None()
 	if !On(cfg) {
 		return c
@@ -168,11 +203,11 @@ func Gather(ctx context.Context, cfg *config.Config, p provider.Provider, ref pr
 	unreadable := 0
 	if ok {
 		for _, r := range issueref.Find(pr, webHost(pr.WebURL, ref.URL)) {
-			unreadable += c.read(ctx, reader, r, pr.WebURL, ref)
+			unreadable += c.read(ctx, reader, r, pr.WebURL, ref, w)
 		}
 	}
 	for _, k := range c.DetectedKeys {
-		c.Notes = append(c.Notes, NoteKey(k))
+		c.Notes = append(c.Notes, w.Key(k))
 	}
 	if len(c.Issues) > 0 {
 		c.Source = SourceProvider
@@ -185,7 +220,7 @@ func Gather(ctx context.Context, cfg *config.Config, p provider.Provider, ref pr
 // read reads the issue r names and records it; it returns 1 when the issue
 // could not be read.
 func (c *Context) read(ctx context.Context, reader provider.IssueReader, r issueref.Ref, webURL string,
-	pr provider.PRRef) int {
+	pr provider.PRRef, w Wording) int {
 	display := "#" + strconv.FormatInt(r.Number, 10)
 	ns, name, ok := issueref.Repository(r, webURL, pr.Namespace, pr.Repo)
 	if r.Repo != "" {
@@ -211,7 +246,7 @@ func (c *Context) read(ctx context.Context, reader provider.IssueReader, r issue
 		// A 404 and a 403 alike: the issue could not be read, which never
 		// means that it does not exist.
 		rec.Outcome = OutcomeUnreadable
-		c.Notes = append(c.Notes, NoteUnreadable(display))
+		c.Notes = append(c.Notes, w.Unreadable(display))
 	}
 	c.Refs = append(c.Refs, rec)
 	if rec.Outcome == OutcomeUnreadable {

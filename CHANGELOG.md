@@ -54,6 +54,8 @@ compliance](docs/review.md#issue-compliance).
   no compliance, a detected tracker key, a dropped compliance answer, and an
   incremental verdict judged on the changed files only (see
   [Troubleshooting](docs/troubleshooting.md#issue-compliance-notes)).
+  `pr_describe` words its issue notes for a description ("... was not used as
+  context."), since it makes no compliance check.
 
 ## [2.2.0-rc.1]
 

@@ -438,3 +438,31 @@ func TestIssueReviewInParts(t *testing.T) {
 		t.Errorf("issue = %+v: the issue is still read and reported", res.Issue)
 	}
 }
+
+// TestIssueReviewSentencesUnchanged: pr_review keeps the spec's sentences
+// (V-2 §2.3), written out here; pr_describe's own wording does not change
+// them.
+func TestIssueReviewSentencesUnchanged(t *testing.T) {
+	h, f := issueHarness(goodAnswer)
+	h.prov.pr.Title = "PROJ-5: retry (#13)"
+	h.prov.pr.Description = "Fixes #12. " + descMarker
+	f.errs[13] = &provider.Error{Class: provider.ClassAuth, Status: 403}
+	f.issues[12].Body = strings.Repeat("A requirement of a very long issue that keeps going.\n", 1200)
+	h.deps.Config.Review.MaxIssueTokens = 20000
+	h.deps.Config.LLM.ContextWindow = 9000
+	res := runIssue(t, h, Args{})
+	for _, want := range []string{
+		"Issue #13 could not be read and was not used for the compliance check.",
+		"The pull request names PROJ-5; pass it as issue_context to check the change against it.",
+		"The issue did not fit the context window next to the diff; issue compliance was not checked.",
+	} {
+		if !slices.Contains(res.Notes, want) {
+			t.Errorf("notes %q lack %q", res.Notes, want)
+		}
+	}
+	for _, n := range res.Notes {
+		if strings.HasSuffix(n, "was not used as context.") || strings.HasSuffix(n, "to use it as context.") {
+			t.Errorf("pr_review got a note worded for a description: %q", n)
+		}
+	}
+}

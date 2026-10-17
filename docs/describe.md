@@ -114,10 +114,19 @@ within `review.max_issue_tokens`, and only in the room the diff leaves. The
 system prompt adds that it is context only: the description may name it
 ("Implements #12"), but `pr_describe` makes **no compliance verdict**. A
 description in parts gives the issue to its last call, which writes the title
-and the summary, not to the parts. The notes are those of `pr_review`
-(an unreadable issue, a cut issue, an issue that did not fit, a detected
-tracker key); see
-[Troubleshooting](troubleshooting.md#issue-compliance-notes). The result's
+and the summary, not to the parts; the files' summaries win over the issue
+there, as the diff does in a single call, so the issue is left out (with the
+note) before a summary is. The notes are worded for a description and never
+speak of a compliance check:
+
+| Note | When |
+|---|---|
+| Issue #12 could not be read and was not used as context. | An issue the pull request names could not be read (a 404 or a 403 alike). |
+| The issue text was longer than review.max_issue_tokens allows and was cut. | The issues together were over the budget and were cut at line boundaries. |
+| The issue did not fit the context window next to the diff and was not used as context. | The issue would have made the diff (or, in parts, the files' summaries) shorter, so it was left out. |
+| The pull request names PROJ-123; pass it as issue_context to use it as context. | A tracker key in the title, branch name or description, and no `issue_context`. |
+
+See [Troubleshooting](troubleshooting.md#issue-compliance-notes). The result's
 `issue` has `source`, `refs` and `detected_keys`, without `compliance`.
 `review.issue_compliance = false` turns it off here too.
 

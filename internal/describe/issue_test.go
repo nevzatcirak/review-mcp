@@ -110,16 +110,30 @@ func TestDescribeIssueContextWins(t *testing.T) {
 	}
 }
 
-// TestDescribeIssueNotes: the notes of pr_review: an unreadable issue, a
-// detected key, an issue that does not fit next to the diff.
+// Notes of pr_describe, written out so that they do not follow the code:
+// worded for a description, never naming a compliance check (WP-10c DQ-1).
+const (
+	describeNoteUnreadable13 = "Issue #13 could not be read and was not used as context."
+	describeNoteKeyPROJ5     = "The pull request names PROJ-5; pass it as issue_context to use it as context."
+	describeNoteDidNotFit    = "The issue did not fit the context window next to the diff and was not used as context."
+)
+
+// TestDescribeIssueNotes: pr_describe's own notes for an unreadable issue,
+// a detected key and an issue that does not fit next to the diff; none of
+// them speaks of a compliance check.
 func TestDescribeIssueNotes(t *testing.T) {
 	h := newHarness(map[int][]string{0: {oneCallAnswer}})
 	f := withIssues(h)
 	h.prov.pr.Title = "PROJ-5: retry (#13) " + titleMarker
 	res := h.runIssue(t, Args{})
-	for _, want := range []string{issuectx.NoteUnreadable("#13"), issuectx.NoteKey("PROJ-5")} {
+	for _, want := range []string{describeNoteUnreadable13, describeNoteKeyPROJ5} {
 		if !slices.Contains(res.Notes, want) {
 			t.Errorf("notes %q lack %q", res.Notes, want)
+		}
+	}
+	for _, n := range res.Notes {
+		if strings.Contains(n, "compliance") || strings.Contains(n, "check the change") {
+			t.Errorf("a pr_describe note speaks of a compliance check: %q", n)
 		}
 	}
 	if !slices.Equal(f.reads, []string{"octo/demo#12", "octo/demo#13"}) {
@@ -132,7 +146,8 @@ func TestDescribeIssueNotes(t *testing.T) {
 	h.deps.Config.Review.MaxIssueTokens = 20000
 	h.deps.Config.LLM.ContextWindow = 7000
 	res = h.runIssue(t, Args{})
-	if !slices.Contains(res.Notes, issuectx.NoteDidNotFit) || strings.Contains(h.llm.calls[0].user, issueSentence) ||
+	if !slices.Contains(res.Notes, describeNoteDidNotFit) || slices.Contains(res.Notes, issuectx.NoteDidNotFit) ||
+		strings.Contains(h.llm.calls[0].user, issueSentence) ||
 		res.Metadata.DiffTrimmed {
 		t.Errorf("notes %q, trimmed %v", res.Notes, res.Metadata.DiffTrimmed)
 	}
@@ -213,7 +228,7 @@ func TestReduceKeepsSummariesBeforeTheIssue(t *testing.T) {
 	if strings.Contains(p.User, issuectx.Header) {
 		t.Error("the issue is in the summary call although it pushed out the summaries")
 	}
-	if !slices.Equal(pl.Result.Notes, []string{issuectx.NoteDidNotFit}) {
+	if !slices.Equal(pl.Result.Notes, []string{describeNoteDidNotFit}) {
 		t.Errorf("notes %q, want the did-not-fit note once", pl.Result.Notes)
 	}
 

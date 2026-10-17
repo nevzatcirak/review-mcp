@@ -446,7 +446,19 @@ Configuration problems of the operator keys (at startup, in `server_info`):
 `pr_review` and `pr_describe` add these fixed sentences when they use the
 issue a pull request implements ([Issue compliance](review.md#issue-compliance)).
 `issue.refs` in the result gives each reference's outcome. Issue text is never
-quoted in a note or a log.
+quoted in a note or a log. The table gives `pr_review`'s sentences;
+`pr_describe`, which uses the issue as context and checks nothing, words three
+of them for a description (the cut note is the same):
+
+| `pr_review` | `pr_describe` |
+|---|---|
+| Issue #12 could not be read and was not used for the compliance check. | Issue #12 could not be read and was not used as context. |
+| The issue did not fit the context window next to the diff; issue compliance was not checked. | The issue did not fit the context window next to the diff and was not used as context. |
+| The pull request names PROJ-123; pass it as issue_context to check the change against it. | The pull request names PROJ-123; pass it as issue_context to use it as context. |
+
+The causes and fixes are the same for both tools. In `pr_describe` an issue
+that did not fit may also have been left out of the summary call of a
+description in parts, where the files' summaries win over it.
 
 | Sentence | Cause and what to do |
 |---|---|

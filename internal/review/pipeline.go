@@ -262,6 +262,9 @@ type Plan struct {
 	// heldNote is the note of overview-only findings without a held line
 	// that the last render of the overview added; "" for none.
 	heldNote string
+	// lastVerdict is the issue compliance verdict the last review's
+	// overview recorded (X-42, spec V-2 §2.4); nil for none.
+	lastVerdict *Compliance
 
 	// The PR's threads and the token's user, each read at most once per
 	// run (listThreads, currentUser).
@@ -834,6 +837,13 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	if issueBlock != "" {
 		cand := in
 		cand.Issue, cand.Toggles.Issue = issueBlock, true
+		// An incremental run shows the model the changed files only: the
+		// verdict the last review recorded stands for the others (spec
+		// §2.4), and the new verdict replaces it.
+		incChanged := inc.Mode == IncrementalChanged
+		if incChanged {
+			cand.EarlierVerdict = earlierVerdictBlock(pl.lastVerdict)
+		}
 		f, ferr := fitPrompts(cand, prep.Text, budget)
 		switch {
 		case ferr != nil && !errors.Is(ferr, tokens.ErrDoesNotFit):
@@ -843,6 +853,9 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			pl.toggles.Issue = true
 			if res.Metadata.PromptTokens, err = ScaffoldingTokens(in, factor); err != nil {
 				return nil, err
+			}
+			if incChanged && pl.lastVerdict == nil {
+				res.Notes = append(res.Notes, NoteChangedFilesOnly)
 			}
 		default:
 			noteIssueNotPlaced(res, issueBlock)

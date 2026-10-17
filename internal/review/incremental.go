@@ -141,6 +141,7 @@ func (pl *Plan) lastReviewed(ctx context.Context, explicit bool) (sha string, no
 		return "", nil
 	}
 	pl.held = found.held
+	pl.lastVerdict = found.verdict
 	return found.reviewed, nil
 }
 

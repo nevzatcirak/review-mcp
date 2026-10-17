@@ -60,6 +60,11 @@ type PromptInput struct {
 	// for issue_compliance and adds IssueComplianceSentence to the system
 	// prompt.
 	Issue string
+	// EarlierVerdict is the rendered verdict of the last review
+	// (earlierVerdictBlock) of an incremental run with an issue, for the
+	// files the run does not show (spec V-2 §2.4); empty omits it. It
+	// follows the issue block.
+	EarlierVerdict string
 	// Discussion is the rendered existing-discussion block (DiscussionHeader
 	// and the fenced threads, see renderDiscussion); empty omits it. It is
 	// third-party text, and part of the scaffolding the diff budget reserves.
@@ -118,6 +123,7 @@ func (in *PromptInput) vars() map[string]any {
 		"branch":             in.Branch,
 		"description":        in.Description,
 		"issue":              in.Issue,
+		"issue_verdict":      in.EarlierVerdict,
 		"issue_instruction":  issueInstruction(in.Issue),
 		"discussion":         in.Discussion,
 		"ci":                 in.CI,

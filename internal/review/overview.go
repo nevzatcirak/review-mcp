@@ -94,19 +94,24 @@ func withOverviewMarker(body string) string {
 	return llmrun.WithMarker(body, OverviewMarker)
 }
 
-// withTrailer returns the overview body followed by its trailer: the held
-// lines (spec v2.1 §7.2), the reviewed-commit line of sha and the overview
-// marker, in that order, as the last lines. Held lines are written only
+// withTrailer returns the overview body followed by its trailer: the issue
+// verdict line (issueLine, X-42; "" for none), the held lines (spec v2.1
+// §7.2), the reviewed-commit line of sha and the overview marker, in that
+// order, as the last lines. The verdict and held lines are written only
 // with a valid sha. The body is model-influenced (finding text, a diff
 // snippet in a fence), so first any line of it that looks like a marker
 // line of review-mcp is defused: the reader takes the last reviewed-commit
 // line, and when there is no sha to write there would be no later line to
 // outvote a forged one; held lines are read from the trailer only, and a
 // forged one must not look like part of it either.
-func withTrailer(body string, held []string, sha string) string {
+func withTrailer(body, issue string, held []string, sha string) string {
 	body = defuseMarkerLines(body)
 	if sha = ValidReviewedSHA(sha); sha != "" {
-		trailer := append(append([]string(nil), held...), reviewedLinePrefix+sha+reviewedLineSuffix, OverviewMarker)
+		var trailer []string
+		if issue != "" {
+			trailer = append(trailer, issue)
+		}
+		trailer = append(append(trailer, held...), reviewedLinePrefix+sha+reviewedLineSuffix, OverviewMarker)
 		return llmrun.WithMarker(body, strings.Join(trailer, "\n"))
 	}
 	return withOverviewMarker(body)
@@ -186,6 +191,9 @@ type foundOverview struct {
 	// held are the valid records of its held lines (spec v2.1 §7.2), in
 	// the order of the overview.
 	held []heldRecord
+	// verdict is the issue compliance verdict its trailer records (X-42);
+	// nil for none.
+	verdict *Compliance
 	// older counts the other overviews of ours, left unchanged.
 	older int
 }
@@ -219,7 +227,8 @@ func (pl *Plan) findOverview(ctx context.Context) (*foundOverview, error) {
 	if invalid > 0 {
 		pl.log.Debug("review: held lines ignored", "invalid", invalid, "valid", len(held))
 	}
-	return &foundOverview{id: m.ID, url: m.URL, reviewed: reviewedSHAOf(m.Body), held: held, older: m.Older}, nil
+	return &foundOverview{id: m.ID, url: m.URL, reviewed: reviewedSHAOf(m.Body), held: held,
+		verdict: issueVerdictOf(m.Body), older: m.Older}, nil
 }
 
 // readDiscussion reads the PR's threads for the prompt and the duplicate

@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/url"
 	"slices"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 )
 
@@ -17,8 +19,9 @@ import (
 // (X-33, spec 2F §4.3).
 const promptMultiPerspective = "multi_perspective_review"
 
-// defaultFocuses are the focuses of multi_perspective_review when the
-// focuses argument is absent or empty.
+// defaultFocuses are the built-in focuses of multi_perspective_review when
+// the focuses argument is absent or empty and the repository config sets
+// none (defaultFocusesFor).
 const defaultFocuses = "security,architecture,performance,tests"
 
 // maxPromptURLBytes caps the pr_url argument of the prompt.
@@ -37,7 +40,8 @@ const (
 
 // registerMultiPerspectivePrompt registers the prompt of X-33; queued adds
 // rateLimitGuidance to its first step (X-37).
-func registerMultiPerspectivePrompt(s *mcp.Server, queued bool) {
+func registerMultiPerspectivePrompt(s *mcp.Server, deps Deps) {
+	queued := rateLimitConfigured(deps.Config)
 	s.AddPrompt(&mcp.Prompt{
 		Name:  promptMultiPerspective,
 		Title: "Multi-perspective review",
@@ -46,9 +50,9 @@ func registerMultiPerspectivePrompt(s *mcp.Server, queued bool) {
 		Arguments: []*mcp.PromptArgument{
 			{Name: "pr_url", Description: "URL of the pull request", Required: true},
 			{Name: "focuses", Description: "comma-separated focus areas out of security, architecture, " +
-				"performance, ux and tests (default " + defaultFocuses + ")"},
+				"performance, ux and tests (default: review.focuses of the repository config, else " + defaultFocuses + ")"},
 		},
-	}, func(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+	}, func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 		var args map[string]string
 		if req != nil && req.Params != nil {
 			args = req.Params.Arguments
@@ -57,8 +61,12 @@ func registerMultiPerspectivePrompt(s *mcp.Server, queued bool) {
 		if !ok {
 			return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: promptURLMessage}
 		}
-		focuses, ok := promptFocuses(args["focuses"])
-		if !ok {
+		var focuses []string
+		if strings.TrimSpace(args["focuses"]) == "" {
+			// No focuses given: the repository config of the pull request
+			// may set the default list (X-40).
+			focuses = defaultFocusesFor(ctx, deps, req, prURL)
+		} else if focuses, ok = promptFocuses(args["focuses"]); !ok {
 			return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: promptFocusesMessage}
 		}
 		return &mcp.GetPromptResult{
@@ -90,6 +98,83 @@ func promptPRURL(raw string) (string, bool) {
 	}
 	u.RawQuery, u.ForceQuery, u.Fragment, u.RawFragment = "", false, "", ""
 	return u.String(), true
+}
+
+// defaultFocusesFor returns the focuses of a prompt call that gave none:
+// review.focuses of the pull request's repository config when it is present
+// and valid, the built-in default otherwise (X-40). It resolves the URL,
+// reads the pull request and reads the file at its base revision, and
+// nothing else. Any failure (a degraded configuration, a URL that matches
+// no provider, a missing credential, a read error) falls back to the
+// default without an error, and with repo_config.enabled false nothing is
+// read. In serve mode the credentials are those of the request.
+func defaultFocusesFor(ctx context.Context, deps Deps, req *mcp.GetPromptRequest, prURL string) []string {
+	pc := promptContext{}
+	if repo := repoFocuses(ctx, deps, req, prURL); repo != nil {
+		pc.repoFocuses = repo
+	}
+	return builtinFocuses(pc)
+}
+
+// promptContext is what the default focus list is chosen from.
+type promptContext struct {
+	// repoFocuses are the validated review.focuses of the repository
+	// config; nil when there are none or they are not valid.
+	repoFocuses []string
+}
+
+// builtinFocuses is the default list of a prompt call that gave no
+// focuses: the repository's list when it has one, defaultFocuses otherwise.
+func builtinFocuses(pc promptContext) []string {
+	if pc.repoFocuses != nil {
+		return pc.repoFocuses
+	}
+	return strings.Split(defaultFocuses, ",")
+}
+
+// repoFocuses reads review.focuses of the repository config of prURL; nil
+// when there is no usable list.
+func repoFocuses(ctx context.Context, deps Deps, req *mcp.GetPromptRequest, prURL string) []string {
+	if deps.LoadErr != nil || deps.Config == nil || deps.NewResolver == nil || !deps.Config.RepoConfig.Enabled {
+		return nil
+	}
+	var header http.Header
+	if req != nil && req.Extra != nil {
+		header = req.Extra.Header
+	}
+	cfg, err := deps.configForHeader(header)
+	if err != nil {
+		return nil
+	}
+	sc := newScope(deps, cfg, false)
+	defer sc.release()
+	ref, p, err := sc.resolver.Resolve(prURL)
+	if err != nil {
+		return nil
+	}
+	pr, err := p.GetPullRequest(ctx, ref)
+	if err != nil {
+		return nil
+	}
+	out := repocfg.ForRun(ctx, logger(deps), cfg, p, ref, pr)
+	return validRepoFocuses(out.Focuses)
+}
+
+// validRepoFocuses returns list as known focus values (without regard to
+// case or surrounding space, repeats once), or nil when it is empty or holds
+// a value that is not a known focus.
+func validRepoFocuses(list []string) []string {
+	var out []string
+	for _, item := range list {
+		v := strings.ToLower(strings.TrimSpace(item))
+		if !slices.Contains(review.FocusValues, v) {
+			return nil
+		}
+		if !slices.Contains(out, v) {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // promptFocuses parses the focuses argument: known focus values

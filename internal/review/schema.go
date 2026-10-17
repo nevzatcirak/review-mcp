@@ -1,6 +1,9 @@
 package review
 
-import "github.com/nevzatcirak/review-mcp/internal/llmrun"
+import (
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
+	"github.com/nevzatcirak/review-mcp/internal/repocfg"
+)
 
 // ResultSchema is the JSON schema (draft 2020-12) of Result, for the
 // pr_review tool's MCP output schema (DQ-6; WP-PR-4e attaches it). The
@@ -92,8 +95,9 @@ func ResultSchema() map[string]any {
 		}, "model", "context_window", "prompt_tokens", "diff_tokens", "request_tokens", "fast_path", "llm_calls",
 			"repair_tactic", "reasked", "truncated", "diff_trimmed", "reviewed_at", "rate_limit_waits", "rate_limit_wait_ms",
 			"models_used", "fallback_calls"),
-		"ci": CISchema(),
-		"focus": str("the focus of a focused run (X-33): security, architecture, performance, ux, tests or the " +
+		"ci":          CISchema(),
+		"repo_config": repocfg.Schema(),
+		"focus": str("the focus of a focused run (X-33): security, architecture, performance, ux, tests, docs or the " +
 			"cleaned free text; absent without one"),
 		"incremental": object("whether the whole pull request or only the files that changed since the last review were reviewed (X-36); always set by pr_review", map[string]any{
 			"mode": map[string]any{"type": "string", "enum": []any{IncrementalFull, IncrementalChanged, IncrementalUnchanged},
@@ -120,7 +124,7 @@ func ResultSchema() map[string]any {
 					"for example \"rate_limited 403\"; a fixed string, never a provider message; omitted when none failed"),
 			}, "posted", "skipped_duplicate", "unanchorable", "failed"),
 		}, "published"),
-	}, "pr", "enabled_fields", "review", "coverage", "notes", "metadata")
+	}, "pr", "enabled_fields", "review", "coverage", "notes", "metadata", "repo_config")
 }
 
 // CISchema is the JSON schema of CI (X-31), for the pr_review output schema.

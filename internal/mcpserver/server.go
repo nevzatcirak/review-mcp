@@ -79,6 +79,12 @@ type Deps struct {
 // HTTP middleware rejects such requests before any tool runs, so this is a
 // second line of defence.
 func (d Deps) ConfigFor(_ context.Context, req *mcp.CallToolRequest) (*config.Config, error) {
+	return d.configForHeader(requestHeader(req))
+}
+
+// configForHeader is ConfigFor for the HTTP header of the request that
+// carries the call (nil in stdio mode).
+func (d Deps) configForHeader(h http.Header) (*config.Config, error) {
 	if !d.Serve {
 		return d.Config, nil
 	}
@@ -86,7 +92,7 @@ func (d Deps) ConfigFor(_ context.Context, req *mcp.CallToolRequest) (*config.Co
 	if base == nil {
 		base = config.Defaults()
 	}
-	s, err := credentials.Secrets(requestHeader(req), base.Serve.LLMKeySource == config.LLMKeySourceServer,
+	s, err := credentials.Secrets(h, base.Serve.LLMKeySource == config.LLMKeySourceServer,
 		base.Secrets.LLMAPIKey, base.Secrets.ServeAccessToken)
 	if err != nil {
 		return nil, err
@@ -163,7 +169,7 @@ func New(deps Deps) *mcp.Server {
 	if deps.background() {
 		registerJobResult(s, deps)
 	}
-	registerMultiPerspectivePrompt(s, rateLimitConfigured(deps.Config))
+	registerMultiPerspectivePrompt(s, deps)
 	return s
 }
 

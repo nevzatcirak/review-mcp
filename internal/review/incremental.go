@@ -270,7 +270,9 @@ func (pl *Plan) unchangedPlan(ctx context.Context, deps Deps, args Args, window 
 		Metadata:      Metadata{Model: cfg.LLM.Model, ContextWindow: window, ReviewedAt: reviewedAt(deps.Clock)},
 		Focus:         args.Focus,
 		Incremental:   inc,
+		RepoConfig:    pl.repo.Result,
 	}
+	res.Notes = append(res.Notes, pl.repo.Notes...)
 	if cfg.Context.Repo.Enabled {
 		res.Coverage.RepoContext = llmrun.RepoContext{Status: llmrun.RepoSkipped, Reason: repoctx.ReasonNothingToReview}
 	}

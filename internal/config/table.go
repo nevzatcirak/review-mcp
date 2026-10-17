@@ -105,6 +105,7 @@ var table = []entry{
 	{"review.max_chunks", "REVIEW_MCP_REVIEW_MAX_CHUNKS", func(c *Config) any { return &c.Review.MaxChunks }},
 	{"review.max_total_findings", "REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS", func(c *Config) any { return &c.Review.MaxTotalFindings }},
 	{"review.incremental", "REVIEW_MCP_REVIEW_INCREMENTAL", func(c *Config) any { return &c.Review.Incremental }},
+	{"review.docs_style", "REVIEW_MCP_REVIEW_DOCS_STYLE", func(c *Config) any { return &c.Review.DocsStyle }},
 	{"review.incremental_max_files", "REVIEW_MCP_REVIEW_INCREMENTAL_MAX_FILES", func(c *Config) any { return &c.Review.IncrementalMaxFiles }},
 
 	{"ask.extra_instructions", "REVIEW_MCP_ASK_EXTRA_INSTRUCTIONS", func(c *Config) any { return &c.Ask.ExtraInstructions }},
@@ -124,6 +125,10 @@ var table = []entry{
 	{"context.repo.max_symbols", "REVIEW_MCP_CONTEXT_REPO_MAX_SYMBOLS", func(c *Config) any { return &c.Context.Repo.MaxSymbols }},
 	{"context.repo.max_hits_per_symbol", "REVIEW_MCP_CONTEXT_REPO_MAX_HITS_PER_SYMBOL", func(c *Config) any { return &c.Context.Repo.MaxHitsPerSymbol }},
 	{"context.repo.max_tokens", "REVIEW_MCP_CONTEXT_REPO_MAX_TOKENS", func(c *Config) any { return &c.Context.Repo.MaxTokens }},
+
+	// repo_config.* rows: v2.1 spec V-5 §1.1 (X-40).
+	{"repo_config.enabled", "REVIEW_MCP_REPO_CONFIG_ENABLED", func(c *Config) any { return &c.RepoConfig.Enabled }},
+	{"repo_config.path", "REVIEW_MCP_REPO_CONFIG_PATH", func(c *Config) any { return &c.RepoConfig.Path }},
 
 	{"log.level", "REVIEW_MCP_LOG_LEVEL", func(c *Config) any { return &c.Log.Level }},
 

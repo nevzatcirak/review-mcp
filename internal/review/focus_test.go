@@ -103,7 +103,7 @@ func TestValidatedModes(t *testing.T) {
 		want string
 	}{
 		{"invalid focus", Args{Focus: "a\nb"},
-			"focus must be one of security, architecture, performance, ux or tests, or a description of 1 to 200 characters without line breaks or control characters"},
+			"focus must be one of security, architecture, performance, ux, tests or docs, or a description of 1 to 200 characters without line breaks or control characters"},
 		{"focus with publish", Args{Focus: "security", Publish: true},
 			"a focused review does not publish; merge the findings and call pr_review with findings and publish=true"},
 		{"free focus with publish", Args{Focus: "locking", Publish: true},

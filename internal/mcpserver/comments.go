@@ -73,6 +73,11 @@ func callScope(ctx context.Context, deps Deps, req *mcp.CallToolRequest, needLLM
 	if err != nil {
 		return nil, toolError(tools.UserMessage(err))
 	}
+	return newScope(deps, cfg, needLLM), nil
+}
+
+// newScope builds the scope of one call from its effective configuration.
+func newScope(deps Deps, cfg *config.Config, needLLM bool) *scope {
 	sc := &scope{cfg: cfg, inner: deps.NewResolver(cfg, deps.Logger)}
 	sc.resolver = sc.inner
 	if deps.Serve {
@@ -81,7 +86,7 @@ func callScope(ctx context.Context, deps Deps, req *mcp.CallToolRequest, needLLM
 	if deps.NewLLM != nil {
 		sc.newLLM = sc.trackLLM(llmFactory(deps))
 	}
-	return sc, nil
+	return sc
 }
 
 // scope holds what one tool call built. It is owned by that call and kept by

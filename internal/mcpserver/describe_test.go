@@ -89,7 +89,7 @@ func TestPRDescribeToolDefinition(t *testing.T) {
 		outProps = append(outProps, k)
 	}
 	sort.Strings(outProps)
-	if got := strings.Join(outProps, ","); got != "coverage,description,files,metadata,notes,publish,title,type" {
+	if got := strings.Join(outProps, ","); got != "coverage,description,files,metadata,notes,publish,repo_config,title,type" {
 		t.Errorf("output schema properties = %s", got)
 	}
 }

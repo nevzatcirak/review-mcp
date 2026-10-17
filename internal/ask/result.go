@@ -1,6 +1,9 @@
 package ask
 
-import "github.com/nevzatcirak/review-mcp/internal/llmrun"
+import (
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
+	"github.com/nevzatcirak/review-mcp/internal/repocfg"
+)
 
 // Notes the pipeline adds (spec P5 §1.2).
 const (
@@ -38,6 +41,9 @@ type Result struct {
 	Metadata Metadata `json:"metadata"`
 	// Publish is set when publishing was requested.
 	Publish *PublishResult `json:"publish,omitempty"`
+	// RepoConfig is what the repository config (X-40) contributed; always
+	// set.
+	RepoConfig repocfg.Result `json:"repo_config"`
 }
 
 // Metadata describes the run. It holds names and numbers only.

@@ -408,6 +408,39 @@ the problems (the position, never the value of a path):
 | review.guidelines_paths: 11 paths, at most 10 are allowed | List at most 10 paths. |
 | review.guidelines_paths[0]: must not be empty / longer than 512 bytes / must be relative to the repository root (no leading "/") / must use "/" as the separator / must not contain control characters / must not contain an empty segment ("//" or a trailing "/") / must not contain "." or ".." segments | `[0]` is the position of the path in the list (counting from 0). Fix that path. In the environment the list is comma-separated, so an empty item between commas is an empty path. |
 
+## Repository config notes
+
+`pr_review`, `pr_improve`, `pr_describe` and `pr_ask` read the
+[repository config](repo-config.md) (`.review-mcp.toml` at the target branch)
+and add these fixed sentences first among the notes. The path in them is
+`repo_config.path`; no value of the file is ever quoted. `repo_config.status`
+in the result says what happened: `applied`, `nothing_applied`, `absent`,
+`invalid`, `off` or `unreadable`. A missing file is the normal case and makes
+no note.
+
+| Sentence | Cause and what to do |
+|---|---|
+| Settings from `.review-mcp.toml` on the target branch were applied: output.language, ignore.glob. | The keys listed were applied, in allow-list order. Not a problem. A number listed may have been capped by the operator's value: numbers only tighten. |
+| Settings in `.review-mcp.toml` that a repository may not change were ignored: llm.model, serve.listen. | The file sets keys outside the [allow-list](repo-config.md#allowed-keys), such as models, hosts, limits or secrets. They were not applied. Remove them from the file; an operator sets them in the server's own configuration. At most 10 names are shown, then "and N more". |
+| The value of review.max_findings in `.review-mcp.toml` is not valid and was ignored. | The key is allowed, but its value has the wrong type (a string for a number, a single string for a list) or is out of the operator key's range. Also: a regex that does not compile, an unknown framework name, more than 5 guidelines paths, a `focuses` that is not a list of short words, a `docs_style` over 1,000 bytes. Fix the value; the other keys were applied. |
+| The value of review.extra_instructions in `.review-mcp.toml` is longer than 2,000 bytes and was cut. | The text was cut at a character boundary to 2,000 bytes (the same for `ask.extra_instructions`). Shorten it. |
+| `.review-mcp.toml` on the target branch could not be read as TOML (line N) and was ignored. | A syntax error at line N (an unclosed table header, a missing quote, a duplicate key). Nothing in the file was used (`invalid`). Fix the file on the target branch; a fix on the pull request's branch is not read. |
+| `.review-mcp.toml` on the target branch is larger than 16 KiB and was ignored. | The file is over the 16 KiB cap (or over `diff.max_file_bytes`). Shorten it (`invalid`). |
+| `.review-mcp.toml` on the target branch could not be read and was ignored. | The read failed: the token cannot read the repository's files, the host was unreachable or rate limited, or the pull request reports no base revision (`unreadable`). Check [connectivity](#check-connectivity-with-diag-pr); the run used the operator's configuration. |
+| None of the guidelines files in review.guidelines_paths exists at the target branch; the review ran without project guidelines. | Also given when `review.guidelines_paths` came from the repository config and none of its paths exists. Fix the path in the file. |
+| Repository context is off, so documentation was checked against the code in this pull request only. | A `focus=docs` review of a diff that changes documentation files only, with `context.repo.enabled` off. The model could not see the code the documentation describes, so it reported only what the pull request shows. Turn on [repository context](repo-context.md) (stdio) to let it look up the names the documentation mentions. |
+
+**Settings changed only on the pull request have no effect.** The file is read
+at the target branch, so a pull request that edits `.review-mcp.toml` is
+reviewed with the version on the target branch. That is intended.
+
+Configuration problems of the operator keys (at startup, in `server_info`):
+
+| Problem | What to do |
+|---|---|
+| repo_config.path: must not be empty / longer than 512 bytes / must be relative to the repository root (no leading "/") / must use "/" as the separator / must not contain control characters / must not contain an empty segment ("//" or a trailing "/") / must not contain "." or ".." segments | Use a clean path relative to the repository root, such as `.review-mcp.toml` or `config/review.toml`. |
+| review.docs_style: N bytes, at most 1000 are allowed | Shorten `review.docs_style` to 1,000 bytes. |
+
 ## Focus and findings refusals
 
 `pr_review` checks the combination of `focus`, `findings`, `publish`,
@@ -417,7 +450,7 @@ sent to the provider or to the model. They are checked in this order.
 
 | Sentence | Cause and what to do |
 |---|---|
-| focus must be one of security, architecture, performance, ux or tests, or a description of 1 to 200 characters without line breaks or control characters | `focus` is blank after trimming, longer than 200 characters, or holds a line break, a control character or a bidirectional formatting character. Use a known value, or a one-line description. |
+| focus must be one of security, architecture, performance, ux, tests or docs, or a description of 1 to 200 characters without line breaks or control characters | `focus` is blank after trimming, longer than 200 characters, or holds a line break, a control character or a bidirectional formatting character. Use a known value, or a one-line description. |
 | findings cannot be combined with focus; call pr_review with findings and publish=true, without focus | `findings` is the merged result of focused runs, not a focused run. Drop `focus`. |
 | a focused review does not publish; merge the findings and call pr_review with findings and publish=true | `focus` with `publish=true`. Run the focused reviews without `publish`, merge their findings, then publish once with `findings` ([Focused reviews](review.md#focused-reviews-and-the-merged-publish)). |
 | findings are only used to publish; call pr_review with findings and publish=true | `findings` (also an empty list) without `publish=true`. Add `publish=true`, or drop `findings` for a normal review. |
@@ -510,7 +543,7 @@ one of these fixed messages (the value is never echoed):
 | Message | Cause and what to do |
 |---|---|
 | pr_url must be the http or https URL of a pull request, without credentials | `pr_url` is missing, longer than 2048 bytes, not an absolute `http` or `https` URL with a host, or it carries credentials (`user:password@`). Pass the pull request's page URL. |
-| focuses must be a comma-separated list of security, architecture, performance, ux and tests | `focuses` holds a value that is not one of the five (free text is not accepted here; use it with `pr_review`'s `focus`), or no value at all. Leave `focuses` out for the default `security,architecture,performance,tests`. |
+| focuses must be a comma-separated list of security, architecture, performance, ux, tests and docs | `focuses` holds a value that is not one of the six (free text is not accepted here; use it with `pr_review`'s `focus`), or no value at all. Leave `focuses` out for the default: `review.focuses` of the [repository config](repo-config.md#focus-defaults), else `security,architecture,performance,tests`, with `docs` added when the pull request changes a documentation file. |
 
 ## `pr_info` required_approvals notes
 
@@ -1211,7 +1244,7 @@ table also covers the configuration, argument and serve-mode errors.
 | the model's answer could not be parsed as code suggestions, also after one retry; try again, or check that llm.model follows the YAML output instructions | `improve_unparseable` | Retry, or use a model that follows YAML output instructions (`pr_improve`). A failed self-review call is not this error; it leaves the suggestions unscored ([`pr_improve`](#pr_improve)). |
 | output_language must be a locale code such as en-US or tr-TR | argument | Fix `output_language` (`pr_review`, `pr_ask`, `pr_describe`, `pr_improve`). |
 | max_findings must be an integer from 1 to 20 | argument | Fix `max_findings` (`pr_review`). |
-| focus must be one of security, architecture, performance, ux or tests, or a description of 1 to 200 characters without line breaks or control characters | `invalid_argument` | Fix `focus` (`pr_review`). |
+| focus must be one of security, architecture, performance, ux, tests or docs, or a description of 1 to 200 characters without line breaks or control characters | `invalid_argument` | Fix `focus` (`pr_review`). |
 | findings cannot be combined with focus; call pr_review with findings and publish=true, without focus | `invalid_argument` | Drop `focus` or `findings` (`pr_review`). |
 | a focused review does not publish; merge the findings and call pr_review with findings and publish=true | `invalid_argument` | Drop `publish`, or merge the findings and send them as `findings` ([Focus and findings refusals](#focus-and-findings-refusals)). |
 | findings are only used to publish; call pr_review with findings and publish=true | `invalid_argument` | Add `publish=true`, or drop `findings`. |

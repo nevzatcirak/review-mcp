@@ -4,6 +4,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/diffpipe"
 	"github.com/nevzatcirak/review-mcp/internal/filter"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
+	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 )
 
 // Notes the pipeline adds (§4.3). Conversion adds the dropped-finding
@@ -48,6 +49,9 @@ type Result struct {
 	// sets it; it is a pointer so that the shared JSON form of a result
 	// built elsewhere omits it.
 	Incremental *Incremental `json:"incremental,omitempty"`
+	// RepoConfig is what the repository config (X-40) contributed; always
+	// set.
+	RepoConfig repocfg.Result `json:"repo_config"`
 	// Reviewed is the commit record of the overview (X-36). It is not part
 	// of the tool result: the renderers show it and the publish writes it.
 	Reviewed ReviewedCommit `json:"-"`

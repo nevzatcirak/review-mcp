@@ -58,6 +58,7 @@ func TestDefaultsAppliedWhenNothingSet(t *testing.T) {
 		{"review.max_total_findings", cfg.Review.MaxTotalFindings, 10},
 		{"review.incremental", cfg.Review.Incremental, false},
 		{"review.incremental_max_files", cfg.Review.IncrementalMaxFiles, 300},
+		{"review.docs_style", cfg.Review.DocsStyle, ""},
 		{"ask.extra_instructions", cfg.Ask.ExtraInstructions, ""},
 		{"improve.max_suggestions", cfg.Improve.MaxSuggestions, 8},
 		{"improve.max_suggestions_per_part", cfg.Improve.MaxSuggestionsPerPart, 4},
@@ -71,6 +72,8 @@ func TestDefaultsAppliedWhenNothingSet(t *testing.T) {
 		{"context.repo.max_symbols", cfg.Context.Repo.MaxSymbols, 20},
 		{"context.repo.max_hits_per_symbol", cfg.Context.Repo.MaxHitsPerSymbol, 5},
 		{"context.repo.max_tokens", cfg.Context.Repo.MaxTokens, 2000},
+		{"repo_config.enabled", cfg.RepoConfig.Enabled, true},
+		{"repo_config.path", cfg.RepoConfig.Path, ".review-mcp.toml"},
 		{"log.level", cfg.Log.Level, "info"},
 		// DQ-26: no defaults for these.
 		{"llm.max_output_tokens", cfg.LLM.MaxOutputTokens == nil, true},

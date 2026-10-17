@@ -31,6 +31,14 @@ type infoProvider struct {
 	checkSHA  string
 
 	gotOpts provider.ReviewStatusOptions
+
+	// fileReads counts GetFileAt calls: pr_info never reads a file.
+	fileReads int
+}
+
+func (f *infoProvider) GetFileAt(context.Context, provider.PRRef, string, string) ([]byte, error) {
+	f.fileReads++
+	return nil, provider.ErrNotFound
 }
 
 func (f *infoProvider) GetChecks(_ context.Context, _ provider.PRRef, sha string) (*provider.Checks, error) {
@@ -75,6 +83,18 @@ func newInfoProvider() *infoProvider {
 			},
 			RequiredApprovals: &two, Mergeable: &yes, MergeBlockers: []string{},
 		},
+	}
+}
+
+// TestPRInfoReadsNoRepositoryConfig: pr_info does not read the repository
+// config (X-40): it reads no file at all.
+func TestPRInfoReadsNoRepositoryConfig(t *testing.T) {
+	f := newInfoProvider()
+	if _, err := PRInfoTool(context.Background(), infoResolver{f}, testPRURL, nil); err != nil {
+		t.Fatal(err)
+	}
+	if f.fileReads != 0 {
+		t.Errorf("pr_info read %d files, want none", f.fileReads)
 	}
 }
 

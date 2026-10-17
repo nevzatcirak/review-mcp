@@ -5,6 +5,62 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Planned as `2.2.0-rc.1`. A repository can tune its own reviews with a
+`.review-mcp.toml` read at the target branch, within an allow-list (X-40,
+WP-9a to WP-9c), and `pr_review` gains a sixth focus, `docs`, which checks
+documentation against the code (WP-9d). Nothing in the tools or in the
+configuration of 2.1.0 is removed or renamed. Guides: [Repository
+config](docs/repo-config.md) and [The docs focus](docs/review.md#the-docs-focus).
+
+### Added
+
+- Repository config: `pr_review`, `pr_improve`, `pr_describe` and `pr_ask` read
+  `.review-mcp.toml` once per run at the pull request's base revision, never at
+  its head. The allow-list holds:
+  - `output.language`;
+  - `ignore.glob` and `ignore.regex` (added to the operator's);
+  - `diff.ignore_generated_frameworks` and `review.guidelines_paths`;
+  - the `review.require_*` toggles and the publish, CI, file-tree and
+    incremental toggles;
+  - `review.max_findings`, `review.max_total_findings`,
+    `improve.max_suggestions` and `improve.min_score`, which only tighten;
+  - `review.extra_instructions` and `ask.extra_instructions`, added after the
+    operator's as fenced repository guidance (at most 2,000 bytes);
+  - `review.focuses` and `review.docs_style`.
+
+  Every other key is ignored and named in a note. A value of the file is never
+  quoted, and the process configuration is never changed.
+- Operator keys `repo_config.enabled` (default `true`,
+  `REVIEW_MCP_REPO_CONFIG_ENABLED`) and `repo_config.path` (default
+  `.review-mcp.toml`, `REVIEW_MCP_REPO_CONFIG_PATH`), shown by `server_info`.
+- `repo_config` in the result of the four model tools: `path`, `status`
+  (`applied`, `nothing_applied`, `absent`, `invalid`, `off`, `unreadable`),
+  `applied` and `ignored`, with fixed notes listed in [Troubleshooting](docs/troubleshooting.md#repository-config-notes).
+- `multi_perspective_review` without `focuses` takes `review.focuses` of the
+  repository config as its list. The pull request and file reads share a 10 s
+  deadline, and any failure falls back to the built-in default.
+- The `docs` focus: `pr_review` with `focus=docs` reviews documentation that
+  contradicts the code, misses a behaviour change, misnames keys, flags, paths
+  or defaults, has broken links or steps, or departs from the project's style.
+  - `review.docs_style` (`REVIEW_MCP_REVIEW_DOCS_STYLE`, at most 1,000 bytes,
+    also in the repository config) gives the model that style, fenced, only
+    for this focus.
+  - With repository context on, the names the added documentation lines write
+    as inline code are looked up in the repository.
+  - Without repository context, a docs-only diff gets a note.
+  - The prompt's default list adds `docs` when the pull request changes a
+    documentation file.
+
+### Changed
+
+- `pr_review` completes the options a call leaves unset (inline findings,
+  persistent overview, discussion budget, parts) from the configuration merged
+  with the repository config, so a merged `findings` publish obeys the file too.
+- The guidelines block and the new repository guidance share one fencing and
+  cleaning helper; the guidelines text in the prompt is unchanged.
+
 ## [2.1.0]
 
 Fourth stable release. The code is the same as `2.1.0-rc.5`. The release

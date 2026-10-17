@@ -14,6 +14,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/describe"
 	"github.com/nevzatcirak/review-mcp/internal/improve"
 	"github.com/nevzatcirak/review-mcp/internal/jobs"
+	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 	"github.com/nevzatcirak/review-mcp/internal/tools"
 )
@@ -137,6 +138,15 @@ func askResultSchema() *jsonschema.Schema {
 	s, err := jsonschema.For[ask.Result](&jsonschema.ForOptions{})
 	if err != nil {
 		panic(fmt.Sprintf("ask.Result schema: %v", err)) // a programming error, caught by every test
+	}
+	// The inferred status of repo_config is a plain string; give it its
+	// values and description, as the other tools' schemas do.
+	if rc := s.Properties["repo_config"]; rc != nil && rc.Properties["status"] != nil {
+		st := rc.Properties["status"]
+		st.Enum = nil
+		for _, v := range repocfg.Statuses() {
+			st.Enum = append(st.Enum, v)
+		}
 	}
 	return s
 }

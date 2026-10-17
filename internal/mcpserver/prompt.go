@@ -3,13 +3,19 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/filter"
+	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 )
 
@@ -17,9 +23,17 @@ import (
 // (X-33, spec 2F §4.3).
 const promptMultiPerspective = "multi_perspective_review"
 
-// defaultFocuses are the focuses of multi_perspective_review when the
-// focuses argument is absent or empty.
+// defaultFocuses are the built-in focuses of multi_perspective_review when
+// the focuses argument is absent or empty and the repository config sets
+// none (defaultFocusesFor).
 const defaultFocuses = "security,architecture,performance,tests"
+
+// promptReadTimeout bounds the repository reads of one prompt call in total
+// (the pull request and the repository config): prompts/get is interactive,
+// so a slow host must not stall the client. On expiry the prompt falls back
+// to the built-in default like any other read failure. A variable so that
+// tests can shorten it.
+var promptReadTimeout = 10 * time.Second
 
 // maxPromptURLBytes caps the pr_url argument of the prompt.
 const maxPromptURLBytes = 2048
@@ -32,12 +46,13 @@ const (
 	// cannot carry a free text that holds a comma, and a typo of a known
 	// value would silently become a weak free-text focus. A free-text focus
 	// stays available through pr_review's focus argument.
-	promptFocusesMessage = "focuses must be a comma-separated list of security, architecture, performance, ux and tests"
+	promptFocusesMessage = "focuses must be a comma-separated list of security, architecture, performance, ux, tests and docs"
 )
 
 // registerMultiPerspectivePrompt registers the prompt of X-33; queued adds
 // rateLimitGuidance to its first step (X-37).
-func registerMultiPerspectivePrompt(s *mcp.Server, queued bool) {
+func registerMultiPerspectivePrompt(s *mcp.Server, deps Deps) {
+	queued := rateLimitConfigured(deps.Config)
 	s.AddPrompt(&mcp.Prompt{
 		Name:  promptMultiPerspective,
 		Title: "Multi-perspective review",
@@ -46,9 +61,10 @@ func registerMultiPerspectivePrompt(s *mcp.Server, queued bool) {
 		Arguments: []*mcp.PromptArgument{
 			{Name: "pr_url", Description: "URL of the pull request", Required: true},
 			{Name: "focuses", Description: "comma-separated focus areas out of security, architecture, " +
-				"performance, ux and tests (default " + defaultFocuses + ")"},
+				"performance, ux, tests and docs (default: review.focuses of the repository config, else " + defaultFocuses +
+				", with docs added when the pull request changes a documentation file)"},
 		},
-	}, func(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+	}, func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 		var args map[string]string
 		if req != nil && req.Params != nil {
 			args = req.Params.Arguments
@@ -57,8 +73,12 @@ func registerMultiPerspectivePrompt(s *mcp.Server, queued bool) {
 		if !ok {
 			return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: promptURLMessage}
 		}
-		focuses, ok := promptFocuses(args["focuses"])
-		if !ok {
+		var focuses []string
+		if strings.TrimSpace(args["focuses"]) == "" {
+			// No focuses given: the repository config of the pull request
+			// may set the default list (X-40).
+			focuses = defaultFocusesFor(ctx, deps, req, prURL)
+		} else if focuses, ok = promptFocuses(args["focuses"]); !ok {
 			return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: promptFocusesMessage}
 		}
 		return &mcp.GetPromptResult{
@@ -90,6 +110,118 @@ func promptPRURL(raw string) (string, bool) {
 	}
 	u.RawQuery, u.ForceQuery, u.Fragment, u.RawFragment = "", false, "", ""
 	return u.String(), true
+}
+
+// defaultFocusesFor returns the focuses of a prompt call that gave none
+// (X-40, v2.1 spec V-5 §3 item 1 and §3a item 5): review.focuses of the pull
+// request's repository config when it is present and valid; otherwise the
+// built-in default, with docs added when the pull request changes a
+// documentation file. It resolves the URL, reads the pull request, reads
+// the file at its base revision and, only when the file gives no list,
+// lists the changed files (GetDiff with every file filtered out, so no
+// content is fetched); nothing else. Any failure (a degraded configuration,
+// a URL that matches no provider, a missing credential, a read error) falls
+// back to the built-in default without an error, and so does a read that is
+// not done within promptReadTimeout; with repo_config.enabled false nothing
+// is read. In serve mode the credentials are those of the request.
+func defaultFocusesFor(ctx context.Context, deps Deps, req *mcp.GetPromptRequest, prURL string) []string {
+	return builtinFocuses(readPromptContext(ctx, deps, req, prURL))
+}
+
+// promptContext is what the default focus list is chosen from.
+type promptContext struct {
+	// repoFocuses are the validated review.focuses of the repository
+	// config; nil when there are none or they are not valid.
+	repoFocuses []string
+	// docsChanged: the pull request changes a documentation file
+	// (filter.IsDocumentation) that the ignore rules keep. It is only looked
+	// up when repoFocuses is nil.
+	docsChanged bool
+}
+
+// builtinFocuses is the default list of a prompt call that gave no
+// focuses: the repository's list when it has one; otherwise defaultFocuses,
+// with docs added when the pull request changes a documentation file.
+func builtinFocuses(pc promptContext) []string {
+	if pc.repoFocuses != nil {
+		return pc.repoFocuses
+	}
+	out := strings.Split(defaultFocuses, ",")
+	if pc.docsChanged {
+		out = append(out, review.FocusDocs)
+	}
+	return out
+}
+
+// readPromptContext reads what builtinFocuses needs for prURL; the zero
+// value when nothing could be read.
+func readPromptContext(ctx context.Context, deps Deps, req *mcp.GetPromptRequest, prURL string) promptContext {
+	var pc promptContext
+	if deps.LoadErr != nil || deps.Config == nil || deps.NewResolver == nil || !deps.Config.RepoConfig.Enabled {
+		return pc
+	}
+	var header http.Header
+	if req != nil && req.Extra != nil {
+		header = req.Extra.Header
+	}
+	cfg, err := deps.configForHeader(header)
+	if err != nil {
+		return pc
+	}
+	sc := newScope(deps, cfg, false)
+	defer sc.release()
+	ctx, cancel := context.WithTimeout(ctx, promptReadTimeout)
+	defer cancel()
+	ref, p, err := sc.resolver.Resolve(prURL)
+	if err != nil {
+		return pc
+	}
+	pr, err := p.GetPullRequest(ctx, ref)
+	if err != nil {
+		return pc
+	}
+	out := repocfg.ForRun(ctx, logger(deps), cfg, p, ref, pr)
+	if pc.repoFocuses = validRepoFocuses(out.Focuses); pc.repoFocuses != nil {
+		return pc
+	}
+	pc.docsChanged = changesDocumentation(ctx, out.Config, p, ref, pr)
+	return pc
+}
+
+// changesDocumentation reports whether the pull request changes a
+// documentation file that the ignore rules of cfg keep. It lists the changed
+// files through GetDiff with an Include that records each path and keeps
+// none, so the provider fetches no file content. A failure is false.
+func changesDocumentation(ctx context.Context, cfg *config.Config, p provider.Provider, ref provider.PRRef, pr *provider.PullRequest) bool {
+	flt, err := filter.New(cfg)
+	if err != nil {
+		return false
+	}
+	found := false
+	_, err = p.GetDiff(ctx, ref, pr, provider.DiffOptions{Include: func(path string) bool {
+		if !found && flt.Include(path) && filter.IsDocumentation(path) {
+			found = true
+		}
+		return false
+	}})
+	return err == nil && found
+}
+
+// validRepoFocuses returns list as known focus values (without regard to
+// case or surrounding space, repeats once), or nil when it is empty or holds
+// a value that is not a known focus.
+func validRepoFocuses(list []string) []string {
+	var out []string
+	for _, item := range list {
+		v := strings.ToLower(strings.TrimSpace(item))
+		if !slices.Contains(review.FocusValues, v) {
+			return nil
+		}
+		if !slices.Contains(out, v) {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // promptFocuses parses the focuses argument: known focus values

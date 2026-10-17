@@ -77,8 +77,12 @@ func (l *loader) validate() {
 		l.problem("review.incremental_max_files: %d is out of range (%d-%d)", c.Review.IncrementalMaxFiles,
 			MinIncrementalMaxFiles, MaxIncrementalMaxFiles)
 	}
+	if !l.bad["review.docs_style"] && len(c.Review.DocsStyle) > MaxDocsStyleBytes {
+		l.problem("review.docs_style: %d bytes, at most %d are allowed", len(c.Review.DocsStyle), MaxDocsStyleBytes)
+	}
 	l.validateImprove()
 	l.validateContextRepo()
+	l.validateRepoConfig()
 	if _, err := logging.ParseLevel(c.Log.Level); err != nil {
 		l.problem("log.level: %v", err)
 	}
@@ -86,6 +90,9 @@ func (l *loader) validate() {
 		l.validateServe()
 	}
 }
+
+// MaxDocsStyleBytes is the longest review.docs_style (v2.1 spec V-5 §3a).
+const MaxDocsStyleBytes = 1000
 
 // Bounds of review.guidelines_paths (X-32).
 const (
@@ -527,17 +534,14 @@ func (l *loader) validateDiff() {
 func (l *loader) validateIgnore() {
 	ig := &l.cfg.Ignore
 	for i, g := range ig.Glob {
-		switch {
-		case strings.TrimSpace(g) == "":
-			l.problem("ignore.glob[%d]: must not be empty", i)
-		case !doublestar.ValidatePattern(g):
-			// The index is reported instead of the pattern, like ignore.regex.
-			l.problem("ignore.glob[%d]: not a valid glob pattern (doublestar syntax)", i)
+		// The index is reported instead of the pattern, like ignore.regex.
+		if reason := GlobProblem(g); reason != "" {
+			l.problem("ignore.glob[%d]: %s", i, reason)
 		}
 	}
 	for i, r := range ig.Regex {
-		if _, err := regexp.Compile(r); err != nil {
-			l.problem("ignore.regex[%d]: pattern does not compile as RE2 (%s)", i, regexpReason(err))
+		if reason := RegexProblem(r); reason != "" {
+			l.problem("ignore.regex[%d]: %s", i, reason)
 		}
 	}
 }
@@ -550,4 +554,40 @@ func regexpReason(err error) string {
 		return string(se.Code)
 	}
 	return "invalid pattern"
+}
+
+// validateRepoConfig checks repo_config.path: a cleaned relative path
+// without ".." (the rules of a guidelines path). The value is not echoed.
+func (l *loader) validateRepoConfig() {
+	if l.bad["repo_config.path"] {
+		return
+	}
+	if reason := guidelinesPathProblem(l.cfg.RepoConfig.Path); reason != "" {
+		l.problem("repo_config.path: %s", reason)
+	}
+}
+
+// GuidelinesPathProblem returns why p is not a valid relative repository
+// path (a guidelines path, repo_config.path), or "". The repository config
+// (X-40) validates review.guidelines_paths with it.
+func GuidelinesPathProblem(p string) string { return guidelinesPathProblem(p) }
+
+// GlobProblem returns why g is not a valid ignore.glob pattern, or "".
+func GlobProblem(g string) string {
+	switch {
+	case strings.TrimSpace(g) == "":
+		return "must not be empty"
+	case !doublestar.ValidatePattern(g):
+		return "not a valid glob pattern (doublestar syntax)"
+	}
+	return ""
+}
+
+// RegexProblem returns why r is not a valid ignore.regex pattern, or "". The
+// reason never contains the pattern.
+func RegexProblem(r string) string {
+	if _, err := regexp.Compile(r); err != nil {
+		return "pattern does not compile as RE2 (" + regexpReason(err) + ")"
+	}
+	return ""
 }

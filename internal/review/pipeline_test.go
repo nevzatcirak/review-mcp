@@ -88,16 +88,29 @@ type fakeProvider struct {
 	revs    map[string]map[string]string
 	reads   []string
 	readErr error
+	// configReads records the reads of the repository config as
+	// "<path>@<rev>"; they are not in reads.
+	configReads []string
 	// readMu guards reads: the change detection of an incremental review
 	// (X-36) reads files concurrently.
 	readMu sync.Mutex
 }
 
+// repoConfigPath is the default repo_config.path.
+const repoConfigPath = ".review-mcp.toml"
+
 func (f *fakeProvider) GetFileAt(_ context.Context, _ provider.PRRef, path, rev string) ([]byte, error) {
 	f.readMu.Lock()
 	defer f.readMu.Unlock()
-	f.reads = append(f.reads, "file "+path+"@"+rev)
-	if f.readErr != nil {
+	if path == repoConfigPath {
+		// The repository config (X-40) has its own record, so the tests of
+		// the project context keep counting the reads of the guidelines and
+		// the tree.
+		f.configReads = append(f.configReads, path+"@"+rev)
+	} else {
+		f.reads = append(f.reads, "file "+path+"@"+rev)
+	}
+	if f.readErr != nil && path != repoConfigPath {
 		return nil, f.readErr
 	}
 	c, ok := f.revs[rev][path]

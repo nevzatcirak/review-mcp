@@ -72,5 +72,11 @@
       "test-model"
     ],
     "fallback_calls": 0
+  },
+  "repo_config": {
+    "path": ".review-mcp.toml",
+    "status": "absent",
+    "applied": [],
+    "ignored": []
   }
 }

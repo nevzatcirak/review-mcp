@@ -27,6 +27,7 @@ type Config struct {
 	Ask             Ask             `toml:"ask" json:"ask"`
 	Improve         Improve         `toml:"improve" json:"improve"`
 	Context         Context         `toml:"context" json:"context"`
+	RepoConfig      RepoConfig      `toml:"repo_config" json:"repo_config"`
 	Log             Log             `toml:"log" json:"log"`
 	Serve           Serve           `toml:"serve" json:"serve"`
 	Secrets         Secrets         `toml:"-" json:"secrets"`
@@ -178,6 +179,11 @@ type Review struct {
 	RequirePerformance    bool   `toml:"require_performance" json:"require_performance"`
 	RequireEffortEstimate bool   `toml:"require_effort_estimate" json:"require_effort_estimate"`
 	ExtraInstructions     string `toml:"extra_instructions" json:"extra_instructions"`
+	// RepoInstructions is review.extra_instructions of the repository config
+	// (X-40), already cut: guidance from the repository's maintainers that
+	// goes into the prompt after ExtraInstructions, fenced as untrusted. Only
+	// a run's merged copy of the configuration has it; it is not a key.
+	RepoInstructions string `toml:"-" json:"-"`
 	// InlineFindings posts each anchorable finding as an inline comment when
 	// a review is published (X-11).
 	InlineFindings bool `toml:"inline_findings" json:"inline_findings"`
@@ -224,6 +230,11 @@ type Review struct {
 	// changed since the last review review-mcp published on it (X-36);
 	// pr_review's incremental argument replaces it for a call.
 	Incremental bool `toml:"incremental" json:"incremental"`
+	// DocsStyle describes the documentation style of the project for the
+	// docs focus (v2.1 spec V-5 §3a): at most MaxDocsStyleBytes, given to the
+	// model fenced, and only in a review with focus docs. "" is no style: the
+	// model then compares with the existing documentation only.
+	DocsStyle string `toml:"docs_style" json:"docs_style"`
 	// IncrementalMaxFiles is the most files the change detection of an
 	// incremental review compares through the provider's API (X-36); a
 	// pull request with more files is reviewed in full, with a note.
@@ -233,6 +244,9 @@ type Review struct {
 // Ask configures the pr_ask tool.
 type Ask struct {
 	ExtraInstructions string `toml:"extra_instructions" json:"extra_instructions"`
+	// RepoInstructions is ask.extra_instructions of the repository config
+	// (X-40); see Review.RepoInstructions.
+	RepoInstructions string `toml:"-" json:"-"`
 }
 
 // Improve configures the pr_improve tool (v2 spec §1.9, X-27).
@@ -279,6 +293,21 @@ type ContextRepo struct {
 	// prompt (RC-8); a part of a review in parts gets its own.
 	MaxTokens int `toml:"max_tokens" json:"max_tokens"`
 }
+
+// RepoConfig configures the repository config file (X-40): a file in the
+// reviewed repository, read at the pull request's base revision, that can
+// tune the review within an allow-list of keys. Both keys are operator-only;
+// a repository file cannot set them.
+type RepoConfig struct {
+	// Enabled turns reading the repository config on.
+	Enabled bool `toml:"enabled" json:"enabled"`
+	// Path is the file's path, relative to the repository root, cleaned and
+	// without "..".
+	Path string `toml:"path" json:"path"`
+}
+
+// DefaultRepoConfigPath is the default of repo_config.path.
+const DefaultRepoConfigPath = ".review-mcp.toml"
 
 // Log configures logging (stderr only).
 type Log struct {
@@ -348,7 +377,8 @@ func Defaults() *Config {
 			MaxHitsPerSymbol:    5,
 			MaxTokens:           2000,
 		}},
-		Log: Log{Level: "info"},
+		RepoConfig: RepoConfig{Enabled: true, Path: DefaultRepoConfigPath},
+		Log:        Log{Level: "info"},
 		Serve: Serve{
 			Listen:             DefaultServeListen,
 			LLMKeySource:       LLMKeySourceHeader,

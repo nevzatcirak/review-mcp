@@ -6,6 +6,7 @@ import (
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/issuectx"
+	"github.com/nevzatcirak/review-mcp/internal/related"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 	"github.com/nevzatcirak/review-mcp/internal/review/render"
 )
@@ -55,6 +56,9 @@ type PRReviewArgs struct {
 	// IssueContext is the issue_context argument (X-42); nil or empty when
 	// not given.
 	IssueContext []issuectx.Input
+	// Related is the related argument (X-41): related pull request URLs as
+	// given; nil or empty when not given.
+	Related []string
 }
 
 // Validate checks the optional arguments before any network call. It returns
@@ -67,6 +71,9 @@ func (a PRReviewArgs) Validate() error {
 		return &ArgumentError{InvalidMaxFindingsMessage}
 	}
 	if _, err := issuectx.Validate(a.IssueContext); err != nil {
+		return &ArgumentError{err.Error()}
+	}
+	if _, err := related.Validate(a.Related, a.Focus != "" || a.Findings != nil); err != nil {
 		return &ArgumentError{err.Error()}
 	}
 	return nil
@@ -119,6 +126,7 @@ func PreparePRReview(deps ReviewDeps, a PRReviewArgs) (*ReviewCall, error) {
 	}
 	// Validate checked the items; this only converts them.
 	args.IssueContext, _ = issuectx.Validate(a.IssueContext)
+	args.Related, _ = related.Validate(a.Related, false)
 	// The modes of X-33 are checked before anything is built: a focused
 	// call with publish=true, or findings without it, is refused before any
 	// provider or model request.

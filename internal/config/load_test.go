@@ -75,6 +75,8 @@ func TestDefaultsAppliedWhenNothingSet(t *testing.T) {
 		{"context.repo.max_hits_per_symbol", cfg.Context.Repo.MaxHitsPerSymbol, 5},
 		{"context.repo.max_tokens", cfg.Context.Repo.MaxTokens, 2000},
 		{"repo_config.enabled", cfg.RepoConfig.Enabled, true},
+		{"related.max_tokens", cfg.Related.MaxTokens, 8000},
+		{"related.contract_globs", cfg.Related.ContractGlobs, []string{}},
 		{"repo_config.path", cfg.RepoConfig.Path, ".review-mcp.toml"},
 		{"log.level", cfg.Log.Level, "info"},
 		// DQ-26: no defaults for these.

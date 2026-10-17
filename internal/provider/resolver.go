@@ -258,7 +258,13 @@ func (r *Resolver) Resolve(rawURL string) (PRRef, Provider, error) {
 	r.mu.Lock()
 	r.built = append(r.built, p)
 	r.mu.Unlock()
-	r.logger.Debug("resolved pull request URL", "kind", string(best.kind), "url", logging.RedactURL(rawURL))
+	// DESIGN-QUESTION (WP-11a DQ-3): this line logged the redacted URL, path
+	// included, for every resolution. The related pull requests of X-41 are
+	// resolved here too, and their URL path must never be logged (spec
+	// V-13a §1.2 item 5), so the line names the provider kind only, for
+	// every URL. The primary's redacted URL is still logged by the tools
+	// ("url" of review: diff prepared). Recommendation: keep.
+	r.logger.Debug("resolved pull request URL", "kind", string(best.kind))
 	return PRRef{Kind: best.kind, Namespace: ns, Repo: repo, Number: num, URL: rawURL}, p, nil
 }
 

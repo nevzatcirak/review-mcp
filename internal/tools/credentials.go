@@ -47,6 +47,10 @@ func (e *RequestError) Error() string {
 // UserMessage is the sentence an entry point may show to a client (X-6).
 func (e *RequestError) UserMessage() string { return e.Error() }
 
+// ErrorClass is the error's class, for packages that cannot import this one
+// (the related pull requests of internal/related).
+func (e *RequestError) ErrorClass() string { return string(e.Class) }
+
 // Is reports whether target is a *RequestError of the same class.
 func (e *RequestError) Is(target error) bool {
 	t, ok := target.(*RequestError)

@@ -39,6 +39,8 @@ type Filter struct {
 	generated []generatedSet
 	globs     []string
 	regexes   []*regexp.Regexp
+	// contractGlobs are related.contract_globs (ContractTier).
+	contractGlobs []string
 }
 
 // New builds a Filter from the validated configuration. It returns an error
@@ -83,6 +85,12 @@ func New(cfg *config.Config) (*Filter, error) {
 			return nil, fmt.Errorf("ignore.regex[%d]: pattern does not compile as RE2", i)
 		}
 		f.regexes = append(f.regexes, re)
+	}
+	for i, g := range cfg.Related.ContractGlobs {
+		if !doublestar.ValidatePattern(g) {
+			return nil, fmt.Errorf("related.contract_globs[%d]: invalid glob pattern", i)
+		}
+		f.contractGlobs = append(f.contractGlobs, g)
 	}
 	return f, nil
 }

@@ -28,6 +28,7 @@ type Config struct {
 	Improve         Improve         `toml:"improve" json:"improve"`
 	Context         Context         `toml:"context" json:"context"`
 	RepoConfig      RepoConfig      `toml:"repo_config" json:"repo_config"`
+	Related         Related         `toml:"related" json:"related"`
 	Log             Log             `toml:"log" json:"log"`
 	Serve           Serve           `toml:"serve" json:"serve"`
 	Secrets         Secrets         `toml:"-" json:"secrets"`
@@ -248,6 +249,19 @@ type Review struct {
 	MaxIssueTokens int `toml:"max_issue_tokens" json:"max_issue_tokens"`
 }
 
+// Related configures related pull requests (X-41, v2.3 spec V-13a): pull
+// requests the caller names as read-only context of a review.
+type Related struct {
+	// MaxTokens is the token budget of all related pull requests of one
+	// prompt together, shared equally by the readable ones; 0 turns them
+	// off (the argument is accepted, nothing is read, one note).
+	MaxTokens int `toml:"max_tokens" json:"max_tokens"`
+	// ContractGlobs make the paths they match API descriptions (the first
+	// contract tier) inside a related pull request's share. The repository
+	// config can add to them.
+	ContractGlobs []string `toml:"contract_globs" json:"contract_globs"`
+}
+
 // Ask configures the pr_ask tool.
 type Ask struct {
 	ExtraInstructions string `toml:"extra_instructions" json:"extra_instructions"`
@@ -387,6 +401,7 @@ func Defaults() *Config {
 			MaxTokens:           2000,
 		}},
 		RepoConfig: RepoConfig{Enabled: true, Path: DefaultRepoConfigPath},
+		Related:    Related{MaxTokens: 8000, ContractGlobs: []string{}},
 		Log:        Log{Level: "info"},
 		Serve: Serve{
 			Listen:             DefaultServeListen,

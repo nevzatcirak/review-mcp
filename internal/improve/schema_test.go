@@ -72,12 +72,17 @@ func jsonName(f reflect.StructField) string {
 	return n
 }
 
+// otherToolsOnly are fields of the shared structs that this tool never
+// sets, so its schema does not declare them: coverage.related (X-41) is
+// pr_review's and pr_ask's, omitted (omitzero) when nil.
+var otherToolsOnly = map[string]bool{"related": true}
+
 // requiredKeys are the json keys of typ without omitempty.
 func requiredKeys(typ reflect.Type) []string {
 	var out []string
 	for i := range typ.NumField() {
 		f := typ.Field(i)
-		if n := jsonName(f); n != "" && n != "-" && !strings.Contains(f.Tag.Get("json"), "omitempty") {
+		if n := jsonName(f); n != "" && n != "-" && !otherToolsOnly[n] && !strings.Contains(f.Tag.Get("json"), "omitempty") {
 			out = append(out, n)
 		}
 	}
@@ -97,7 +102,7 @@ func sortedKeys(m map[string]any) []string {
 func jsonKeys(typ reflect.Type) []string {
 	var out []string
 	for i := range typ.NumField() {
-		if n := jsonName(typ.Field(i)); n != "" && n != "-" {
+		if n := jsonName(typ.Field(i)); n != "" && n != "-" && !otherToolsOnly[n] {
 			out = append(out, n)
 		}
 	}

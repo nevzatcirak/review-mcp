@@ -89,6 +89,7 @@ type PRInfo struct {
 // internal/llmrun, shared with pr_ask; the JSON field names are unchanged.
 type (
 	Coverage     = llmrun.Coverage
+	RelatedItem  = llmrun.RelatedItem
 	OmittedFiles = llmrun.OmittedFiles
 	SkippedFile  = llmrun.SkippedFile
 )

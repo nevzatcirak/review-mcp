@@ -257,6 +257,7 @@ func (pl *Plan) mergeParts(answers []*partAnswer, classes []string) *Review {
 		}
 	}
 	res.Coverage = pl.partsCoverage(failed)
+	res.Coverage.Related = pl.relatedCoverage()
 	res.Notes = append(res.Notes, failNotes...)
 
 	merged := &Review{KeyIssuesToReview: []KeyIssue{}}

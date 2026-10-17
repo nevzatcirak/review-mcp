@@ -72,6 +72,10 @@ type Toggles struct {
 	// It is not a configuration toggle: the pipeline sets it when it places
 	// the issue block, and TogglesFrom leaves it off.
 	Issue bool
+	// Related asks for cross-repository findings (X-41): the prompt carries
+	// the related block. Like Issue, the pipeline sets it when it places the
+	// block.
+	Related bool
 }
 
 // TogglesFrom reads the toggles from the review configuration.
@@ -137,6 +141,18 @@ type KeyIssue struct {
 	// Focus is the focus a client gave a supplied finding of a merged
 	// publish (X-33), cleaned as the focus argument is; empty otherwise.
 	Focus string `json:"focus,omitempty"`
+	// Related is the normalised URL of the related pull request the finding
+	// is located in (X-41, v2.3 spec V-13a §2.2); empty for a finding on the
+	// reviewed pull request. Such a finding is listed in the overview only,
+	// never inline; its Link and Snippet come from that pull request.
+	Related string `json:"related,omitempty"`
+	// RelatedName is "<repo>#<number>" of that pull request, for the
+	// overview; not part of the result.
+	RelatedName string `json:"-"`
+	// relatedTag is the answer's related value of the finding ("R1" to
+	// "R4"), before it is mapped to a related pull request (X-41); "" when
+	// the answer gave none. It is not part of the result.
+	relatedTag string
 	// CarriedFrom is set on a finding an incremental review carried forward
 	// from an earlier overview (spec v2.1 §7.3, WP-7f): the full commit id
 	// of the review that produced it. Such a finding is on a file that did
@@ -244,6 +260,8 @@ var keyIssueExtraSchema = map[string]map[string]any{
 	"inline_status": {"type": "string", "enum": []any{InlinePosted, InlineSkippedDuplicate, InlineUnanchorable, InlineFailed},
 		"description": "what happened to the finding in an inline publish; absent when inline findings were not considered"},
 	"focus": {"type": "string", "description": "the focus the client gave this finding in a publish of merged findings; absent otherwise"},
+	"related": {"type": "string", "description": "for a finding located in a related pull request (X-41): that pull request's URL " +
+		"as given in related; such a finding is listed in the overview only, never inline, and its link points into that pull request; absent otherwise"},
 	"carried_from": {"type": "string", "description": "for a finding of an earlier review carried forward by an incremental review " +
 		"because its file did not change since (listed in the overview only, not reviewed again): the full commit id of that review; absent otherwise"},
 }
@@ -360,6 +378,9 @@ func SchemaText(t Toggles, maxFindings int) string {
 	for _, e := range keyIssueFields {
 		fmt.Fprintf(&b, "\n    %s: %s = Field(description=\"%s\")", e.key, e.pyType, e.description)
 	}
+	if t.Related {
+		b.WriteString(relatedKeyIssueField)
+	}
 	b.WriteString("\n\n")
 	if t.Issue {
 		b.WriteString(complianceClasses)
@@ -409,6 +430,9 @@ func RepairKeys(t Toggles) yamlrepair.Keys {
 	for _, f := range enabledFields(t) {
 		k.Names = append(k.Names, f.leafKeys...)
 		k.Last = f.key
+	}
+	if t.Related {
+		k.Names = append(k.Names, KeyRelated)
 	}
 	return k
 }
@@ -682,6 +706,9 @@ func convertKeyIssue(v any) (KeyIssue, bool) {
 	ki.IssueContent, _ = toText(m[KeyIssueContent])
 	if ki.RelevantFile == "" || ki.IssueContent == "" {
 		return KeyIssue{}, false
+	}
+	if tag, ok := toText(m[KeyRelated]); ok {
+		ki.relatedTag = strings.ToUpper(strings.Join(strings.Fields(tag), ""))
 	}
 	if n, ok := toInt(m[KeyStartLine]); ok && n > 0 {
 		ki.StartLine = n

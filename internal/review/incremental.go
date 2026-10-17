@@ -9,6 +9,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/projctx"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/related"
 	"github.com/nevzatcirak/review-mcp/internal/repoctx"
 	"github.com/nevzatcirak/review-mcp/internal/review/incremental"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
@@ -142,6 +143,7 @@ func (pl *Plan) lastReviewed(ctx context.Context, explicit bool) (sha string, no
 	}
 	pl.held = found.held
 	pl.lastVerdict = found.verdict
+	pl.lastRelated = found.related
 	return found.reviewed, nil
 }
 
@@ -170,6 +172,15 @@ func (pl *Plan) carryForward(d *provider.Diff, r incremental.Result) []KeyIssue 
 	}
 	var out []KeyIssue
 	for _, h := range pl.held {
+		if h.R != "" {
+			// A finding in a related pull request (X-41): carried only when
+			// the run's related set is the recorded one, and with its link
+			// into that pull request.
+			if ki, ok := pl.carryRelated(h); ok {
+				out = append(out, ki)
+			}
+			continue
+		}
 		if !unchanged[h.F] {
 			continue
 		}
@@ -286,6 +297,11 @@ func (pl *Plan) unchangedPlan(ctx context.Context, deps Deps, args Args, window 
 	res.Notes = append(res.Notes, d.Notes...)
 	res.Notes = append(res.Notes, note)
 	res.Notes = append(res.Notes, llmrun.PartialNotes(&res.Coverage, tokens.Budget{})...)
+	// Nothing is reviewed, so no related pull request is shown (X-41): the
+	// ones read are not placed. They equal the last review's record, or the
+	// run would be a full one.
+	pl.markRelated(related.StatusNotPlaced, ReasonNothingToReview)
+	res.Coverage.Related = pl.relatedCoverage()
 	pl.d = d
 	pl.Result, pl.Empty, pl.Unchanged = res, true, true
 	pl.log.Debug("review: nothing changed since the last review", "url", logging.RedactURL(pl.ref.URL),

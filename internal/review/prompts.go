@@ -65,6 +65,18 @@ type PromptInput struct {
 	// files the run does not show (spec V-2 §2.4); empty omits it. It
 	// follows the issue block.
 	EarlierVerdict string
+	// Related is the rendered related block (RelatedHeader and the fenced
+	// related pull requests, X-41); empty omits it. It follows the issue and
+	// precedes the discussion.
+	//
+	// DESIGN-QUESTION (WP-11a DQ-4): the spec orders the related block after
+	// the issue block and before repository context, but those two sit apart
+	// in the user prompt (the discussion, the CI results, the guidelines and
+	// the file tree are between them). The block goes right after the issue
+	// blocks: both are context the caller gave about the change, and the
+	// budget order (issue, related, repository context) is the spec's.
+	// Recommendation: keep.
+	Related string
 	// Discussion is the rendered existing-discussion block (DiscussionHeader
 	// and the fenced threads, see renderDiscussion); empty omits it. It is
 	// third-party text, and part of the scaffolding the diff budget reserves.
@@ -113,29 +125,40 @@ type Prompts struct {
 // here: the engine runs with missingkey=error.
 func (in *PromptInput) vars() map[string]any {
 	return map[string]any{
-		"extra_instructions": prompt.WithOutputLanguage(in.ExtraInstructions, in.Language),
-		"repo_instructions":  in.RepoInstructions,
-		"docs_style":         in.DocsStyle,
-		"schema":             SchemaText(in.Toggles, in.MaxFindings),
-		"example":            ExampleYAML(in.Toggles),
-		"date":               in.Date,
-		"title":              in.Title,
-		"branch":             in.Branch,
-		"description":        in.Description,
-		"issue":              in.Issue,
-		"issue_verdict":      in.EarlierVerdict,
-		"issue_instruction":  issueInstruction(in.Issue),
-		"discussion":         in.Discussion,
-		"ci":                 in.CI,
-		"guidelines":         in.Guidelines,
-		"file_tree":          in.FileTree,
-		"repo_context":       in.RepoContext,
-		"focus":              focusInstruction(in.Focus),
-		"focus_block":        focusBlock(in.Focus),
-		"incremental":        incrementalInstruction(in.Incremental),
-		"part_header":        in.PartHeader,
-		"diff":               in.Diff,
+		"extra_instructions":  prompt.WithOutputLanguage(in.ExtraInstructions, in.Language),
+		"repo_instructions":   in.RepoInstructions,
+		"docs_style":          in.DocsStyle,
+		"schema":              SchemaText(in.Toggles, in.MaxFindings),
+		"example":             ExampleYAML(in.Toggles),
+		"date":                in.Date,
+		"title":               in.Title,
+		"branch":              in.Branch,
+		"description":         in.Description,
+		"issue":               in.Issue,
+		"issue_verdict":       in.EarlierVerdict,
+		"related":             in.Related,
+		"related_instruction": relatedInstruction(in.Related),
+		"issue_instruction":   issueInstruction(in.Issue),
+		"discussion":          in.Discussion,
+		"ci":                  in.CI,
+		"guidelines":          in.Guidelines,
+		"file_tree":           in.FileTree,
+		"repo_context":        in.RepoContext,
+		"focus":               focusInstruction(in.Focus),
+		"focus_block":         focusBlock(in.Focus),
+		"incremental":         incrementalInstruction(in.Incremental),
+		"part_header":         in.PartHeader,
+		"diff":                in.Diff,
 	}
+}
+
+// relatedInstruction is RelatedInstruction with a related block, ""
+// otherwise.
+func relatedInstruction(block string) string {
+	if block != "" {
+		return RelatedInstruction
+	}
+	return ""
 }
 
 // issueInstruction is the system prompt's paragraph of a run with an issue

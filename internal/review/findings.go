@@ -180,8 +180,14 @@ func (pl *Plan) attachSnippets(rev *Review) {
 		files[d.Files[i].Path] = &d.Files[i]
 	}
 	unverified := 0
+	unknownRelated := false
 	for i := range rev.KeyIssuesToReview {
 		ki := &rev.KeyIssuesToReview[i]
+		// A finding located in a related pull request (X-41) takes its
+		// snippet and link from there.
+		if pl.attachRelated(ki, &unknownRelated) {
+			continue
+		}
 		// DESIGN-QUESTION: how is relevant_file matched to a changed file? —
 		// chose an exact match (after trimming) against the paths of the
 		// PR's reviewable files, because any normalization (a "./" or "a/"
@@ -199,6 +205,9 @@ func (pl *Plan) attachSnippets(rev *Review) {
 		if fp != nil {
 			ki.Link = p.FileLineURL(ref, pr, ki.RelevantFile, ki.StartLine)
 		}
+	}
+	if unknownRelated && pl.Result != nil {
+		pl.Result.Notes = append(pl.Result.Notes, NoteRelatedUnknown)
 	}
 	pl.log.Debug("review: snippets", "findings", len(rev.KeyIssuesToReview), "unverified_snippets", unverified)
 }

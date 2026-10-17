@@ -141,6 +141,14 @@ type KeyIssue struct {
 	// Focus is the focus a client gave a supplied finding of a merged
 	// publish (X-33), cleaned as the focus argument is; empty otherwise.
 	Focus string `json:"focus,omitempty"`
+	// Related is the normalised URL of the related pull request the finding
+	// is located in (X-41, v2.3 spec V-13a §2.2); empty for a finding on the
+	// reviewed pull request. Such a finding is listed in the overview only,
+	// never inline; its Link and Snippet come from that pull request.
+	Related string `json:"related,omitempty"`
+	// RelatedName is "<repo>#<number>" of that pull request, for the
+	// overview; not part of the result.
+	RelatedName string `json:"-"`
 	// relatedTag is the answer's related value of the finding ("R1" to
 	// "R4"), before it is mapped to a related pull request (X-41); "" when
 	// the answer gave none. It is not part of the result.
@@ -252,6 +260,8 @@ var keyIssueExtraSchema = map[string]map[string]any{
 	"inline_status": {"type": "string", "enum": []any{InlinePosted, InlineSkippedDuplicate, InlineUnanchorable, InlineFailed},
 		"description": "what happened to the finding in an inline publish; absent when inline findings were not considered"},
 	"focus": {"type": "string", "description": "the focus the client gave this finding in a publish of merged findings; absent otherwise"},
+	"related": {"type": "string", "description": "for a finding located in a related pull request (X-41): that pull request's URL " +
+		"as given in related; such a finding is listed in the overview only, never inline, and its link points into that pull request; absent otherwise"},
 	"carried_from": {"type": "string", "description": "for a finding of an earlier review carried forward by an incremental review " +
 		"because its file did not change since (listed in the overview only, not reviewed again): the full commit id of that review; absent otherwise"},
 }

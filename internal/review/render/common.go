@@ -1,6 +1,7 @@
 package render
 
 import (
+	"html"
 	"net/url"
 	"strconv"
 	"strings"
@@ -45,6 +46,8 @@ const (
 	textListedHere       = "(listed here only)"
 	textCarriedFrom      = "(from the review of "
 	textCarriedSuffix    = ", listed here only)"
+	textInRelated        = "(in related pull request "
+	textRelatedSuffix    = ", listed here only)"
 	textDiscussed        = "Already discussed"
 	textCode             = "Code:"
 	textPublish          = "Publishing"
@@ -151,6 +154,22 @@ func listedHereOnly(i *review.KeyIssue) bool {
 // rendered); "(listed here only)" for one without an inline comment; ""
 // otherwise. The commit is a validated id, never model text.
 func listedSuffix(i *review.KeyIssue, gfm bool) string {
+	if i.Related != "" {
+		// Spec V-13a §2.2 item 4: "(in related pull request [<repo>#<number>](<pr url>), listed here only)".
+		name := i.RelatedName
+		if name == "" {
+			name = relatedName(i.Related)
+		}
+		l := safeLink(i.Related)
+		switch {
+		case l == "":
+			return textInRelated + mdutil.Inline(name) + textRelatedSuffix
+		case gfm:
+			return textInRelated + "<a href='" + html.EscapeString(l) + "'>" + html.EscapeString(name) + "</a>" + textRelatedSuffix
+		default:
+			return textInRelated + "[" + mdutil.Inline(name) + "](" + l + ")" + textRelatedSuffix
+		}
+	}
 	if i.CarriedFrom != "" {
 		sha := shortSHA(i.CarriedFrom)
 		if sha == "" {

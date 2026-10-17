@@ -42,3 +42,23 @@ func TestRelatedInCoverage(t *testing.T) {
 		t.Error("a related section without a read item")
 	}
 }
+
+// TestRelatedFindingSuffix: a finding in a related pull request is marked
+// in every overview as listed only, with a link to that pull request.
+func TestRelatedFindingSuffix(t *testing.T) {
+	res := &review.Result{PR: basePR(), EnabledFields: allKeys, Review: &review.Review{KeyIssuesToReview: []review.KeyIssue{{
+		RelevantFile: "proto/user.proto", IssueHeader: "Field renamed", IssueContent: "c", StartLine: 1, EndLine: 2,
+		Link: "https://gitlab.example/grp/svc/-/blob/abc/proto/user.proto#L1", Related: "https://gitlab.example/grp/svc/-/merge_requests/3",
+		RelatedName: "svc#3"}}}}
+	gfm := Provider(res, capsGitea)
+	if !strings.Contains(gfm, "(in related pull request <a href='https://gitlab.example/grp/svc/-/merge_requests/3'>svc#3</a>, listed here only)") {
+		t.Errorf("GFM overview:\n%s", gfm)
+	}
+	plain := Provider(res, capsBB)
+	if !strings.Contains(plain, "(in related pull request [svc#3](https://gitlab.example/grp/svc/-/merge_requests/3), listed here only)") {
+		t.Errorf("plain overview:\n%s", plain)
+	}
+	if strings.Contains(gfm, "(listed here only)") {
+		t.Error("the plain listed-here suffix next to the related one")
+	}
+}

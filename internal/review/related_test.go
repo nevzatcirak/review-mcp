@@ -504,3 +504,87 @@ func TestRelatedReasonEnum(t *testing.T) {
 		t.Errorf("the reason enum has %d values: %q", len(got), got)
 	}
 }
+
+func (r *relProvider) FileLineURL(_ provider.PRRef, pr *provider.PullRequest, path string, line int) string {
+	return "https://gitlab.example/grp/svc/-/blob/" + pr.HeadSHA + "/" + path + "#L" + fmt.Sprint(line)
+}
+
+func (r *relProvider) Capabilities() provider.Capabilities { return provider.Capabilities{} }
+
+// relatedFindingsAnswer is an answer with a finding in R1 on a shown file,
+// one in R1 on a file that pull request does not change, one naming an
+// unknown R5, and one on the reviewed pull request.
+const relatedFindingsAnswer = "```yaml\nreview:\n  key_issues_to_review:\n" +
+	"    - relevant_file: proto/user.proto\n      issue_header: Field renamed\n      issue_content: The client still reads the old name.\n" +
+	"      start_line: 1\n      end_line: 2\n      related: R1\n" +
+	"    - relevant_file: src/elsewhere.go\n      issue_header: Missing\n      issue_content: Not in that diff.\n" +
+	"      start_line: 3\n      end_line: 3\n      related: r1\n" +
+	"    - relevant_file: src/app.go\n      issue_header: Unknown\n      issue_content: Names R5.\n" +
+	"      start_line: 10\n      end_line: 12\n      related: R5\n" +
+	"    - relevant_file: src/app.go\n      issue_header: Primary\n      issue_content: On the reviewed pull request.\n" +
+	"      start_line: 10\n      end_line: 12\n```\n"
+
+// TestRelatedFindingsAreLinked: a finding in R1 on a file R1 shows gets
+// R1's link and snippet and no inline comment, even with publish; one on a
+// file R1 does not change gets no link; an unknown R5 is a finding on the
+// reviewed pull request, with the note; every result validates. [canary]
+func TestRelatedFindingsAreLinked(t *testing.T) {
+	h, _ := relatedHarness(relatedFindingsAnswer)
+	h.deps.Config.Review.MaxFindings = 5
+	args := relatedArgs()
+	args.Publish = true
+	res := runRelated(t, h, Args{Related: args.Related, Publish: true})
+	f := res.Review.KeyIssuesToReview
+	if len(f) != 4 {
+		t.Fatalf("%d findings", len(f))
+	}
+	inR1 := f[0]
+	if inR1.Related != relatedURL || inR1.RelatedName != "svc#3" ||
+		inR1.Link != "https://gitlab.example/grp/svc/-/blob/1234567890abcdef1234567890abcdef12345678/proto/user.proto#L1" ||
+		!strings.Contains(inR1.Snippet, "PROTO-MARKER") {
+		t.Errorf("the R1 finding %+v", inR1)
+	}
+	if inR1.InlineStatus != "" || f[1].InlineStatus != "" {
+		t.Errorf("a related finding was considered for an inline comment: %q %q", inR1.InlineStatus, f[1].InlineStatus)
+	}
+	for _, items := range h.prov.inline {
+		for _, it := range items {
+			if it.Path == "proto/user.proto" || it.Path == "src/elsewhere.go" {
+				t.Errorf("a related finding was posted inline: %+v", it)
+			}
+		}
+	}
+	if notIn := f[1]; notIn.Related != relatedURL || notIn.Link != "" || notIn.Snippet != "" {
+		t.Errorf("the finding on a file R1 does not change %+v", notIn)
+	}
+	if unknown := f[2]; unknown.Related != "" || !strings.HasPrefix(unknown.Link, "https://your-gitea.example/") {
+		t.Errorf("the R5 finding %+v, want one on the reviewed pull request", unknown)
+	}
+	if !slices.Contains(res.Notes, NoteRelatedUnknown) || strings.Count(strings.Join(res.Notes, "\n"), NoteRelatedUnknown) != 1 {
+		t.Errorf("notes %q", res.Notes)
+	}
+	if f[3].Related != "" || f[3].InlineStatus == "" {
+		t.Errorf("the primary finding %+v", f[3])
+	}
+}
+
+// TestRelatedTagWithoutABlock: a related value in an answer of a run whose
+// block was not placed makes a finding on the reviewed pull request, with
+// the note.
+func TestRelatedTagWithoutABlock(t *testing.T) {
+	h, rel := relatedHarness(relatedFindingsAnswer)
+	for i := range 40 {
+		rel.files = append(rel.files, patchOf(fmt.Sprintf("api/handler%02d.go", i), "HANDLER", 60))
+	}
+	h.deps.Config.Related.MaxTokens = 40000
+	h.deps.Config.LLM.ContextWindow = 9000
+	res := runRelated(t, h, relatedArgs())
+	for _, ki := range res.Review.KeyIssuesToReview {
+		if ki.Related != "" {
+			t.Errorf("finding %+v is related without a placed block", ki)
+		}
+	}
+	if !slices.Contains(res.Notes, NoteRelatedUnknown) {
+		t.Errorf("notes %q", res.Notes)
+	}
+}

@@ -288,10 +288,11 @@ func planInline(res *Result, d *provider.Diff, own []ownFinding, render InlineRe
 	var out []inlineFinding
 	for n := range res.Review.KeyIssuesToReview {
 		ki := &res.Review.KeyIssuesToReview[n]
-		if ki.CarriedFrom != "" {
-			// Carried forward from an earlier review (spec v2.1 §7.3): listed
-			// in the overview only, never inline and never part of the
-			// duplicate check.
+		if ki.CarriedFrom != "" || ki.Related != "" {
+			// Carried forward from an earlier review (spec v2.1 §7.3), or
+			// located in a related pull request (X-41): listed in the
+			// overview only, never inline and never part of the duplicate
+			// check.
 			continue
 		}
 		a, ok := anchor.Resolve(files[ki.RelevantFile], ki.StartLine, ki.EndLine)

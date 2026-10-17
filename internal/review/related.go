@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
@@ -69,8 +70,9 @@ type relatedSection struct {
 	item *related.Item
 	text string
 	// included counts the files shown with hunks, listed those listed by
-	// path only.
+	// path only; shown are the paths shown with hunks.
 	included, listed int
+	shown            map[string]bool
 }
 
 // relatedSections renders the section of each read item within share
@@ -97,10 +99,13 @@ func relatedSectionOf(it *related.Item, n, share int, cfg *config.Config, flt *f
 	if err != nil && !errors.Is(err, tokens.ErrDoesNotFit) {
 		return relatedSection{}, err
 	}
-	sec := relatedSection{item: it}
+	sec := relatedSection{item: it, shown: map[string]bool{}}
 	var listed []string
 	if prep != nil && err == nil {
 		sec.included = len(prep.Included) + len(prep.Clipped) + len(prep.DeletedListed)
+		for _, p := range append(append([]string(nil), prep.Included...), prep.Clipped...) {
+			sec.shown[p] = true
+		}
 		listed = append(append(append(listed, prep.Omitted.Added...), prep.Omitted.Modified...), prep.Omitted.Deleted...)
 	} else {
 		for _, f := range files {
@@ -247,7 +252,8 @@ func (pl *Plan) placeRelated(in PromptInput, fit *fitted, diff string, b tokens.
 				if s.listed > 0 {
 					s.item.Status = related.StatusPartial
 				}
-				pl.relatedShown = append(pl.relatedShown, relatedShown{item: s.item, included: s.included, listed: s.listed})
+				pl.relatedShown = append(pl.relatedShown, relatedShown{item: s.item, included: s.included, listed: s.listed,
+					shown: s.shown})
 			}
 			return cand, f, nil
 		}
@@ -261,6 +267,8 @@ func (pl *Plan) placeRelated(in PromptInput, fit *fitted, diff string, b tokens.
 type relatedShown struct {
 	item             *related.Item
 	included, listed int
+	// shown are the paths shown with hunks.
+	shown map[string]bool
 }
 
 // relatedCoverage is coverage.related of the run: one entry per item of the
@@ -323,4 +331,55 @@ func (pl *Plan) reportRelated(res *Result) {
 			res.Notes = append(res.Notes, n.note)
 		}
 	}
+}
+
+// NoteRelatedUnknown: a finding named a related pull request that was not
+// in the review (spec §2.2 item 3, verbatim); it was kept as a finding on
+// the reviewed pull request. Added once per run.
+const NoteRelatedUnknown = "The model named a related pull request that was not in the review; the finding is treated as one on this pull request."
+
+// relatedOf returns the placed related pull request a finding's related
+// value names ("R<n>": the n-th placed item, R1 to R4); ok is false for any
+// other value, or when no block was placed.
+func (pl *Plan) relatedOf(tag string) (relatedShown, bool) {
+	n, err := strconv.Atoi(strings.TrimPrefix(tag, "R"))
+	if !strings.HasPrefix(tag, "R") || err != nil || n < 1 || n > len(pl.relatedShown) {
+		return relatedShown{}, false
+	}
+	return pl.relatedShown[n-1], true
+}
+
+// attachRelated places a finding in the related pull request its related
+// value names (spec §2.2 item 2): Related and RelatedName are set; the
+// Link comes from that pull request's own provider, only when the file is
+// one of its changed files (shown or listed); the Snippet from its diff,
+// only when the file was shown. It reports whether the finding is related;
+// an unknown value (not a placed item) is dropped, and unknown is set.
+func (pl *Plan) attachRelated(ki *KeyIssue, unknown *bool) bool {
+	tag := ki.relatedTag
+	ki.relatedTag = ""
+	if tag == "" {
+		return false
+	}
+	rs, ok := pl.relatedOf(tag)
+	if !ok {
+		*unknown = true
+		return false
+	}
+	it := rs.item
+	ki.Related = it.URL
+	ki.RelatedName = it.Ref.Repo + "#" + strconv.FormatInt(it.Ref.Number, 10)
+	ki.Snippet, ki.SnippetNote, ki.Link = "", "", ""
+	for i := range it.Diff.Files {
+		fp := &it.Diff.Files[i]
+		if fp.Path != ki.RelevantFile {
+			continue
+		}
+		ki.Link = it.Provider.FileLineURL(it.Ref, it.PR, fp.Path, ki.StartLine)
+		if rs.shown[fp.Path] {
+			ki.Snippet, ki.SnippetNote = snippet(fp, ki.StartLine, ki.EndLine)
+		}
+		break
+	}
+	return true
 }

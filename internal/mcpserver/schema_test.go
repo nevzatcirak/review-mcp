@@ -104,3 +104,134 @@ func TestRepoConfigWithNothingIgnoredValidates(t *testing.T) {
 		})
 	}
 }
+
+// Answers of the edge cases: a review and suggestions that find nothing.
+const (
+	emptyReviewAnswer = "```yaml\nreview:\n  estimated_effort_to_review: 1\n  relevant_tests: No\n" +
+		"  key_issues_to_review: []\n  security_concerns: No\n  performance_concerns: No\n```\n"
+	emptyImproveAnswer = "```yaml\ncode_suggestions: []\n```\n"
+)
+
+// list returns the JSON array at key of m, failing when it is absent or not
+// an array (null included).
+func list(t *testing.T, m map[string]any, key string) []any {
+	t.Helper()
+	v, ok := m[key].([]any)
+	if !ok {
+		t.Fatalf("%s is %#v, want an array", key, m[key])
+	}
+	return v
+}
+
+// TestEdgeCaseResultsValidate: the results of the empty edge cases validate
+// against the tools' output schemas, as the MCP SDK checks them, and carry
+// their lists as [] rather than null: no findings, no notes, no changed
+// files, no suggestions, no issue references or detected keys, compliance
+// null, a repository config that is absent or ignores nothing, a merged
+// publish of no findings, and the same results through job_result.
+func TestEdgeCaseResultsValidate(t *testing.T) {
+	t.Run("pr_review with no findings and no notes", func(t *testing.T) {
+		g := newFakeGiteaHost(t)
+		cs := connect(t, realDeps(reviewEnv(g, newFakeLLMHost(t, 200, emptyReviewAnswer)), nil))
+		out := callValid(t, cs, outputSchemas(t, cs), "pr_review", map[string]any{"pr_url": reviewPRURL(g)})
+		rev, _ := out["review"].(map[string]any)
+		if n := len(list(t, rev, "key_issues_to_review")); n != 0 {
+			t.Errorf("%d findings", n)
+		}
+		if n := len(list(t, out, "notes")); n != 0 {
+			t.Errorf("notes %v, want none for this edge case", out["notes"])
+		}
+		rc, _ := out["repo_config"].(map[string]any)
+		if rc["status"] != "absent" || len(list(t, rc, "applied")) != 0 || len(list(t, rc, "ignored")) != 0 {
+			t.Errorf("repo_config %v", rc)
+		}
+		is, _ := out["issue"].(map[string]any)
+		if is["source"] != "none" || len(list(t, is, "refs")) != 0 || len(list(t, is, "detected_keys")) != 0 ||
+			is["compliance"] != nil {
+			t.Errorf("issue %v", is)
+		}
+		md, _ := out["metadata"].(map[string]any)
+		list(t, md, "models_used")
+	})
+	t.Run("pr_review with no changed files", func(t *testing.T) {
+		g := newFakeGiteaHost(t)
+		g.noFiles = true
+		cs := connect(t, realDeps(reviewEnv(g, newFakeLLMHost(t, 200, emptyReviewAnswer)), nil))
+		out := callValid(t, cs, outputSchemas(t, cs), "pr_review", map[string]any{"pr_url": reviewPRURL(g)})
+		cov, _ := out["coverage"].(map[string]any)
+		for _, k := range []string{"included", "clipped", "deleted_listed", "skipped", "filtered"} {
+			if n := len(list(t, cov, k)); n != 0 {
+				t.Errorf("coverage.%s has %d entries", k, n)
+			}
+		}
+		om, _ := cov["omitted"].(map[string]any)
+		for _, k := range []string{"added", "modified", "deleted"} {
+			list(t, om, k)
+		}
+	})
+	t.Run("pr_review merged publish of no findings", func(t *testing.T) {
+		g := newFakeGiteaHost(t)
+		cs := connect(t, realDeps(reviewEnv(g, newFakeLLMHost(t, 200, emptyReviewAnswer)), nil))
+		out := callValid(t, cs, outputSchemas(t, cs), "pr_review", map[string]any{"pr_url": reviewPRURL(g),
+			"publish": true, "findings": []any{}})
+		rev, _ := out["review"].(map[string]any)
+		list(t, rev, "key_issues_to_review")
+		list(t, out, "enabled_fields")
+	})
+	t.Run("pr_review with a dropped compliance answer", func(t *testing.T) {
+		g := newFakeGiteaHost(t)
+		g.repoConfig = "[review]\nissue_compliance = true\n"
+		cs := connect(t, realDeps(reviewEnv(g, newFakeLLMHost(t, 200, emptyReviewAnswer)), nil))
+		out := callValid(t, cs, outputSchemas(t, cs), "pr_review", map[string]any{"pr_url": reviewPRURL(g),
+			"issue_context": []any{map[string]any{"key": "PROJ-1", "title": "Retry"}}})
+		is, _ := out["issue"].(map[string]any)
+		if is["source"] != "argument" || is["compliance"] != nil || len(list(t, is, "detected_keys")) != 0 {
+			t.Errorf("issue %v", is)
+		}
+	})
+	t.Run("pr_describe with no changed files", func(t *testing.T) {
+		g := newFakeGiteaHost(t)
+		g.noFiles = true
+		cs := connect(t, realDeps(reviewEnv(g, newFakeLLMHost(t, 200, describeAnswer)), nil))
+		out := callValid(t, cs, outputSchemas(t, cs), "pr_describe", map[string]any{"pr_url": reviewPRURL(g)})
+		list(t, out, "files")
+		list(t, out, "notes")
+		is, _ := out["issue"].(map[string]any)
+		list(t, is, "refs")
+		list(t, is, "detected_keys")
+	})
+	t.Run("pr_improve with no suggestions", func(t *testing.T) {
+		g := newFakeGiteaHost(t)
+		cs := connect(t, realDeps(reviewEnv(g, newImproveLLMHost(t, emptyImproveAnswer, improveReflection)), nil))
+		out := callValid(t, cs, outputSchemas(t, cs), "pr_improve", map[string]any{"pr_url": reviewPRURL(g)})
+		if n := len(list(t, out, "suggestions")); n != 0 {
+			t.Errorf("%d suggestions", n)
+		}
+		list(t, out, "notes")
+	})
+	t.Run("pr_improve with no changed files", func(t *testing.T) {
+		g := newFakeGiteaHost(t)
+		g.noFiles = true
+		cs := connect(t, realDeps(reviewEnv(g, newImproveLLMHost(t, emptyImproveAnswer, improveReflection)), nil))
+		out := callValid(t, cs, outputSchemas(t, cs), "pr_improve", map[string]any{"pr_url": reviewPRURL(g)})
+		list(t, out, "suggestions")
+	})
+	t.Run("job_result of an empty review", func(t *testing.T) {
+		g := newFakeGiteaHost(t)
+		g.repoConfig = "[review]\nissue_compliance = false\n"
+		d := withJobs(t, realDeps(reviewEnv(g, newFakeLLMHost(t, 200, emptyReviewAnswer)), nil), nil)
+		cs := connect(t, d)
+		schemas := outputSchemas(t, cs)
+		first := callValid(t, cs, schemas, "pr_review", map[string]any{"pr_url": reviewPRURL(g), "wait_seconds": 0})
+		id, _ := first["job_id"].(string)
+		if id == "" {
+			// The run finished within the wait: the result itself was checked.
+			return
+		}
+		out := callValid(t, cs, schemas, "job_result", map[string]any{"job_id": id, "wait_seconds": 30})
+		rc, _ := out["repo_config"].(map[string]any)
+		if rc["status"] != "applied" || len(list(t, rc, "ignored")) != 0 {
+			t.Errorf("job_result %v", out)
+		}
+	})
+}

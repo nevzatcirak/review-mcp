@@ -84,6 +84,9 @@ type fakeServer struct {
 	// repoConfig is .review-mcp.toml at the base revision (mergesha); ""
 	// serves none.
 	repoConfig string
+	// noFiles makes the pull request change no file: an empty listing and
+	// an empty diff.
+	noFiles bool
 
 	// The fake Gitea's publish state: the PR-level comments (id -> body,
 	// author login), the posted reviews and their comments.
@@ -268,9 +271,11 @@ func newFakeGiteaHost(t *testing.T) *fakeServer {
 			}
 			_, _ = io.WriteString(w, content)
 		case r.Method == "GET" && p == api+"/pulls/7.diff":
-			_, _ = io.WriteString(w, reviewDiff)
+			if !f.noFiles {
+				_, _ = io.WriteString(w, reviewDiff)
+			}
 		case r.Method == "GET" && p == api+"/pulls/7/files":
-			if r.URL.Query().Get("page") != "1" {
+			if r.URL.Query().Get("page") != "1" || f.noFiles {
 				_, _ = io.WriteString(w, "[]")
 				return
 			}

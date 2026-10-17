@@ -41,6 +41,9 @@ Changes from upstream (v2 spec §3.1, X-26):
   the generated title and description and the PRType class are left out,
   PRDescription has only the pr_files field, and the example shows only
   pr_files. The sentences of the variant are ours.
+- intentional deviation (X-42, v2.2 spec V-2 §3.1): with an issue block in
+  the user prompt, one line after the "Keep in mind" line (IssueSentence)
+  says the issue is context only; without one nothing is rendered.
 Kept verbatim: the role statement, the other instruction lines, the
 FileDescription and PRDescription field descriptions, the example and the
 closing instruction. Jinja whitespace control is reproduced with {{- and
@@ -54,6 +57,9 @@ Your task is to provide a full description for the PR content: type, description
 {{- end }}
 - Focus on the new PR code (lines starting with '+' in the 'PR Git Diff' section).
 - Keep in mind that the 'Previous title', 'Previous description' and 'Commit messages' sections may be partial, simplistic, non-informative or out of date. Hence, compare them to the PR diff code, and use them only as a reference.
+{{- if .issue_instruction }}
+- {{ .issue_instruction }}
+{{- end }}
 {{- if not .files_only }}
 - The generated title and description should prioritize the most significant changes.
 {{- end }}

@@ -85,3 +85,16 @@ func TestPreparePRReviewIssueContext(t *testing.T) {
 		t.Errorf("err = %v, built %d", err, built)
 	}
 }
+
+// TestPRDescribeArgsIssueContext: pr_describe checks issue_context as
+// pr_review does, with the same fixed sentences.
+func TestPRDescribeArgsIssueContext(t *testing.T) {
+	ok := PRDescribeArgs{IssueContext: []issuectx.Input{{Key: "PROJ-1", Title: "Retry", AcceptanceCriteria: []any{"a"}}}}
+	if err := ok.Validate(); err != nil {
+		t.Errorf("valid: %v", err)
+	}
+	bad := PRDescribeArgs{IssueContext: []issuectx.Input{{Key: "PROJ-1", Title: "T", AcceptanceCriteria: 5}}}
+	if err := bad.Validate(); err == nil || UserMessage(err) != "issue_context[1].acceptance_criteria must be a string or a list of strings" {
+		t.Errorf("err = %v", err)
+	}
+}

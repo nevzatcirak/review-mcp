@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nevzatcirak/review-mcp/internal/projctx"
+	"github.com/nevzatcirak/review-mcp/internal/prompt"
 )
 
 // The issue verdict line (X-42, v2.2 spec V-2 §2.4): the overview records
@@ -204,5 +204,5 @@ func earlierVerdictBlock(c *Compliance) string {
 			}
 		}
 	}
-	return projctx.Fenced(EarlierVerdictHeader, strings.TrimRight(b.String(), "\n"))
+	return prompt.FencedBlock(EarlierVerdictHeader, strings.TrimRight(b.String(), "\n"))
 }

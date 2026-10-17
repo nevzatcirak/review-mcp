@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nevzatcirak/review-mcp/internal/projctx"
+	"github.com/nevzatcirak/review-mcp/internal/prompt"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 )
 
@@ -72,7 +72,7 @@ func Validate(in []Input) ([]Issue, error) {
 		case utf8.RuneCountInString(title) > MaxTitleRunes:
 			return nil, argErr("issue_context[%d].title must be at most %d characters", n, MaxTitleRunes)
 		}
-		desc := projctx.CleanText(it.Description)
+		desc := prompt.CleanText(it.Description)
 		if utf8.RuneCountInString(desc) > MaxDescriptionRunes {
 			return nil, argErr("issue_context[%d].description must be at most %d characters", n, MaxDescriptionRunes)
 		}
@@ -121,7 +121,7 @@ func criteria(v any) ([]string, bool) {
 	}
 	var out []string
 	for _, s := range raw {
-		if s = strings.TrimSpace(projctx.CleanText(s)); s != "" {
+		if s = strings.TrimSpace(prompt.CleanText(s)); s != "" {
 			out = append(out, s)
 		}
 	}

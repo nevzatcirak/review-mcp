@@ -1,6 +1,7 @@
 package review
 
 import (
+	"github.com/nevzatcirak/review-mcp/internal/issuectx"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 )
@@ -183,12 +184,7 @@ func IssueSchema() map[string]any {
 		return map[string]any{"type": "object", "description": desc, "properties": props,
 			"required": req, "additionalProperties": false}
 	}
-	ref := object("one issue reference of the run", map[string]any{
-		"ref":     str("the issue as named: #12, owner/repo#12, or the key of an issue_context item"),
-		"source":  enum("where it came from: a closing keyword, an issue URL, #N in the title or the branch name of the pull request, or the issue_context argument", "keyword", "url", "title", "branch", "argument"),
-		"outcome": enum("used; unreadable (the provider could not read it, never meaning it does not exist); not_an_issue (the number names a pull request); cut (used, its text cut to review.max_issue_tokens)", "used", "unreadable", "not_an_issue", "cut"),
-		"url":     str("the issue's web page, when known"),
-	}, "ref", "source", "outcome")
+	ref := issuectx.RefSchema()
 	verdict := object("the verdict on one issue", map[string]any{
 		"ref":                str("the issue as the model named it"),
 		"met":                strList("requirements the pull request meets (at most 10, each at most 300 bytes)"),

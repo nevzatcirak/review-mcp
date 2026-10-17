@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nevzatcirak/review-mcp/internal/issuectx"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 )
@@ -132,6 +133,10 @@ type Result struct {
 	// RepoConfig is what the repository config (X-40) contributed; always
 	// set.
 	RepoConfig repocfg.Result `json:"repo_config"`
+	// Issue is the issue the description used as context (X-42): where it
+	// came from, its references and the detected tracker keys. pr_describe
+	// makes no compliance verdict. Run always sets it.
+	Issue *issuectx.Result `json:"issue,omitempty"`
 }
 
 // PublishResult is the outcome of publishing (v2 spec §4): the comment

@@ -22,7 +22,7 @@ import (
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/issueref"
-	"github.com/nevzatcirak/review-mcp/internal/projctx"
+	"github.com/nevzatcirak/review-mcp/internal/prompt"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 )
@@ -204,7 +204,7 @@ func (c *Context) read(ctx context.Context, reader provider.IssueReader, r issue
 	case ok && err == nil:
 		rec.Outcome, rec.URL = OutcomeUsed, is.URL
 		c.Issues = append(c.Issues, Issue{Ref: display, Title: cleanLine(is.Title), State: string(is.State),
-			Labels: cleanLabels(is.Labels), Description: projctx.CleanText(is.Body), URL: is.URL, ref: len(c.Refs)})
+			Labels: cleanLabels(is.Labels), Description: prompt.CleanText(is.Body), URL: is.URL, ref: len(c.Refs)})
 	case ok && errors.Is(err, provider.ErrNotAnIssue):
 		rec.Outcome = OutcomeNotAnIssue
 	default:
@@ -238,18 +238,12 @@ func cleanLine(s string) string {
 		switch {
 		case r == '\n' || r == '\r' || r == '\t':
 			return ' '
-		case unicode.IsControl(r) || isBidi(r):
+		case unicode.IsControl(r) || prompt.IsBidiControl(r):
 			return -1
 		}
 		return r
 	}, strings.ToValidUTF8(s, "�"))
 	return strings.TrimSpace(s)
-}
-
-// isBidi reports a bidirectional formatting character.
-func isBidi(r rune) bool {
-	return r == '\u200e' || r == '\u200f' || r == '\u061c' || (r >= '\u202a' && r <= '\u202e') ||
-		(r >= '\u2066' && r <= '\u2069')
 }
 
 // maxLabelRunes caps a label name in the prompt.
@@ -278,7 +272,7 @@ const (
 )
 
 // Render returns the issue block of the prompt (Header and every issue in
-// one fence; projctx.Fenced), "" without an issue. All issue text together
+// one fence; prompt.FencedBlock, the shared fencing helper), "" without an issue. All issue text together
 // is held to maxTokens (tokens.Estimate with factor): each issue gets an
 // equal share, and an issue over its share has its description cut at a
 // line boundary, then its acceptance criteria item by item, each with a cut
@@ -301,7 +295,7 @@ func (c *Context) Render(maxTokens int, factor float64) string {
 	if anyCut {
 		c.Notes = append(c.Notes, NoteCut)
 	}
-	return projctx.Fenced(Header, strings.Join(sections, "\n\n"))
+	return prompt.FencedBlock(Header, strings.Join(sections, "\n\n"))
 }
 
 // fit renders is within share tokens: the whole issue when it fits, else
@@ -381,4 +375,53 @@ func largest(maxN int, ok func(int) bool) int {
 		}
 	}
 	return lo
+}
+
+// Result is the issue object of a tool that uses the issue as context
+// only (pr_describe, spec §3.1): where it came from, its references and the
+// detected tracker keys. pr_review's adds the compliance verdict.
+type Result struct {
+	Source       string   `json:"source"`
+	Refs         []Ref    `json:"refs"`
+	DetectedKeys []string `json:"detected_keys"`
+}
+
+// Result returns c as a result object; never nil, with empty lists rather
+// than nil.
+func (c *Context) Result() *Result {
+	if c == nil {
+		c = None()
+	}
+	r := &Result{Source: c.Source, Refs: c.Refs, DetectedKeys: c.DetectedKeys}
+	if r.Refs == nil {
+		r.Refs = []Ref{}
+	}
+	if r.DetectedKeys == nil {
+		r.DetectedKeys = []string{}
+	}
+	return r
+}
+
+// RefSchema is the JSON schema of Ref, for the tools' output schemas.
+func RefSchema() map[string]any {
+	str := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
+	return map[string]any{"type": "object", "description": "one issue reference of the run", "properties": map[string]any{
+		"ref": str("the issue as named: #12, owner/repo#12, or the key of an issue_context item"),
+		"source": map[string]any{"type": "string", "enum": []any{"keyword", "url", "title", "branch", RefArgument},
+			"description": "where it came from: a closing keyword, an issue URL, #N in the title or the branch name of the pull request, or the issue_context argument"},
+		"outcome": map[string]any{"type": "string", "enum": []any{OutcomeUsed, OutcomeUnreadable, OutcomeNotAnIssue, OutcomeCut},
+			"description": "used; unreadable (the provider could not read it, never meaning it does not exist); not_an_issue (the number names a pull request); cut (used, its text cut to review.max_issue_tokens)"},
+		"url": str("the issue's web page, when known"),
+	}, "required": []any{"ref", "source", "outcome"}, "additionalProperties": false}
+}
+
+// ResultSchema is the JSON schema of Result; desc describes it for the tool.
+func ResultSchema(desc string) map[string]any {
+	return map[string]any{"type": "object", "description": desc, "properties": map[string]any{
+		"source": map[string]any{"type": "string", "enum": []any{SourceProvider, SourceArgument, SourceNone},
+			"description": "provider: issues the pull request names on its own host; argument: the issue_context argument; none: no issue was used"},
+		"refs": map[string]any{"type": "array", "items": RefSchema(), "description": "the issue references of the run, with their outcomes"},
+		"detected_keys": map[string]any{"type": "array", "items": map[string]any{"type": "string"},
+			"description": "tracker keys such as PROJ-123 that the pull request names when no issue_context was given; review-mcp never reads them: pass the issue as issue_context"},
+	}, "required": []any{"source", "refs", "detected_keys"}, "additionalProperties": false}
 }

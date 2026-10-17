@@ -71,7 +71,7 @@ func TestPRDescribeToolDefinition(t *testing.T) {
 		}
 	}
 	sort.Strings(props)
-	if got := strings.Join(props, ","); got != "output_language,pr_url,publish,publish_mode,update_title,wait_seconds" {
+	if got := strings.Join(props, ","); got != "issue_context,output_language,pr_url,publish,publish_mode,update_title,wait_seconds" {
 		t.Errorf("properties = %s", got)
 	}
 	if strings.Join(in.Required, ",") != "pr_url" {
@@ -89,7 +89,7 @@ func TestPRDescribeToolDefinition(t *testing.T) {
 		outProps = append(outProps, k)
 	}
 	sort.Strings(outProps)
-	if got := strings.Join(outProps, ","); got != "coverage,description,files,metadata,notes,publish,repo_config,title,type" {
+	if got := strings.Join(outProps, ","); got != "coverage,description,files,issue,metadata,notes,publish,repo_config,title,type" {
 		t.Errorf("output schema properties = %s", got)
 	}
 }

@@ -27,6 +27,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/diffpipe"
 	"github.com/nevzatcirak/review-mcp/internal/filter"
+	"github.com/nevzatcirak/review-mcp/internal/issuectx"
 	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
@@ -87,6 +88,10 @@ type Args struct {
 	// UpdateTitle, with PublishModeDescription, replaces the PR title with
 	// the generated one.
 	UpdateTitle bool
+	// IssueContext are the validated issues of the issue_context argument
+	// (issuectx.Validate, X-42): when given, they are the only issues used
+	// and nothing is discovered or read. nil means not given.
+	IssueContext []issuectx.Issue
 }
 
 // errNoWiring reports a caller bug: Run needs a resolver and an LLM.
@@ -156,6 +161,9 @@ type Plan struct {
 	// in is the PR text of the prompts, for the reduce call.
 	in  PromptInput
 	log *slog.Logger
+	// issue is the rendered issue block of the run (X-42); "" without one.
+	// A description in parts gives it to the reduce call only.
+	issue string
 }
 
 // part is one model call with a diff.
@@ -296,6 +304,19 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		log.Debug("describe: commit messages not read", "class", llmrun.FailureClass(commitsErr))
 		commits = nil
 	}
+	// The issue the pull request implements (X-42, spec V-2 §3.1), as
+	// context for the description only: the issue_context argument, else
+	// the issues the pull request names on its own host. It is budgeted
+	// here and placed after the diff, in the room the diff leaves.
+	//
+	// DESIGN-QUESTION (WP-10c DQ-1): the notes are pr_review's, word for
+	// word (spec §3.1 "Notes as in §2.3"), so two of them name the compliance
+	// check ("was not used for the compliance check", "issue compliance was
+	// not checked") although pr_describe makes no verdict. Recommendation:
+	// keep one wording for both tools; a describe-specific wording can
+	// follow if users find it confusing.
+	ic := issuectx.Gather(ctx, cfg, p, ref, pr, args.IssueContext, log)
+	issueBlock := ic.Render(cfg.Review.MaxIssueTokens, factor)
 	progress(deps, StagePreparingDiff)
 
 	in := PromptInput{
@@ -340,6 +361,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			DiffTokens: prep.Tokens, FastPath: prep.FastPath, CommitMessages: len(commits),
 		},
 		RepoConfig: rc.Result,
+		Issue:      ic.Result(),
 	}
 	// The notes of the repository config come first (X-40).
 	res.Notes = append(res.Notes, rc.Notes...)
@@ -351,12 +373,13 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	} else if pr.CommitCount > len(commits) {
 		res.Notes = append(res.Notes, fmt.Sprintf(NoteCommitsPartialFormat, pr.CommitCount, len(commits)))
 	}
+	res.Notes = append(res.Notes, ic.Notes...)
 	log.Debug("describe: diff prepared", "url", logging.RedactURL(ref.URL), "files", len(d.Files),
 		"provider_skipped", len(d.Skipped), "included", len(prep.Included), "clipped", len(prep.Clipped),
 		"fast_path", prep.FastPath, "prompt_tokens", promptTokens, "diff_tokens", prep.Tokens,
 		"commit_messages", len(commits))
 
-	pl := &Plan{Result: res, Budget: budget, flt: flt, ref: ref, p: p, pr: pr, in: in, log: log}
+	pl := &Plan{Result: res, Budget: budget, flt: flt, ref: ref, p: p, pr: pr, in: in, log: log, issue: issueBlock}
 	if prep.Text == "" {
 		pl.Empty = true
 		res.Notes = append(res.Notes, partialNotes(llmrun.PartialNotes(&res.Coverage, budget))...)
@@ -373,6 +396,9 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			return nil, err
 		}
 		if ok {
+			// The parts write the files walkthrough only; the issue goes to
+			// the reduce call, which writes the title and the description
+			// (reducePrompts).
 			return pl, nil
 		}
 	}
@@ -380,6 +406,25 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	fit, err := fitPrompts(in, prep.Text, budget)
 	if err != nil {
 		return nil, err
+	}
+	// The issue block goes into the room the diff leaves: it is placed only
+	// when the prompt then still fits without trimming the diff.
+	if issueBlock != "" {
+		cand := in
+		cand.Issue = issueBlock
+		f, ferr := fitPrompts(cand, prep.Text, budget)
+		switch {
+		case ferr != nil && !errors.Is(ferr, tokens.ErrDoesNotFit):
+			return nil, ferr
+		case ferr == nil && fit.keptLines < 0 && f.keptLines < 0:
+			in, fit = cand, f
+			pl.in = in
+			if res.Metadata.PromptTokens, err = ScaffoldingTokens(in, factor); err != nil {
+				return nil, err
+			}
+		default:
+			res.Notes = append(res.Notes, issuectx.NoteDidNotFit)
+		}
 	}
 	pl.parts = []*part{{prep: prep, fit: fit}}
 	pl.Prompts = fit.prompts
@@ -557,20 +602,42 @@ func (pl *Plan) reduce(ctx context.Context, deps Deps) {
 // reducePrompts renders the reduce prompts with the files' summaries, or,
 // when that request does not fit the context window, with their titles
 // only. ok is false when neither fits.
+//
+// The issue of the run (X-42) goes into the reduce call, which writes the
+// title and the description: with it first, then, when neither variant
+// fits with it, without it and with issuectx.NoteDidNotFit.
+//
+// DESIGN-QUESTION (WP-10c DQ-2): in a description in parts the parts write
+// the files walkthrough only, and the reduce call writes the title and the
+// description that may name the issue. The issue goes to the reduce call
+// only, not to every part (unlike pr_review, which checks no compliance in
+// parts: a description needs the issue as context, not the whole diff).
+// Recommendation: keep.
 func (pl *Plan) reducePrompts() (p Prompts, reaskUser string, withSummaries, ok bool) {
 	b := pl.Budget
 	limit := b.ContextWindow - b.HardReserve()
-	for _, summaries := range []bool{true, false} {
-		r, err := RenderReducePrompts(ReduceInput{PR: pl.in, Walkthrough: Walkthrough(pl.Result.Files, summaries)})
-		if err != nil {
-			return Prompts{}, "", false, false
-		}
-		ru, err := withReaskNote(r.User)
-		if err != nil {
-			return Prompts{}, "", false, false
-		}
-		if tokens.RequestTokens(r.System, ru, b.Factor) <= limit {
-			return r, ru, summaries, true
+	issues := []string{""}
+	if pl.issue != "" {
+		issues = []string{pl.issue, ""}
+	}
+	for _, issue := range issues {
+		in := pl.in
+		in.Issue = issue
+		for _, summaries := range []bool{true, false} {
+			r, err := RenderReducePrompts(ReduceInput{PR: in, Walkthrough: Walkthrough(pl.Result.Files, summaries)})
+			if err != nil {
+				return Prompts{}, "", false, false
+			}
+			ru, err := withReaskNote(r.User)
+			if err != nil {
+				return Prompts{}, "", false, false
+			}
+			if tokens.RequestTokens(r.System, ru, b.Factor) <= limit {
+				if pl.issue != "" && issue == "" {
+					pl.Result.Notes = append(pl.Result.Notes, issuectx.NoteDidNotFit)
+				}
+				return r, ru, summaries, true
+			}
 		}
 	}
 	return Prompts{}, "", false, false

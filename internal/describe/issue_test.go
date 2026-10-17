@@ -8,7 +8,9 @@ import (
 	"testing"
 
 	"github.com/nevzatcirak/review-mcp/internal/issuectx"
+	"github.com/nevzatcirak/review-mcp/internal/prompt"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/tokens"
 )
 
 // issueSentence is the line above the issue block (spec V-2 §2.2 item 1).
@@ -165,5 +167,64 @@ func TestDescribeIssueOff(t *testing.T) {
 	res := h.runIssue(t, Args{})
 	if len(f.reads) != 0 || res.Issue.Source != issuectx.SourceNone || strings.Contains(h.llm.calls[0].user, issueSentence) {
 		t.Errorf("reads %q, issue %+v", f.reads, res.Issue)
+	}
+}
+
+// TestReduceKeepsSummariesBeforeTheIssue: the files' summaries stand in for
+// the diff in the summary call, so they win over the issue. With a window
+// where (summaries, issue) does not fit but both (summaries, no issue) and
+// (titles only, issue) do, the call keeps the summaries, drops the issue
+// and adds the did-not-fit note. [canary]
+func TestReduceKeepsSummariesBeforeTheIssue(t *testing.T) {
+	var files []File
+	for i := range 6 {
+		files = append(files, File{Path: "src/f" + strconv.Itoa(i) + ".go", Title: "Change " + strconv.Itoa(i),
+			Summary: strings.Repeat("A long summary of what this file changes and why. ", 30), Label: "enhancement"})
+	}
+	issue := prompt.FencedBlock(issuectx.Header, "Issue #12: Retry\n"+strings.Repeat("A requirement of the issue.\n", 120))
+	factor := testConfig().LLM.TokenEstimateFactor
+	in := PromptInput{Title: "Retry", Branch: "feature/retry", TargetBranch: "main"}
+	size := func(summaries bool, iss string) int {
+		c := in
+		c.Issue = iss
+		r, err := RenderReducePrompts(ReduceInput{PR: c, Walkthrough: Walkthrough(files, summaries)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ru, err := withReaskNote(r.User)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tokens.RequestTokens(r.System, ru, factor)
+	}
+	withBoth, summariesOnly, titlesAndIssue := size(true, issue), size(true, ""), size(false, issue)
+	limit := max(summariesOnly, titlesAndIssue)
+	if withBoth <= limit {
+		t.Fatalf("fixture: summaries and issue %d must exceed %d", withBoth, limit)
+	}
+	b := tokens.Budget{Factor: factor}
+	b.ContextWindow = limit + b.HardReserve()
+	pl := &Plan{Result: &Result{Files: files, Notes: []string{}}, in: in, issue: issue, Budget: b}
+
+	p, _, withSummaries, ok := pl.reducePrompts()
+	if !ok || !withSummaries {
+		t.Fatalf("ok %v, with summaries %v: the summaries must win over the issue", ok, withSummaries)
+	}
+	if strings.Contains(p.User, issuectx.Header) {
+		t.Error("the issue is in the summary call although it pushed out the summaries")
+	}
+	if !slices.Equal(pl.Result.Notes, []string{issuectx.NoteDidNotFit}) {
+		t.Errorf("notes %q, want the did-not-fit note once", pl.Result.Notes)
+	}
+
+	// Titles only with the issue is used when the summaries cannot fit even
+	// without it.
+	b.ContextWindow = titlesAndIssue + b.HardReserve()
+	if summariesOnly > titlesAndIssue {
+		pl = &Plan{Result: &Result{Files: files, Notes: []string{}}, in: in, issue: issue, Budget: b}
+		p, _, withSummaries, ok = pl.reducePrompts()
+		if !ok || withSummaries || !strings.Contains(p.User, issuectx.Header) || len(pl.Result.Notes) != 0 {
+			t.Errorf("ok %v, with summaries %v, notes %q: want titles only with the issue", ok, withSummaries, pl.Result.Notes)
+		}
 	}
 }

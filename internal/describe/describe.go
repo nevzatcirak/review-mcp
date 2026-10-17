@@ -604,8 +604,11 @@ func (pl *Plan) reduce(ctx context.Context, deps Deps) {
 // only. ok is false when neither fits.
 //
 // The issue of the run (X-42) goes into the reduce call, which writes the
-// title and the description: with it first, then, when neither variant
-// fits with it, without it and with issuectx.NoteDidNotFit.
+// title and the description. The files' summaries stand in for the diff
+// there, so, as the diff does in a single call, they win over the issue
+// (spec V-2 §2.2): the variants are tried in the order (summaries, issue),
+// (summaries, no issue), (titles only, issue), (titles only, no issue), and
+// a variant without the issue adds issuectx.NoteDidNotFit.
 //
 // DESIGN-QUESTION (WP-10c DQ-2): in a description in parts the parts write
 // the files walkthrough only, and the reduce call writes the title and the
@@ -620,10 +623,10 @@ func (pl *Plan) reducePrompts() (p Prompts, reaskUser string, withSummaries, ok 
 	if pl.issue != "" {
 		issues = []string{pl.issue, ""}
 	}
-	for _, issue := range issues {
-		in := pl.in
-		in.Issue = issue
-		for _, summaries := range []bool{true, false} {
+	for _, summaries := range []bool{true, false} {
+		for _, issue := range issues {
+			in := pl.in
+			in.Issue = issue
 			r, err := RenderReducePrompts(ReduceInput{PR: in, Walkthrough: Walkthrough(pl.Result.Files, summaries)})
 			if err != nil {
 				return Prompts{}, "", false, false

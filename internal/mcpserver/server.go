@@ -122,7 +122,8 @@ const serverInstructions = "review-mcp reviews, describes and discusses pull req
 	"performance and tests), in parallel if you can; merge the findings and drop duplicates; then call pr_review " +
 	"once with the merged findings and publish=true, which publishes them without another model call. Never " +
 	"publish from a focused run: pr_review refuses focus together with publish=true. The multi_perspective_review " +
-	"prompt gives these steps for one pull request."
+	"prompt gives these steps for one pull request.\n\n" +
+	issueContextGuidance
 
 // rateLimitGuidance is the sentence the instructions and the
 // multi_perspective_review prompt add after "in parallel if you can" when a

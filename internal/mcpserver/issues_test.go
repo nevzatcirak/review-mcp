@@ -68,3 +68,37 @@ func TestPRReviewIssueContext(t *testing.T) {
 		t.Errorf("error %v %q; model calls %d -> %d", res.IsError, textOf(t, res), before, l.hits.Load())
 	}
 }
+
+// TestIssueContextGuidance: the guidance sentence of V-3 (spec V-2 §3 item
+// 2, verbatim) is in the server instructions and the pr_review and
+// pr_describe descriptions, and not in the multi_perspective_review
+// prompt.
+func TestIssueContextGuidance(t *testing.T) {
+	const want = "If the pull request names an issue in a tracker you can reach (for example through a tracker MCP " +
+		"server), fetch it and pass it as issue_context; review-mcp never contacts trackers itself."
+	cs := connect(t, realDeps(validEnv(), slog.New(slog.DiscardHandler)))
+	if init := cs.InitializeResult(); init == nil || !strings.HasSuffix(init.Instructions, "\n\n"+want) {
+		t.Errorf("instructions do not end with the guidance")
+	}
+	tools, err := cs.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tl := range tools.Tools {
+		has := strings.Count(tl.Description, want)
+		switch tl.Name {
+		case "pr_review", "pr_describe":
+			if has != 1 {
+				t.Errorf("%s: the guidance appears %d times", tl.Name, has)
+			}
+		default:
+			if has != 0 {
+				t.Errorf("%s carries the guidance", tl.Name)
+			}
+		}
+	}
+	p := multiPerspectiveText("https://your-gitea.example/octo/demo/pulls/7", []string{"security"}, false)
+	if strings.Contains(p, "issue_context") {
+		t.Error("the multi_perspective_review prompt mentions issue_context")
+	}
+}

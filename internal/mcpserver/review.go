@@ -17,12 +17,22 @@ import (
 // prReviewDescription is the tool description from spec P4 §6.1.
 //
 // In stdio mode the description gains prReviewJobSentence (X-16).
-const prReviewDescription = "Reviews a pull request with the configured LLM and returns a structured review (key issues, effort, tests, security, performance) with code excerpts. Set publish=true to also post it: one overview comment that later runs edit in place, and the findings on changed lines as inline comments. The PR's title, description, existing comments and diff are sent to the configured LLM endpoint." + focusSentence + partialSentence
+const prReviewDescription = "Reviews a pull request with the configured LLM and returns a structured review (key issues, effort, tests, security, performance) with code excerpts. Set publish=true to also post it: one overview comment that later runs edit in place, and the findings on changed lines as inline comments. The PR's title, description, existing comments and diff are sent to the configured LLM endpoint." + focusSentence + issueContextSentence + partialSentence
 
 // focusSentence points at the focused-review pattern of X-33 (spec 2F
 // §4.3): the same recipe as serverInstructions and the
 // multi_perspective_review prompt.
 const focusSentence = " For a thorough review, run it with focus for several areas without publish, merge the findings, then call it once with findings and publish=true, which publishes them without a model call; a focused run never publishes."
+
+// issueContextSentence is the client guidance of V-3 (X-42, v2.2 spec V-2
+// §3 item 2, verbatim, with its leading space): the pr_review and
+// pr_describe descriptions and the server instructions carry it. The
+// multi_perspective_review prompt does not.
+const issueContextSentence = " " + issueContextGuidance
+
+// issueContextGuidance is issueContextSentence without its leading space.
+const issueContextGuidance = "If the pull request names an issue in a tracker you can reach (for example through a " +
+	"tracker MCP server), fetch it and pass it as issue_context; review-mcp never contacts trackers itself."
 
 // partialSentence ends the pr_review, pr_ask and job_result descriptions
 // (X-18). The job sentence of stdio mode follows it.

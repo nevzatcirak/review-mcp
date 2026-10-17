@@ -28,7 +28,7 @@ const (
 type Result struct {
 	// Path is the configured path of the file.
 	Path string `json:"path"`
-	// Status is applied, absent, invalid, off or unreadable.
+	// Status is applied, nothing_applied, absent, invalid, off or unreadable.
 	Status Status `json:"status"`
 	// Applied are the keys applied, in allow-list order.
 	Applied []string `json:"applied"`
@@ -103,7 +103,7 @@ func Apply(base *config.Config, f *File) *Outcome {
 
 	o.Result.Status = StatusApplied
 	if len(o.Result.Applied) == 0 {
-		o.Result.Status = StatusAbsent
+		o.Result.Status = StatusNothingApplied
 	}
 	o.Result.Ignored = capNames(append(slices.Clone(f.ignored), invalid...))
 
@@ -173,6 +173,9 @@ func applyKey(o *Outcome, key string, v any) keyResult {
 			return keyInvalid
 		}
 		c.Review.GuidelinesPaths = l
+		// The maintainers chose these paths, so a missing file there is worth
+		// the existing note, as for paths the operator set.
+		c.Review.GuidelinesPathsExplicit = true
 	case "review.require_tests":
 		return setBool(v, &c.Review.RequireTests)
 	case "review.require_security":

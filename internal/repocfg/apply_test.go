@@ -66,8 +66,10 @@ func TestApplyFileProblems(t *testing.T) {
 	}{
 		"syntax":     {"[output\nlanguage = \"tr\"", StatusInvalid},
 		"too large":  {"# " + strings.Repeat("x", MaxFileBytes), StatusInvalid},
-		"nothing":    {"", StatusAbsent},
-		"only comms": {"# nothing here\n", StatusAbsent},
+		"nothing":    {"", StatusNothingApplied},
+		"only comms": {"# nothing here\n", StatusNothingApplied},
+		"forbidden":  {"[llm]\nmodel = \"x\"\n", StatusNothingApplied},
+		"invalid":    {"[review]\nmax_findings = 0\n", StatusNothingApplied},
 	} {
 		o := Apply(base, readBase(t, tc.content))
 		if o.Result.Status != tc.status || len(o.Result.Applied) != 0 || !reflect.DeepEqual(o.Config, base) {
@@ -96,6 +98,21 @@ func TestApplyReplaceKeys(t *testing.T) {
 	}
 	if o.Result.Status != StatusApplied || len(o.Result.Applied) != 12 {
 		t.Errorf("result %+v", o.Result)
+	}
+}
+
+// TestApplyGuidelinesPathsAreExplicit: paths chosen by the repository count as
+// chosen by the user, so a missing file gets the note.
+func TestApplyGuidelinesPathsAreExplicit(t *testing.T) {
+	base, o := applyText(t, "[review]\nguidelines_paths = [\"docs/GUIDE.md\"]\n")
+	if !o.Config.Review.GuidelinesPathsExplicit || base.Review.GuidelinesPathsExplicit {
+		t.Errorf("explicit: merged %v, process %v", o.Config.Review.GuidelinesPathsExplicit, base.Review.GuidelinesPathsExplicit)
+	}
+	if _, o := applyText(t, "[review]\nrequire_tests = false\n"); o.Config.Review.GuidelinesPathsExplicit {
+		t.Error("explicit without the key")
+	}
+	if _, o := applyText(t, "[review]\nguidelines_paths = [\"../x\"]\n"); o.Config.Review.GuidelinesPathsExplicit {
+		t.Error("explicit from an invalid value")
 	}
 }
 

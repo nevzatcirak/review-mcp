@@ -33,9 +33,12 @@ type Status string
 const (
 	// StatusApplied: the file was read and at least one setting was applied.
 	StatusApplied Status = "applied"
-	// StatusAbsent: there is no file at the base revision, or it holds
-	// nothing to apply.
+	// StatusAbsent: there is no file at the base revision.
 	StatusAbsent Status = "absent"
+	// StatusNothingApplied: the file was read and is valid, but nothing in it
+	// was applied (it is empty, holds only comments, or only keys that are
+	// ignored or have an invalid value).
+	StatusNothingApplied Status = "nothing_applied"
 	// StatusInvalid: the file is not TOML, or larger than MaxFileBytes.
 	StatusInvalid Status = "invalid"
 	// StatusOff: repo_config.enabled is false; nothing was read.

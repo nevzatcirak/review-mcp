@@ -528,6 +528,22 @@ last call, `metadata.models_used` the models that served calls, in order, and
 every model fails, the error is the first model's, with "All N fallback models
 failed as well."
 
+### Repository config
+
+Each reviewed repository can tune its own reviews with a `.review-mcp.toml`
+at its root, read at the pull request's target branch. Only an allow-list of
+keys is read: no host, model, limit or secret
+([Repository config](repo-config.md)). Two operator keys control it; the
+repository file cannot set them.
+
+| Key | Environment variable | Default | Meaning |
+|---|---|---|---|
+| `repo_config.enabled` | `REVIEW_MCP_REPO_CONFIG_ENABLED` | `true` | Read the repository config. With `false` nothing is read, and every result says `repo_config.status` `off`. |
+| `repo_config.path` | `REVIEW_MCP_REPO_CONFIG_PATH` | `.review-mcp.toml` | The file's path, relative to the repository root, without `..`, `.` or empty segments. |
+| `review.docs_style` | `REVIEW_MCP_REVIEW_DOCS_STYLE` | (empty) | The documentation style of the [`docs` focus](review.md#the-docs-focus), at most 1,000 bytes; a repository config may replace it. |
+
+`server_info` shows all three.
+
 ### `context_window` and `max_output_tokens`
 
 - Set `context_window` to the window your server really runs, not the largest

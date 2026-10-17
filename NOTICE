@@ -17,7 +17,10 @@ review agent, licensed under the MIT License. In particular:
   question-answering, pull-request description and code-suggestion tools,
   including the self-review scoring of code suggestions,
 - the idea of reviewing only the files touched since the last review
-  (incremental review); only the idea follows PR-Agent, no code is copied.
+  (incremental review); only the idea follows PR-Agent, no code is copied,
+- the idea of per-repository settings read from a file in the reviewed
+  repository (PR-Agent's .pr_agent.toml; review-mcp's .review-mcp.toml); only
+  the idea follows PR-Agent, no code is copied.
 
 review-mcp is an independent reimplementation in Go. No PR-Agent source code
 is included in this repository; the logic, prompt design, and schemas were

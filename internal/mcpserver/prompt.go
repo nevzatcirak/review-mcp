@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -23,6 +24,13 @@ const promptMultiPerspective = "multi_perspective_review"
 // the focuses argument is absent or empty and the repository config sets
 // none (defaultFocusesFor).
 const defaultFocuses = "security,architecture,performance,tests"
+
+// promptReadTimeout bounds the repository reads of one prompt call in total
+// (the pull request and the repository config): prompts/get is interactive,
+// so a slow host must not stall the client. On expiry the prompt falls back
+// to the built-in default like any other read failure. A variable so that
+// tests can shorten it.
+var promptReadTimeout = 10 * time.Second
 
 // maxPromptURLBytes caps the pr_url argument of the prompt.
 const maxPromptURLBytes = 2048
@@ -106,8 +114,9 @@ func promptPRURL(raw string) (string, bool) {
 // reads the pull request and reads the file at its base revision, and
 // nothing else. Any failure (a degraded configuration, a URL that matches
 // no provider, a missing credential, a read error) falls back to the
-// default without an error, and with repo_config.enabled false nothing is
-// read. In serve mode the credentials are those of the request.
+// default without an error, and so does a read that is not done within
+// promptReadTimeout; with repo_config.enabled false nothing is read. In
+// serve mode the credentials are those of the request.
 func defaultFocusesFor(ctx context.Context, deps Deps, req *mcp.GetPromptRequest, prURL string) []string {
 	pc := promptContext{}
 	if repo := repoFocuses(ctx, deps, req, prURL); repo != nil {
@@ -148,6 +157,8 @@ func repoFocuses(ctx context.Context, deps Deps, req *mcp.GetPromptRequest, prUR
 	}
 	sc := newScope(deps, cfg, false)
 	defer sc.release()
+	ctx, cancel := context.WithTimeout(ctx, promptReadTimeout)
+	defer cancel()
 	ref, p, err := sc.resolver.Resolve(prURL)
 	if err != nil {
 		return nil

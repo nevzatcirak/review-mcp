@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -23,6 +24,10 @@ const promptPR = "https://your-gitea.example/octo/demo/pulls/7"
 type promptFake struct {
 	provider.Provider
 
+	// block makes GetPullRequest (blockPR) or GetFileAt (blockFile) wait
+	// until the context ends, like a host that does not answer.
+	blockPR, blockFile bool
+
 	mu      sync.Mutex
 	file    string // the content of .review-mcp.toml at the base revision; "" is absent
 	fileErr error
@@ -36,7 +41,11 @@ const (
 	promptHead = "head-sha"
 )
 
-func (f *promptFake) GetPullRequest(context.Context, provider.PRRef) (*provider.PullRequest, error) {
+func (f *promptFake) GetPullRequest(ctx context.Context, _ provider.PRRef) (*provider.PullRequest, error) {
+	if f.blockPR {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.prCalls++
@@ -46,7 +55,11 @@ func (f *promptFake) GetPullRequest(context.Context, provider.PRRef) (*provider.
 	return &provider.PullRequest{Title: "t", HeadSHA: promptHead, BaseSHA: promptBase}, nil
 }
 
-func (f *promptFake) GetFileAt(_ context.Context, _ provider.PRRef, path, rev string) ([]byte, error) {
+func (f *promptFake) GetFileAt(ctx context.Context, _ provider.PRRef, path, rev string) ([]byte, error) {
+	if f.blockFile {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.reads = append(f.reads, path+"@"+rev)
@@ -204,5 +217,33 @@ func TestPromptServeUsesTheRequestCredentials(t *testing.T) {
 	}
 	if f2.prCalls != 0 || len(f2.reads) != 0 {
 		t.Errorf("a request without a token read %d / %q", f2.prCalls, f2.reads)
+	}
+}
+
+// TestPromptReadsAreBounded: a host that does not answer, at the pull request
+// read or at the file read, cannot stall the prompt: the built-in default
+// comes back within promptReadTimeout, which bounds both reads together.
+func TestPromptReadsAreBounded(t *testing.T) {
+	saved := promptReadTimeout
+	t.Cleanup(func() { promptReadTimeout = saved })
+	promptReadTimeout = 300 * time.Millisecond
+	for name, f := range map[string]*promptFake{
+		"pull request": {blockPR: true, file: "[review]\nfocuses = [\"ux\"]\n"},
+		"file":         {blockFile: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cs := promptSession(t, f)
+			start := time.Now()
+			text := promptText(t, cs, map[string]string{"pr_url": promptPR})
+			if d := time.Since(start); d > promptReadTimeout+2*time.Second {
+				t.Errorf("the prompt took %v, deadline %v", d, promptReadTimeout)
+			}
+			if text != wantFocuses(builtinDefault...) {
+				t.Errorf("message = %s", text)
+			}
+		})
+	}
+	if saved != 10*time.Second {
+		t.Errorf("promptReadTimeout = %v, want 10 s", saved)
 	}
 }

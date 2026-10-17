@@ -90,7 +90,8 @@ func TestPRInfoToolDefinition(t *testing.T) {
 			if err := json.Unmarshal(in, &inS); err != nil {
 				t.Fatal(err)
 			}
-			if strings.Join(inS.Required, ",") != "pr_url" || len(inS.Properties) != 1 || inS.Properties["pr_url"]["description"] == "" {
+			if strings.Join(inS.Required, ",") != "pr_url" || len(inS.Properties) != 2 || inS.Properties["pr_url"]["description"] == "" ||
+				inS.Properties["related"]["description"] == "" {
 				t.Errorf("input schema = %s", in)
 			}
 			if tl.OutputSchema == nil {
@@ -105,7 +106,7 @@ func TestPRInfoToolDefinition(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := []string{"approvals", "author", "base_strategy", "ci", "head_sha", "merge_base_sha", "merge_blockers", "mergeable", "notes", "pr",
-				"required_approvals", "review_mcp_activity", "reviewers", "source_branch", "state", "target_branch", "title", "web_url"}
+				"related", "required_approvals", "review_mcp_activity", "reviewers", "source_branch", "state", "target_branch", "title", "web_url"}
 			sort.Strings(outS.Required)
 			if strings.Join(outS.Required, ",") != strings.Join(want, ",") {
 				t.Errorf("required = %v, want %v", outS.Required, want)

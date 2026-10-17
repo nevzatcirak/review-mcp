@@ -171,6 +171,24 @@ type Item struct {
 // request is never read twice nor shown as its own context.
 func Read(ctx context.Context, r Resolver, primaryURL string, primary provider.PRRef, urls []string,
 	include func(string) bool, off bool, log *slog.Logger) []*Item {
+	return read(ctx, r, primaryURL, primary, urls, include, off, true, log)
+}
+
+// ReadPullRequests is Read without the diffs (pr_info, spec V-13a §3.2):
+// each related pull request is resolved and read with GetPullRequest only;
+// related.max_tokens does not apply, since nothing goes into a prompt.
+//
+// DESIGN-QUESTION (WP-11c DQ-2): related.max_tokens 0 turns related pull
+// requests off for the prompts of pr_review and pr_ask. pr_info has no
+// prompt and reads no diff, so it reads them whatever the budget.
+// Recommendation: keep.
+func ReadPullRequests(ctx context.Context, r Resolver, primaryURL string, primary provider.PRRef, urls []string,
+	log *slog.Logger) []*Item {
+	return read(ctx, r, primaryURL, primary, urls, nil, false, false, log)
+}
+
+func read(ctx context.Context, r Resolver, primaryURL string, primary provider.PRRef, urls []string,
+	include func(string) bool, off, withDiff bool, log *slog.Logger) []*Item {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
@@ -212,8 +230,8 @@ func Read(ctx context.Context, r Resolver, primaryURL string, primary provider.P
 		seenRefs = append(seenRefs, ref)
 		it.Ref, it.Provider = ref, p
 		pr, err := p.GetPullRequest(ctx, ref)
-		var d *provider.Diff
-		if err == nil {
+		d := &provider.Diff{}
+		if err == nil && withDiff {
 			d, err = p.GetDiff(ctx, ref, pr, provider.DiffOptions{Include: include})
 		}
 		if err != nil {

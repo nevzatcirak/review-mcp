@@ -11,6 +11,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/mdutil"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/related"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 	"github.com/nevzatcirak/review-mcp/internal/review/render"
 )
@@ -83,6 +84,70 @@ type PRInfoResult struct {
 	ReviewMCPActivity     *ReviewMCPActivity `json:"review_mcp_activity" jsonschema:"comments written by review-mcp as the token's user; null when they could not be read"`
 	CI                    review.CI          `json:"ci" jsonschema:"the CI results the repository reported for the head commit; state unreadable with a note when they could not be read"`
 	Notes                 []string           `json:"notes" jsonschema:"fixed notes about parts that could not be read"`
+	// Related are the related pull requests of the call (X-41), in argument
+	// order; [] without the argument.
+	Related []RelatedInfo `json:"related" jsonschema:"the related pull requests of the call, in argument order; empty without the related argument"`
+}
+
+// RelatedInfo is one related pull request of pr_info (X-41, v2.3 spec
+// V-13a §3.2). Its title, state, draft flag, target branch and head are set
+// only when it was read.
+type RelatedInfo struct {
+	URL string `json:"url" jsonschema:"the URL as normalised (query and fragment dropped)"`
+	// Status is read, failed or ignored.
+	//
+	// DESIGN-QUESTION (WP-11c DQ-1): the spec gives the fields of an item
+	// but no status for one that was read (pr_info shows no diff, so full,
+	// partial and not_placed do not apply). It is read; failed and ignored
+	// keep their reasons. Recommendation: keep.
+	Status       string `json:"status" jsonschema:"read, failed or ignored"`
+	Reason       string `json:"reason,omitempty" jsonschema:"for failed: url_not_configured, url_malformed, credentials_missing, not_found, forbidden, unauthorized or unreadable (never meaning it does not exist); for ignored: duplicate or primary"`
+	Title        string `json:"title,omitempty" jsonschema:"the pull request's title, when read; untrusted third-party text"`
+	State        string `json:"state,omitempty" jsonschema:"open, merged, closed or unknown, when read"`
+	Draft        *bool  `json:"draft,omitempty" jsonschema:"whether it is a draft, when read and reported"`
+	TargetBranch string `json:"target_branch,omitempty" jsonschema:"the branch it merges into, when read"`
+	HeadSHA      string `json:"head_sha,omitempty" jsonschema:"its head commit, when read"`
+}
+
+// Notes of related pull requests in pr_info (spec V-13a §3.2, verbatim):
+// information, not blockers.
+func noteRelatedMerged(url string) string {
+	return "Related pull request " + url + " is merged while this pull request is open."
+}
+
+func noteRelatedClosed(url string) string {
+	return "Related pull request " + url + " is closed without being merged."
+}
+
+// StatusRead is the status of a related pull request pr_info read.
+const StatusRead = "read"
+
+// relatedInfo reads the related pull requests of a pr_info call (their
+// pull requests only, no diff) and returns them with their notes.
+func relatedInfo(ctx context.Context, resolver PRResolver, prURL string, ref provider.PRRef, primaryState string,
+	urls []string, log *slog.Logger) ([]RelatedInfo, []string) {
+	out := []RelatedInfo{}
+	if len(urls) == 0 {
+		return out, nil
+	}
+	primaryURL, _ := related.Normalize(prURL)
+	var notes []string
+	for _, it := range related.ReadPullRequests(ctx, resolver, primaryURL, ref, urls, log) {
+		e := RelatedInfo{URL: it.URL, Status: it.Status, Reason: it.Reason}
+		if it.Read {
+			e.Status = StatusRead
+			e.Title, e.State, e.Draft = validUTF8(it.PR.Title), prInfoState(it.PR), it.PR.Draft
+			e.TargetBranch, e.HeadSHA = validUTF8(it.PR.TargetBranch), it.PR.HeadSHA
+			switch {
+			case e.State == "merged" && primaryState == "open":
+				notes = append(notes, noteRelatedMerged(it.URL))
+			case e.State == "closed":
+				notes = append(notes, noteRelatedClosed(it.URL))
+			}
+		}
+		out = append(out, e)
+	}
+	return out, notes
 }
 
 // PRInfoTool reads the target branch, the human reviewers, the approval
@@ -91,6 +156,15 @@ type PRInfoResult struct {
 // with a provider sentence; any optional part failing leaves its fields null
 // with a fixed note.
 func PRInfoTool(ctx context.Context, resolver PRResolver, prURL string, log *slog.Logger) (PRInfoResult, error) {
+	return PRInfoWithRelated(ctx, resolver, prURL, nil, log)
+}
+
+// PRInfoWithRelated is PRInfoTool with the related argument (X-41): the
+// related pull requests (normalised URLs, related.Validate) are read
+// through the same resolver, their pull requests only, and reported in
+// Related with their notes. A related pull request that cannot be read
+// never fails the call.
+func PRInfoWithRelated(ctx context.Context, resolver PRResolver, prURL string, relatedURLs []string, log *slog.Logger) (PRInfoResult, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
@@ -148,6 +222,11 @@ func PRInfoTool(ctx context.Context, resolver PRResolver, prURL string, log *slo
 	// with a fixed note, in the result itself.
 	ci := review.ReadCI(ctx, p, ref, pr.HeadSHA, log)
 
+	rel, relNotes := relatedInfo(ctx, resolver, prURL, ref, prInfoState(pr), relatedURLs, log)
+	for _, n := range relNotes {
+		addNote(n)
+	}
+
 	// A canceled or expired call must not pass for a complete answer.
 	if err := ctx.Err(); err != nil {
 		return PRInfoResult{}, err
@@ -170,6 +249,7 @@ func PRInfoTool(ctx context.Context, resolver PRResolver, prURL string, log *slo
 		MergeBlockers:     append([]string{}, st.MergeBlockers...),
 		ReviewMCPActivity: activity,
 		CI:                ci,
+		Related:           rel,
 	}
 	switch {
 	case st.RequiredApprovalsNote != "":
@@ -297,6 +377,20 @@ func RenderPRInfoMarkdown(r PRInfoResult) string {
 		b.WriteString(" · " + mdutil.Literal(r.WebURL))
 	}
 	b.WriteString("\n")
+	if len(r.Related) > 0 {
+		b.WriteString("\nRelated pull requests:\n\n")
+		for _, it := range r.Related {
+			line := "- " + mdutil.Literal(it.URL) + ": "
+			switch it.Status {
+			case StatusRead:
+				line += mdutil.Literal(it.State) + ", into " + mdutil.Literal(it.TargetBranch) + ", head " +
+					mdutil.Literal(shortSHA(it.HeadSHA)) + " — " + mdutil.Inline(it.Title)
+			default:
+				line += mdutil.Literal(it.Status + " (" + it.Reason + ")")
+			}
+			b.WriteString(line + "\n")
+		}
+	}
 	for _, n := range r.Notes {
 		b.WriteString("\n> Note: " + n + "\n")
 	}

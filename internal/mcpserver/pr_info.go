@@ -5,6 +5,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/nevzatcirak/review-mcp/internal/related"
 	"github.com/nevzatcirak/review-mcp/internal/tools"
 )
 
@@ -12,7 +13,8 @@ import (
 const prInfoDescription = "Reports which branch a pull request merges into and who has reviewed or approved it: the human reviewers with their states, approval counts, required approvals and merge status where the provider exposes them, and the CI results (statuses and checks) the repository reported for the head commit. review-mcp's own reviews and comments are reported separately and never count as approvals. Read-only; no LLM call."
 
 type prInfoInput struct {
-	PRURL string `json:"pr_url" jsonschema:"URL of the pull request, on a configured Gitea, Bitbucket Server, GitHub or GitLab host"`
+	PRURL   string   `json:"pr_url" jsonschema:"URL of the pull request, on a configured Gitea, Bitbucket Server, GitHub or GitLab host"`
+	Related []string `json:"related,omitempty" jsonschema:"Up to 4 related pull request URLs on configured providers, for example the backend change a UI pull request depends on: their title, state, draft flag, target branch and head are reported, with a note when one is merged while this pull request is open or closed without being merged. No diff is read."`
 }
 
 func registerPRInfo(s *mcp.Server, deps Deps) {
@@ -28,12 +30,18 @@ func registerPRInfo(s *mcp.Server, deps Deps) {
 		},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in prInfoInput) (*mcp.CallToolResult, tools.PRInfoResult, error) {
 		var zero tools.PRInfoResult
+		// The related argument is checked before anything is built or
+		// requested (X-41).
+		relatedURLs, err := related.Validate(in.Related, false)
+		if err != nil {
+			return nil, zero, toolError(err.Error())
+		}
 		sc, err := callScope(ctx, deps, req, false)
 		if err != nil {
 			return nil, zero, err
 		}
 		defer sc.release()
-		res, err := tools.PRInfoTool(ctx, sc.resolver, in.PRURL, logger(deps))
+		res, err := tools.PRInfoWithRelated(ctx, sc.resolver, in.PRURL, relatedURLs, logger(deps))
 		if err != nil {
 			msg := tools.UserMessage(err)
 			logger(deps).Debug("pr_info failed", "error", msg)

@@ -2,11 +2,13 @@ package mcpserver
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -35,6 +37,8 @@ type fakeGitLabHost struct {
 	reqs  []string
 	auths []string
 	files []map[string]any
+	// state is the merge request's state; "" is opened.
+	state string
 }
 
 func newFakeGitLabHost(t *testing.T) *fakeGitLabHost {
@@ -62,7 +66,7 @@ func newFakeGitLabHost(t *testing.T) *fakeGitLabHost {
 		switch r.URL.EscapedPath() {
 		case mr:
 			writeJ(map[string]any{
-				"title": "Rename the field " + relatedTitleMarker, "state": "opened", "target_branch": "main",
+				"title": "Rename the field " + relatedTitleMarker, "state": cmp.Or(f.state, "opened"), "target_branch": "main",
 				"source_branch": "rename", "sha": relatedHead, "web_url": f.srv.URL + "/grp/svc/-/merge_requests/3",
 				"diff_refs": map[string]any{"base_sha": "2222222222222222222222222222222222222222", "head_sha": relatedHead,
 					"start_sha": "2222222222222222222222222222222222222222"},
@@ -280,4 +284,67 @@ func (f *fakeServer) lastBody() string {
 		return ""
 	}
 	return f.bodies[len(f.bodies)-1]
+}
+
+// TestInfoRelated: pr_info reports a related merge request on another
+// provider (title, state, draft flag, target branch, head) without reading
+// its diff, accounts for the others, and validates against its output
+// schema; the information notes say when a related pull request is merged
+// while this one is open, or closed without being merged.
+func TestInfoRelated(t *testing.T) {
+	g, gl := newFakeGiteaHost(t), newFakeGitLabHost(t)
+	unconfigured, hits := countingHost(t)
+	cs := connect(t, realDeps(relatedEnv(g, gl, newFakeLLMHost(t, 200, goodAnswer)), nil))
+	schemas := outputSchemas(t, cs)
+	glURL := gl.srv.URL + "/grp/svc/-/merge_requests/3"
+
+	out := callValid(t, cs, schemas, "pr_info", map[string]any{"pr_url": reviewPRURL(g)})
+	if len(list(t, out, "related")) != 0 {
+		t.Errorf("without the argument: %v", out["related"])
+	}
+
+	out = callValid(t, cs, schemas, "pr_info", map[string]any{"pr_url": reviewPRURL(g),
+		"related": []any{glURL, unconfigured.URL + "/a/b/-/merge_requests/1", reviewPRURL(g)}})
+	rel := list(t, out, "related")
+	first, _ := rel[0].(map[string]any)
+	if len(rel) != 3 || first["status"] != "read" || first["state"] != "open" || first["target_branch"] != "main" ||
+		first["head_sha"] != relatedHead || !strings.Contains(first["title"].(string), relatedTitleMarker) {
+		t.Errorf("related %v", rel)
+	}
+	if second, _ := rel[1].(map[string]any); second["status"] != "failed" || second["reason"] != "url_not_configured" || second["title"] != nil {
+		t.Errorf("second %v", second)
+	}
+	if third, _ := rel[2].(map[string]any); third["status"] != "ignored" || third["reason"] != "primary" {
+		t.Errorf("third %v", third)
+	}
+	for _, r := range gl.requests() {
+		if strings.Contains(r, "/diffs") {
+			t.Error("pr_info read the related diff")
+		}
+	}
+	if hits.Load() != 0 {
+		t.Error("the host that is not configured got a request")
+	}
+
+	res := callTool(t, cs, "pr_info", map[string]any{"pr_url": reviewPRURL(g), "related": []any{"ftp://x"}})
+	if !res.IsError || textOf(t, res) != "related[0] must be an http or https pull request URL without credentials" {
+		t.Errorf("invalid related: %q", textOf(t, res))
+	}
+}
+
+// TestInfoRelatedNotes: the two information notes of pr_info.
+func TestInfoRelatedNotes(t *testing.T) {
+	for state, want := range map[string]string{
+		"merged": " is merged while this pull request is open.",
+		"closed": " is closed without being merged.",
+	} {
+		g, gl := newFakeGiteaHost(t), newFakeGitLabHost(t)
+		gl.state = state
+		cs := connect(t, realDeps(relatedEnv(g, gl, newFakeLLMHost(t, 200, goodAnswer)), nil))
+		glURL := gl.srv.URL + "/grp/svc/-/merge_requests/3"
+		out := callValid(t, cs, outputSchemas(t, cs), "pr_info", map[string]any{"pr_url": reviewPRURL(g), "related": []any{glURL}})
+		if notes := list(t, out, "notes"); !slices.Contains(notes, any("Related pull request "+glURL+want)) {
+			t.Errorf("%s: notes %v", state, notes)
+		}
+	}
 }

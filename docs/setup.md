@@ -101,6 +101,7 @@ Use a read-only token to start. `pr_review`, `pr_ask`, `pr_describe` and
 | `pr_improve` with `publish=true` | the same as `pr_review` with `publish=true`: comment write for the overview (Gitea `write:issue`) and the write scope for the inline comments (Gitea `write:repository`); see [Suggesting code changes](improve.md#permissions) |
 | `pr_describe` with `publish=true` and `publish_mode=description` (also `update_title`) | the read scopes plus write access to the pull request itself, not only to its comments (see the `PATCH` and `PUT` rows below) |
 | CI results (`pr_info`, and `pr_review` unless `review.ci_status` is false), the guidelines file and the file tree (`pr_review`, `pr_improve`) | Gitea and Bitbucket Server: nothing beyond the read scopes (the commit status or build status, and file contents at the target branch). GitHub: **Commit statuses: Read** and **Checks: Read** for the CI results (fine-grained token; a classic token's `repo` scope covers them), **Contents: Read** for the guidelines and the tree. See the endpoint tables below |
+| Issue compliance (`pr_review`, `pr_describe`): reading the issues a pull request names | Gitea: `read:issue`. GitHub: **Issues: Read** (fine-grained token; a classic token's `repo` / `public_repo` covers it). GitLab: the scopes below (`api` reads issues). Bitbucket Server has no issue tracker. Without the permission, the issue is noted as unreadable and the review goes on; `issue_context` needs no permission. See [Issue compliance](review.md#issue-compliance) |
 | GitHub, any use | see [GitHub](#github) below: a fine-grained token with Pull requests, Contents and Metadata, or a classic `repo` / `public_repo` token |
 | GitLab, any use | see [GitLab](#gitlab) below: a legacy personal access token with the scopes `api` and `read_repository`, or a project or group access token with the role Reporter (read) or Developer (publish) and the same scopes |
 
@@ -544,6 +545,21 @@ repository file cannot set them.
 
 `server_info` shows all three.
 
+### Issue compliance
+
+`pr_review` checks the pull request against the issue it implements, and
+`pr_describe` uses that issue as context
+([Issue compliance](review.md#issue-compliance)). The issue comes from the
+`issue_context` argument or from the provider's own issue tracker (GitHub,
+Gitea, GitLab), found through explicit references in the pull request.
+review-mcp never contacts another tracker and holds no tracker credential.
+`server_info` shows `reads issues` for each provider that can read them.
+
+| Key | Environment variable | Default | Meaning |
+|---|---|---|---|
+| `review.issue_compliance` | `REVIEW_MCP_REVIEW_ISSUE_COMPLIANCE` | `true` | Use the issue when there is one. With `false` nothing is read or shown and `issue_context` is ignored. A repository config may set it. |
+| `review.max_issue_tokens` | `REVIEW_MCP_REVIEW_MAX_ISSUE_TOKENS` | `2000` | Token budget of all issue text of one prompt together, 0 to 20,000; 0 turns issue compliance off. |
+
 ### `context_window` and `max_output_tokens`
 
 - Set `context_window` to the window your server really runs, not the largest
@@ -701,6 +717,32 @@ file.
 
 For Bitbucket Server, use `REVIEW_MCP_BITBUCKET_SERVER_BASE_URL` and
 `REVIEW_MCP_BITBUCKET_SERVER_TOKEN` instead of (or next to) the Gitea pair.
+
+### With a tracker MCP server
+
+review-mcp reads issues from the git provider only. For an issue in another
+tracker, register that tracker's MCP server in the same client next to
+review-mcp. The client then fetches the issue the pull request names and
+passes it to `pr_review` or `pr_describe` as `issue_context` (key, title,
+description, acceptance criteria and URL). The server instructions and the
+tool descriptions already tell the client to do so: "If the pull request
+names an issue in a tracker you can reach (for example through a tracker MCP
+server), fetch it and pass it as issue_context; review-mcp never contacts
+trackers itself." When the pull request names a key such as `PROJ-123` and no
+`issue_context` was given, the review's notes and `issue.detected_keys` say
+which issue to pass.
+
+review-mcp holds no tracker credential: the tracker's MCP server
+authenticates on its own, in the client. For Jira, for example:
+
+- **Jira Cloud:** Atlassian's remote MCP server.
+- **Jira Data Center / Server:** a community server such as
+  `sooperset/mcp-atlassian`, set to read-only mode.
+
+Follow the server's own setup guide, give it read access only, and check that
+your client may call both servers in one session. The check is the same
+whichever tracker the issue came from; see
+[Issue compliance](review.md#issue-compliance).
 
 ## 5. First run
 

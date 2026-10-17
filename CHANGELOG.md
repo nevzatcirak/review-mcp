@@ -5,6 +5,56 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Planned as `2.2.0-rc.2` (the npm dist-tag `next`). `pr_review` checks a pull
+request against the issue it implements, and `pr_describe` uses that issue as
+context (X-42, V-2/V-3). Nothing in the tools or in the configuration of
+2.2.0-rc.1 is removed or renamed. Guide: [Issue
+compliance](docs/review.md#issue-compliance).
+
+### Added
+
+- Issue compliance in `pr_review`: for each issue the requirements met, not
+  met and needing human verification, and one verdict (`compliant`,
+  `partly_compliant`, `not_compliant`, `unclear`). The issue comes from:
+  - a new `issue_context` argument (1 to 3 items: `key` and `title` required,
+    `description`, `acceptance_criteria` and `url` optional), which the client
+    fills from any tracker, for example through a tracker MCP server; it wins;
+  - otherwise the issues the pull request names on its own host (GitHub,
+    Gitea, GitLab), found through closing keywords in the description, issue
+    URLs on the same host, `#N` in the title and the branch name, at most 3.
+  Issue text is fenced as requirements, budgeted by `review.max_issue_tokens`,
+  placed only in the room the diff leaves, and never logged.
+- The result's `issue` object (`source`, `refs` with outcomes,
+  `detected_keys`, `compliance`) and an "Issue compliance" row in every
+  overview, with one block per issue.
+- Tracker keys such as `PROJ-123` are detected and reported, with a note to
+  pass the issue as `issue_context`; review-mcp never reads them. Prefixes of
+  standards and encodings (UTF, SHA, ISO, RFC, CVE, ...) are not keys.
+- Incremental reviews keep the verdict: the overview records it in a hidden
+  line, the next incremental run gives it to the model for the files it does
+  not show, and the new verdict replaces it.
+- `pr_describe` accepts `issue_context` and reads the named issues the same
+  way, as context only (no verdict); its result gains `issue`.
+- The `pr_review` and `pr_describe` descriptions and the server instructions
+  tell the client to fetch an issue from a tracker it can reach and pass it as
+  `issue_context`; the setup guide has a section on using a tracker MCP
+  server.
+- Operator keys `review.issue_compliance` (default `true`, also allowed in the
+  repository config) and `review.max_issue_tokens` (default 2000, 0 to 20000,
+  0 turns the check off), shown by `server_info`.
+- `server_info` shows per provider whether it reads issues
+  (`providers[].issues`).
+
+### Changed
+
+- New notes: an issue that could not be read, issue text cut to the budget,
+  an issue that did not fit next to the diff, a review in parts that checks
+  no compliance, a detected tracker key, a dropped compliance answer, and an
+  incremental verdict judged on the changed files only (see
+  [Troubleshooting](docs/troubleshooting.md#issue-compliance-notes)).
+
 ## [2.2.0-rc.1]
 
 First 2.2 release candidate (the npm dist-tag `next`; `latest` stays on 2.1.0).

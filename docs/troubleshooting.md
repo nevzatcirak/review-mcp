@@ -441,6 +441,47 @@ Configuration problems of the operator keys (at startup, in `server_info`):
 | repo_config.path: must not be empty / longer than 512 bytes / must be relative to the repository root (no leading "/") / must use "/" as the separator / must not contain control characters / must not contain an empty segment ("//" or a trailing "/") / must not contain "." or ".." segments | Use a clean path relative to the repository root, such as `.review-mcp.toml` or `config/review.toml`. |
 | review.docs_style: N bytes, at most 1000 are allowed | Shorten `review.docs_style` to 1,000 bytes. |
 
+## Issue compliance notes
+
+`pr_review` and `pr_describe` add these fixed sentences when they use the
+issue a pull request implements ([Issue compliance](review.md#issue-compliance)).
+`issue.refs` in the result gives each reference's outcome. Issue text is never
+quoted in a note or a log.
+
+| Sentence | Cause and what to do |
+|---|---|
+| Issue #12 could not be read and was not used for the compliance check. | The provider answered 404 or 403, or another error, for an issue the pull request names (outcome `unreadable`). A 404 does not mean the issue does not exist: the token may not read it (another repository, a private or confidential issue). Give the token read access to issues, or pass the issue as `issue_context`. The reference is shown as `#12` or `owner/repo#12`. |
+| The issue text was longer than review.max_issue_tokens allows and was cut. | The issues together were over the budget; each was cut at a line boundary to its share (outcome `cut`). Raise `review.max_issue_tokens` (at most 20,000), or pass a shorter `issue_context`. |
+| The issue did not fit the context window next to the diff; issue compliance was not checked. | The issue block would have made the diff shorter, so it was left out and no verdict was asked for. Lower `review.max_issue_tokens`, raise `llm.context_window`, or narrow the diff (`ignore.glob`). In `pr_describe` the issue was then not used as context. |
+| The pull request was reviewed in parts; issue compliance needs the whole change at once and was not checked. | The diff did not fit one model call, so the review was made in parts, and no part sees the whole change. The issue was read but not shown to any part. Review a smaller change, raise `llm.context_window`, or narrow the diff. |
+| The pull request names PROJ-123; pass it as issue_context to check the change against it. | The title, branch name or description names a tracker key, and no `issue_context` was given. review-mcp never reads trackers: fetch the issue in your client (for example through a tracker MCP server) and pass it as `issue_context`. One note per key, at most 5. Names of standards and encodings (UTF-8, SHA-256, ISO-8601, RFC, CVE, ...) are not keys. |
+| The model's issue compliance answer was missing or could not be read; issue compliance was not reported. | The model left out `issue_compliance`, or gave it in another shape (an unknown verdict, a list that is not a list). The review itself is kept. Try again, or use a model that follows the schema more closely. |
+| Issue compliance was judged on the changed files only. | An incremental review with an issue, when the last overview recorded no verdict (it had no issue, or it is older than 2.2.0-rc.2). The next incremental run has a recorded verdict. Run a full review (`incremental: false`) for a verdict on the whole pull request. |
+
+A number that names a pull request (`#7` in the title of a follow-up, for
+example) is skipped without a note (outcome `not_an_issue`). Bitbucket Server
+has no issue tracker: nothing is read and no note is added.
+
+`issue_context` errors (refused before anything is sent; `N` is the item,
+counting from 1):
+
+| Sentence | What to do |
+|---|---|
+| issue_context must hold 1 to 3 issues | Pass at most 3 items. |
+| issue_context[N].key is required / issue_context[N].title is required | Every item needs a key and a title. |
+| issue_context[N].key must be at most 64 characters | Shorten the key. |
+| issue_context[N].title must be at most 300 characters | Shorten the title. |
+| issue_context[N].description must be at most 20000 characters | Shorten the description. |
+| issue_context[N].acceptance_criteria must be a string or a list of strings | Pass the criteria as one string or a list of strings. |
+| issue_context[N].acceptance_criteria must be at most 10000 characters in total | Shorten the criteria. |
+| issue_context[N].url must be an http or https URL | Pass the issue's web page, without credentials, or leave `url` out. |
+
+Configuration problem (at startup, in `server_info`):
+
+| Problem | What to do |
+|---|---|
+| review.max_issue_tokens: N is out of range (0-20000; 0 turns issue compliance off) | Use 0 to 20,000. |
+
 ## Focus and findings refusals
 
 `pr_review` checks the combination of `focus`, `findings`, `publish`,
@@ -1255,6 +1296,8 @@ table also covers the configuration, argument and serve-mode errors.
 | question is too long: at most 8000 characters are allowed | argument | Shorten the question. |
 | publish_mode must be comment or description | argument | Fix `publish_mode` (`pr_describe`). |
 | update_title needs publish=true and publish_mode=description | argument | Set both, or drop `update_title` (`pr_describe`). |
+| issue_context must hold 1 to 3 issues; issue_context[N].key is required; issue_context[N].title is required; issue_context[N].key must be at most 64 characters; issue_context[N].title must be at most 300 characters; issue_context[N].description must be at most 20000 characters; issue_context[N].acceptance_criteria must be a string or a list of strings; issue_context[N].acceptance_criteria must be at most 10000 characters in total; issue_context[N].url must be an http or https URL | argument | Fix `issue_context` (`pr_review`, `pr_describe`); `N` is the item, counting from 1. See [Issue compliance notes](#issue-compliance-notes). |
+| the number names a pull request, not an issue | `not_an_issue` | Never returned to a client: an issue reference that names a pull request is skipped (`issue.refs` outcome `not_an_issue`). |
 | no Gitea token in this request: set the X-Review-MCP-Gitea-Token header in your MCP client configuration | `credentials_missing` | Serve mode: the request carried no Gitea token. Add the header to the client configuration ([Serve mode](serve.md#client-configuration-for-a-remote-server)); `server_info` shows which headers arrived. No outbound request was made. |
 | no Bitbucket Server token in this request: set the X-Review-MCP-Bitbucket-Server-Token header in your MCP client configuration | `credentials_missing` | Same, for a Bitbucket Server URL. |
 | no GitHub token in this request: set the X-Review-MCP-GitHub-Token header in your MCP client configuration | `credentials_missing` | Same, for a GitHub URL. |

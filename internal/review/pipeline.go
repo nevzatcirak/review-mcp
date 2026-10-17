@@ -274,6 +274,8 @@ type Plan struct {
 	// relatedShown are the related items placed in the prompt, with their
 	// counts of files shown and listed.
 	relatedShown []relatedShown
+	// relatedReported: reportRelated added the related notes.
+	relatedReported bool
 	// lastVerdict is the issue compliance verdict the last review's
 	// overview recorded (X-42, spec V-2 §2.4); nil for none.
 	lastVerdict *Compliance
@@ -327,6 +329,10 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 			// A run that never reached the issue (nothing changed since the
 			// last review) reports none.
 			res.Issue = issueResultOf(nil)
+		}
+		if res.Coverage.Related == nil {
+			// coverage.related is always present in pr_review.
+			res.Coverage.Related = []llmrun.RelatedItem{}
 		}
 	}
 	return res, err
@@ -792,6 +798,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	if prep.Text == "" {
 		pl.Empty = true
 		pl.markRelated(related.StatusNotPlaced, ReasonNothingToReview)
+		pl.reportRelated(res)
 		if rcs != nil {
 			// No model call, so no context: skipped, not off ("off" means
 			// only "disabled").
@@ -815,6 +822,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		if ok {
 			noteIssueInParts(res, issueBlock)
 			pl.markRelated(related.StatusNotPlaced, related.ReasonReviewInParts)
+			pl.reportRelated(res)
 			return pl, nil
 		}
 		if reserve > 0 {
@@ -834,6 +842,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 				} else if ok {
 					noteIssueInParts(res, issueBlock)
 					pl.markRelated(related.StatusNotPlaced, related.ReasonReviewInParts)
+					pl.reportRelated(res)
 					return pl, nil
 				}
 			}
@@ -934,6 +943,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 	res.Notes = append(res.Notes, llmrun.PartialNotes(&res.Coverage, budget)...)
 	res.Notes = append(res.Notes, repoNotes...)
+	pl.reportRelated(res)
 	return pl, nil
 }
 

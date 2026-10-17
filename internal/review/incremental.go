@@ -9,6 +9,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/projctx"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/related"
 	"github.com/nevzatcirak/review-mcp/internal/repoctx"
 	"github.com/nevzatcirak/review-mcp/internal/review/incremental"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
@@ -286,6 +287,12 @@ func (pl *Plan) unchangedPlan(ctx context.Context, deps Deps, args Args, window 
 	res.Notes = append(res.Notes, d.Notes...)
 	res.Notes = append(res.Notes, note)
 	res.Notes = append(res.Notes, llmrun.PartialNotes(&res.Coverage, tokens.Budget{})...)
+	// Nothing is reviewed, so no related pull request is read (X-41); each
+	// is accounted for as not placed.
+	for _, u := range args.Related {
+		pl.related = append(pl.related, &related.Item{URL: u, Status: related.StatusNotPlaced, Reason: ReasonNothingToReview})
+	}
+	res.Coverage.Related = pl.relatedCoverage()
 	pl.d = d
 	pl.Result, pl.Empty, pl.Unchanged = res, true, true
 	pl.log.Debug("review: nothing changed since the last review", "url", logging.RedactURL(pl.ref.URL),

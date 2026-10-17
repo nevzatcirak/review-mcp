@@ -208,9 +208,41 @@ func ReviewedLine(res *review.Result) string {
 func writeCoverage(b *strings.Builder, heading string, res *review.Result) {
 	if inc := res.Incremental; inc != nil && inc.Mode != review.IncrementalFull {
 		llmrender.IncrementalCoverage(b, heading, &res.Coverage, inc.Mode == review.IncrementalChanged)
+	} else {
+		llmrender.Coverage(b, heading, &res.Coverage)
+	}
+	writeRelated(b, res.Coverage.Related)
+}
+
+// writeRelated lists the related pull requests that were read (X-41, v2.3
+// spec V-13a §1.5 item 3), as links with their status; the others are in
+// the notes. Nothing without one.
+func writeRelated(b *strings.Builder, items []review.RelatedItem) {
+	var lines []string
+	for _, it := range items {
+		if it.HeadSHA == "" {
+			continue
+		}
+		text := literal(relatedName(it.URL))
+		if l := safeLink(it.URL); l != "" {
+			text = "[" + mdutil.Inline(relatedName(it.URL)) + "](" + l + ")"
+		}
+		status := it.Status
+		if it.Reason != "" {
+			status += " (" + it.Reason + ")"
+		}
+		lines = append(lines, "- "+text+": "+literal(status))
+	}
+	if len(lines) == 0 {
 		return
 	}
-	llmrender.Coverage(b, heading, &res.Coverage)
+	b.WriteString("\nRelated pull requests (context only; nothing was published to them):\n\n" + strings.Join(lines, "\n") + "\n")
+}
+
+// relatedName is a related URL without its scheme.
+func relatedName(u string) string {
+	u = strings.TrimPrefix(strings.TrimPrefix(u, "https://"), "http://")
+	return strings.TrimSuffix(u, "/")
 }
 
 // shortSHA is the first 7 characters of a hexadecimal commit id, or ""

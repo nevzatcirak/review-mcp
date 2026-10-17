@@ -285,3 +285,28 @@ func reasonOf(err error) string {
 	}
 	return ReasonUnreadable
 }
+
+// Notes (spec §1.5 item 2, verbatim); url is the normalised URL, which the
+// user gave.
+
+// NoteFailed: the item could not be read.
+func NoteFailed(url, reason string) string {
+	return "Related pull request " + url + " could not be read (" + reason + ") and was not used."
+}
+
+// NoteIgnored: the item is the primary pull request or a duplicate.
+func NoteIgnored(url string) string {
+	return "Related pull request " + url + " was ignored: it is the reviewed pull request itself or a duplicate."
+}
+
+// NotePartial: n of the item's files were listed by path only.
+func NotePartial(url string, n int) string {
+	return fmt.Sprintf("Related pull request %s did not fit in full; %d of its files are listed by path only.", url, n)
+}
+
+// Notes of the whole set.
+const (
+	NoteNotPlaced = "The related pull requests did not fit the context window next to the diff and were not used."
+	NoteInParts   = "The pull request was reviewed in parts; related pull requests need the whole change at once and were not used."
+	NoteOff       = "related.max_tokens is 0, so related pull requests were not read."
+)

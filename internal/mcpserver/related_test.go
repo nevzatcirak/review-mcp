@@ -115,12 +115,19 @@ func TestRelatedAcrossProviders(t *testing.T) {
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	cs := connect(t, realDeps(relatedEnv(g, gl, l), logger))
-	res := callTool(t, cs, "pr_review", map[string]any{"pr_url": reviewPRURL(g), "related": []any{
-		gl.srv.URL + "/grp/svc/-/merge_requests/3",
-		unconfigured.URL + "/grp/svc/-/merge_requests/9",
-	}})
-	if res.IsError {
-		t.Fatalf("tool error: %s", textOf(t, res))
+	glURL, noURL := gl.srv.URL+"/grp/svc/-/merge_requests/3", unconfigured.URL+"/grp/svc/-/merge_requests/9"
+	out := callValid(t, cs, outputSchemas(t, cs), "pr_review", map[string]any{"pr_url": reviewPRURL(g),
+		"related": []any{glURL + "?tab=changes", noURL}})
+	cov, _ := out["coverage"].(map[string]any)
+	rel := list(t, cov, "related")
+	if len(rel) != 2 {
+		t.Fatalf("coverage.related %v", rel)
+	}
+	first, _ := rel[0].(map[string]any)
+	second, _ := rel[1].(map[string]any)
+	if first["url"] != glURL || first["status"] != "full" || first["head_sha"] != relatedHead ||
+		first["files_included"] != float64(2) || second["status"] != "failed" || second["reason"] != "url_not_configured" {
+		t.Errorf("coverage.related %v", rel)
 	}
 	if n := hits.Load(); n != 0 {
 		t.Errorf("the host that is not configured got %d requests", n)

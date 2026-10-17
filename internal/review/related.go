@@ -9,6 +9,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/diffpipe"
 	"github.com/nevzatcirak/review-mcp/internal/filter"
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/patch"
 	"github.com/nevzatcirak/review-mcp/internal/prompt"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
@@ -239,4 +240,66 @@ func (pl *Plan) placeRelated(in PromptInput, fit *fitted, diff string, b tokens.
 type relatedShown struct {
 	item             *related.Item
 	included, listed int
+}
+
+// relatedCoverage is coverage.related of the run: one entry per item of the
+// argument, in order; [] without the argument.
+func (pl *Plan) relatedCoverage() []llmrun.RelatedItem {
+	shown := map[*related.Item]relatedShown{}
+	for _, s := range pl.relatedShown {
+		shown[s.item] = s
+	}
+	out := make([]llmrun.RelatedItem, 0, len(pl.related))
+	for _, it := range pl.related {
+		e := llmrun.RelatedItem{URL: it.URL, Status: it.Status, Reason: it.Reason}
+		if it.Read && it.PR != nil {
+			e.HeadSHA = it.PR.HeadSHA
+		}
+		if s, ok := shown[it]; ok {
+			e.FilesIncluded, e.FilesListed = s.included, s.listed
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// reportRelated sets coverage.related and adds the related notes (spec
+// §1.5), once per run: per item, failed, ignored and partial; for the set,
+// did not fit, reviewed in parts and turned off. A related pull request of
+// a run with nothing to review gets no note: the note of the empty review
+// says why.
+func (pl *Plan) reportRelated(res *Result) {
+	res.Coverage.Related = pl.relatedCoverage()
+	if pl.relatedReported {
+		return
+	}
+	pl.relatedReported = true
+	var notPlaced, inParts, off bool
+	for _, it := range pl.related {
+		switch {
+		case it.Status == related.StatusFailed:
+			res.Notes = append(res.Notes, related.NoteFailed(it.URL, it.Reason))
+		case it.Status == related.StatusIgnored:
+			res.Notes = append(res.Notes, related.NoteIgnored(it.URL))
+		case it.Reason == related.ReasonDidNotFit:
+			notPlaced = true
+		case it.Reason == related.ReasonReviewInParts:
+			inParts = true
+		case it.Reason == related.ReasonOff:
+			off = true
+		}
+	}
+	for _, s := range pl.relatedShown {
+		if s.listed > 0 {
+			res.Notes = append(res.Notes, related.NotePartial(s.item.URL, s.listed))
+		}
+	}
+	for _, n := range []struct {
+		on   bool
+		note string
+	}{{notPlaced, related.NoteNotPlaced}, {inParts, related.NoteInParts}, {off, related.NoteOff}} {
+		if n.on {
+			res.Notes = append(res.Notes, n.note)
+		}
+	}
 }

@@ -70,10 +70,11 @@ func ResultSchema() map[string]any {
 				"references": integer("uses of those symbols shown to the model"),
 				"files":      integer("distinct files among the shown uses (summed over the parts of a review in parts)"),
 			}, "status", "reason", "symbols", "references", "files"),
+			"related":    RelatedCoverageSchema(),
 			"guidelines": llmrun.GuidelinesSchema("the project guidelines read at the target branch (X-32); present except in a publish of supplied findings, which sends no prompt"),
 			"file_tree":  llmrun.FileTreeSchema("the listing of the directories the change touches, at the target branch (X-32); present except in a publish of supplied findings, which sends no prompt"),
 		}, "included", "clipped", "deleted_listed", "omitted", "skipped", "filtered", "partial", "reviewed_files",
-			"total_files", "not_reviewed_files", "model_calls", "failed_parts", "repo_context"),
+			"total_files", "not_reviewed_files", "model_calls", "failed_parts", "repo_context", "related"),
 		"notes": strList("notes about truncation, dropped findings, clipped or trimmed files and the re-ask"),
 		"metadata": object("run metadata", map[string]any{
 			"model":              str("llm.model"),
@@ -202,4 +203,25 @@ func IssueSchema() map[string]any {
 		"detected_keys": strList("tracker keys such as PROJ-123 that the pull request names when no issue_context was given; review-mcp never reads them: pass the issue as issue_context"),
 		"compliance":    compliance,
 	}, "source", "refs", "detected_keys", "compliance")
+}
+
+// RelatedCoverageSchema is the JSON schema of coverage.related (X-41, v2.3
+// spec V-13a §1.5), for the output schemas of the tools with the related
+// argument.
+func RelatedCoverageSchema() map[string]any {
+	str := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
+	integer := func(desc string) map[string]any { return map[string]any{"type": "integer", "description": desc} }
+	item := map[string]any{"type": "object", "description": "one item of the related argument", "properties": map[string]any{
+		"url": str("the URL as normalised (query and fragment dropped)"),
+		"status": map[string]any{"type": "string", "enum": []any{"full", "partial", "not_placed", "failed", "ignored"},
+			"description": "full: every changed file shown; partial: some files listed by path only; not_placed: read but not in the prompt; failed: not read; ignored: the reviewed pull request itself or a duplicate"},
+		"reason": str("for failed: url_not_configured, url_malformed, credentials_missing, not_found, forbidden, unauthorized " +
+			"or unreadable (never meaning it does not exist); for ignored: duplicate or primary; for not_placed: did_not_fit, " +
+			"review_in_parts, nothing_to_review or off; absent otherwise"),
+		"head_sha":       str("the related pull request's head revision when it was read"),
+		"files_included": integer("files shown with hunks"),
+		"files_listed":   integer("files listed by path only"),
+	}, "required": []any{"url", "status", "files_included", "files_listed"}, "additionalProperties": false}
+	return map[string]any{"type": "array", "items": item,
+		"description": "related pull requests (X-41): one entry per item of the related argument, in order; [] without it. They are context only: nothing is published to them"}
 }

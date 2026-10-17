@@ -434,3 +434,73 @@ func TestRelatedUnchangedIncremental(t *testing.T) {
 		t.Errorf("mode %s, related %+v", res.Incremental.Mode, res.Coverage.Related)
 	}
 }
+
+// TestRelatedInstruction: with a placed related block the system prompt
+// carries the cross-repository instruction and the optional related field
+// of KeyIssuesComponentLink; without one (no argument, or a block that was
+// not placed) the system prompt is byte for byte the one without the
+// feature, and the example answer never changes.
+func TestRelatedInstruction(t *testing.T) {
+	h, _ := relatedHarness(goodAnswer)
+	plain := prepareWith(t, h, Args{}).Prompts.System
+
+	h, _ = relatedHarness(goodAnswer)
+	sys := prepareWith(t, h, relatedArgs()).Prompts.System
+	if !strings.Contains(sys, RelatedInstruction) || !strings.Contains(sys, relatedKeyIssueField) {
+		t.Fatal("the system prompt lacks the cross-repository instruction or the related field")
+	}
+	if got := strings.Replace(strings.Replace(sys, "\n\n"+RelatedInstruction, "", 1), relatedKeyIssueField, "", 1); got != plain {
+		t.Error("the related block changes the system prompt beyond the instruction and the field")
+	}
+
+	h, rel := relatedHarness(goodAnswer)
+	for i := range 40 {
+		rel.files = append(rel.files, patchOf(fmt.Sprintf("api/handler%02d.go", i), "HANDLER", 60))
+	}
+	h.deps.Config.Related.MaxTokens = 40000
+	h.deps.Config.LLM.ContextWindow = 9000
+	h2, _ := relatedHarness(goodAnswer)
+	h2.deps.Config.LLM.ContextWindow = 9000
+	notPlaced, without := prepareWith(t, h, relatedArgs()).Prompts.System, prepareWith(t, h2, Args{}).Prompts.System
+	if notPlaced != without {
+		t.Error("a related block that was not placed changed the system prompt")
+	}
+}
+
+// TestRelatedTagIsRead: a finding's related value is read (trimmed, upper
+// case) for the mapping to a related pull request.
+func TestRelatedTagIsRead(t *testing.T) {
+	data := map[string]any{RootKey: map[string]any{KeyKeyIssues: []any{
+		map[string]any{KeyRelevantFile: "a.go", KeyIssueContent: "x", KeyRelated: " r2 "},
+		map[string]any{KeyRelevantFile: "b.go", KeyIssueContent: "y"},
+	}}}
+	rev, _, err := Convert(data, Toggles{Related: true}, 5)
+	if err != nil || len(rev.KeyIssuesToReview) != 2 || rev.KeyIssuesToReview[0].relatedTag != "R2" ||
+		rev.KeyIssuesToReview[1].relatedTag != "" {
+		t.Errorf("findings %+v, %v", rev, err)
+	}
+	if !slices.Contains(RepairKeys(Toggles{Related: true}).Names, KeyRelated) || slices.Contains(RepairKeys(Toggles{}).Names, KeyRelated) {
+		t.Error("the repair keys do not follow the related toggle")
+	}
+}
+
+// TestRelatedReasonEnum pins the reasons coverage.related declares,
+// including the four not_placed reasons: the spec's did_not_fit and
+// review_in_parts, and off and nothing_to_review (WP-11a DQ-1 and DQ-5).
+func TestRelatedReasonEnum(t *testing.T) {
+	cov := ResultSchema()["properties"].(map[string]any)["coverage"].(map[string]any)
+	item := cov["properties"].(map[string]any)["related"].(map[string]any)["items"].(map[string]any)
+	var got []string
+	for _, v := range item["properties"].(map[string]any)["reason"].(map[string]any)["enum"].([]any) {
+		got = append(got, v.(string))
+	}
+	for _, want := range []string{"did_not_fit", "review_in_parts", "off", "nothing_to_review", "url_not_configured",
+		"url_malformed", "credentials_missing", "not_found", "forbidden", "unauthorized", "unreadable", "duplicate", "primary"} {
+		if !slices.Contains(got, want) {
+			t.Errorf("the reason enum lacks %q: %q", want, got)
+		}
+	}
+	if len(got) != 13 {
+		t.Errorf("the reason enum has %d values: %q", len(got), got)
+	}
+}

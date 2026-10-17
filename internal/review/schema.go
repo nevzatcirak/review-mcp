@@ -3,6 +3,7 @@ package review
 import (
 	"github.com/nevzatcirak/review-mcp/internal/issuectx"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
+	"github.com/nevzatcirak/review-mcp/internal/related"
 	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 )
 
@@ -215,13 +216,27 @@ func RelatedCoverageSchema() map[string]any {
 		"url": str("the URL as normalised (query and fragment dropped)"),
 		"status": map[string]any{"type": "string", "enum": []any{"full", "partial", "not_placed", "failed", "ignored"},
 			"description": "full: every changed file shown; partial: some files listed by path only; not_placed: read but not in the prompt; failed: not read; ignored: the reviewed pull request itself or a duplicate"},
-		"reason": str("for failed: url_not_configured, url_malformed, credentials_missing, not_found, forbidden, unauthorized " +
-			"or unreadable (never meaning it does not exist); for ignored: duplicate or primary; for not_placed: did_not_fit, " +
-			"review_in_parts, nothing_to_review or off; absent otherwise"),
+		"reason": map[string]any{"type": "string", "enum": relatedReasons(),
+			"description": "for failed: url_not_configured, url_malformed, credentials_missing, not_found, forbidden, " +
+				"unauthorized or unreadable (never meaning it does not exist); for ignored: duplicate or primary; for " +
+				"not_placed: did_not_fit, review_in_parts, off (related.max_tokens is 0) or nothing_to_review (the primary " +
+				"pull request has nothing to review); absent otherwise"},
 		"head_sha":       str("the related pull request's head revision when it was read"),
 		"files_included": integer("files shown with hunks"),
 		"files_listed":   integer("files listed by path only"),
 	}, "required": []any{"url", "status", "files_included", "files_listed"}, "additionalProperties": false}
 	return map[string]any{"type": "array", "items": item,
 		"description": "related pull requests (X-41): one entry per item of the related argument, in order; [] without it. They are context only: nothing is published to them"}
+}
+
+// relatedReasons are the values of coverage.related[].reason.
+func relatedReasons() []any {
+	var out []any
+	for _, r := range []string{related.ReasonURLNotConfigured, related.ReasonURLMalformed, related.ReasonCredentialsMissing,
+		related.ReasonNotFound, related.ReasonForbidden, related.ReasonUnauthorized, related.ReasonUnreadable,
+		related.ReasonDuplicate, related.ReasonPrimary, related.ReasonDidNotFit, related.ReasonReviewInParts,
+		related.ReasonOff, ReasonNothingToReview} {
+		out = append(out, r)
+	}
+	return out
 }

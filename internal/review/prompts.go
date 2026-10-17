@@ -125,30 +125,40 @@ type Prompts struct {
 // here: the engine runs with missingkey=error.
 func (in *PromptInput) vars() map[string]any {
 	return map[string]any{
-		"extra_instructions": prompt.WithOutputLanguage(in.ExtraInstructions, in.Language),
-		"repo_instructions":  in.RepoInstructions,
-		"docs_style":         in.DocsStyle,
-		"schema":             SchemaText(in.Toggles, in.MaxFindings),
-		"example":            ExampleYAML(in.Toggles),
-		"date":               in.Date,
-		"title":              in.Title,
-		"branch":             in.Branch,
-		"description":        in.Description,
-		"issue":              in.Issue,
-		"issue_verdict":      in.EarlierVerdict,
-		"related":            in.Related,
-		"issue_instruction":  issueInstruction(in.Issue),
-		"discussion":         in.Discussion,
-		"ci":                 in.CI,
-		"guidelines":         in.Guidelines,
-		"file_tree":          in.FileTree,
-		"repo_context":       in.RepoContext,
-		"focus":              focusInstruction(in.Focus),
-		"focus_block":        focusBlock(in.Focus),
-		"incremental":        incrementalInstruction(in.Incremental),
-		"part_header":        in.PartHeader,
-		"diff":               in.Diff,
+		"extra_instructions":  prompt.WithOutputLanguage(in.ExtraInstructions, in.Language),
+		"repo_instructions":   in.RepoInstructions,
+		"docs_style":          in.DocsStyle,
+		"schema":              SchemaText(in.Toggles, in.MaxFindings),
+		"example":             ExampleYAML(in.Toggles),
+		"date":                in.Date,
+		"title":               in.Title,
+		"branch":              in.Branch,
+		"description":         in.Description,
+		"issue":               in.Issue,
+		"issue_verdict":       in.EarlierVerdict,
+		"related":             in.Related,
+		"related_instruction": relatedInstruction(in.Related),
+		"issue_instruction":   issueInstruction(in.Issue),
+		"discussion":          in.Discussion,
+		"ci":                  in.CI,
+		"guidelines":          in.Guidelines,
+		"file_tree":           in.FileTree,
+		"repo_context":        in.RepoContext,
+		"focus":               focusInstruction(in.Focus),
+		"focus_block":         focusBlock(in.Focus),
+		"incremental":         incrementalInstruction(in.Incremental),
+		"part_header":         in.PartHeader,
+		"diff":                in.Diff,
 	}
+}
+
+// relatedInstruction is RelatedInstruction with a related block, ""
+// otherwise.
+func relatedInstruction(block string) string {
+	if block != "" {
+		return RelatedInstruction
+	}
+	return ""
 }
 
 // issueInstruction is the system prompt's paragraph of a run with an issue

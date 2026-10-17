@@ -1,0 +1,17 @@
+# Acceptance fixture for repository config (X-40). Throwaway branch.
+[output]
+language = "tr"
+
+[ignore]
+glob = ["**/*_gen.go"]
+
+[review]
+max_findings = 2
+focuses = ["security", "tests"]
+docs_style = "Formal, impersonal tone; passive voice for procedures; present tense; second person never used."
+
+[llm]
+model = "x"
+
+[serve]
+listen = ":1"

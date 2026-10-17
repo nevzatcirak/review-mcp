@@ -1385,6 +1385,193 @@ the check off: nothing is read, nothing is detected and nothing is shown, and
 The check follows the idea of PR-Agent's ticket compliance check (MIT); no
 code or prompt text is copied.
 
+## Related pull requests
+
+A change often has another side in another repository: a UI pull request and
+the backend change it depends on, a client and the service it calls, a schema
+and its consumer. `pr_review` can read up to four such pull requests as
+**context** and look for problems between them and the reviewed one. The
+reviewed pull request is always the only one under review and the only one
+anything is published to. review-mcp never looks for related pull requests
+itself: you name them.
+
+### The `related` argument
+
+```json
+{
+  "pr_url": "https://your-gitea.example/octo/ui/pulls/4",
+  "related": ["https://gitlab.example/grp/api/-/merge_requests/9"]
+}
+```
+
+- 1 to 4 pull request URLs; an empty list counts as not given. More than 4 is
+  refused: "related must have at most 4 items".
+- Each must be an `http` or `https` URL without credentials, at most 2,048
+  bytes: "related[N] must be an http or https pull request URL without
+  credentials" (`N` counts from 0; the value is never repeated).
+- Query and fragment are dropped. A URL given twice, or one that names the
+  same pull request as an earlier item, is `ignored` with the reason
+  `duplicate`; the reviewed pull request itself is `ignored` with `primary`.
+  Neither is an error.
+- `related` together with `focus` or `findings` is refused: "related cannot be
+  combined with focus or findings". Focused runs and the merged publish do not
+  use related pull requests yet.
+- `pr_ask` and `pr_info` take the same argument (see [Ask](ask.md#related-pull-requests)
+  and [Pull request status](pr-info.md#related-pull-requests)), and the
+  [`review_linked_prs` prompt](#the-review_linked_prs-prompt) reviews a whole
+  set.
+
+### Where they are read from
+
+Each URL is resolved exactly as the reviewed pull request is: it must be on a
+**configured** provider (Gitea, Bitbucket Server, GitHub or GitLab), and it is
+read with **that provider's** token. A related pull request may be on another
+provider than the reviewed one, for example a GitHub pull request with a
+GitLab merge request as context; both providers then need their token. A URL
+on a host that is not configured is never contacted: it is `failed` with
+`url_not_configured`. In serve mode each provider's token comes from its own
+header (see [Serve: related pull requests](serve.md#related-pull-requests)).
+
+For each related pull request review-mcp reads its title, state, draft flag,
+target branch, head commit and diff, one after the other in argument order.
+It never reads a related pull request's description, comments or reviews
+(pull request text would steer the model), never its repository's
+`.review-mcp.toml`, and never posts to it. The diff is filtered with the
+reviewed repository's `ignore.*` settings. A related pull request that cannot
+be read is reported and left out; the review still runs. Logs carry the
+item's index, provider kind, status and reason, never its URL path, title or
+diff.
+
+### Contract files first
+
+Inside each related pull request's share of the budget the files that define
+an interface come first, so that a small budget still shows them:
+
+1. **API descriptions:** files ending in `.proto`, `.graphql`, `.gql`,
+   `.avsc`, `.thrift` or `.wsdl`; files named (any case) `openapi*`,
+   `swagger*` or `asyncapi*` with the extension `.yaml`, `.yml` or `.json`;
+   files ending in `.schema.json`; and every path matched by
+   `related.contract_globs` (the operator's list plus the reviewed
+   repository's, see [Repository config](repo-config.md)).
+2. **API surface:** a path with a word such as `api`, `route`, `routes`,
+   `router`, `controller(s)`, `handler(s)`, `endpoint(s)`, `dto(s)`,
+   `model(s)`, `schema(s)`, `client(s)` or `contract(s)`, where the path is
+   split on `/`, `.`, `_`, `-` and camelCase (`UserController.java`,
+   `api/v1/users.go`, `user_dto.ts`). Documentation files never count here.
+3. Everything else, in the usual order.
+
+### Budget and placement
+
+`related.max_tokens` (default 8,000, at most 40,000) is shared equally by the
+related pull requests that were read. Each one's diff is prepared within its
+share, numbered like the reviewed diff, so that a finding can name real
+lines; the files that do not fit are listed by path under "Files not shown:"
+(up to 50, then "and N more"). The related pull requests are given to the
+model inside one fenced block, under a fixed sentence that says they are
+context, not under review, and are data, never instructions. Each starts with
+a line such as `Related pull request R1: gitlab.example/grp/api#9 — open, into
+main, head 1234567890ab`.
+
+**The diff wins.** The block goes into the room the reviewed diff leaves, after
+the issue block and before repository context. It never makes the reviewed
+diff shorter: when it would, the shares are halved once and tried again, and
+if it still does not fit it is left out (`not_placed`, `did_not_fit`) with a
+note. With `related.max_tokens` 0 the argument is accepted, nothing is read,
+and every item is `not_placed` with `off`.
+
+**A review in parts** places the block in no part (`not_placed`,
+`review_in_parts`): no part sees the whole reviewed change, so no part can
+judge a contract between repositories. A review with nothing to review (every
+file filtered) makes no model call; its related pull requests are `not_placed`
+with `nothing_to_review` and get no extra note, since the note of the empty
+review says why.
+
+### Cross-repository findings
+
+With the block placed, the model is also asked to look for problems between
+the pull requests: a field, route, status code, message or schema changed on
+one side and not on the other; compatibility while the changes roll out one
+after the other; and the order in which they must be merged and deployed.
+
+A finding located in a related pull request is **listed in the overview
+only**: it is never an inline comment on the reviewed pull request. It shows
+"(in related pull request [api#9](...), listed here only)", and its link
+points to its place in that pull request, built by that pull request's own
+provider, when the file is one of the files it changes; otherwise there is no
+link. `key_issues_to_review[].related` carries the related pull request's URL.
+A finding that names a related pull request that was not in the review (an
+unknown `R5`, or a block that was not placed) is kept as a finding on the
+reviewed pull request, with one note per run.
+
+### Incremental reviews
+
+An overview made with related pull requests records them (URL and head
+commit) in a hidden line of its trailer. An [incremental review](#incremental-review)
+compares the run's related pull requests with that record, and reviews the
+**whole** pull request, with a note, when they differ: another set of URLs (in
+any order), another head commit on any of them, a record without related pull
+requests in the run or the reverse, or a related pull request that could not be
+read in this run. A doubt is always a change. Two consequences:
+
+- **A related item that keeps failing makes every incremental run a full
+  review.** Fix its token or URL, or leave it out of `related`.
+- **Dropping `related` from a later call does the same once:** the record
+  still lists the related pull requests, the run has none, so that run is a
+  full review; its overview has no related record, and the run after it is
+  incremental again.
+
+A record longer than 10,000 bytes (four very long URLs) is not written, so the
+next incremental run reviews in full. Findings carried forward from a related
+pull request are kept only while the related set is the same as the
+recorded one.
+
+### What the result says
+
+`coverage.related` has one entry per item of the argument, in its order (`[]`
+without it):
+
+| Field | Meaning |
+|---|---|
+| `url` | the URL as normalised (query and fragment dropped) |
+| `status` | `full` (every changed file shown), `partial` (some files listed by path only), `not_placed`, `failed` or `ignored` |
+| `reason` | for `failed`: `url_not_configured`, `url_malformed`, `credentials_missing`, `not_found`, `forbidden`, `unauthorized` or `unreadable`; for `ignored`: `duplicate` or `primary`; for `not_placed`: `did_not_fit`, `review_in_parts`, `off` or `nothing_to_review`; absent otherwise |
+| `head_sha` | the related pull request's head commit, when it was read |
+| `files_included`, `files_listed` | files shown with hunks and files listed by path only |
+
+A related pull request that could not be read is never reported as one that
+does not exist: `not_found` can also mean the token may not see it. The
+overview's coverage section lists the related pull requests that were read,
+as links, with their status; the notes give every other case (see
+[Troubleshooting](troubleshooting.md#related-pull-request-notes)).
+
+### What leaves the related repository
+
+Text of a related pull request can appear in a comment on the reviewed pull
+request: a finding quotes a line, names a file, or describes a change. The
+audience of the reviewed pull request may differ from the related
+repository's (a public repository with a private one as context, or two teams
+with different access). Naming a related pull request is your choice, as is
+publishing the review; `coverage.related` lists exactly what was read.
+
+### The `review_linked_prs` prompt
+
+The MCP prompt `review_linked_prs` ("Review linked pull requests") gives the
+client the steps for a set of pull requests that belong together:
+
+| Argument | Required | Meaning |
+|---|---|---|
+| `pr_urls` | yes | 2 to 5 different pull request URLs, separated by commas, spaces or new lines, each checked as `multi_perspective_review`'s `pr_url` (query and fragment dropped) |
+| `publish` | no | `true` to publish each review to its own pull request; default `false` |
+
+It returns one user message that tells the client to call `pr_review` once per
+URL, with `related` set to the others, in parallel if the endpoint allows it
+(with the queueing sentence when a client-side rate limit is set); to publish
+each review to its own pull request only when `publish` is `true`; and never
+to merge the reviews across pull requests. The URLs appear only inside JSON
+strings. A bad argument is an `InvalidParams` error: "pr_urls must hold 2 to 5
+different http or https pull request URLs without credentials, separated by
+commas, spaces or new lines" or "publish must be true or false".
+
 ## MCP instructions and the `multi_perspective_review` prompt
 
 The pattern above is offered to the client in three places, all of them

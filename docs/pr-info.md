@@ -53,7 +53,29 @@ The structured result has the same facts:
 | `merge_blockers` | short fixed reasons, only where the provider gives structured ones |
 | `ci` | the CI results the repository reported for the head commit; always present (see [CI results](#ci-results)) |
 | `review_mcp_activity` | `{overview, inline_findings}`: what review-mcp wrote as the token's user; `null` when it could not be read |
-| `notes` | fixed sentences about parts that could not be read |
+| `notes` | fixed sentences about parts that could not be read, and the related pull request notes below |
+| `related` | the related pull requests of the call, in argument order; `[]` without the argument (see below) |
+
+## Related pull requests
+
+`related` takes up to four pull request URLs, on any configured provider, with
+the same rules as on `pr_review` ([Related pull requests](review.md#related-pull-requests)).
+Each is read with its own provider's token, with one request for the pull
+request itself; **no diff is read**, and `related.max_tokens` does not apply.
+The markdown lists them under "Related pull requests:", and `related` in the
+result has one entry each:
+
+| Field | Meaning |
+|---|---|
+| `url` | the URL as normalised (query and fragment dropped) |
+| `status` | `read`, `failed` or `ignored` |
+| `reason` | for `failed`: `url_not_configured`, `url_malformed`, `credentials_missing`, `not_found`, `forbidden`, `unauthorized` or `unreadable`; for `ignored`: `duplicate` or `primary` |
+| `title`, `state`, `draft`, `target_branch`, `head_sha` | as for the pull request itself, only when it was read (the title is third-party text) |
+
+Two information notes, not blockers: "Related pull request <url> is merged
+while this pull request is open." and "Related pull request <url> is closed
+without being merged." A related pull request that cannot be read never fails
+the call.
 
 ## Where each provider's facts come from
 

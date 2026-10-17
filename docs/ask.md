@@ -158,6 +158,19 @@ was cut off by the output limit ("The answer was cut off by the model's output
 limit."; raise `llm.max_output_tokens`), files were clipped, or the diff was
 shortened by the request-size guard.
 
+## Related pull requests
+
+`related` takes up to four pull request URLs, as on `pr_review`, for a question
+such as "Does this change match the related pull request?". They are read,
+budgeted (`related.max_tokens`), fenced and placed exactly as for a review
+([Related pull requests](review.md#related-pull-requests)): only in the room
+the diff leaves, before repository context, never shortening the diff; in
+plain mode, like `pr_ask`'s own diff. The answer may refer to them; there are
+no findings and no links. `coverage.related` (always present, `[]` without the
+argument) and the notes are those of a review; the answer's markdown does not
+list them separately. The refusal of `related` with `focus` or `findings` does
+not arise: `pr_ask` has neither.
+
 ## Repository context
 
 With `context.repo.enabled` (stdio only; off by default) the prompt also

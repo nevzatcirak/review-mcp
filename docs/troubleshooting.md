@@ -494,6 +494,64 @@ Configuration problem (at startup, in `server_info`):
 |---|---|
 | review.max_issue_tokens: N is out of range (0-20000; 0 turns issue compliance off) | Use 0 to 20,000. |
 
+## Related pull request notes
+
+`pr_review` and `pr_ask` add these fixed sentences about the pull requests of
+the `related` argument ([Related pull requests](review.md#related-pull-requests));
+`coverage.related` gives each one's status and reason. `<url>` is the URL you
+gave, without its query and fragment. A related pull request's title, text or
+diff is never quoted in a note or a log.
+
+| Sentence | Cause and what to do |
+|---|---|
+| Related pull request <url> could not be read (<reason>) and was not used. | See the reasons below. The review ran without it. In an incremental review this also makes the run a full review (see below). |
+| Related pull request <url> was ignored: it is the reviewed pull request itself or a duplicate. | The URL is the reviewed pull request (`primary`), or names the same pull request as an earlier item (`duplicate`), also through another path such as `.../pulls/7/files`. Nothing to do; leave it out. |
+| Related pull request <url> did not fit in full; <n> of its files are listed by path only. | Its share of `related.max_tokens` held its contract files first and listed the rest by path (`partial`). Raise `related.max_tokens` (at most 40,000), name fewer related pull requests, or add the files that matter to `related.contract_globs`. |
+| The related pull requests did not fit the context window next to the diff and were not used. | The block would have made the reviewed diff shorter, even with half the shares, so it was left out (`not_placed`, `did_not_fit`). Lower `related.max_tokens`, raise `llm.context_window`, or narrow the reviewed diff (`ignore.glob`). |
+| The pull request was reviewed in parts; related pull requests need the whole change at once and were not used. | The reviewed diff did not fit one model call (`not_placed`, `review_in_parts`). Review a smaller change or raise `llm.context_window`. |
+| related.max_tokens is 0, so related pull requests were not read. | The operator turned related pull requests off (`not_placed`, `off`). Set `related.max_tokens` above 0. |
+| The model named a related pull request that was not in the review; the finding is treated as one on this pull request. | The model answered with an `R` number that no placed related pull request has. The finding is kept on the reviewed pull request, once per run whatever the number of such findings. |
+| A related pull request changed since the last review, so the whole pull request was reviewed. | An incremental review whose related pull requests differ from the ones the last overview recorded: another set, a new head commit on one of them, `related` added or dropped, or one that could not be read now. **A related pull request that keeps failing makes every incremental run a full review**: fix its token or URL, or leave it out. **Dropping `related` from a later call does the same once**; the run after it is incremental again. |
+
+A review with nothing to review gets no related note: its related pull
+requests are `not_placed` with `nothing_to_review`, and the note of the empty
+review says why.
+
+Reasons of a related pull request that could not be read (`failed`):
+
+| Reason | Cause and what to do |
+|---|---|
+| `url_not_configured` | The URL matches no configured provider. Nothing was sent to that host. Configure the provider, or correct the URL. |
+| `url_malformed` | The URL is on a configured host but is not a pull request URL the provider understands. Use the pull request's web URL. |
+| `credentials_missing` | Serve mode: the request carries no token for that provider. Add its `X-Review-MCP-…-Token` header ([Serve](serve.md#related-pull-requests)). |
+| `not_found` | The provider answered 404. This does not mean the pull request does not exist: the token may not see that repository. |
+| `forbidden` | The provider answered 403: the token may not read that repository. |
+| `unauthorized` | The provider refused the token (401). |
+| `unreadable` | Any other error (a server error, a timeout, an answer that could not be read). Try again. |
+
+`related` errors (refused before anything is sent; `N` counts from 0):
+
+| Sentence | What to do |
+|---|---|
+| related must have at most 4 items | Name at most 4 related pull requests. |
+| related[N] must be an http or https pull request URL without credentials | Pass the pull request's web URL, at most 2,048 bytes, without a user or password. |
+| related cannot be combined with focus or findings | Run focused reviews and the merged publish without `related`. |
+
+`pr_info` adds two information notes, not blockers: "Related pull request
+<url> is merged while this pull request is open." and "Related pull request
+<url> is closed without being merged."
+
+`review_linked_prs` argument errors (`InvalidParams`): "pr_urls must hold 2 to
+5 different http or https pull request URLs without credentials, separated by
+commas, spaces or new lines" and "publish must be true or false".
+
+Configuration problems (at startup, in `server_info`):
+
+| Problem | What to do |
+|---|---|
+| related.max_tokens: N is out of range (0-40000; 0 turns related pull requests off) | Use 0 to 40,000. |
+| related.contract_globs[N]: ... | Fix that glob as you would an `ignore.glob` entry. |
+
 ## Focus and findings refusals
 
 `pr_review` checks the combination of `focus`, `findings`, `publish`,

@@ -391,6 +391,12 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// The related block (X-41) goes first into the room the diff leaves,
 	// before the repository context, in plain mode like the diff; it never
 	// trims the diff.
+	//
+	// DESIGN-QUESTION (WP-11c DQ-4): the spec gives pr_ask "the same
+	// reading, budget, fence and placement" as pr_review, whose related
+	// diffs are numbered so that a finding can name real lines. pr_ask has
+	// no findings and its own diff is plain (X-21), so its related diffs are
+	// plain too. Recommendation: keep.
 	placed, err := related.Place(rel, cfg.Related.MaxTokens, diffpipe.ModePlain, cfg, flt, fit.KeptLines < 0,
 		func(block string) (bool, error) {
 			cand := in

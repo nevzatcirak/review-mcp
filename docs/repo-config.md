@@ -53,6 +53,7 @@ The operator turns it on and off and chooses the path; both settings are
 | `review.focuses` | a list out of `security`, `architecture`, `performance`, `ux`, `tests` and `docs` | the default list of the `multi_perspective_review` prompt only |
 | `review.docs_style` | text, at most 1,000 bytes | replaces; used only by the [`docs` focus](review.md#the-docs-focus) |
 | `review.issue_compliance` | true or false | replaces; false turns [issue compliance](review.md#issue-compliance) off for the repository |
+| `related.contract_globs` | a list of globs, validated as `ignore.glob` | **added** to the operator's list; paths shown first in a [related pull request](review.md#contract-files-first) |
 
 Every other key is ignored and named in a note. That covers `llm.*`, the
 provider sections, `context.*`, `serve.*`, `log.*`, `repo_config.*`, the other

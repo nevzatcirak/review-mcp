@@ -5,6 +5,60 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Planned as `2.3.0-rc.1` (the npm dist-tag `next`; `latest` stays on 2.2.0).
+`pr_review`, `pr_ask` and `pr_info` take related pull requests: up to four pull
+requests on any configured provider, read as context only (X-41, V-13a). The
+reviewed pull request stays the only one under review and the only one
+published to. Nothing in the tools or in the configuration of 2.2.0 is removed
+or renamed. Guide: [Related pull requests](docs/review.md#related-pull-requests).
+
+### Added
+
+- A `related` argument on `pr_review` (1 to 4 pull request URLs; not with
+  `focus` or `findings`). Each is resolved like the reviewed pull request, on
+  a configured provider only and with that provider's own token (in serve
+  mode its own header); a host that is not configured is never contacted. Its
+  title, state, draft flag, target branch, head and diff are read; never its
+  description, comments or repository config. Duplicates and the reviewed
+  pull request itself are ignored.
+- The related diffs share `related.max_tokens`, show contract files first (API
+  descriptions, then API-surface paths, plus `related.contract_globs`), list
+  the files that do not fit, and are fenced as untrusted data. They go only in
+  the room the reviewed diff leaves and never shorten it; a review in parts
+  does not use them.
+- Cross-repository findings: the model is asked for mismatches between the
+  pull requests, rollout compatibility and merge order. A finding located in a
+  related pull request is listed in the overview only, never inline, with a
+  link built by that pull request's own provider.
+- Incremental reviews record the related pull requests (URL and head) in a
+  hidden overview line and review in full, with a note, when they changed.
+- `coverage.related` in `pr_review` and `pr_ask` (one entry per item: status
+  `full`, `partial`, `not_placed`, `failed` or `ignored`, with a reason), and
+  the read ones listed in the overview's coverage section.
+- `pr_ask` uses related pull requests as context, with the same reading,
+  budget and placement.
+- `pr_info` reports related pull requests (`related`: title, state, draft
+  flag, target branch, head), without reading their diffs, with a note when
+  one is merged while this pull request is open or closed without being
+  merged.
+- The MCP prompt `review_linked_prs`: 2 to 5 pull request URLs and an optional
+  `publish`; it tells the client to review each with the others as related
+  context and to publish each review to its own pull request only.
+- Operator keys `related.max_tokens` (default 8000, 0 to 40000, 0 turns
+  related pull requests off) and `related.contract_globs`; the repository
+  config may add to `related.contract_globs`.
+
+### Changed
+
+- New notes for related pull requests that could not be read, were ignored,
+  did not fit in full, did not fit at all, were not used in a review in parts
+  or were turned off, for an unknown related pull request named by the model,
+  and for an incremental run made full by a related change (see
+  [Troubleshooting](docs/troubleshooting.md#related-pull-request-notes)).
+- The resolver's debug line names the provider kind only, no longer the URL.
+
 ## [2.2.0]
 
 Fifth stable release. The code is the same as `2.2.0-rc.3`. The release

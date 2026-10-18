@@ -22,6 +22,7 @@ const (
 	TextCoverage      = "Coverage"
 	TextNotes         = "Notes"
 	TextRepoContext   = "Repository context"
+	TextRepoTools     = "Repository tools"
 	reasonBudgetAdded = "Left out to fit the context window (added files)"
 	reasonBudgetMod   = "Left out to fit the context window (modified files)"
 	reasonBudgetDel   = "Left out to fit the context window (deleted files)"
@@ -165,6 +166,9 @@ func coverage(b *strings.Builder, heading string, c *llmrun.Coverage, verb strin
 	if line := RepoContextLine(c.RepoContext); line != "" {
 		b.WriteString("- " + line + "\n")
 	}
+	if line := RepoToolsLine(c.RepoContext.Tools); line != "" {
+		b.WriteString("- " + line + "\n")
+	}
 
 	var groups []coverageGroup
 	if len(c.Clipped) > 0 {
@@ -213,6 +217,42 @@ func RepoContextLine(r llmrun.RepoContext) string {
 			count(r.References, "reference", "references") + " from " + count(r.Files, "file", "files")
 	case llmrun.RepoSkipped:
 		return TextRepoContext + ": skipped: " + mdutil.Literal(r.Reason)
+	}
+	return ""
+}
+
+// RepoToolsLine is the "Repository tools" line of the coverage section
+// (X-43, v2.4 spec V-8 §5): what the run did with the repository tools. It
+// is empty for a result without the tools accounting and when the tools are
+// off by configuration, so such a result renders as it did in rc.1. It
+// names no path, search text or file content.
+func RepoToolsLine(t *llmrun.RepoTools) string {
+	if t == nil {
+		return ""
+	}
+	switch t.Status {
+	case "used":
+		line := TextRepoTools + ": " + count(len(t.Calls), "call", "calls") + " in " + count(t.Rounds, "round", "rounds")
+		for _, st := range llmrun.RepoToolCallStatusOrder[1:] {
+			n := 0
+			for _, c := range t.Calls {
+				if c.Status == st {
+					n++
+				}
+			}
+			if n > 0 {
+				line += "; " + strconv.Itoa(n) + " " + mdutil.Literal(st)
+			}
+		}
+		return line
+	case "not_used":
+		return TextRepoTools + ": allowed, not used"
+	case "skipped":
+		return TextRepoTools + ": skipped: " + mdutil.Literal(t.Reason)
+	case "off":
+		if t.Reason == "repo_context_off" {
+			return TextRepoTools + ": off: " + mdutil.Literal(t.Reason)
+		}
 	}
 	return ""
 }

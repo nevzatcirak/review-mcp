@@ -467,8 +467,20 @@ func trimDeletedListed(c *Coverage, lines []string, kept int) {
 var (
 	repoToolStatuses     = []any{"used", "not_used", "off", "skipped"}
 	repoToolReasons      = []any{"", "off", "repo_context_off", "repo_context_unavailable", "review_in_parts", "endpoint_no_tools", "no_room", "no_model_call", "conversation_failed"}
-	repoToolCallStatuses = []any{"ok", "not_allowed", "not_available", "too_large", "budget_exhausted", "invalid_arguments", "too_many_calls"}
+	repoToolCallStatuses = anySlice(RepoToolCallStatusOrder)
 )
+
+// RepoToolCallStatusOrder is the call-status enum in the order the schema
+// lists it; the coverage line counts the statuses that are not "ok" in it.
+var RepoToolCallStatusOrder = []string{"ok", "not_allowed", "not_available", "too_large", "budget_exhausted", "invalid_arguments", "too_many_calls"}
+
+func anySlice(ss []string) []any {
+	out := make([]any, len(ss))
+	for i, s := range ss {
+		out[i] = s
+	}
+	return out
+}
 
 // RepoToolsSchema is the JSON schema of coverage.repo_context.tools (X-43)
 // under the description desc. Every property is required within the

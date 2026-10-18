@@ -43,7 +43,7 @@ func Client(res *ask.Result) string {
 	}
 	b.WriteString("## Question\n\n")
 	mdutil.WriteFenced(&b, res.Question, "", "")
-	if a := strings.TrimSpace(res.Answer); a != "" {
+	if a := answerBody(res.Answer); a != "" {
 		b.WriteString("\n## Answer\n\n" + a + "\n")
 	}
 	llmrender.Coverage(&b, "## "+llmrender.TextCoverage, &res.Coverage)
@@ -91,10 +91,29 @@ func Provider(res *ask.Result, caps provider.Capabilities) string {
 	}
 	b.WriteString(askHead + "\n")
 	mdutil.WriteFenced(&b, provider.SanitizeQuickActions(res.Question), "", "")
-	if a := strings.TrimSpace(res.Answer); a != "" {
+	if a := answerBody(res.Answer); a != "" {
 		b.WriteString("\n" + answerHead + "\n" + provider.SanitizeQuickActions(a) + "\n")
 	}
 	llmrender.Coverage(&b, covHead, &res.Coverage)
 	llmrender.Notes(&b, notesHead, res.Notes)
 	return b.String()
+}
+
+// answerBody is the model's answer as it goes under our own answer heading:
+// trimmed, and without a first line that is exactly "## Answer" (any case,
+// surrounding spaces ignored) and the blank lines after it, because the
+// heading would show twice. Nothing else of the model's text is changed.
+func answerBody(answer string) string {
+	a := strings.TrimSpace(answer)
+	first, rest, _ := strings.Cut(a, "\n")
+	if strings.EqualFold(strings.TrimSpace(first), "## answer") {
+		for {
+			line, after, found := strings.Cut(rest, "\n")
+			if strings.TrimSpace(line) != "" || !found {
+				return rest
+			}
+			rest = after
+		}
+	}
+	return a
 }

@@ -5,6 +5,21 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Planned as `2.4.0-rc.2`.
+
+### Changed
+
+- The coverage section of `pr_review` and `pr_ask` has a **Repository tools**
+  line after the "Repository context" line: `N calls in M rounds` (with the
+  calls that did not succeed counted by status), `allowed, not used`,
+  `skipped: <reason>` or `off: repo_context_off`. Nothing is shown when
+  `context.repo.max_tool_rounds` is 0, so such a result renders as before.
+  Guide: [Reading the tools result](docs/repo-context.md#reading-the-tools-result).
+- `pr_ask` drops a model answer's own first `## Answer` line, which showed the
+  heading twice.
+
 ## [2.4.0-rc.1]
 
 First 2.4 release candidate (the npm dist-tag `next`; `latest` stays on 2.3.0).

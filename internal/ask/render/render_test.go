@@ -239,3 +239,45 @@ func TestAnswerBannerWording(t *testing.T) {
 		t.Errorf("banner:\n%s", got)
 	}
 }
+
+// TestAnswerHeadingIsDroppedOnlyAtTheStart: a model answer that starts with
+// its own "## Answer" line loses that line and the blank lines after it
+// (the section already has our heading); the same line anywhere else, and
+// any other heading, stays.
+func TestAnswerHeadingIsDroppedOnlyAtTheStart(t *testing.T) {
+	for _, tc := range []struct{ name, answer, want string }{
+		{"exact", "## Answer\n\nIt is bounded.", "It is bounded."},
+		{"case_and_spaces", "  ## ANSWER  \n\n\n  It is bounded.\n- x", "  It is bounded.\n- x"},
+		{"crlf", "## Answer\r\n\r\nIt is bounded.", "It is bounded."},
+		{"no_blank_line", "## Answer\nIt is bounded.", "It is bounded."},
+		{"only_heading", "## Answer", ""},
+		{"kept_later", "It is bounded.\n\n## Answer\n\nAgain.", "It is bounded.\n\n## Answer\n\nAgain."},
+		{"kept_other_heading", "## Answers\n\nIt is bounded.", "## Answers\n\nIt is bounded."},
+		{"kept_h3", "### Answer\n\nIt is bounded.", "### Answer\n\nIt is bounded."},
+		{"kept_suffix", "## Answer: yes\n\nIt is bounded.", "## Answer: yes\n\nIt is bounded."},
+		{"kept_in_fence", "```\n## Answer\n```", "```\n## Answer\n```"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res := completeSample()
+			res.Answer = tc.answer
+			client := Client(res)
+			gitea := Provider(res, capsGitea)
+			bb := Provider(res, capsBB)
+			if tc.want == "" {
+				for _, out := range []string{client, gitea, bb} {
+					if strings.Contains(out, "Answer") {
+						t.Errorf("empty answer still has a section:\n%s", out)
+					}
+				}
+				return
+			}
+			for _, c := range []struct{ out, pre string }{
+				{client, "\n## Answer\n\n"}, {gitea, "\n### **Answer:**\n"}, {bb, "\n### Answer\n"},
+			} {
+				if !strings.Contains(c.out, c.pre+tc.want+"\n") {
+					t.Errorf("want %q after %q in:\n%s", tc.want, c.pre, c.out)
+				}
+			}
+		})
+	}
+}

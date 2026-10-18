@@ -7,6 +7,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/diffpipe"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
+	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/related"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 )
@@ -26,13 +27,15 @@ const ReasonNothingToReview = related.ReasonNothingToReview
 
 // KeyRelated is the optional key-issue field of a run with a related block
 // (X-41, v2.3 spec V-13a §2.1 item 2): R1 to R4 when the finding's file is
-// in that related pull request.
+// in that related pull request. It marks the location, not the topic
+// (§5 item 2).
 const KeyRelated = "related"
 
 // relatedKeyIssueField is its line in the KeyIssuesComponentLink class of
 // the system prompt's schema; the example answer does not change.
-const relatedKeyIssueField = "\n    " + KeyRelated + ": Optional[str] = Field(description=\"R1 to R4 when relevant_file is " +
-	"in that related pull request; omit for the reviewed pull request\")"
+const relatedKeyIssueField = "\n    " + KeyRelated + ": Optional[str] = Field(description=\"R1 to R4 only when relevant_file is " +
+	"a file changed in that related pull request; omit for a file of the reviewed pull request, even when a " +
+	"related pull request causes the problem\")"
 
 // RelatedInstruction is the system prompt's instruction block of a run with
 // a placed related block (spec §2.1 item 1); absent otherwise.
@@ -41,8 +44,12 @@ const RelatedInstruction = "Cross-repository review: the user prompt carries rel
 	"- a field, route, status code, message or schema changed on one side and not on the other;\n" +
 	"- compatibility while the changes roll out one after the other;\n" +
 	"- the order in which the pull requests must be merged and deployed.\n" +
-	"When such a problem is located in a related pull request, set related to its R number (R1 to R4), and " +
-	"relevant_file, start_line and end_line to its place in that pull request's diff; otherwise omit related."
+	"The related field marks where the lines are, not what the problem is about. Set related only when " +
+	"relevant_file is a file changed in that related pull request, to its R number (R1 to R4), with start_line " +
+	"and end_line in that pull request's diff. A problem on the reviewed pull request's own lines stays " +
+	"untagged, even when a related pull request causes it.\n" +
+	"In the text, name a related pull request by the repository and number shown in its header line, not by " +
+	"R1 to R4: readers of the comment do not see R numbers."
 
 // markRelated sets the status of every read item that has none yet.
 func (pl *Plan) markRelated(status, reason string) { related.Mark(pl.related, status, reason) }
@@ -110,7 +117,12 @@ func (pl *Plan) relatedOf(tag string) (related.Section, bool) {
 // one of its changed files (shown or listed); the Snippet from its diff,
 // only when the file was shown. It reports whether the finding is related;
 // an unknown value (not a placed item) is dropped, and unknown is set.
-func (pl *Plan) attachRelated(ki *KeyIssue, unknown *bool) bool {
+//
+// The file decides, not the tag (spec §5 item 1): a file of the reviewed
+// pull request's diff (primary) that the related pull request does not
+// change makes a finding on the reviewed pull request, tag dropped, no
+// note. The model reads "related" as "relates to" (acceptance on 2.3.0-rc.1).
+func (pl *Plan) attachRelated(ki *KeyIssue, primary map[string]*provider.FilePatch, unknown *bool) bool {
 	tag := ki.relatedTag
 	ki.relatedTag = ""
 	if tag == "" {
@@ -122,6 +134,9 @@ func (pl *Plan) attachRelated(ki *KeyIssue, unknown *bool) bool {
 		return false
 	}
 	it := rs.Item
+	if primary[ki.RelevantFile] != nil && !changes(it, ki.RelevantFile) {
+		return false
+	}
 	ki.Related = it.URL
 	ki.RelatedName = it.Ref.Repo + "#" + strconv.FormatInt(it.Ref.Number, 10)
 	ki.Snippet, ki.SnippetNote, ki.Link = "", "", ""
@@ -137,4 +152,15 @@ func (pl *Plan) attachRelated(ki *KeyIssue, unknown *bool) bool {
 		break
 	}
 	return true
+}
+
+// changes reports whether the related pull request changes the file
+// (shown or listed).
+func changes(it *related.Item, path string) bool {
+	for i := range it.Diff.Files {
+		if it.Diff.Files[i].Path == path {
+			return true
+		}
+	}
+	return false
 }

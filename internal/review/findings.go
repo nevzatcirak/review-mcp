@@ -185,7 +185,7 @@ func (pl *Plan) attachSnippets(rev *Review) {
 		ki := &rev.KeyIssuesToReview[i]
 		// A finding located in a related pull request (X-41) takes its
 		// snippet and link from there.
-		if pl.attachRelated(ki, &unknownRelated) {
+		if pl.attachRelated(ki, files, &unknownRelated) {
 			continue
 		}
 		// DESIGN-QUESTION: how is relevant_file matched to a changed file? —

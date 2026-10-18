@@ -5,6 +5,23 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Planned as `2.3.0-rc.2`.
+
+### Fixed
+
+- A finding the model tags with a related pull request is now placed by its
+  file, not by the tag. Found in the 2.3.0-rc.1 acceptance: the model tagged
+  findings on the reviewed pull request's own files `related`, so they were
+  listed as related, with no link and no inline comment. A finding whose file
+  is in the reviewed pull request's diff and not in the related pull request's
+  changed files is now a finding on the reviewed pull request (anchored inline
+  as usual, no note); in both, in the related one only, or in neither, the tag
+  still decides. The prompt now says that `related` marks where the lines are
+  and asks for a related pull request to be named by repository and number.
+  See [Cross-repository findings](docs/review.md#cross-repository-findings).
+
 ## [2.3.0-rc.1]
 
 First 2.3 release candidate (the npm dist-tag `next`; `latest` stays on 2.2.0).

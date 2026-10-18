@@ -5,6 +5,33 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0]
+
+Seventh stable release. The code is the same as `2.4.0-rc.2`. The release
+candidates were accepted in use in record #51, against a throwaway pull request
+in this repository and an endpoint that accepts tool calls; the no-tools path
+was checked against a local endpoint that refuses them. That acceptance also
+found the missing coverage line added in `2.4.0-rc.2`. The `2.4.0-rc.1` and
+`2.4.0-rc.2` sections of CHANGELOG.md list everything that went into 2.4.0
+since 2.3.0. Nothing in the tools or in the configuration of 2.3.0 is removed
+or renamed, and nothing changes unless `context.repo.max_tool_rounds` is set
+above 0: a 2.3.0 setup keeps working as before.
+
+### Highlights
+
+- Repository tools (opt-in, `context.repo.max_tool_rounds`): with repository
+  context on, the model in `pr_review` and `pr_ask` can read the head commit
+  itself while it answers (`read_file`, `list_dir`, `search`), offline, confined
+  to the repository, within `context.repo.max_tool_tokens`. Nothing is built,
+  run or loaded as code.
+- An endpoint that does not accept tool calls gets the single-pass review with
+  a note, and the process remembers it for that endpoint and model.
+- `coverage.repo_context.tools`, `metadata.tool_rounds`, and a "Repository
+  tools" line in the published coverage section show what the model read,
+  without naming paths or content.
+- Every tool round is a model call through the rate limiter, so a review with
+  tools takes more time and tokens.
+
 ## [2.4.0-rc.2]
 
 Second 2.4 release candidate (the npm dist-tag `next`; `latest` stays on
@@ -1708,6 +1735,7 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[2.4.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.4.0
 [2.4.0-rc.2]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.4.0-rc.2
 [2.4.0-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.4.0-rc.1
 [2.3.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.3.0

@@ -956,6 +956,44 @@ product, your own address, with its context path, otherwise), and that the
 scheme and port match. A URL without `/-/` before `merge_requests`, or with a
 tail other than `/diffs`, `/commits` or `/pipelines`, is `url_malformed`.
 
+## Repository tool notes
+
+`pr_review` and `pr_ask` add these fixed sentences when the model could read the
+repository through tools ([Repository tools](repo-context.md#repository-tools)).
+`coverage.repo_context.tools` gives the status, the reason, the rounds and every
+call; `metadata.tool_rounds` counts the rounds. The notes are in the tool result
+and in a published overview or answer.
+
+| Sentence | Cause and what to do |
+|---|---|
+| The LLM endpoint does not accept tool calls, so the review used the diff and repository context without reading further files. | The endpoint or model refused tool calls (`endpoint_no_tools`). The run was single-pass, and this process remembers it for that endpoint and model: restart the server after you move to a model that supports tools, or set `context.repo.max_tool_rounds` to 0. `server_info` shows `refused`. |
+| The review was made in parts, so repository tools were not used. | The diff did not fit one model call (`review_in_parts`). Tools work in a review in one call only; raise `llm.context_window` or review a smaller change. |
+| The repository tool budget was used up after N calls. | A tool result did not fit the rest of `context.repo.max_tool_tokens` or the room beside the diff (`budget_exhausted`); N counts the calls that ran. The model then answered with what it had. Raise `context.repo.max_tool_tokens` (at most 40,000) or `llm.context_window`. |
+| The diff left no room for repository tools, so the review was made without them. | The tools' instruction and definitions do not fit beside the whole diff, or the diff was trimmed already (`no_room`). The diff always wins. Raise `llm.context_window` or narrow the diff. |
+| A model call failed while the model was reading the repository through tools, so the review was made without them. | A model call of the conversation failed in a way that ends the rounds (a second restart on the next model, or a context-length error), and the answer came single-pass (`conversation_failed`). Check the endpoint; see the [fallback notes](#rate-limit-and-fallback-notes). |
+
+Reasons without a note: `off` and `repo_context_off` (the tools are off; with
+rounds above 0 and repository context off `server_info` warns at startup),
+`repo_context_unavailable` (see [Repository context was
+skipped](#repository-context-was-skipped)) and `no_model_call` (the run made
+no model call).
+
+Status of one call (`coverage.repo_context.tools.calls[].status`):
+
+| Status | Cause and what to do |
+|---|---|
+| `ok` | The call ran. |
+| `not_allowed` | The model asked for a path outside the repository rules (`..`, a leading `/`, `\`, a `.git` segment, control characters, over 4,096 bytes). Nothing was read. Expected when a pull request text tries to send the model elsewhere. |
+| `not_available` | Binary file, a file the partial clone lacks (over 1 MiB, never fetched), a path that does not exist at the head, a path that is not a directory, a start line past the end of the file, or a repository read that failed. |
+| `too_large` | The file is over `diff.max_file_bytes`. |
+| `budget_exhausted` | The result did not fit; not run. See the budget note above. |
+| `invalid_arguments` | The arguments were not a JSON object of at most 4 KiB, a required one was missing, a range was invalid, or the tool does not exist. |
+| `too_many_calls` | More than four calls in one round; the extra ones were not run. |
+
+Each round is a model call: a slow review with tools is usually the rate limit
+(`metadata.rate_limit_waits`) or a slow endpoint ([Rate limits](setup.md#rate-limits)).
+Set `context.repo.max_tool_rounds` lower, or to 0.
+
 ## Repository context was skipped
 
 The coverage section says `Repository context: skipped: <reason>` (and

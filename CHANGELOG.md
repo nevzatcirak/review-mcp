@@ -5,6 +5,64 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Planned as `2.4.0-rc.1` (the npm dist-tag `next`; `latest` stays on 2.3.0).
+With repository context on, the model can read the pull request's head commit
+itself while it answers, through the endpoint's tool calling: a file or a line
+range, a directory listing and a fixed-string search (X-43, V-8). It is opt-in
+and off by default. Nothing in the tools or in the configuration of 2.3.0 is
+removed or renamed, and nothing changes unless `context.repo.max_tool_rounds`
+is set above 0: a 2.3.0 setup keeps working as before. Guide:
+[Repository tools](docs/repo-context.md#repository-tools).
+
+### Added
+
+- Repository tools in `pr_review` (a review in one call, full or incremental)
+  and `pr_ask`: `read_file` (numbered like the diff, at most 400 lines),
+  `list_dir` (at most 200 entries) and `search` (a fixed string, at most 50
+  matches with one line of context). They read the head commit only, in the
+  server, offline, with the isolation of repository context; paths are confined
+  to the repository (no `..`, no absolute path, no `\`, no `.git`); nothing is
+  built, run or loaded as code.
+- Operator keys `context.repo.max_tool_rounds` (default 0 = off, 0 to 6) and
+  `context.repo.max_tool_tokens` (default 6,000, 500 to 40,000). A repository
+  config cannot set or raise them.
+- Every result is fenced as untrusted data, cut at 2,000 tokens at a line
+  boundary and counted against the budget. At most four calls run in a round.
+  The loop never shortens the diff: every request fits the context window with
+  the diff whole.
+- `coverage.repo_context.tools` in `pr_review` and `pr_ask` (status `used`,
+  `not_used`, `off` or `skipped` with a reason, the rounds, every call with its
+  target, status and tokens, and the tokens) and `metadata.tool_rounds`.
+- `server_info` shows both keys, and for the primary model and each fallback
+  whether this process has seen it accept or refuse tool calls (`repo_tools`).
+  Rounds above 0 with `context.repo.enabled` off are a startup warning there.
+- The LLM client can converse with tools (`Converse`), through the same retries,
+  rate limiter and fallback chain as a single call; a conversation never changes
+  model in the middle.
+
+### Changed
+
+- An endpoint that does not accept tool calls (HTTP 400 or 422 that mentions
+  tools or functions) gets the single-pass review or answer and the note "The
+  LLM endpoint does not accept tool calls, so the review used the diff and
+  repository context without reading further files."; the process remembers it
+  for that endpoint and model.
+- New notes for a review in parts, a used-up tool budget, a diff that left no
+  room and a conversation that failed (see
+  [Troubleshooting](docs/troubleshooting.md#repository-tool-notes)).
+- **Every tool round is a model call** (`metadata.llm_calls`) through the rate
+  limiter, so a review with tools takes more time and tokens.
+- A blob the partial clone lacks is read as the reason `blob_missing` inside
+  `gitctx`; callers behave as before.
+
+### Backlog
+
+- Tools in a review in parts; `pr_describe` and `pr_improve` with tools;
+  deterministic secret-pattern scanning; reading the base commit for "before"
+  comparisons; V-13b uses these tools inside related repositories.
+
 ## [2.3.0]
 
 Sixth stable release. The code is the same as `2.3.0-rc.2`. The release

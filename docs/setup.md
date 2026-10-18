@@ -576,6 +576,22 @@ for them.
 | `related.max_tokens` | `REVIEW_MCP_RELATED_MAX_TOKENS` | `8000` | Token budget of all related pull requests of one prompt together, shared equally, 0 to 40,000; 0 turns them off (the argument is accepted, nothing is read, one note). `pr_info` reads no diff and is not limited by it. |
 | `related.contract_globs` | `REVIEW_MCP_RELATED_CONTRACT_GLOBS` | (empty) | Globs (as `ignore.glob`) of paths shown first in a related pull request, as API descriptions. A repository config adds to the list. |
 
+### Repository tools
+
+With [repository context](repo-context.md) on, the model can read the pull
+request's head commit itself through the endpoint's tool calling
+([Repository tools](repo-context.md#repository-tools)). Off by default; the two
+keys are operator-only (a repository config cannot set them) and need
+`context.repo.enabled`.
+
+| Key | Environment variable | Default | Meaning |
+|---|---|---|---|
+| `context.repo.max_tool_rounds` | `REVIEW_MCP_CONTEXT_REPO_MAX_TOOL_ROUNDS` | `0` | The most rounds in which the model may call tools, 0 to 6; 0 turns them off. Each round is one model call through the rate limiter, so a review takes more time and tokens. With rounds above 0 and `context.repo.enabled` off, nothing is read and `server_info` shows a warning. |
+| `context.repo.max_tool_tokens` | `REVIEW_MCP_CONTEXT_REPO_MAX_TOOL_TOKENS` | `6000` | Token budget of all tool results of one call together, 500 to 40,000. Each result is also cut at 2,000 tokens. |
+
+The endpoint must support tool calling. If it does not, the run is single-pass
+with a note, and `server_info` shows `refused` for that model.
+
 ### `context_window` and `max_output_tokens`
 
 - Set `context_window` to the window your server really runs, not the largest

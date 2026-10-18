@@ -9,7 +9,9 @@ self-review calls (see [Suggesting code changes](improve.md#what-is-sent-to-the-
 
 It is **opt-in** (off by default) and **stdio only**: it is a startup error in
 [serve mode](serve.md#repository-context-is-not-available). It needs the
-system `git`. Nothing in this guide is needed for a review without it.
+system `git`. Nothing in this guide is needed for a review without it. On top
+of it, the model can be allowed to read the head commit itself:
+[Repository tools](#repository-tools).
 
 ## What it does
 
@@ -172,6 +174,189 @@ otherwise through the provider's API. The base commit is never fetched for this.
 The fetch of the head is shallow, so in practice the API answers most of the
 time.
 
+## Repository tools
+
+With **repository tools** the model can read the pull request's head commit
+itself, while it answers, instead of only seeing the block of uses. It asks for
+what it needs through the endpoint's **tool calling**, and review-mcp answers
+from the commit that repository context already fetched. It is **opt-in** and
+**off by default** (V-8, X-43): nothing in this section happens until you set
+`context.repo.max_tool_rounds` above 0.
+
+It works in `pr_review` (a review in one call, full or incremental) and in
+`pr_ask`. `pr_describe` and `pr_improve` do not use it yet.
+
+### Enabling it
+
+| Setting | Env | Default | Effect |
+|---|---|---|---|
+| `context.repo.max_tool_rounds` | `REVIEW_MCP_CONTEXT_REPO_MAX_TOOL_ROUNDS` | `0` | the most rounds in which the model may call tools, 0 to 6; 0 turns the tools off |
+| `context.repo.max_tool_tokens` | `REVIEW_MCP_CONTEXT_REPO_MAX_TOOL_TOKENS` | `6000` | token budget of all tool results of one call together, 500 to 40,000 |
+
+Both are operator keys: a [repository config](repo-config.md) cannot set or
+raise them (they are not in its allow-list), so a pull request cannot turn the
+tools on for itself. They need `context.repo.enabled` (stdio only, as
+repository context): with rounds above 0 and repository context off nothing is
+read, the result says `repo_context_off`, and the server logs a startup warning
+that `server_info` shows under `warnings`. `server_info` also shows both keys,
+and, for the primary model and each fallback, whether this process has seen it
+accept or refuse tool calls (`repo_tools`: `not known yet`, `accepted` or
+`refused`).
+
+```json
+"environment": {
+  "REVIEW_MCP_CONTEXT_REPO_ENABLED": "true",
+  "REVIEW_MCP_CONTEXT_REPO_MAX_TOOL_ROUNDS": "3"
+}
+```
+
+### What the model can read
+
+Three tools, all on the **head commit** of the pull request (the code as it is
+after the change). The base commit is never fetched for this.
+
+| Tool | Arguments | Result |
+|---|---|---|
+| `read_file` | `path`, optional `start_line`, `end_line` (1-based) | the file with line numbers like the diff, at most 400 lines per call (the first 400 without a range) |
+| `list_dir` | `path` (`""` is the root) | the entries of the directory, directories with a trailing `/`, at most 200 and then "and N more" |
+| `search` | `text` (2 to 200 characters), optional `path` (a directory) | a fixed-string search (`git grep -F`, case-sensitive, not a pattern): at most 50 matches, each with one line around it |
+
+`search` leaves out the files the review ignores (`ignore.glob`, generated,
+lock and minified files, binary files), as the repository-context search does;
+`read_file` and `list_dir` read any allowed path the model names.
+
+A path must be relative and `/`-separated, at most 4,096 bytes, valid UTF-8
+without control characters, and must have no `..` or `.` segment, no leading
+`/`, no `\`, no empty segment and no `.git` segment (in any case). A path
+outside these rules is answered "path not allowed" and **nothing is read**; a
+directory may end with one `/`. Paths are only ever resolved as
+`<head sha>:<path>` through git, never against the file system.
+
+Binary files, files the partial clone lacks (blobs over 1 MiB are not fetched)
+and files over `diff.max_file_bytes` give a fixed answer ("not available:
+binary", "not available: not fetched", "not available: too large"). Nothing is
+fetched to read them.
+
+### How the loop works
+
+1. The system prompt gets one fixed instruction block (absent without tools):
+   the tools read the head commit, use them only when the diff and the
+   repository context are not enough, at most N rounds and four calls in each,
+   and the final answer carries no tool call. `pr_review` answers in the usual
+   YAML, `pr_ask` in plain text.
+2. Each **round** is one model call. The calls of the answer (at most four;
+   further ones are answered "too many calls in one round") run in order and
+   their results go back to the model.
+3. After `max_tool_rounds` rounds, when the budget is used up, or when the next
+   request would not fit, one last call with tool choice `none` asks for the
+   answer.
+4. The final text goes through the normal parsing. A `pr_review` answer that
+   cannot be parsed is re-asked once as a plain call without tools; that is not
+   a round. `pr_ask` has no re-ask.
+
+**The diff wins.** The loop never shortens the diff. Every request is measured
+before it is sent and must fit the context window beside the output reserve
+with the diff whole; a result gets only the room the request has left. If the
+tools' instruction and definitions do not fit beside the diff, the run is
+single-pass.
+
+Every tool result is fenced as **untrusted data** under a fixed sentence, cut
+at a line boundary at 2,000 tokens with a marker, and counted against
+`context.repo.max_tool_tokens`. Text in a file, such as "ignore previous
+instructions", is data and does not change the task. Logs carry the tool, the
+status, the token count and the round, and the repository path of a read; never
+file content or search text.
+
+Nothing is built, run or loaded as code (R-1), and nothing touches the network:
+the reads run on the cache, offline, with the isolation of repository context
+(no credential, no lazy fetch, no hooks, no repository configuration read as
+code).
+
+### When the tools are not used
+
+The run is then single-pass, as without the feature, never an error. The
+result says why in `coverage.repo_context.tools.reason`:
+
+| Status | Reason | Meaning |
+|---|---|---|
+| `off` | `off` | `context.repo.max_tool_rounds` is 0. |
+| `off` | `repo_context_off` | The rounds are above 0 but `context.repo.enabled` is off (also a startup warning). |
+| `skipped` | `repo_context_unavailable` | Repository context was skipped (see the [reasons](#reading-the-result)) or the head could not be read. |
+| `skipped` | `review_in_parts` | The review was made in parts; a note says so. |
+| `skipped` | `endpoint_no_tools` | The endpoint or model does not accept tool calls; a note says so. |
+| `skipped` | `no_room` | The tools' block and definitions do not fit beside the whole diff, or the single-pass diff is trimmed already; a note says so. |
+| `skipped` | `no_model_call` | The run made no model call (nothing to review, nothing changed since the last review, a publish of supplied findings). |
+| `skipped` | `conversation_failed` | A model call failed while the model was reading the repository in a way that ends the rounds, and the answer came single-pass; a note says so. |
+
+A run in which tools were allowed but the model made no call is `not_used`.
+
+**An endpoint without tool calling.** There is no probe: the first request of a
+process to an endpoint and model carries the tools. If the endpoint refuses them
+(HTTP 400 or 422 whose text mentions tools or functions), or answers that it
+calls a tool without a call that can be read, the run continues single-pass
+with the note "The LLM endpoint does not accept tool calls, so the review used
+the diff and repository context without reading further files." and the
+process remembers "no tools" for that endpoint and model: later runs there send
+no tool request. A fallback model is treated the same way, one by one. Restart
+the server after you switch the endpoint to a model that supports tools.
+
+A conversation never changes model in the middle. If the primary fails before
+the first turn, the run starts on the fallback; if it fails later, the
+conversation starts again once on the fallback, or the run ends single-pass
+with a note.
+
+### Reading the tools result
+
+`coverage.repo_context.tools` is always present in `pr_review` and `pr_ask`:
+
+```json
+{"status": "used", "reason": "", "rounds": 2,
+ "calls": [{"tool": "read_file", "target": "store/lookup.go", "status": "ok", "tokens": 210},
+           {"tool": "search", "target": "nil, nil", "status": "ok", "tokens": 340}],
+ "tokens": 550}
+```
+
+- `rounds` counts the rounds whose calls ran; `metadata.tool_rounds` is the
+  same number. **Every round is a model call** counted in `metadata.llm_calls`.
+- `target` is the path or the search text, cut to 200 characters without
+  control characters.
+- `tokens` is the estimate of the results, counted against
+  `context.repo.max_tool_tokens`.
+
+| Call status | Meaning |
+|---|---|
+| `ok` | The call ran. |
+| `not_allowed` | The path broke the path rules; nothing was read. |
+| `not_available` | Binary, not fetched, not found, not a directory, a start past the end of the file, or unreadable. |
+| `too_large` | The file is over `diff.max_file_bytes`. |
+| `budget_exhausted` | The result did not fit the rest of `context.repo.max_tool_tokens` or the room beside the diff; not run. The loop then ends, with the note "The repository tool budget was used up after N calls." |
+| `invalid_arguments` | Not a JSON object of at most 4 KiB, a missing or wrong argument, or a tool that does not exist. |
+| `too_many_calls` | Beyond four calls in one round; not run. |
+
+The notes are listed in
+[Troubleshooting](troubleshooting.md#repository-tool-notes).
+
+### What it costs
+
+Each round is one model call through the same rate limiter as any call
+(`llm.requests_per_minute`, `llm.max_concurrent_requests`, the cool-down after
+an HTTP 429, [Rate limits](setup.md#rate-limits)). A review with three rounds
+makes up to four calls instead of one, each carrying the whole diff again, so
+it takes more time and more tokens, and behind a gateway with a low limit
+noticeably more time (`metadata.rate_limit_waits` shows it). Start with 2 or 3
+rounds.
+
+### What is never done
+
+- Anything is built, run or loaded as code; hooks or repository configuration
+  are executed.
+- The network is used while the tools run, or a missing blob is fetched.
+- The base commit is read, or any other commit than the pull request head.
+- The tools are turned on or raised by a file of the repository.
+- File content, search text or a tool result is written to a log.
+- The diff is shortened to make room for a tool result.
+- A secret-pattern scan of the repository is made (backlog).
+
 ## Why not in serve mode
 
 A shared server would hold code fetched with one user's token, and another user
@@ -277,6 +462,9 @@ nothing is shown when repository context is off. The structured result has
 A review in parts is `used` when at least one part searched the repository, and
 a note names the parts that lack it; it is `skipped` when none did.
 
+`coverage.repo_context.tools` reports the [repository
+tools](#reading-the-tools-result) in `pr_review` and `pr_ask`.
+
 ## Measuring the gain
 
 `diag review --repo-context=on|off` overrides `context.repo.enabled` for one
@@ -329,3 +517,8 @@ ratings show a clear gain on at least **20 pull requests**.
 
 - Evaluation of `pr_ask` with context (`tools/evalrepo` reviews only in v1.1).
 - A real code graph (stage 2), only after the rule above is met.
+- Repository tools in a review in parts.
+- Repository tools for `pr_describe` and `pr_improve`.
+- Deterministic secret-pattern scanning.
+- Reading the base commit for "before" comparisons (needs a base fetch decision).
+- V-13b uses these tools inside related repositories.

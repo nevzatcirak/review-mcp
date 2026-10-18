@@ -5,6 +5,34 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0]
+
+Sixth stable release. The code is the same as `2.3.0-rc.2`. The release
+candidates were accepted in use in record #48. The primary was a throwaway pull
+request in this repository, and the related item a throwaway merge request on
+GitLab, each read with its own provider's token. That acceptance also found the
+defect fixed in `2.3.0-rc.2`. The `2.3.0-rc.1` and `2.3.0-rc.2` sections of
+CHANGELOG.md list everything that went into 2.3.0 since 2.2.0. Nothing in the
+tools or in the configuration of 2.2.0 is removed or renamed, and nothing
+changes unless a call passes the new `related` argument: a 2.2.0 setup keeps
+working as before.
+
+### Highlights
+
+- Related pull requests (`related` on `pr_review`, `pr_ask` and `pr_info`):
+  up to four pull requests on any configured provider, named by the caller,
+  read as context only. Their diffs are budgeted (`related.max_tokens`),
+  contract files first, fenced as untrusted data, and placed only in the room
+  the reviewed diff leaves. Nothing is ever published to them.
+- Cross-repository findings: mismatches between the pull requests, rollout
+  compatibility and merge order. A finding in a related pull request is listed
+  in the overview with a link built by that pull request's own provider; a
+  finding on the reviewed pull request's own lines stays inline.
+- Incremental reviews record the related pull requests and review in full when
+  one changed.
+- The MCP prompt `review_linked_prs` reviews a set of linked pull requests, one
+  call per pull request, each with the others as related.
+
 ## [2.3.0-rc.2]
 
 Second 2.3 release candidate (the npm dist-tag `next`; `latest` stays on
@@ -1605,6 +1633,7 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[2.3.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.3.0
 [2.3.0-rc.2]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.3.0-rc.2
 [2.3.0-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.3.0-rc.1
 [2.2.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.2.0

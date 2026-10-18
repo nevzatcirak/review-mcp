@@ -315,11 +315,11 @@ func TestChainConverseRestart(t *testing.T) {
 			t.Fatal(err)
 		}
 		_, err = ch.Converse(t.Context(), later(conv, turn))
-		if !errors.Is(err, ErrRestart) || !errors.Is(err, ErrUpstream) {
-			t.Fatalf("later turn: %v", err)
-		}
 		if fb.calls() != 0 {
-			t.Fatal("the fallback got the middle of a conversation")
+			t.Fatalf("a later turn was served by another model: the fallback got the middle of a conversation (error %v)", err)
+		}
+		if !errors.Is(err, ErrRestart) || !errors.Is(err, ErrUpstream) {
+			t.Fatalf("a later turn that failed on its model did not ask for a restart: %v", err)
 		}
 		turn, err = ch.Converse(t.Context(), conv)
 		if err != nil {

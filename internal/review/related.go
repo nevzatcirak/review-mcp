@@ -7,6 +7,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/diffpipe"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
+	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/related"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 )
@@ -110,7 +111,12 @@ func (pl *Plan) relatedOf(tag string) (related.Section, bool) {
 // one of its changed files (shown or listed); the Snippet from its diff,
 // only when the file was shown. It reports whether the finding is related;
 // an unknown value (not a placed item) is dropped, and unknown is set.
-func (pl *Plan) attachRelated(ki *KeyIssue, unknown *bool) bool {
+//
+// The file decides, not the tag (spec §5 item 1): a file of the reviewed
+// pull request's diff (primary) that the related pull request does not
+// change makes a finding on the reviewed pull request, tag dropped, no
+// note. The model reads "related" as "relates to" (acceptance on 2.3.0-rc.1).
+func (pl *Plan) attachRelated(ki *KeyIssue, primary map[string]*provider.FilePatch, unknown *bool) bool {
 	tag := ki.relatedTag
 	ki.relatedTag = ""
 	if tag == "" {
@@ -122,6 +128,9 @@ func (pl *Plan) attachRelated(ki *KeyIssue, unknown *bool) bool {
 		return false
 	}
 	it := rs.Item
+	if primary[ki.RelevantFile] != nil && !changes(it, ki.RelevantFile) {
+		return false
+	}
 	ki.Related = it.URL
 	ki.RelatedName = it.Ref.Repo + "#" + strconv.FormatInt(it.Ref.Number, 10)
 	ki.Snippet, ki.SnippetNote, ki.Link = "", "", ""
@@ -137,4 +146,15 @@ func (pl *Plan) attachRelated(ki *KeyIssue, unknown *bool) bool {
 		break
 	}
 	return true
+}
+
+// changes reports whether the related pull request changes the file
+// (shown or listed).
+func changes(it *related.Item, path string) bool {
+	for i := range it.Diff.Files {
+		if it.Diff.Files[i].Path == path {
+			return true
+		}
+	}
+	return false
 }

@@ -572,3 +572,67 @@ func TestRelatedTagWithoutABlock(t *testing.T) {
 		t.Errorf("notes %q", res.Notes)
 	}
 }
+
+// relatedByFileAnswer tags every finding R1; the files decide where each
+// one is placed (spec §5 item 1): proto/user.proto only in R1, src/util.go
+// only in the reviewed pull request, src/app.go in both, src/elsewhere.go
+// in neither.
+const relatedByFileAnswer = "```yaml\nreview:\n  key_issues_to_review:\n" +
+	"    - relevant_file: proto/user.proto\n      issue_header: In R1\n      issue_content: Only R1 changes this file.\n" +
+	"      start_line: 1\n      end_line: 2\n      related: R1\n" +
+	"    - relevant_file: src/util.go\n      issue_header: On the reviewed\n      issue_content: Only the reviewed pull request changes this file.\n" +
+	"      start_line: 2\n      end_line: 2\n      related: R1\n" +
+	"    - relevant_file: src/app.go\n      issue_header: In both\n      issue_content: Both change this file.\n" +
+	"      start_line: 1\n      end_line: 1\n      related: R1\n" +
+	"    - relevant_file: src/elsewhere.go\n      issue_header: In neither\n      issue_content: Neither changes this file.\n" +
+	"      start_line: 3\n      end_line: 3\n      related: R1\n```\n"
+
+// TestRelatedPlacedByFile: with a placed related block, the file a tagged
+// finding names decides its place, not the tag (spec §5 item 1, one case
+// per row of its table); a re-homed finding keeps no related value, so no
+// held line carries one, is anchored inline, and adds no note. [canary]
+func TestRelatedPlacedByFile(t *testing.T) {
+	h, rel := relatedHarness(relatedByFileAnswer)
+	rel.files = append(rel.files, patchOf("src/app.go", "APP-MARKER", 24))
+	h.deps.Config.Review.MaxFindings = 5
+	res := runRelated(t, h, Args{Related: relatedArgs().Related, Publish: true})
+	f := res.Review.KeyIssuesToReview
+	if len(f) != 4 {
+		t.Fatalf("%d findings", len(f))
+	}
+	if only := f[0]; only.Related != relatedURL || only.RelatedName != "svc#3" || only.Link == "" || only.InlineStatus != "" {
+		t.Errorf("file only in R1 %+v, want a related finding", only)
+	}
+	if primary := f[1]; primary.Related != "" || primary.RelatedName != "" || primary.relatedTag != "" ||
+		!strings.HasPrefix(primary.Link, "https://your-gitea.example/") || primary.InlineStatus == "" {
+		t.Errorf("file only in the reviewed pull request %+v, want a primary finding planned inline", primary)
+	}
+	if both := f[2]; both.Related != relatedURL || both.Link == "" || both.InlineStatus != "" ||
+		!strings.Contains(both.Link, "/src/app.go#L1") {
+		t.Errorf("file in both %+v, want the tag to decide", both)
+	}
+	if neither := f[3]; neither.Related != relatedURL || neither.Link != "" || neither.Snippet != "" {
+		t.Errorf("file in neither %+v, want a related finding without a link", neither)
+	}
+	if slices.Contains(res.Notes, NoteRelatedUnknown) {
+		t.Errorf("a re-homed finding added the unknown-related note: %q", res.Notes)
+	}
+	inlined := false
+	for _, items := range h.prov.inline {
+		for _, it := range items {
+			inlined = inlined || it.Path == "src/util.go"
+			if it.Path != "src/util.go" {
+				t.Errorf("a related finding was posted inline: %+v", it)
+			}
+		}
+	}
+	if !inlined {
+		t.Error("the re-homed finding was not posted inline")
+	}
+	// The re-homed finding is not held; the three related ones are, each
+	// with its related URL.
+	lines, _ := heldLines(res, shaOld)
+	if len(lines) != 3 {
+		t.Fatalf("%d held lines, want 3", len(lines))
+	}
+}

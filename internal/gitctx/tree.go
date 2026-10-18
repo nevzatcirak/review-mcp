@@ -3,6 +3,7 @@ package gitctx
 import (
 	"bytes"
 	"context"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -92,11 +93,39 @@ func (r *Runner) ListDir(ctx context.Context, c Checkout, rev, dir string) (*pro
 	if err != nil {
 		return nil, err
 	}
+	return provider.FinishDirListing(dirEntries(entries), false), nil
+}
+
+// DirEntries returns every direct entry of directory dir ("" is the root)
+// at commit rev of c's repository, sorted by name and not capped: the
+// caller caps and counts what it leaves out (the list_dir tool, X-43). A
+// submodule is listed as a file. A dir that is not a directory at rev is
+// not_found.
+func (r *Runner) DirEntries(ctx context.Context, c Checkout, rev, dir string) ([]provider.DirEntry, error) {
+	rev = strings.ToLower(rev)
+	if !shaRE.MatchString(rev) || !usablePath(dir) {
+		return nil, fail(ReasonUnsupported)
+	}
+	g, err := r.openCheckout(c)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := g.listTree(ctx, rev, dir)
+	if err != nil {
+		return nil, err
+	}
+	out := dirEntries(entries)
+	slices.SortStableFunc(out, func(a, b provider.DirEntry) int { return strings.Compare(a.Name, b.Name) })
+	return out, nil
+}
+
+// dirEntries maps ls-tree entries to directory entries.
+func dirEntries(entries []treeEntry) []provider.DirEntry {
 	out := make([]provider.DirEntry, 0, len(entries))
 	for _, e := range entries {
 		out = append(out, provider.DirEntry{Name: e.name, Dir: e.typ == "tree"})
 	}
-	return provider.FinishDirListing(out, false), nil
+	return out
 }
 
 // usablePath reports whether p can name a path in an object specification
@@ -198,9 +227,13 @@ func (g *gitRun) readBlob(ctx context.Context, oid string, maxBytes int) ([]byte
 	if nl < 0 {
 		return nil, fail(ReasonGitFailed)
 	}
-	m := blobHeadRE.FindStringSubmatch(string(res.stdout[:nl]))
+	head := string(res.stdout[:nl])
+	if strings.HasSuffix(head, " missing") {
+		return nil, fail(ReasonBlobMissing) // the partial clone lacks it
+	}
+	m := blobHeadRE.FindStringSubmatch(head)
 	if m == nil || m[2] != "blob" {
-		return nil, fail(ReasonGitFailed) // "<oid> missing": the partial clone lacks it
+		return nil, fail(ReasonGitFailed)
 	}
 	size, err := strconv.Atoi(m[3])
 	if err != nil {

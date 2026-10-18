@@ -241,6 +241,31 @@ func (s *Session) Changes() (cr ChangeReader, co gitctx.Checkout, ok bool) {
 	return cr, s.co, true
 }
 
+// HeadReader reads the fetched pull request head from the cache, offline
+// (the repository tools, X-43). *gitctx.Runner implements it.
+type HeadReader interface {
+	FileAt(ctx context.Context, c gitctx.Checkout, rev, path string, maxBytes int) ([]byte, error)
+	DirEntries(ctx context.Context, c gitctx.Checkout, rev, dir string) ([]provider.DirEntry, error)
+	SearchText(ctx context.Context, c gitctx.Checkout, q gitctx.TextQuery) (gitctx.TextResult, error)
+}
+
+var _ HeadReader = (*gitctx.Runner)(nil)
+
+// Head returns the reader of the pull request head, its checkout and the
+// run's filter, or ok false. Like AtRevision it never fetches: ok is true
+// only when this session already fetched the head without error and the
+// backend can read it. Only git plumbing runs, offline (R-1).
+func (s *Session) Head() (hr HeadReader, co gitctx.Checkout, flt *filter.Filter, ok bool) {
+	if s == nil || !s.fetched.Load() {
+		return nil, gitctx.Checkout{}, nil, false
+	}
+	hr, ok = s.backend.(HeadReader)
+	if !ok {
+		return nil, gitctx.Checkout{}, nil, false
+	}
+	return hr, s.co, s.flt, true
+}
+
 // Narrow makes files the pull request files of a review in one call that
 // only part of the pull request reaches: an incremental review (X-36), whose
 // prompt carries only the files that changed since the last review. Their

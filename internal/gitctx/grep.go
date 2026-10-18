@@ -208,7 +208,7 @@ func (r *Runner) Grep(ctx context.Context, c Checkout, q Query) (Result, error) 
 			res.SkippedSymbols++
 			continue
 		}
-		raw, truncated, err := s.search(total, sym.Name, pathspecs)
+		raw, truncated, err := s.search(total, sym.Name, pathspecs, true)
 		if err != nil {
 			if ctx.Err() != nil {
 				return res, ctx.Err()
@@ -419,12 +419,16 @@ func (s *searcher) pathspecs(missing []string) []string {
 	return out
 }
 
-// search runs git grep for one symbol and returns the hits that survive the
-// post-filter.
-func (s *searcher) search(ctx context.Context, symbol string, pathspecs []string) (hits []rawHit, truncated bool, err error) {
+// search runs git grep for one fixed string, as a whole word when word is
+// set, and returns the hits that survive the post-filter.
+func (s *searcher) search(ctx context.Context, symbol string, pathspecs []string, word bool) (hits []rawHit, truncated bool, err error) {
 	gctx, cancel := context.WithTimeout(ctx, grepTimeout)
 	defer cancel()
-	args := []string{"grep", "-n", "-z", "-w", "-F", "-I", "--no-color", "-e", symbol, s.sha, "--"}
+	args := []string{"grep", "-n", "-z"}
+	if word {
+		args = append(args, "-w")
+	}
+	args = append(args, "-F", "-I", "--no-color", "-e", symbol, s.sha, "--")
 	args = append(args, pathspecs...)
 	res := s.g.run(gctx, gitCmd{args: args, offline: true, maxStdout: maxGrepOutput})
 	if res.err != nil {
@@ -621,4 +625,106 @@ func cutLine(s string) string {
 		cut--
 	}
 	return s[:cut] + "..."
+}
+
+// TextQuery is a fixed-string search of the head commit: the search tool of
+// the model (X-43, V-8 spec §2.1).
+type TextQuery struct {
+	// Text is the fixed string, matched case-sensitively anywhere in a line.
+	Text string
+	// Dir limits the search to a directory ("" is the whole tree).
+	Dir string
+	// Filter, when set, leaves out the files it does not include, like the
+	// symbol search.
+	Filter *filter.Filter
+	// MaxHits caps the hits kept; 0 means DefaultMaxTextHits.
+	MaxHits int
+	// ContextLines is the number of lines kept before and after a hit; a
+	// negative value none. At most 10.
+	ContextLines int
+}
+
+// DefaultMaxTextHits is the hit cap of a TextQuery without one.
+const DefaultMaxTextHits = 50
+
+// maxTextBytes bounds the text of a TextQuery: 200 characters of up to four
+// bytes.
+const maxTextBytes = 800
+
+// usableText is usableSymbol for the longer text of a TextQuery.
+func usableText(text string) bool {
+	return text != "" && len(text) <= maxTextBytes && utf8.ValidString(text) && !strings.ContainsAny(text, "\x00\r\n")
+}
+
+// TextResult is what SearchText found.
+type TextResult struct {
+	// Hits are the first matches in git's order (path, then line); Symbol
+	// is empty.
+	Hits []Hit
+	// More is true when there were more matches than the cap, or git's
+	// output reached its cap.
+	More bool
+	// SkippedBlobs counts the files not searched because the partial clone
+	// lacks their blob (never fetched).
+	SkippedBlobs int
+}
+
+// SearchText runs "git grep -n -z -F -I -e <text> <head-sha> -- <pathspecs>"
+// on the head commit of c, with the offline rules, limits and timeouts of
+// Grep: no credential, no protocol, GIT_NO_LAZY_FETCH=1, files without a
+// blob left out and counted, 15 s for the search and 60 s in all, 4 MiB of
+// output. The text is the value of -e, so it is never an option, and Dir is
+// a literal pathspec. The context lines are read from the blobs of the kept
+// hits.
+func (r *Runner) SearchText(ctx context.Context, c Checkout, q TextQuery) (TextResult, error) {
+	var res TextResult
+	if err := ctx.Err(); err != nil {
+		return res, err
+	}
+	sha := strings.ToLower(c.HeadSHA)
+	if !shaRE.MatchString(sha) || !usableText(q.Text) || !usablePath(q.Dir) {
+		return res, fail(ReasonUnsupported)
+	}
+	g, err := r.openCheckout(c)
+	if err != nil {
+		return res, err
+	}
+	maxHits := q.MaxHits
+	if maxHits <= 0 {
+		maxHits = DefaultMaxTextHits
+	}
+	total, cancel := context.WithTimeout(ctx, grepTotalTimeout)
+	defer cancel()
+	s := &searcher{g: g, sha: sha, q: Query{Filter: q.Filter}, exclude: map[string]bool{}}
+	missing, err := s.missingFiles(total)
+	if err != nil {
+		return res, err
+	}
+	res.SkippedBlobs = len(missing)
+	var specs []string
+	if q.Dir != "" {
+		specs = append(specs, ":(top,literal)"+q.Dir)
+	}
+	specs = append(specs, s.pathspecs(missing)...)
+	raw, truncated, err := s.search(total, q.Text, specs, false)
+	if err != nil {
+		if ctx.Err() != nil {
+			return res, ctx.Err()
+		}
+		return res, err
+	}
+	res.More = truncated || len(raw) > maxHits
+	if len(raw) > maxHits {
+		raw = raw[:maxHits]
+	}
+	hits := make([]Hit, len(raw))
+	for i, h := range raw {
+		hits[i] = Hit{Path: h.path, Line: h.line, StartLine: h.line, Snippet: h.text}
+	}
+	ctxLines := min(q.ContextLines, maxContextLines)
+	if ctxLines > 0 {
+		s.addContext(total, hits, ctxLines)
+	}
+	res.Hits = hits
+	return res, nil
 }

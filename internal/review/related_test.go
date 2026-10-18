@@ -636,3 +636,30 @@ func TestRelatedPlacedByFile(t *testing.T) {
 		t.Fatalf("%d held lines, want 3", len(lines))
 	}
 }
+
+// TestRelatedInstructionMarksTheLocation: the instruction and the field
+// say that related marks where the lines are, not what the problem is
+// about, and ask for the repository and number in the text (spec §5
+// item 2); the system prompt of a run with a placed block carries them.
+func TestRelatedInstructionMarksTheLocation(t *testing.T) {
+	for _, want := range []string{
+		"Set related only when relevant_file is a file changed in that related pull request",
+		"A problem on the reviewed pull request's own lines stays untagged, even when a related pull request causes it.",
+		"name a related pull request by the repository and number shown in its header line, not by R1 to R4",
+	} {
+		if !strings.Contains(RelatedInstruction, want) {
+			t.Errorf("the instruction lacks %q", want)
+		}
+	}
+	for _, want := range []string{"only when relevant_file is a file changed in that related pull request",
+		"omit for a file of the reviewed pull request, even when a related pull request causes the problem"} {
+		if !strings.Contains(relatedKeyIssueField, want) {
+			t.Errorf("the field description lacks %q", want)
+		}
+	}
+	h, _ := relatedHarness(goodAnswer)
+	sys := prepareWith(t, h, relatedArgs()).Prompts.System
+	if !strings.Contains(sys, RelatedInstruction) || !strings.Contains(sys, relatedKeyIssueField) {
+		t.Error("the system prompt of a run with a placed block lacks the new texts")
+	}
+}

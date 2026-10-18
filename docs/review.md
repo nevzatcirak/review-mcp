@@ -1493,6 +1493,21 @@ the pull requests: a field, route, status code, message or schema changed on
 one side and not on the other; compatibility while the changes roll out one
 after the other; and the order in which they must be merged and deployed.
 
+**The file decides where a finding is placed, not the model's tag.** The
+model sets `related` (R1 to R4) to mark where the lines are, but it may also
+use it to mean "relates to". So review-mcp compares the finding's
+`relevant_file` with the files of both pull requests:
+
+| `relevant_file` is in … | The finding is |
+|---|---|
+| the related pull request's changed files only | a related finding (below) |
+| the reviewed pull request's diff only | a finding on the reviewed pull request: the tag is dropped, it is anchored inline as usual, and there is no note |
+| both | a related finding: the tag decides |
+| neither | a related finding without a link |
+
+A contract mismatch whose lines are on the reviewed pull request is therefore
+anchored there, even when the model tagged it with a related pull request.
+
 A finding located in a related pull request is **listed in the overview
 only**: it is never an inline comment on the reviewed pull request. It shows
 "(in related pull request [api#9](...), listed here only)", and its link

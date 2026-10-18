@@ -53,3 +53,55 @@ func TestRepoContextZeroValueMarshalsAsOff(t *testing.T) {
 		t.Errorf("coverage JSON = %s", raw)
 	}
 }
+
+// TestRepoToolsLine: every row of the table of the v2.4 spec V-8 §5. Nil and
+// off/off give no line, so a result without the tools renders as in rc.1.
+func TestRepoToolsLine(t *testing.T) {
+	call := func(st string) llmrun.RepoToolCall {
+		return llmrun.RepoToolCall{Tool: "read_file", Target: "a.go", Status: st}
+	}
+	for _, tc := range []struct {
+		name string
+		t    *llmrun.RepoTools
+		want string
+	}{
+		{"nil", nil, ""},
+		{"off", &llmrun.RepoTools{Status: "off", Reason: "off"}, ""},
+		{"off_zero_reason", &llmrun.RepoTools{Status: "off"}, ""},
+		{"used", &llmrun.RepoTools{Status: "used", Rounds: 2, Calls: []llmrun.RepoToolCall{call("ok"), call("ok"), call("ok")}},
+			"Repository tools: 3 calls in 2 rounds"},
+		{"used_singular", &llmrun.RepoTools{Status: "used", Rounds: 1, Calls: []llmrun.RepoToolCall{call("ok")}},
+			"Repository tools: 1 call in 1 round"},
+		{"used_failed", &llmrun.RepoTools{Status: "used", Rounds: 2, Calls: []llmrun.RepoToolCall{
+			call("too_many_calls"), call("ok"), call("budget_exhausted"), call("too_many_calls"), call("not_available")}},
+			"Repository tools: 5 calls in 2 rounds; 1 `not_available`; 1 `budget_exhausted`; 2 `too_many_calls`"},
+		{"not_used", &llmrun.RepoTools{Status: "not_used"}, "Repository tools: allowed, not used"},
+		{"skipped", &llmrun.RepoTools{Status: "skipped", Reason: "endpoint_no_tools"}, "Repository tools: skipped: `endpoint_no_tools`"},
+		{"repo_context_off", &llmrun.RepoTools{Status: "off", Reason: "repo_context_off"}, "Repository tools: off: `repo_context_off`"},
+	} {
+		if got := RepoToolsLine(tc.t); got != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestCoverageRepoToolsLinePlacement: the line follows the "Repository
+// context" line, and for off/off the output is byte-identical to a result
+// without the tools accounting.
+func TestCoverageRepoToolsLinePlacement(t *testing.T) {
+	render := func(tools *llmrun.RepoTools) string {
+		c := llmrun.Coverage{Included: []string{"a.go"}, RepoContext: llmrun.RepoContext{Status: "used", Symbols: 1, References: 1, Files: 1, Tools: tools}}
+		var b strings.Builder
+		Coverage(&b, "## Coverage", &c)
+		return b.String()
+	}
+	base := render(nil)
+	if got := render(&llmrun.RepoTools{Status: "off", Reason: "off"}); got != base {
+		t.Errorf("off/off changed the output:\n%s", got)
+	}
+	ctx := "- Repository context: 1 symbol, 1 reference from 1 file\n"
+	got := render(&llmrun.RepoTools{Status: "not_used"})
+	if want := strings.Replace(base, ctx, ctx+"- Repository tools: allowed, not used\n", 1); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}

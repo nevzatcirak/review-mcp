@@ -324,16 +324,22 @@ func toolBigFiles(n, lines int) []provider.FilePatch {
 }
 
 // TestToolsNeverTrimTheDiff [canary]: across a sweep of context windows,
-// no tool round goes out with the diff trimmed: every request carries the
-// user prompt with the whole diff and fits the window beside the output
-// reserve. The sweep both uses the tools and leaves them out for room.
+// no tool round goes out with the diff trimmed or over the window: every
+// request carries the user prompt with the whole diff and fits the window
+// beside the output reserve. The model reads a large file, so in the
+// smaller windows the results press the room beside the diff. The sweep
+// uses the tools, has results cut for the room, and leaves the tools out
+// for room.
 func TestToolsNeverTrimTheDiff(t *testing.T) {
-	used, noRoom := false, false
-	for window := 3000; window <= 9000; window += 100 {
-		h, _, tl := toolHarness(3,
-			callTools(readCall("c1", "pkg/store.go"), readCall("c2", "pkg/store.go")),
-			callTools(readCall("c3", "pkg/store.go")),
+	used, pressed, noRoom := false, false, false
+	for window := 3000; window <= 12000; window += 100 {
+		h, tr, tl := toolHarness(3,
+			callTools(toolCall("c1", repotools.ReadFile, `{"path":"pkg/big.go","end_line":120}`),
+				toolCall("c2", repotools.ReadFile, `{"path":"pkg/big.go","start_line":121}`)),
+			callTools(toolCall("c3", repotools.ReadFile, `{"path":"pkg/big.go","start_line":60}`)),
 			toolAnswer(goodAnswer))
+		tr.files["pkg/big.go"] = numberedLines(1, 240, nil)
+		h.deps.Config.Context.Repo.MaxToolTokens = 40000
 		h.prov.files = toolBigFiles(1, 120)
 		h.deps.Config.LLM.ContextWindow = window
 		h.deps.Config.Review.MaxChunks = 1
@@ -355,14 +361,18 @@ func TestToolsNeverTrimTheDiff(t *testing.T) {
 				t.Fatalf("window %d: request %d went out with the diff trimmed", window, i+1)
 			}
 			if n := repotools.RequestTokens(c, pl.Budget.Factor); n > limit {
-				t.Fatalf("window %d: request %d estimates %d over the limit %d", window, i+1, n, limit)
+				t.Fatalf("window %d: request %d estimates %d tokens, over the %d the window leaves beside the whole diff", window, i+1, n, limit)
 			}
 		}
-		used = used || toolsOf(res).Status == repotools.StatusUsed
-		noRoom = noRoom || toolsOf(res).Reason == repotools.ReasonNoRoom
+		rt := toolsOf(res)
+		used = used || rt.Status == repotools.StatusUsed
+		pressed = pressed || rt.Status == repotools.StatusUsed && slices.ContainsFunc(rt.Calls, func(c llmrun.RepoToolCall) bool {
+			return c.Status == repotools.StatusBudgetExhausted
+		})
+		noRoom = noRoom || rt.Reason == repotools.ReasonNoRoom
 	}
-	if !used || !noRoom {
-		t.Fatalf("the sweep never used tools (%v) or never left them out for room (%v)", used, noRoom)
+	if !used || !pressed || !noRoom {
+		t.Fatalf("the sweep never used tools (%v), never cut a result for room (%v) or never left the tools out for room (%v)", used, pressed, noRoom)
 	}
 }
 

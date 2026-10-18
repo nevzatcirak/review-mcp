@@ -560,3 +560,32 @@ func TestToolSupportString(t *testing.T) {
 		}
 	}
 }
+
+// TestToolSupportSeen: what a process saw of a model's tool calling is
+// readable by base URL and model without a request or a key (server_info):
+// not known yet, then accepted, then refused for another model.
+func TestToolSupportSeen(t *testing.T) {
+	f := convFake(t, func(n int) (int, string) {
+		if n == 1 {
+			return 200, okJSON("no need")
+		}
+		return 400, `{"error":{"message":"tools are not supported"}}`
+	})
+	a, b := baseCfg(f.srv.URL+"/v1/"), baseCfg(f.srv.URL+"/v1/")
+	b.Model = "other-model"
+	if ToolSupportSeen(a.BaseURL, a.Model) != ToolsUnknown {
+		t.Fatal("seen before any conversation")
+	}
+	if _, err := newClient(t, a, nil, nil).Converse(t.Context(), startConv()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newClient(t, b, nil, nil).Converse(t.Context(), startConv()); !errors.Is(err, ErrNoTools) {
+		t.Fatal(err)
+	}
+	if got := ToolSupportSeen(a.BaseURL, a.Model); got != ToolsAccepted {
+		t.Errorf("model a: %v", got)
+	}
+	if got := ToolSupportSeen(strings.TrimSuffix(b.BaseURL, "/"), b.Model); got != ToolsRefused {
+		t.Errorf("model b: %v", got)
+	}
+}

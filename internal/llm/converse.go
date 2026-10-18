@@ -151,7 +151,7 @@ func (c *Client) Converse(ctx context.Context, conv Conversation) (Turn, error) 
 	})
 	var le *Error
 	if tools && errors.As(err, &le) && le.reason == reasonNoTools {
-		c.limiter.setToolSupport(c.cfg.Model, ToolsRefused)
+		c.remember(ToolsRefused)
 		c.logger.Debug("llm tools refused", "endpoint", c.limiter.endpoint, "status", le.Status)
 		return Turn{}, ErrNoTools
 	}
@@ -159,7 +159,7 @@ func (c *Client) Converse(ctx context.Context, conv Conversation) (Turn, error) 
 		return Turn{}, err
 	}
 	if tools {
-		c.limiter.setToolSupport(c.cfg.Model, ToolsAccepted)
+		c.remember(ToolsAccepted)
 	}
 	return out, nil
 }

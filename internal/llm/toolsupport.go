@@ -3,6 +3,7 @@ package llm
 import (
 	"errors"
 	"strings"
+	"sync"
 )
 
 // Endpoints that refuse tools (V-8 spec §1 item 4, owner default 5). There
@@ -81,6 +82,41 @@ func (l *limiter) setToolSupport(model string, s ToolSupport) {
 // model's tool calling.
 func (c *Client) ToolSupport() ToolSupport {
 	return c.limiter.toolSupport(c.cfg.Model)
+}
+
+// remember records support for the client's endpoint and model, in the
+// limiter (the X-37 key, which decides) and in the process-wide record that
+// server_info reads.
+func (c *Client) remember(s ToolSupport) {
+	c.limiter.setToolSupport(c.cfg.Model, s)
+	toolsSeen.set(c.baseStr, c.cfg.Model, s)
+}
+
+// toolsSeen is the process-wide record of the tool support seen per base URL
+// and model, with no key in it: server_info reads it without a request and
+// without a secret, as it reads the resolved context windows.
+var toolsSeen = &toolRecord{vals: map[string]ToolSupport{}}
+
+type toolRecord struct {
+	mu   sync.Mutex
+	vals map[string]ToolSupport
+}
+
+func toolKey(baseURL, model string) string { return strings.TrimRight(baseURL, "/") + "\x00" + model }
+
+func (r *toolRecord) set(baseURL, model string, s ToolSupport) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.vals[toolKey(baseURL, model)] = s
+}
+
+// ToolSupportSeen returns what this process has seen of the tool calling of
+// model at baseURL (ToolsUnknown until a conversation with tools was
+// tried), for readers that must not ask the endpoint (server_info).
+func ToolSupportSeen(baseURL, model string) ToolSupport {
+	toolsSeen.mu.Lock()
+	defer toolsSeen.mu.Unlock()
+	return toolsSeen.vals[toolKey(baseURL, model)]
 }
 
 // ToolsRefused reports whether the model the run is on is known not to

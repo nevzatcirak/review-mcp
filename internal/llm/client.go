@@ -480,6 +480,9 @@ func (c *Client) Complete(ctx context.Context, system, user string) (*Response, 
 type exchange struct {
 	build func() ([]byte, error)
 	parse func(data []byte) (outcome, *Error)
+	// tools is set when the request carries tools: a 400 or 422 body is
+	// then also matched for a refusal of them.
+	tools bool
 }
 
 // outcome is what the debug log reports of a parsed answer; attrs are
@@ -589,13 +592,17 @@ func (c *Client) attempt(ctx context.Context, attempt int, ex exchange) (time.Du
 
 	if status < 200 || status >= 300 {
 		var errBody []byte
-		if status == http.StatusBadRequest || status == http.StatusRequestEntityTooLarge {
+		if status == http.StatusBadRequest || status == http.StatusRequestEntityTooLarge ||
+			(ex.tools && status == http.StatusUnprocessableEntity) {
 			errBody, _ = io.ReadAll(io.LimitReader(resp.Body, errBodyBytes))
 		} else {
 			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, drainBytes))
 		}
 		retryAfter := c.retryAfter(resp.Header.Get("Retry-After"))
 		le := c.statusError(status, errBody)
+		if ex.tools && le.Class == ClassBadRequest && status != http.StatusRequestEntityTooLarge && mentionsTools(errBody) {
+			le.reason = reasonNoTools
+		}
 		if status == http.StatusTooManyRequests {
 			// Retry-After is the endpoint's cool-down, not this request's
 			// delay: every caller waits for it (§2.2 item 5).
@@ -658,8 +665,9 @@ func (c *Client) transportError(parent, reqCtx context.Context, err error) *Erro
 	return &Error{Class: ClassTransport, Detail: pe.Hint}
 }
 
-// statusError maps a non-2xx status to a sanitized error. errBody (400/413
-// only) is inspected in memory and never returned or logged.
+// statusError maps a non-2xx status to a sanitized error. errBody (400/413,
+// and 422 of a request with tools) is inspected in memory and never
+// returned or logged.
 func (c *Client) statusError(status int, errBody []byte) *Error {
 	e := &Error{Status: status}
 	switch {

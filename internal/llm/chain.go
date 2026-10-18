@@ -242,6 +242,22 @@ func (c *Chain) from(ctx context.Context, start int, moved string, need func() i
 		if ctx.Err() != nil {
 			return -1, ctx.Err()
 		}
+		if errors.Is(err, ErrNoTools) {
+			// The model is up but refuses tools: the run stays on it and
+			// continues single-pass there (§1 item 5).
+			//
+			// DESIGN-QUESTION (WP-12a DQ-6): when the primary failed first
+			// (say, a server error) and the fallback refuses tools, the
+			// run moves to the fallback, as if it had served, and goes on
+			// single-pass there with the no-tools note; the fallback note
+			// names the primary's failure. Trying the primary again
+			// single-pass would ask a model that just failed.
+			// Recommendation: keep.
+			if i > start {
+				c.moved(i, reason)
+			}
+			return -1, err
+		}
 		if first == nil && moved == "" {
 			first = err
 		} else {
@@ -337,6 +353,14 @@ func (c *Chain) fits(ctx context.Context, i int, prompt func() int) (bool, error
 	}
 	c.use.SizeSkips = append(c.use.SizeSkips, SizeSkip{Model: model, Calls: 1})
 	return false, nil
+}
+
+// moved records that the run moved to model i for reason without a call
+// served there yet; the next call starts at it.
+func (c *Chain) moved(i int, reason string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cur, c.pending = i, reason
 }
 
 // served records that model i served a call, after moving for reason ("" at

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
@@ -123,9 +124,21 @@ func (cv Conversation) estimate(factor float64) int {
 // goes through the same retries and rate limiter as Complete (§1 item 3);
 // the request differs from Complete's only by the further messages, the
 // tools and the tool choice.
+//
+// A request with tools to an endpoint and model known to refuse them is
+// not sent: Converse returns ErrNoTools. A refusal (HTTP 400 or 422 whose
+// body mentions tools or functions) or an answer that ends for tool calls
+// without a call it can read is remembered for the process and returned as
+// ErrNoTools; a request with tools that gets an answer marks them accepted.
+// A model that answers without calling tools accepted them.
 func (c *Client) Converse(ctx context.Context, conv Conversation) (Turn, error) {
+	tools := len(conv.Tools) > 0
+	if tools && c.ToolSupport() == ToolsRefused {
+		return Turn{}, ErrNoTools
+	}
 	var out Turn
 	err := c.do(ctx, exchange{
+		tools: tools,
 		build: func() ([]byte, error) { return c.buildConversation(conv) },
 		parse: func(data []byte) (outcome, *Error) {
 			t, le := parseTurn(data)
@@ -136,8 +149,17 @@ func (c *Client) Converse(ctx context.Context, conv Conversation) (Turn, error) 
 			return outcome{usage: t.Usage, truncated: t.Truncated, attrs: []any{"tool_calls", len(t.ToolCalls)}}, nil
 		},
 	})
+	var le *Error
+	if tools && errors.As(err, &le) && le.reason == reasonNoTools {
+		c.limiter.setToolSupport(c.cfg.Model, ToolsRefused)
+		c.logger.Debug("llm tools refused", "endpoint", c.limiter.endpoint, "status", le.Status)
+		return Turn{}, ErrNoTools
+	}
 	if err != nil {
 		return Turn{}, err
+	}
+	if tools {
+		c.limiter.setToolSupport(c.cfg.Model, ToolsAccepted)
 	}
 	return out, nil
 }
@@ -174,7 +196,8 @@ func (c *Client) buildConversation(conv Conversation) ([]byte, error) {
 }
 
 // parseTurn reads an answer of a conversation. Unlike Complete's, its text
-// may be empty when it calls tools.
+// may be empty when it calls tools. An answer that ends for tool calls
+// without a call it can read shows a model that ignores the tools.
 func parseTurn(data []byte) (Turn, *Error) {
 	var cr chatResponse
 	if err := json.Unmarshal(data, &cr); err != nil {
@@ -194,6 +217,9 @@ func parseTurn(data []byte) (Turn, *Error) {
 			CompletionTokens: cr.Usage.CompletionTokens,
 			TotalTokens:      cr.Usage.TotalTokens,
 		},
+	}
+	if ch.FinishReason == "tool_calls" && len(t.ToolCalls) == 0 {
+		return Turn{}, &Error{Class: ClassProtocol, Detail: "tool calls could not be read", reason: reasonNoTools}
 	}
 	if len(t.ToolCalls) == 0 && strings.TrimSpace(t.Text) == "" {
 		return Turn{}, &Error{Class: ClassProtocol, Detail: "response content is empty"}

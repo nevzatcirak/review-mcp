@@ -692,7 +692,8 @@ func TestNoLeaksInLogsOrErrors(t *testing.T) {
 	for _, st := range []int{400, 401, 403, 404, 413, 422, 429, 500, 503, 302} {
 		scenarios = append(scenarios,
 			scenario{name: fmt.Sprintf("status %d context wording", st), handler: echo(st, "context length window")},
-			scenario{name: fmt.Sprintf("status %d other wording", st), handler: echo(st, "invalid parameter")})
+			scenario{name: fmt.Sprintf("status %d other wording", st), handler: echo(st, "invalid parameter")},
+			scenario{name: fmt.Sprintf("status %d tool wording", st), handler: echo(st, "tools are not supported for this function")})
 	}
 	// Converse sends the markers in tool arguments and results as well.
 	conv := Conversation{System: "system " + promptMarker, Messages: []Message{

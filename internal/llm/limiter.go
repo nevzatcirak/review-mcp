@@ -98,6 +98,9 @@ type limiter struct {
 	// before it. consecutive429 counts the 429s since the last success.
 	coolUntil      time.Time
 	consecutive429 int
+	// tools is what the process knows of each model's tool calling on
+	// the endpoint (toolsupport.go).
+	tools map[string]ToolSupport
 }
 
 // waiter is one request waiting for its turn. wake, set while it waits,

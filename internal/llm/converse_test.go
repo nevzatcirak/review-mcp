@@ -381,3 +381,182 @@ func TestChainConverseRestart(t *testing.T) {
 		}
 	})
 }
+
+// TestConverseToolsRefused: an endpoint that refuses tools (HTTP 400 or 422
+// whose body mentions tools or functions), or answers for tool calls
+// without one it can read, gives ErrNoTools, never an error of the run. The
+// process remembers it for the endpoint and model: a later conversation
+// there sends no request, from any client of the process; Complete still
+// works; another model on the endpoint still gets tools (§1 item 4).
+func TestConverseToolsRefused(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"400 tools", 400, `{"error":{"message":"tools are not supported by this model"}}`},
+		{"400 tool_choice", 400, `{"error":{"message":"Unknown parameter: 'tool_choice'."}}`},
+		{"422 function calling", 422, `{"detail":"Function calling is not enabled"}`},
+		{"400 upper case", 400, `{"error":"TOOL USE UNSUPPORTED"}`},
+		{"tool_calls without calls", 200, callsJSON(`"I would read a.go"`, "", "tool_calls")},
+		{"tool_calls with garbage", 200, callsJSON("", `[{"function":{"arguments":"{}"}}]`, "tool_calls")},
+		{"tool_calls not a list", 200, callsJSON("", `"read_file"`, "tool_calls")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := convFake(t, func(n int) (int, string) {
+				if n == 1 {
+					return tc.status, tc.body
+				}
+				return 200, okJSON("single pass")
+			})
+			reg := &registry{}
+			newC := func(model string) *Client {
+				cfg := baseCfg(f.srv.URL)
+				cfg.Model = model
+				c, err := New(cfg, config.NewSecret(testKey), nil, WithSleeper((&fakeSleep{}).sleep), withRegistry(reg))
+				if err != nil {
+					t.Fatal(err)
+				}
+				return c
+			}
+			c := newC("test-model")
+			if c.ToolSupport() != ToolsUnknown {
+				t.Fatalf("before: %v", c.ToolSupport())
+			}
+			_, err := c.Converse(t.Context(), startConv())
+			if !errors.Is(err, ErrNoTools) {
+				t.Fatalf("refusal: %v", err)
+			}
+			if _, ok := ClassOf(err); ok {
+				t.Fatalf("the refusal is an LLM error of the run: %v", err)
+			}
+			if c.ToolSupport() != ToolsRefused || f.calls() != 1 {
+				t.Fatalf("support %v after %d requests", c.ToolSupport(), f.calls())
+			}
+			// Remembered for the process: another client, no request.
+			again := newC("test-model")
+			if _, err := again.Converse(t.Context(), startConv()); !errors.Is(err, ErrNoTools) || f.calls() != 1 {
+				t.Fatalf("second conversation: %v after %d requests", err, f.calls())
+			}
+			// Single-pass still works and carries no tools.
+			if resp, err := again.Complete(t.Context(), "s", "u"); err != nil || resp.Content != "single pass" {
+				t.Fatalf("complete: %+v %v", resp, err)
+			}
+			if strings.Contains(string(f.body(1)), "tool") {
+				t.Fatalf("single pass carried tools: %s", f.body(1))
+			}
+			// Another model of the endpoint is not known yet.
+			other := newC("other-model")
+			if other.ToolSupport() != ToolsUnknown {
+				t.Fatalf("other model: %v", other.ToolSupport())
+			}
+			if _, err := other.Converse(t.Context(), startConv()); err != nil || f.calls() != 3 || other.ToolSupport() != ToolsAccepted {
+				t.Fatalf("other model: %v, %d requests, %v", err, f.calls(), other.ToolSupport())
+			}
+		})
+	}
+}
+
+// TestConverseNotRefused: answers that do not show a refusal. A model that
+// answers without calling tools accepted them; a 400 about the context
+// length stays that error even when it names tools; other refusals stay
+// the run's errors; a refusal wording without tools in the request is not
+// a refusal of tools.
+func TestConverseNotRefused(t *testing.T) {
+	t.Run("answer without calls", func(t *testing.T) {
+		f := convFake(t, func(int) (int, string) { return 200, okJSON("no need to read") })
+		c := newClient(t, baseCfg(f.srv.URL), nil, nil)
+		turn, err := c.Converse(t.Context(), startConv())
+		if err != nil || turn.Text != "no need to read" || c.ToolSupport() != ToolsAccepted {
+			t.Fatalf("%+v %v %v", turn, err, c.ToolSupport())
+		}
+	})
+	for _, tc := range []struct {
+		name     string
+		status   int
+		body     string
+		tools    bool
+		want     error
+		requests int
+	}{
+		{"context length naming tools", 400, `{"error":{"message":"maximum context length exceeded, including tool definitions"}}`, true, ErrContextTooLong, 1},
+		{"other 400", 400, `{"error":{"message":"invalid temperature"}}`, true, ErrBadRequest, 1},
+		{"413 naming tools", 413, `{"error":{"message":"payload with tools too large"}}`, true, ErrBadRequest, 1},
+		{"404 naming tools", 404, `{"error":{"message":"no tools here"}}`, true, ErrNotFound, 1},
+		{"500 naming tools", 500, `{"error":{"message":"tool runner crashed"}}`, true, ErrUpstream, 2},
+		{"400 tools without tools", 400, `{"error":{"message":"tools are not supported"}}`, false, ErrBadRequest, 1},
+		{"tool_calls without tools", 200, callsJSON("", "", "tool_calls"), false, ErrProtocol, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := convFake(t, func(int) (int, string) { return tc.status, tc.body })
+			c := newClient(t, baseCfg(f.srv.URL), nil, &fakeSleep{})
+			conv := startConv()
+			if !tc.tools {
+				conv.Tools = nil
+			}
+			_, err := c.Converse(t.Context(), conv)
+			if errors.Is(err, ErrNoTools) || !errors.Is(err, tc.want) || f.calls() != tc.requests {
+				t.Fatalf("%v after %d requests, want %v", err, f.calls(), tc.want)
+			}
+			if c.ToolSupport() != ToolsUnknown {
+				t.Fatalf("support %v", c.ToolSupport())
+			}
+		})
+	}
+}
+
+// TestChainToolsRefused: a fallback is treated like the primary. When the
+// primary fails and the fallback refuses tools, the run is on the fallback
+// and continues single-pass there; the chain reports the refusal of the
+// model the run is on.
+func TestChainToolsRefused(t *testing.T) {
+	p := convFake(t, func(int) (int, string) { return 500, `{}` })
+	fb := convFake(t, func(n int) (int, string) {
+		if n == 1 {
+			return 400, `{"error":{"message":"tools are not supported"}}`
+		}
+		return 200, okJSON("single pass")
+	})
+	ch := NewChain(chainConvClient(t, p, "primary"), []*Client{chainConvClient(t, fb, "fallback")}, 1)
+	if ch.ToolsRefused() {
+		t.Fatal("refused before any request")
+	}
+	if _, err := ch.Converse(t.Context(), startConv()); !errors.Is(err, ErrNoTools) {
+		t.Fatalf("%v", err)
+	}
+	if !ch.ToolsRefused() {
+		t.Fatal("the fallback's refusal is not reported")
+	}
+	resp, err := ch.Complete(t.Context(), "s", "u")
+	if err != nil || resp.Content != "single pass" || p.calls() != 1 || fb.calls() != 2 {
+		t.Fatalf("%+v %v, calls %d/%d", resp, err, p.calls(), fb.calls())
+	}
+	if u := ch.Use(); u.Model != "fallback" || u.FallbackReason != ReasonServerError {
+		t.Fatalf("use %+v", u)
+	}
+
+	// A primary that refuses keeps the run on it.
+	p2 := convFake(t, func(n int) (int, string) {
+		if n == 1 {
+			return 422, `{"detail":"function calling is not supported"}`
+		}
+		return 200, okJSON("single pass")
+	})
+	fb2 := convFake(t, func(int) (int, string) { return 200, okJSON("x") })
+	ch = NewChain(chainConvClient(t, p2, "primary"), []*Client{chainConvClient(t, fb2, "fallback")}, 1)
+	if _, err := ch.Converse(t.Context(), startConv()); !errors.Is(err, ErrNoTools) || fb2.calls() != 0 || !ch.ToolsRefused() {
+		t.Fatalf("%v, fallback calls %d", err, fb2.calls())
+	}
+	if _, err := ch.Complete(t.Context(), "s", "u"); err != nil || p2.calls() != 2 || fb2.calls() != 0 {
+		t.Fatalf("%v, calls %d/%d", err, p2.calls(), fb2.calls())
+	}
+}
+
+// TestToolSupportString: the states as server_info names them.
+func TestToolSupportString(t *testing.T) {
+	for s, want := range map[ToolSupport]string{ToolsUnknown: "not known yet", ToolsAccepted: "accepted", ToolsRefused: "refused"} {
+		if s.String() != want {
+			t.Errorf("%d: %q", s, s.String())
+		}
+	}
+}

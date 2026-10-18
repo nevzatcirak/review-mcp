@@ -182,6 +182,15 @@ window, and is left out (reason `budget`) when nothing is left. The coverage
 section and `coverage.repo_context` report it as for a review. See
 [Repository context](repo-context.md).
 
+With `context.repo.max_tool_rounds` above 0 the model can also **read the
+repository itself** while it answers: a file or a line range, a directory
+listing, a fixed-string search, all on the head commit of the pull request
+([Repository tools](repo-context.md#repository-tools)). The final answer is free
+text, so there is no re-ask. Ask "Where is X defined and what does it return?"
+and the model can open the file instead of guessing. Every round is a model
+call (`metadata.llm_calls`, `metadata.tool_rounds`), and an endpoint without
+tool calling gets the single-pass answer and a note.
+
 ## Publishing
 
 `publish=true` (or `diag ask --publish`) posts one PR-level comment after the

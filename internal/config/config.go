@@ -313,6 +313,14 @@ type ContextRepo struct {
 	// MaxTokens is the token budget of the repository-context block of the
 	// prompt (RC-8); a part of a review in parts gets its own.
 	MaxTokens int `toml:"max_tokens" json:"max_tokens"`
+	// MaxToolRounds is the most rounds in which the model may read the
+	// pull request's head commit through tools (X-43); 0 turns the tools
+	// off. They need Enabled. Operator-only: a repository file cannot set
+	// it (not in the X-40 allow-list).
+	MaxToolRounds int `toml:"max_tool_rounds" json:"max_tool_rounds"`
+	// MaxToolTokens is the token budget of all tool results of one model
+	// call together (X-43).
+	MaxToolTokens int `toml:"max_tool_tokens" json:"max_tool_tokens"`
 }
 
 // RepoConfig configures the repository config file (X-40): a file in the
@@ -399,6 +407,7 @@ func Defaults() *Config {
 			MaxSymbols:          20,
 			MaxHitsPerSymbol:    5,
 			MaxTokens:           2000,
+			MaxToolTokens:       6000,
 		}},
 		RepoConfig: RepoConfig{Enabled: true, Path: DefaultRepoConfigPath},
 		Related:    Related{MaxTokens: 8000, ContractGlobs: []string{}},

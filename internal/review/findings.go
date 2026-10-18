@@ -158,7 +158,8 @@ func (pl *Plan) publishSupplied(ctx context.Context, deps Deps, args Args) *Resu
 	res.Coverage.ModelCalls = 0
 	res.Coverage.Guidelines, res.Coverage.FileTree = nil, nil
 	if deps.Config.Context.Repo.Enabled {
-		res.Coverage.RepoContext = llmrun.RepoContext{Status: llmrun.RepoSkipped, Reason: repoctx.ReasonClientFindings}
+		res.Coverage.RepoContext = llmrun.RepoContext{Status: llmrun.RepoSkipped, Reason: repoctx.ReasonClientFindings,
+			Tools: res.Coverage.RepoContext.Tools}
 	}
 	res.Metadata.RequestTokens = 0
 	// No model was shown the discussion in this run.

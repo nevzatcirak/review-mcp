@@ -28,6 +28,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/related"
 	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 	"github.com/nevzatcirak/review-mcp/internal/repoctx"
+	"github.com/nevzatcirak/review-mcp/internal/repotools"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 )
 
@@ -132,6 +133,12 @@ type Plan struct {
 	// nil when repository context is off.
 	RepoReport *repoctx.Report
 
+	// tools is the tool loop of the run (X-43), nil when the run does not
+	// use tools; toolUse is what the run did with them.
+	tools   *toolPlan
+	toolUse toolUse
+	cfg     *config.Config
+
 	ref provider.PRRef
 	p   provider.Provider
 	log *slog.Logger
@@ -191,15 +198,17 @@ func run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 		// because step 9 applies to every returned result and the comment
 		// then shows the question, the coverage and the note.
 		res.Notes = append(res.Notes, NoteNoReviewableChanges)
+		reportTools(res, pl.toolUse)
 		pl.publish(ctx, deps, args)
 		return res, nil
 	}
 	progress(deps, StageCallingModel)
 
-	// Step 7: one call; the client owns the transport retries. There is no
-	// re-ask, because there is nothing to parse.
-	resp, err := deps.LLM.Complete(ctx, pl.Prompts.System, pl.Prompts.User)
-	res.Metadata.LLMCalls++
+	// Step 7: one call, or the rounds of the tool loop (X-43); the client
+	// owns the transport retries. There is no re-ask, because there is
+	// nothing to parse.
+	resp, calls, err := pl.answer(ctx, deps)
+	res.Metadata.LLMCalls += calls
 	if err != nil {
 		return nil, err
 	}
@@ -216,8 +225,10 @@ func run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 	log.Debug("ask: answer received", "truncated", resp.Truncated,
 		"prompt_tokens_reported", resp.Usage.PromptTokens, "completion_tokens_reported", resp.Usage.CompletionTokens)
 
-	// Step 8: the result.
+	// Step 8: the result, with what the run did with the repository tools
+	// (X-43), before the publish, whose comment carries the notes.
 	res.Answer = answer
+	reportTools(res, pl.toolUse)
 
 	// Step 9: publish.
 	pl.publish(ctx, deps, args)
@@ -371,7 +382,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		"provider_skipped", len(d.Skipped), "included", len(prep.Included), "clipped", len(prep.Clipped),
 		"fast_path", prep.FastPath, "prompt_tokens", promptTokens, "diff_tokens", prep.Tokens, "pinned", len(pinned))
 
-	pl := &Plan{Result: res, Budget: budget, ref: ref, p: p, log: log}
+	pl := &Plan{Result: res, Budget: budget, ref: ref, p: p, log: log, cfg: cfg, toolUse: repotools.Default(cfg.Context.Repo)}
 	if prep.Text == "" {
 		pl.Empty = true
 		related.Mark(rel, related.StatusNotPlaced, related.ReasonNothingToReview)
@@ -440,7 +451,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			return f.KeptLines >= 0, nil
 		})
 		if o.Block != "" {
-			fit = fit1
+			in, fit = in1, fit1
 			if res.Metadata.PromptTokens, err = ScaffoldingTokens(in1, factor); err != nil {
 				return nil, err
 			}
@@ -450,6 +461,11 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		log.Debug("ask: repository context", "status", res.Coverage.RepoContext.Status,
 			"reason", res.Coverage.RepoContext.Reason, "symbols", o.Symbols, "references", o.References,
 			"files", o.Files, "omitted", o.Omitted)
+	}
+	if rcs != nil {
+		if err := pl.planTools(ctx, deps, in, fit, prep.Text, budget, rcs, res.Coverage.RepoContext); err != nil {
+			return nil, err
+		}
 	}
 	pl.Prompts = Prompts{System: fit.Rendered.System, User: fit.Rendered.User}
 	res.Metadata.RequestTokens = fit.RequestTokens

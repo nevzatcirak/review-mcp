@@ -1385,6 +1385,16 @@ the check off: nothing is read, nothing is detected and nothing is shown, and
 The check follows the idea of PR-Agent's ticket compliance check (MIT); no
 code or prompt text is copied.
 
+## Repository tools
+
+With repository context on and `context.repo.max_tool_rounds` above 0, the model
+may read the pull request's head commit through tool calling before it answers
+(a file or a line range, a directory, a fixed-string search), for example to see
+what a function that the diff calls returns. Off by default; it works in a
+review in one call, full or incremental; a review in parts uses no tools, with a
+note. The result reports it in `coverage.repo_context.tools` and
+`metadata.tool_rounds`. See [Repository tools](repo-context.md#repository-tools).
+
 ## Related pull requests
 
 A change often has another side in another repository: a UI pull request and

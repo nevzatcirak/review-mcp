@@ -30,7 +30,11 @@ type Chain struct {
 	// last is the index of the model that served the last call, -1 before
 	// one did.
 	last int
-	use  ChainUse
+	// pending is the reason the run moved to cur without a call served
+	// there yet (a conversation that restarts on the next model), for the
+	// next call served at a fallback.
+	pending string
+	use     ChainUse
 }
 
 // ChainUse is what a run's chain reports (§3.4).
@@ -83,8 +87,89 @@ func (c *Chain) Complete(ctx context.Context, system, user string) (*Response, e
 	c.mu.Lock()
 	start := c.cur
 	c.mu.Unlock()
-	resp, _, err := c.from(ctx, start, "", system, user)
-	return resp, err
+	var resp *Response
+	_, err := c.from(ctx, start, "", c.promptNeed(system, user), func(m *Client) error {
+		r, err := m.Complete(ctx, system, user)
+		resp = r
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// promptNeed is the estimate of a single-pass prompt.
+func (c *Chain) promptNeed(system, user string) func() int {
+	return func() int { return tokens.Estimate(system, c.factor) + tokens.Estimate(user, c.factor) }
+}
+
+// ErrRestart reports that a later turn of a conversation failed on the
+// model that started it, in a way that moves to the next model: the
+// conversation must be started again from its first turn, which the chain
+// then sends to the next model (V-8 spec §1 item 3). It wraps the failure.
+var ErrRestart = errors.New("llm: the conversation must restart on the next model")
+
+// restartError is ErrRestart wrapping the failure of the turn.
+type restartError struct{ err error }
+
+func (e *restartError) Error() string        { return e.err.Error() }
+func (e *restartError) Unwrap() []error      { return []error{ErrRestart, e.err} }
+func (e *restartError) Is(target error) bool { return target == ErrRestart }
+
+// Converse sends one turn of a conversation (§1 item 3). The run's chain
+// stays sticky, and a conversation never changes model in the middle:
+//   - its first turn (no assistant message yet) moves along the chain as
+//     Complete does, so a run whose primary fails before the first turn
+//     starts on the fallback;
+//   - a later turn goes only to the model the run is on. When it fails in
+//     a way that would move a call on and a later model exists, the run
+//     moves to that model and the error wraps ErrRestart: the caller may
+//     start the conversation again once (or continue single-pass, with a
+//     note). Any other failure is returned as it is.
+//
+// DESIGN-QUESTION (WP-12a DQ-4): "the run starts on the fallback" is the
+// chain's sticky index, so after a restart every later call of the run,
+// single-pass ones included, starts at the fallback, as after any move of
+// Complete. The fallback note names the reason of the failed turn.
+// Recommendation: keep.
+func (c *Chain) Converse(ctx context.Context, conv Conversation) (Turn, error) {
+	c.mu.Lock()
+	start := c.cur
+	c.mu.Unlock()
+	var turn Turn
+	call := func(m *Client) error {
+		t, err := m.Converse(ctx, conv)
+		turn = t
+		return err
+	}
+	if !conv.started() {
+		_, err := c.from(ctx, start, "", func() int { return conv.estimate(c.factor) }, call)
+		if err != nil {
+			return Turn{}, err
+		}
+		return turn, nil
+	}
+	m := c.models[start]
+	err := call(m)
+	if err == nil {
+		c.served(start, "")
+		return turn, nil
+	}
+	if ctx.Err() != nil {
+		return Turn{}, ctx.Err()
+	}
+	r, moves := moveReason(err)
+	m.logger.Debug("llm model call failed", "model_index", start, "moves_on", moves, "reason", r, "turn", "later")
+	if !moves || start+1 >= len(c.models) {
+		return Turn{}, err
+	}
+	c.mu.Lock()
+	if c.cur == start {
+		c.cur, c.pending = start+1, r
+	}
+	c.mu.Unlock()
+	return Turn{}, &restartError{err: err}
 }
 
 // CompleteNext sends the original prompt once to the model after the one
@@ -109,7 +194,12 @@ func (c *Chain) CompleteNext(ctx context.Context, system, user string) (*Respons
 	if start >= len(c.models) {
 		return nil, false, nil
 	}
-	resp, _, err := c.from(ctx, start, ReasonUnusable, system, user)
+	var resp *Response
+	_, err := c.from(ctx, start, ReasonUnusable, c.promptNeed(system, user), func(m *Client) error {
+		r, err := m.Complete(ctx, system, user)
+		resp = r
+		return err
+	})
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, false, ctx.Err()
@@ -119,9 +209,10 @@ func (c *Chain) CompleteNext(ctx context.Context, system, user string) (*Respons
 	return resp, true, nil
 }
 
-// from runs the chain from index start. moved is the reason the call is
-// already on the move (CompleteNext), "" for a call at its starting model.
-// It returns the response and the index that served it.
+// from runs call along the chain from index start. moved is the reason the
+// call is already on the move (CompleteNext), "" for a call at its starting
+// model; need is the prompt's estimate, for the size check of a fallback.
+// It returns the index that served the call.
 //
 // DESIGN-QUESTION (WP-8c DQ-4): "the error of the primary" (§3.4 item 4) is
 // read as the error of the first model this call tried: after a sticky
@@ -130,26 +221,42 @@ func (c *Chain) CompleteNext(ctx context.Context, system, user string) (*Respons
 // failed (skipped ones are not counted); when the first model fails with a
 // class that does not move on, no fallback was tried and there is no note.
 // Recommendation: keep.
-func (c *Chain) from(ctx context.Context, start int, moved, system, user string) (*Response, int, error) {
+func (c *Chain) from(ctx context.Context, start int, moved string, need func() int, call func(*Client) error) (int, error) {
 	var first error
 	failed := 0
 	reason := moved
 	for i := start; i < len(c.models); i++ {
 		m := c.models[i]
 		if i > 0 {
-			if ok, err := c.fits(ctx, i, system, user); err != nil {
-				return nil, -1, err
+			if ok, err := c.fits(ctx, i, need); err != nil {
+				return -1, err
 			} else if !ok {
 				continue
 			}
 		}
-		resp, err := m.Complete(ctx, system, user)
+		err := call(m)
 		if err == nil {
 			c.served(i, reason)
-			return resp, i, nil
+			return i, nil
 		}
 		if ctx.Err() != nil {
-			return nil, -1, ctx.Err()
+			return -1, ctx.Err()
+		}
+		if errors.Is(err, ErrNoTools) {
+			// The model is up but refuses tools: the run stays on it and
+			// continues single-pass there (§1 item 5).
+			//
+			// DESIGN-QUESTION (WP-12a DQ-6): when the primary failed first
+			// (say, a server error) and the fallback refuses tools, the
+			// run moves to the fallback, as if it had served, and goes on
+			// single-pass there with the no-tools note; the fallback note
+			// names the primary's failure. Trying the primary again
+			// single-pass would ask a model that just failed.
+			// Recommendation: keep.
+			if i > start {
+				c.moved(i, reason)
+			}
+			return -1, err
 		}
 		if first == nil && moved == "" {
 			first = err
@@ -166,12 +273,12 @@ func (c *Chain) from(ctx context.Context, start int, moved, system, user string)
 		}
 	}
 	if first == nil {
-		return nil, -1, errors.New("llm: no model of the chain could take the prompt")
+		return -1, errors.New("llm: no model of the chain could take the prompt")
 	}
 	if failed > 0 {
-		return nil, -1, withAllFailed(first, failed)
+		return -1, withAllFailed(first, failed)
 	}
-	return nil, -1, first
+	return -1, first
 }
 
 // moveReason reports whether a failed call moves on to the next model
@@ -216,7 +323,7 @@ func moveReason(err error) (string, bool) {
 // room the run's own budget leaves; a window that cannot be resolved skips
 // the fallback for the call without counting it as a size skip (the note
 // would be wrong) and logs it. Recommendation: keep.
-func (c *Chain) fits(ctx context.Context, i int, system, user string) (bool, error) {
+func (c *Chain) fits(ctx context.Context, i int, prompt func() int) (bool, error) {
 	m := c.models[i]
 	window := m.cfg.ContextWindow
 	if window <= 0 {
@@ -230,8 +337,7 @@ func (c *Chain) fits(ctx context.Context, i int, system, user string) (bool, err
 		}
 		window = n
 	}
-	need := tokens.Estimate(system, c.factor) + tokens.Estimate(user, c.factor) +
-		tokens.Budget{MaxOutputTokens: m.cfg.MaxOutputTokens}.HardReserve()
+	need := prompt() + tokens.Budget{MaxOutputTokens: m.cfg.MaxOutputTokens}.HardReserve()
 	if need <= window {
 		return true, nil
 	}
@@ -249,11 +355,23 @@ func (c *Chain) fits(ctx context.Context, i int, system, user string) (bool, err
 	return false, nil
 }
 
+// moved records that the run moved to model i for reason without a call
+// served there yet; the next call starts at it.
+func (c *Chain) moved(i int, reason string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cur, c.pending = i, reason
+}
+
 // served records that model i served a call, after moving for reason ("" at
 // the starting model). The run stays on it (sticky, owner default 6).
 func (c *Chain) served(i int, reason string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if reason == "" && i > 0 {
+		reason = c.pending
+	}
+	c.pending = ""
 	c.cur, c.last = i, i
 	model := c.models[i].cfg.Model
 	c.use.Model = model

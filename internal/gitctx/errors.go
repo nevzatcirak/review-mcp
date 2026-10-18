@@ -29,6 +29,10 @@ const (
 	// ReasonUnsupported: the repository cannot be fetched (an unknown
 	// provider kind, an unusable base URL or name, an invalid head SHA).
 	ReasonUnsupported = "unsupported"
+	// ReasonBlobMissing: a read of a file whose blob the partial clone does
+	// not hold (the fetch leaves out blobs above 1 MiB, and a read never
+	// fetches). It is a reason of a read, not of repository context.
+	ReasonBlobMissing = "blob_missing"
 )
 
 // notes are the fixed sentences for each reason, for the review notes and

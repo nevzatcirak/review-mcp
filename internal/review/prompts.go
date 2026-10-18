@@ -6,6 +6,7 @@ import (
 	"text/template"
 
 	"github.com/nevzatcirak/review-mcp/internal/prompt"
+	"github.com/nevzatcirak/review-mcp/internal/repotools"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 )
 
@@ -106,6 +107,10 @@ type PromptInput struct {
 	// the files that changed since the last review: the system prompt
 	// carries IncrementalSentence. False renders as before.
 	Incremental bool
+	// ToolRounds is context.repo.max_tool_rounds for a run in which the
+	// model may read the repository through tools (X-43): the system prompt
+	// carries ToolsInstruction. 0 renders as before.
+	ToolRounds int
 	// Date is the prompt date (prompt.Date).
 	Date string
 	// PartHeader is the part line of a review in several parts (PartHeader);
@@ -147,6 +152,7 @@ func (in *PromptInput) vars() map[string]any {
 		"focus":               focusInstruction(in.Focus),
 		"focus_block":         focusBlock(in.Focus),
 		"incremental":         incrementalInstruction(in.Incremental),
+		"tools_instruction":   ToolsInstruction(in.ToolRounds),
 		"part_header":         in.PartHeader,
 		"diff":                in.Diff,
 	}
@@ -168,6 +174,19 @@ func issueInstruction(block string) string {
 		return IssueComplianceSentence
 	}
 	return ""
+}
+
+// ToolsFinalAnswer is the last line of the tools' instruction block of
+// pr_review.
+const ToolsFinalAnswer = "Your final answer is the usual YAML described below, with no tool call in it."
+
+// ToolsInstruction is the system prompt's block of a run with tools (X-43,
+// repotools.Instruction), "" for rounds 0.
+func ToolsInstruction(rounds int) string {
+	if rounds <= 0 {
+		return ""
+	}
+	return repotools.Instruction(rounds, ToolsFinalAnswer)
 }
 
 // incrementalInstruction is the system prompt's sentence of an incremental

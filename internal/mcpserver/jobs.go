@@ -16,6 +16,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/describe"
 	"github.com/nevzatcirak/review-mcp/internal/improve"
 	"github.com/nevzatcirak/review-mcp/internal/jobs"
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 	"github.com/nevzatcirak/review-mcp/internal/tools"
@@ -162,6 +163,19 @@ func askResultSchema() *jsonschema.Schema {
 		cov.Properties["related"] = &rel
 		if !slices.Contains(cov.Required, "related") {
 			cov.Required = append(cov.Required, "related")
+		}
+		// coverage.repo_context.tools (X-43) gets the declared schema of
+		// pr_review's (the status, reason and call status enums).
+		if rc := cov.Properties["repo_context"]; rc != nil {
+			var tools jsonschema.Schema
+			raw, err := json.Marshal(llmrun.RepoToolsSchema("repository tools (X-43): whether the model read the pull request's head commit through tool calls, and every call"))
+			if err != nil || json.Unmarshal(raw, &tools) != nil {
+				panic("coverage.repo_context.tools schema") // a programming error, caught by every test
+			}
+			rc.Properties["tools"] = &tools
+			if !slices.Contains(rc.Required, "tools") {
+				rc.Required = append(rc.Required, "tools")
+			}
 		}
 	}
 	return s

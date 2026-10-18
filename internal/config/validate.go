@@ -266,6 +266,10 @@ const (
 	MaxContextRepoHits         = 20
 	MinContextRepoTokens       = 200
 	MaxContextRepoTokens       = 16000
+	// X-43 (v2.4 spec V-8 §0 items 1 and 3).
+	MaxContextRepoToolRounds = 6
+	MinContextRepoToolTokens = 500
+	MaxContextRepoToolTokens = 40000
 )
 
 // validateContextRepo checks the context.repo.* keys. They are validated
@@ -291,6 +295,14 @@ func (l *loader) validateContextRepo() {
 	rng("context.repo.max_symbols", c.MaxSymbols, 1, MaxContextRepoSymbols)
 	rng("context.repo.max_hits_per_symbol", c.MaxHitsPerSymbol, 1, MaxContextRepoHits)
 	rng("context.repo.max_tokens", c.MaxTokens, MinContextRepoTokens, MaxContextRepoTokens)
+	rng("context.repo.max_tool_rounds", c.MaxToolRounds, 0, MaxContextRepoToolRounds)
+	rng("context.repo.max_tool_tokens", c.MaxToolTokens, MinContextRepoToolTokens, MaxContextRepoToolTokens)
+	if c.MaxToolRounds > 0 && !c.Enabled && !l.bad["context.repo.max_tool_rounds"] {
+		// Not an error (WP-12b DQ-15): the tools are off and the result says
+		// repo_context_off, but a user who set the rounds should learn why
+		// nothing happens.
+		l.warn("context.repo.max_tool_rounds is set but context.repo.enabled is off, so the model cannot read the repository through tools")
+	}
 	cacheOK := rng("context.repo.max_cache_mb", c.MaxCacheMB, 1, MaxContextRepoCacheMB)
 	repoOK := rng("context.repo.max_repo_mb", c.MaxRepoMB, 1, MaxContextRepoCacheMB)
 	if cacheOK && repoOK && c.MaxRepoMB > c.MaxCacheMB {

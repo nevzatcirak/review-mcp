@@ -424,3 +424,62 @@ func TestServerInfoProviderCapabilities(t *testing.T) {
 		t.Errorf("markdown providers:\n%s", md)
 	}
 }
+
+// TestServerInfoRepoTools: the tool rounds and tool tokens are reported with
+// the other values, the configured models are listed with what this process
+// knows of their tool calling (no request is made), and rounds above 0 with
+// repository context off are a warning (WP-12b DQ-15).
+func TestServerInfoRepoTools(t *testing.T) {
+	env := validEnv()
+	env["REVIEW_MCP_CONTEXT_REPO_MAX_TOOL_ROUNDS"] = "3"
+	env["REVIEW_MCP_CONTEXT_REPO_MAX_TOOL_TOKENS"] = "9000"
+	env["REVIEW_MCP_LLM_FALLBACK_1_MODEL"] = "fallback-model"
+	cfg, rep, err := load(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := ServerInfo(cfg, rep, nil)
+	if v := r.Config.Values["context.repo.max_tool_rounds"]; v.Value != 3 {
+		t.Errorf("max_tool_rounds = %+v", v)
+	}
+	if v := r.Config.Values["context.repo.max_tool_tokens"]; v.Value != 9000 {
+		t.Errorf("max_tool_tokens = %+v", v)
+	}
+	if len(r.RepoTools) != 2 || r.RepoTools[0].Model != "example-model" || r.RepoTools[1].Model != "fallback-model" ||
+		r.RepoTools[0].BaseURL != "https://llm.example.com/v1" {
+		t.Fatalf("repo tools %+v", r.RepoTools)
+	}
+	for _, m := range r.RepoTools {
+		if m.Tools != "not known yet" {
+			t.Errorf("%+v", m)
+		}
+	}
+	warned := false
+	for _, w := range r.Warnings {
+		warned = warned || strings.Contains(w, "context.repo.max_tool_rounds is set but context.repo.enabled is off")
+	}
+	if !warned {
+		t.Errorf("warnings %q lack the tool rounds warning", r.Warnings)
+	}
+	md := RenderServerInfoMarkdown(r)
+	if !strings.Contains(md, "## Tool calling (repository tools)") || !strings.Contains(md, "`example-model` at `https://llm.example.com/v1`: tools: `not known yet`") {
+		t.Errorf("markdown lacks the tool calling section:\n%s", md)
+	}
+
+	// With repository context on there is no warning, and the key is secret
+	// free in the structured result.
+	env["REVIEW_MCP_CONTEXT_REPO_ENABLED"] = "true"
+	cfg, rep, err = load(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r = ServerInfo(cfg, rep, nil)
+	for _, w := range r.Warnings {
+		if strings.Contains(w, "max_tool_rounds") {
+			t.Errorf("a warning with repository context on: %q", w)
+		}
+	}
+	if raw, _ := json.Marshal(r); strings.Contains(string(raw), testLLMKey) {
+		t.Error("the LLM key reached the result")
+	}
+}

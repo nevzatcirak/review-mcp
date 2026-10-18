@@ -272,14 +272,62 @@ func (c *Client) setAuth(req *http.Request) {
 
 // --- request / response wire types --------------------------------------
 
+// message is one chat message. ToolCalls (assistant) and ToolCallID (tool
+// role) are tool calling's (V-8 spec §1 item 1); both are omitted when
+// empty, so a single-pass request is unchanged on the wire.
 type message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string     `json:"role"`
+	Content    string     `json:"content"`
+	ToolCalls  []toolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+}
+
+// MarshalJSON writes the content of an assistant message that only calls
+// tools as null, the form the endpoints answer with themselves; every other
+// message is written as declared.
+//
+// DESIGN-QUESTION (WP-12a DQ-1): the spec lets the content be empty. Some
+// endpoints refuse an empty string next to tool calls, while null is what
+// the chat-completions format declares for it. Recommendation: keep null.
+func (m message) MarshalJSON() ([]byte, error) {
+	type plain message
+	if m.Content != "" || len(m.ToolCalls) == 0 {
+		return json.Marshal(plain(m))
+	}
+	return json.Marshal(struct {
+		Role      string     `json:"role"`
+		Content   *string    `json:"content"`
+		ToolCalls []toolCall `json:"tool_calls"`
+	}{m.Role, nil, m.ToolCalls})
+}
+
+// tool is a function the model may call.
+type tool struct {
+	Type     string       `json:"type"`
+	Function toolFunction `json:"function"`
+}
+
+type toolFunction struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parameters  json.RawMessage `json:"parameters"`
+}
+
+// toolCall is a call of an assistant message; Arguments is a JSON string.
+type toolCall struct {
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function toolCallFunction `json:"function"`
+}
+
+type toolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 // chatRequest carries sampling parameters as pointers with omitempty so that
 // an unset value is absent from the JSON (DQ-26), while an explicit zero is
-// still sent.
+// still sent. Tools and ToolChoice are omitted when empty.
 type chatRequest struct {
 	Model           string    `json:"model"`
 	Messages        []message `json:"messages"`
@@ -287,6 +335,8 @@ type chatRequest struct {
 	Seed            *int64    `json:"seed,omitempty"`
 	ReasoningEffort *string   `json:"reasoning_effort,omitempty"`
 	MaxTokens       *int      `json:"max_tokens,omitempty"`
+	Tools           []tool    `json:"tools,omitempty"`
+	ToolChoice      string    `json:"tool_choice,omitempty"`
 }
 
 // buildRequest builds a fresh, request-scoped body (DQ-9: nothing is shared
@@ -299,6 +349,12 @@ func (c *Client) buildRequest(system, user string) ([]byte, error) {
 			{Role: "user", Content: user},
 		},
 	}
+	c.sampling(&r)
+	return json.Marshal(r)
+}
+
+// sampling copies the configured sampling parameters into r.
+func (c *Client) sampling(r *chatRequest) {
 	if v := c.cfg.Temperature; v != nil {
 		x := *v
 		r.Temperature = &x
@@ -315,13 +371,16 @@ func (c *Client) buildRequest(system, user string) ([]byte, error) {
 		x := *v
 		r.MaxTokens = &x
 	}
-	return json.Marshal(r)
 }
 
+// chatResponse is the part of an answer the client reads. tool_calls is
+// kept raw, so that a malformed list does not make the whole answer
+// unreadable (parseToolCalls).
 type chatResponse struct {
 	Choices []struct {
 		Message struct {
-			Content json.RawMessage `json:"content"`
+			Content   json.RawMessage `json:"content"`
+			ToolCalls json.RawMessage `json:"tool_calls"`
 		} `json:"message"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
@@ -398,34 +457,74 @@ func parseResponse(data []byte) (*Response, *Error) {
 // classes are retried up to cfg.MaxRetries times. A canceled or expired ctx
 // stops everything and is returned as ctx.Err().
 func (c *Client) Complete(ctx context.Context, system, user string) (*Response, error) {
+	var out *Response
+	err := c.do(ctx, exchange{
+		build: func() ([]byte, error) { return c.buildRequest(system, user) },
+		parse: func(data []byte) (outcome, *Error) {
+			r, le := parseResponse(data)
+			if le != nil {
+				return outcome{}, le
+			}
+			out = r
+			return outcome{usage: r.Usage, truncated: r.Truncated}, nil
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// exchange is one kind of request: build makes a fresh body for every
+// attempt, parse reads a successful answer.
+type exchange struct {
+	build func() ([]byte, error)
+	parse func(data []byte) (outcome, *Error)
+	// tools is set when the request carries tools: a 400 or 422 body is
+	// then also matched for a refusal of them.
+	tools bool
+}
+
+// outcome is what the debug log reports of a parsed answer; attrs are
+// further log attributes, never content.
+type outcome struct {
+	usage     Usage
+	truncated bool
+	attrs     []any
+}
+
+// do runs ex with the retries described at Complete: the rate limiter and
+// its 429 retries (X-37), and the DQ-9 retries of the other retryable
+// classes.
+func (c *Client) do(ctx context.Context, ex exchange) error {
 	maxRetries := max(c.cfg.MaxRetries, 0)
 	maxRateRetries := max(c.cfg.MaxRateRetries, 0)
 	retries, rateRetries := 0, 0
 	for attempt := 0; ; attempt++ {
-		resp, retryAfter, le := c.attempt(ctx, attempt, system, user)
+		retryAfter, le := c.attempt(ctx, attempt, ex)
 		if le == nil {
-			return resp, nil
+			return nil
 		}
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return ctx.Err()
 		}
 		if le.reason == reasonWaitTooLong {
 			// The limiter found the needed wait too long: no retry may
 			// wait for it either (§2.2 item 4).
-			return nil, le
+			return le
 		}
 		if le.Class == ClassRateLimited {
 			// The 429 set the endpoint's cool-down; the next attempt's
 			// limiter wait is the retry delay (§2.2 item 7).
 			if rateRetries >= maxRateRetries {
-				return nil, le
+				return le
 			}
 			rateRetries++
 			c.logger.Debug("llm retry", "class", string(le.Class), "attempt", attempt+1, "rate_retry", rateRetries)
 			continue
 		}
 		if !le.Class.Retryable() || retries >= maxRetries {
-			return nil, le
+			return le
 		}
 		delay := backoff[min(retries, len(backoff)-1)]
 		retries++
@@ -434,17 +533,17 @@ func (c *Client) Complete(ctx context.Context, system, user string) (*Response, 
 		}
 		c.logger.Debug("llm retry", "class", string(le.Class), "attempt", attempt+1, "delay_ms", delay.Milliseconds())
 		if serr := c.sleep(ctx, delay); serr != nil {
-			return nil, serr
+			return serr
 		}
 	}
 }
 
 // attempt performs one request. The body is rebuilt here, so no state is
 // shared between attempts.
-func (c *Client) attempt(ctx context.Context, attempt int, system, user string) (*Response, time.Duration, *Error) {
-	body, err := c.buildRequest(system, user)
+func (c *Client) attempt(ctx context.Context, attempt int, ex exchange) (time.Duration, *Error) {
+	body, err := ex.build()
 	if err != nil {
-		return nil, 0, &Error{Class: ClassProtocol, Detail: "request could not be encoded"}
+		return 0, &Error{Class: ClassProtocol, Detail: "request could not be encoded"}
 	}
 	// Every attempt, retries included, takes a place in the endpoint's
 	// limits (X-37) and holds it until its response is read.
@@ -458,10 +557,10 @@ func (c *Client) attempt(ctx context.Context, attempt int, system, user string) 
 	if err != nil {
 		var long *errWaitTooLong
 		if errors.As(err, &long) {
-			return nil, 0, &Error{Class: ClassRateLimited, reason: reasonWaitTooLong, wait: long.need,
+			return 0, &Error{Class: ClassRateLimited, reason: reasonWaitTooLong, wait: long.need,
 				maxWait: time.Duration(max(c.cfg.MaxRateWaitSeconds, 0)) * time.Second}
 		}
-		return nil, 0, &Error{Class: ClassTransport, Detail: "canceled"}
+		return 0, &Error{Class: ClassTransport, Detail: "canceled"}
 	}
 	defer c.limiter.release()
 	full := c.baseStr + chatPath
@@ -469,7 +568,7 @@ func (c *Client) attempt(ctx context.Context, attempt int, system, user string) 
 	defer cancel()
 	req, err := http.NewRequestWithContext(rctx, http.MethodPost, full, bytes.NewReader(body))
 	if err != nil {
-		return nil, 0, &Error{Class: ClassProtocol, Detail: "invalid request"}
+		return 0, &Error{Class: ClassProtocol, Detail: "invalid request"}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
@@ -486,20 +585,24 @@ func (c *Client) attempt(ctx context.Context, attempt int, system, user string) 
 	if err != nil {
 		le := c.transportError(ctx, rctx, err)
 		logFail(0, le.Class)
-		return nil, 0, le
+		return 0, le
 	}
 	defer func() { _ = resp.Body.Close() }()
 	status := resp.StatusCode
 
 	if status < 200 || status >= 300 {
 		var errBody []byte
-		if status == http.StatusBadRequest || status == http.StatusRequestEntityTooLarge {
+		if status == http.StatusBadRequest || status == http.StatusRequestEntityTooLarge ||
+			(ex.tools && status == http.StatusUnprocessableEntity) {
 			errBody, _ = io.ReadAll(io.LimitReader(resp.Body, errBodyBytes))
 		} else {
 			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, drainBytes))
 		}
 		retryAfter := c.retryAfter(resp.Header.Get("Retry-After"))
 		le := c.statusError(status, errBody)
+		if ex.tools && le.Class == ClassBadRequest && status != http.StatusRequestEntityTooLarge && mentionsTools(errBody) {
+			le.reason = reasonNoTools
+		}
 		if status == http.StatusTooManyRequests {
 			// Retry-After is the endpoint's cool-down, not this request's
 			// delay: every caller waits for it (§2.2 item 5).
@@ -508,7 +611,7 @@ func (c *Client) attempt(ctx context.Context, attempt int, system, user string) 
 			retryAfter = 0
 		}
 		logFail(status, le.Class)
-		return nil, retryAfter, le
+		return retryAfter, le
 	}
 
 	// A successful status, whatever its body: the 429 doubling starts
@@ -518,30 +621,31 @@ func (c *Client) attempt(ctx context.Context, attempt int, system, user string) 
 	if resp.ContentLength > c.maxBytes {
 		le := &Error{Class: ClassProtocol, Status: status, Detail: "response exceeded the size limit"}
 		logFail(status, le.Class)
-		return nil, 0, le
+		return 0, le
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, c.maxBytes+1))
 	if err != nil {
 		le := c.transportError(ctx, rctx, err)
 		logFail(status, le.Class)
-		return nil, 0, le
+		return 0, le
 	}
 	if int64(len(data)) > c.maxBytes {
 		le := &Error{Class: ClassProtocol, Status: status, Detail: "response exceeded the size limit"}
 		logFail(status, le.Class)
-		return nil, 0, le
+		return 0, le
 	}
-	out, le := parseResponse(data)
+	out, le := ex.parse(data)
 	if le != nil {
 		le.Status = status
 		logFail(status, le.Class)
-		return nil, 0, le
+		return 0, le
 	}
-	c.logger.Debug("llm request", "method", http.MethodPost, "url", logging.RedactURL(full),
-		"status", status, "class", "ok", "attempt", attempt+1, "duration_ms", dur(),
-		"prompt_tokens", out.Usage.PromptTokens, "completion_tokens", out.Usage.CompletionTokens,
-		"total_tokens", out.Usage.TotalTokens, "truncated", out.Truncated)
-	return out, 0, nil
+	attrs := []any{"method", http.MethodPost, "url", logging.RedactURL(full),
+		"status", status, "class", "ok", "attempt", attempt + 1, "duration_ms", dur(),
+		"prompt_tokens", out.usage.PromptTokens, "completion_tokens", out.usage.CompletionTokens,
+		"total_tokens", out.usage.TotalTokens, "truncated", out.truncated}
+	c.logger.Debug("llm request", append(attrs, out.attrs...)...)
+	return 0, nil
 }
 
 // transportError classifies a failure from Do or a body read. err.Error() is
@@ -561,8 +665,9 @@ func (c *Client) transportError(parent, reqCtx context.Context, err error) *Erro
 	return &Error{Class: ClassTransport, Detail: pe.Hint}
 }
 
-// statusError maps a non-2xx status to a sanitized error. errBody (400/413
-// only) is inspected in memory and never returned or logged.
+// statusError maps a non-2xx status to a sanitized error. errBody (400/413,
+// and 422 of a request with tools) is inspected in memory and never
+// returned or logged.
 func (c *Client) statusError(status int, errBody []byte) *Error {
 	e := &Error{Status: status}
 	switch {

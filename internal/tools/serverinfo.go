@@ -13,6 +13,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/gitctx"
 	"github.com/nevzatcirak/review-mcp/internal/llm"
+	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/mdutil"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/version"
@@ -55,8 +56,18 @@ type ServerInfoResult struct {
 	Warnings  []string       `json:"warnings" jsonschema:"non-fatal configuration warnings"`
 	Providers []ProviderInfo `json:"providers" jsonschema:"enabled providers"`
 	Config    config.Summary `json:"config" jsonschema:"effective non-secret configuration; secrets appear only as set or unset"`
+	// RepoTools lists the configured models (the primary, then the
+	// fallbacks) with what this process knows of their tool calling.
+	RepoTools []ModelTools `json:"repo_tools" jsonschema:"for each configured model (the primary, then the fallbacks), what this process knows of its tool calling, which the repository tools need (context.repo.max_tool_rounds): not known yet, accepted or refused"`
 	// Serve is present in serve mode only.
 	Serve *ServeInfo `json:"serve,omitempty" jsonschema:"serve-mode transport details; absent in stdio mode"`
+}
+
+// ModelTools is one model's tool calling as this process knows it (X-43).
+type ModelTools struct {
+	Model   string `json:"model" jsonschema:"the model name"`
+	BaseURL string `json:"base_url" jsonschema:"the endpoint, with credentials and query values removed"`
+	Tools   string `json:"tools" jsonschema:"not known yet (no conversation with tools was tried by this process), accepted or refused (the endpoint rejected tool calls; the repository tools are not used with this model until the process restarts)"`
 }
 
 // ServeInfo describes the serve transport and the credential headers of the
@@ -89,6 +100,7 @@ func ServerInfo(cfg *config.Config, rep *config.Report, loadErr error) ServerInf
 	reportRepoContext(&sum, cfg)
 
 	res := ServerInfoResult{
+		RepoTools: modelTools(cfg),
 		Name:      ServerName,
 		Version:   bi.Version,
 		Commit:    bi.Commit,
@@ -112,6 +124,19 @@ func ServerInfo(cfg *config.Config, rep *config.Report, loadErr error) ServerInf
 		}
 	}
 	return res
+}
+
+// modelTools reports the tool calling of the configured models as this
+// process saw it; it makes no request.
+func modelTools(cfg *config.Config) []ModelTools {
+	out := []ModelTools{{Model: cfg.LLM.Model, BaseURL: logging.RedactURL(cfg.LLM.BaseURL),
+		Tools: llm.ToolSupportSeen(cfg.LLM.BaseURL, cfg.LLM.Model).String()}}
+	for i := range cfg.LLM.Fallback {
+		eff := cfg.EffectiveFallback(i)
+		out = append(out, ModelTools{Model: eff.Model, BaseURL: logging.RedactURL(eff.BaseURL),
+			Tools: llm.ToolSupportSeen(eff.BaseURL, eff.Model).String()})
+	}
+	return out
 }
 
 // SetProviderCapabilities fills each provider's capability fields from caps,
@@ -227,6 +252,13 @@ func RenderServerInfoMarkdown(r ServerInfoResult) string {
 			b.WriteString(", reads issues")
 		}
 		b.WriteString("\n")
+	}
+
+	if len(r.RepoTools) > 0 {
+		b.WriteString("\n## Tool calling (repository tools)\n\n")
+		for _, m := range r.RepoTools {
+			b.WriteString("- " + codeSpan(m.Model) + " at " + codeSpan(m.BaseURL) + ": tools: " + codeSpan(m.Tools) + "\n")
+		}
 	}
 
 	if len(r.Config.Fallbacks) > 0 {

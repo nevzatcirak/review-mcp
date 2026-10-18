@@ -74,6 +74,8 @@ func TestDefaultsAppliedWhenNothingSet(t *testing.T) {
 		{"context.repo.max_symbols", cfg.Context.Repo.MaxSymbols, 20},
 		{"context.repo.max_hits_per_symbol", cfg.Context.Repo.MaxHitsPerSymbol, 5},
 		{"context.repo.max_tokens", cfg.Context.Repo.MaxTokens, 2000},
+		{"context.repo.max_tool_rounds", cfg.Context.Repo.MaxToolRounds, 0},
+		{"context.repo.max_tool_tokens", cfg.Context.Repo.MaxToolTokens, 6000},
 		{"repo_config.enabled", cfg.RepoConfig.Enabled, true},
 		{"related.max_tokens", cfg.Related.MaxTokens, 8000},
 		{"related.contract_globs", cfg.Related.ContractGlobs, []string{}},

@@ -692,51 +692,60 @@ func TestNoLeaksInLogsOrErrors(t *testing.T) {
 	for _, st := range []int{400, 401, 403, 404, 413, 422, 429, 500, 503, 302} {
 		scenarios = append(scenarios,
 			scenario{name: fmt.Sprintf("status %d context wording", st), handler: echo(st, "context length window")},
-			scenario{name: fmt.Sprintf("status %d other wording", st), handler: echo(st, "invalid parameter")})
+			scenario{name: fmt.Sprintf("status %d other wording", st), handler: echo(st, "invalid parameter")},
+			scenario{name: fmt.Sprintf("status %d tool wording", st), handler: echo(st, "tools are not supported for this function")})
 	}
-	for _, sc := range scenarios {
-		t.Run(sc.name, func(t *testing.T) {
-			var logs bytes.Buffer
-			logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-			f := newFake(t, sc.handler)
-			url := f.srv.URL
-			if sc.closed {
-				f.srv.Close()
-			}
-			cfg := baseCfg(url)
-			cfg.MaxRetries = 2
-			temp, seed, mt, re := 0.2, int64(7), 100, "low"
-			cfg.Temperature, cfg.Seed, cfg.MaxOutputTokens, cfg.ReasoningEffort = &temp, &seed, &mt, &re
-			c := newClient(t, cfg, logger, &fakeSleep{})
-			if sc.mutate != nil {
-				sc.mutate(c)
-			}
-			resp, err := c.Complete(context.Background(), "system "+promptMarker, "user "+promptMarker)
-			var out []string
-			out = append(out, logs.String())
-			if err != nil {
-				out = append(out, err.Error(), fmt.Sprintf("%v|%+v|%#v", err, err, err))
-				var le *Error
-				if errors.As(err, &le) {
-					out = append(out, le.UserMessage())
+	// Converse sends the markers in tool arguments and results as well.
+	conv := Conversation{System: "system " + promptMarker, Messages: []Message{
+		{Role: RoleUser, Content: "user " + promptMarker},
+		{Role: RoleAssistant, ToolCalls: []ToolCall{{ID: "c1", Name: "read_file", Arguments: `{"path":"` + promptMarker + `"}`}}},
+		ToolResult("c1", promptMarker),
+	}, Tools: []Tool{{Name: "read_file", Description: promptMarker, Parameters: json.RawMessage(`{"type":"object"}`)}}, ToolChoice: ToolChoiceAuto}
+	for _, mode := range []string{"complete", "converse"} {
+		for _, sc := range scenarios {
+			t.Run(mode+"/"+sc.name, func(t *testing.T) {
+				var logs bytes.Buffer
+				logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+				f := newFake(t, sc.handler)
+				url := f.srv.URL
+				if sc.closed {
+					f.srv.Close()
 				}
-			}
-			if resp != nil {
-				// the response content legitimately carries respMarker; only
-				// the logs and errors are checked for it below
-				out = append(out, "")
-			}
-			for _, s := range out {
-				for _, secret := range []string{testKey, promptMarker, respMarker, "Bearer", "Authorization"} {
-					if strings.Contains(s, secret) {
-						t.Fatalf("%q leaked into %q", secret, s)
+				cfg := baseCfg(url)
+				cfg.MaxRetries = 2
+				temp, seed, mt, re := 0.2, int64(7), 100, "low"
+				cfg.Temperature, cfg.Seed, cfg.MaxOutputTokens, cfg.ReasoningEffort = &temp, &seed, &mt, &re
+				c := newClient(t, cfg, logger, &fakeSleep{})
+				if sc.mutate != nil {
+					sc.mutate(c)
+				}
+				var err error
+				if mode == "complete" {
+					_, err = c.Complete(context.Background(), "system "+promptMarker, "user "+promptMarker)
+				} else {
+					_, err = c.Converse(context.Background(), conv)
+				}
+				var out []string
+				out = append(out, logs.String())
+				if err != nil {
+					out = append(out, err.Error(), fmt.Sprintf("%v|%+v|%#v", err, err, err))
+					var le *Error
+					if errors.As(err, &le) {
+						out = append(out, le.UserMessage())
 					}
 				}
-			}
-			if !strings.Contains(logs.String(), "llm request") {
-				t.Fatalf("expected a debug log line, got %q", logs.String())
-			}
-		})
+				for _, s := range out {
+					for _, secret := range []string{testKey, promptMarker, respMarker, "Bearer", "Authorization"} {
+						if strings.Contains(s, secret) {
+							t.Fatalf("%q leaked into %q", secret, s)
+						}
+					}
+				}
+				if !strings.Contains(logs.String(), "llm request") {
+					t.Fatalf("expected a debug log line, got %q", logs.String())
+				}
+			})
+		}
 	}
 }
 

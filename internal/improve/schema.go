@@ -88,6 +88,7 @@ func ResultSchema() map[string]any {
 				"symbols":    integer("symbols searched"),
 				"references": integer("uses shown in the prompts"),
 				"files":      integer("distinct files of the uses shown, summed over the parts"),
+				"tools":      llmrun.RepoToolsSchema("repository tools (X-43): pr_improve does not use them yet, so this is always absent"),
 			}, "status", "reason", "symbols", "references", "files"),
 			"guidelines": llmrun.GuidelinesSchema("the project guidelines read at the target branch (X-32); always present for pr_improve"),
 			"file_tree":  llmrun.FileTreeSchema("the listing of the directories the change touches, at the target branch (X-32); always present for pr_improve"),

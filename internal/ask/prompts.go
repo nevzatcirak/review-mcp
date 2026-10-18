@@ -6,6 +6,7 @@ import (
 
 	"github.com/nevzatcirak/review-mcp/internal/filter"
 	"github.com/nevzatcirak/review-mcp/internal/prompt"
+	"github.com/nevzatcirak/review-mcp/internal/repotools"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 )
 
@@ -60,9 +61,26 @@ type PromptInput struct {
 	// sentence and the fenced related pull requests, X-41); empty omits it.
 	// It precedes the repository context.
 	Related string
+	// ToolRounds is context.repo.max_tool_rounds for a run in which the
+	// model may read the repository through tools (X-43): the system prompt
+	// carries ToolsInstruction. 0 renders as before.
+	ToolRounds int
 	// Diff is the prepared plain diff; empty for the scaffolding
 	// measurement.
 	Diff string
+}
+
+// ToolsFinalAnswer is the last line of the tools' instruction block of
+// pr_ask: the answer is free text.
+const ToolsFinalAnswer = "Your final answer is the plain-text answer to the question, with no tool call in it."
+
+// ToolsInstruction is the system prompt's block of a run with tools (X-43),
+// "" for rounds 0.
+func ToolsInstruction(rounds int) string {
+	if rounds <= 0 {
+		return ""
+	}
+	return repotools.QuestionInstruction(rounds, ToolsFinalAnswer)
 }
 
 // Prompts is one rendered system and user prompt pair.
@@ -87,6 +105,7 @@ func (in *PromptInput) vars() map[string]any {
 		"language":           lang,
 		"repo_context":       in.RepoContext,
 		"related":            in.Related,
+		"tools_instruction":  ToolsInstruction(in.ToolRounds),
 		"diff":               in.Diff,
 		"questions":          in.Question,
 	}

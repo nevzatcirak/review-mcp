@@ -201,6 +201,12 @@ did **not** see. Every changed file appears in exactly one group:
 - **Repository context**: a line, only when it is on, with
   `N symbols, M references from K files` or `skipped: <reason>` (see
   [Repository context](#repository-context)).
+- **Repository tools**: a line right after it, only when
+  `context.repo.max_tool_rounds` is above 0, with `N calls in M rounds` (and
+  `; K <status>` for the calls that did not succeed), `allowed, not used`,
+  `skipped: <reason>` or `off: repo_context_off`. It counts what the model
+  read through the [repository tools](repo-context.md#reading-the-tools-result);
+  it names no path or file content.
 - **Guidelines** and **File tree**: the structured `coverage.guidelines` and
   `coverage.file_tree` say whether the project's guidelines and the directory
   listing went into the prompt (see

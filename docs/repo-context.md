@@ -323,6 +323,30 @@ with a note.
 - `tokens` is the estimate of the results, counted against
   `context.repo.max_tool_tokens`.
 
+The coverage section of the overview (`pr_review`, client and published
+comment, and `pr_ask`) shows the same result in a **Repository tools** line
+right after the "Repository context" line, so a reader of the comment can see
+that the review or the answer rested on files the model read itself:
+
+```text
+- Repository tools: 3 calls in 2 rounds
+- Repository tools: 5 calls in 2 rounds; 1 `not_available`; 2 `budget_exhausted`
+- Repository tools: allowed, not used
+- Repository tools: skipped: `endpoint_no_tools`
+- Repository tools: off: `repo_context_off`
+```
+
+| Status | Line |
+|---|---|
+| `used` | `N calls in M rounds`, then `; K <status>` for each call status other than `ok` that occurred, in the order of the table below |
+| `not_used` | `allowed, not used` |
+| `skipped` | `skipped: <reason>` |
+| `off`, reason `repo_context_off` | `off: repo_context_off` |
+| `off`, reason `off` | no line: `max_tool_rounds` is 0 and the output is as without the feature |
+
+The line holds counts and fixed words only: no path, search text or file
+content (those stay in `calls`).
+
 | Call status | Meaning |
 |---|---|
 | `ok` | The call ran. |

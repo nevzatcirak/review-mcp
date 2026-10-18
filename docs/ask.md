@@ -189,7 +189,12 @@ listing, a fixed-string search, all on the head commit of the pull request
 text, so there is no re-ask. Ask "Where is X defined and what does it return?"
 and the model can open the file instead of guessing. Every round is a model
 call (`metadata.llm_calls`, `metadata.tool_rounds`), and an endpoint without
-tool calling gets the single-pass answer and a note.
+tool calling gets the single-pass answer and a note. The coverage section then
+has a **Repository tools** line after the "Repository context" line (calls and
+rounds, `allowed, not used`, `skipped: <reason>` or `off: repo_context_off`;
+see [Reading the tools result](repo-context.md#reading-the-tools-result)). If
+the model starts its answer with its own `## Answer` heading, that line is
+dropped, because the answer is already under one.
 
 ## Publishing
 

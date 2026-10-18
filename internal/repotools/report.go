@@ -3,6 +3,7 @@ package repotools
 import (
 	"strconv"
 
+	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 )
@@ -32,6 +33,21 @@ type Use struct {
 	// Exhausted is true when a result did not fit the budget or the room
 	// beside the diff.
 	Exhausted bool
+}
+
+// Default is the use of a run before its plan decides: off when
+// context.repo.max_tool_rounds is 0 (reason off) or repository context is
+// off (reason repo_context_off, WP-12b DQ-15), else skipped for a run that
+// makes no model call (it stays so for an empty or unchanged run and a
+// publish of supplied findings).
+func Default(c config.ContextRepo) Use {
+	switch {
+	case c.MaxToolRounds <= 0:
+		return Use{Status: StatusOff, Reason: ReasonOff}
+	case !c.Enabled:
+		return Use{Status: StatusOff, Reason: ReasonRepoContextOff}
+	}
+	return Use{Status: StatusSkipped, Reason: ReasonNoModelCall}
 }
 
 // Report is the use as coverage.repo_context.tools.

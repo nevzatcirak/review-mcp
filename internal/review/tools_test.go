@@ -252,9 +252,10 @@ func TestToolsOffAndSkipped(t *testing.T) {
 		h, _, tl := toolHarness(3, toolAnswer(goodAnswer))
 		h.deps.Config.Context.Repo.Enabled = false
 		res := runTools(t, h, Args{})
-		if toolsOf(res).Status != repotools.StatusOff || len(tl.convs) != 0 {
+		if toolsOf(res).Status != repotools.StatusOff || toolsOf(res).Reason != repotools.ReasonRepoContextOff || len(tl.convs) != 0 {
 			t.Fatalf("%+v", toolsOf(res))
 		}
+		validateResult(t, res)
 	})
 	t.Run("repository context unavailable", func(t *testing.T) {
 		h, tr, tl := toolHarness(3, toolAnswer(goodAnswer))

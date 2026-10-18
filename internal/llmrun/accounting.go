@@ -466,7 +466,7 @@ func trimDeletedListed(c *Coverage, lines []string, kept int) {
 // them; internal/repotools holds the constants.
 var (
 	repoToolStatuses     = []any{"used", "not_used", "off", "skipped"}
-	repoToolReasons      = []any{"", "off", "repo_context_unavailable", "review_in_parts", "endpoint_no_tools", "no_room", "no_model_call", "conversation_failed"}
+	repoToolReasons      = []any{"", "off", "repo_context_off", "repo_context_unavailable", "review_in_parts", "endpoint_no_tools", "no_room", "no_model_call", "conversation_failed"}
 	repoToolCallStatuses = []any{"ok", "not_allowed", "not_available", "too_large", "budget_exhausted", "invalid_arguments", "too_many_calls"}
 )
 
@@ -491,7 +491,7 @@ func RepoToolsSchema(desc string) map[string]any {
 			"status": map[string]any{"type": "string", "enum": repoToolStatuses,
 				"description": "used: the model read the head commit through tools; not_used: tools were allowed but the model made no call; off: context.repo.max_tool_rounds is 0 or repository context is off; skipped: tools were allowed but the run was single-pass, see reason"},
 			"reason": map[string]any{"type": "string", "enum": repoToolReasons,
-				"description": "off for off; for skipped: repo_context_unavailable, review_in_parts, endpoint_no_tools (the endpoint does not accept tool calls), no_room (no room beside the whole diff), no_model_call, or conversation_failed (single-pass after a failed conversation); empty otherwise"},
+				"description": "off or repo_context_off (max_tool_rounds is above 0 but context.repo.enabled is off) for off; for skipped: repo_context_unavailable, review_in_parts, endpoint_no_tools (the endpoint does not accept tool calls), no_room (no room beside the whole diff), no_model_call, or conversation_failed (single-pass after a failed conversation); empty otherwise"},
 			"rounds": integer("rounds whose tool calls ran"),
 			"calls":  map[string]any{"type": "array", "items": call, "description": "every tool call of the run, in order"},
 			"tokens": integer("estimated tokens of all tool results, counted against context.repo.max_tool_tokens"),

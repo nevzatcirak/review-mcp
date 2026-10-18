@@ -25,16 +25,8 @@ type toolPlan struct {
 // toolUse is what a run did with the tools.
 type toolUse = repotools.Use
 
-// toolsDefault is the tool use of a run before the plan decides: off when
-// context.repo.max_tool_rounds is 0 or repository context is off, else
-// skipped for a run that makes no model call (it stays so for an empty or
-// unchanged review and a publish of supplied findings).
-func toolsDefault(c config.ContextRepo) toolUse {
-	if !c.Enabled || c.MaxToolRounds <= 0 {
-		return toolUse{Status: repotools.StatusOff, Reason: repotools.ReasonOff}
-	}
-	return toolUse{Status: repotools.StatusSkipped, Reason: repotools.ReasonNoModelCall}
-}
+// toolsDefault is repotools.Default.
+func toolsDefault(c config.ContextRepo) toolUse { return repotools.Default(c) }
 
 // toolsSkipped records why a run that could use tools does not.
 func (pl *Plan) toolsSkipped(reason string) {

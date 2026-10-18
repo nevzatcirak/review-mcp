@@ -25,7 +25,7 @@ func TestSchemaEnumsHoldEveryValue(t *testing.T) {
 	if got, want := enum(props["status"].(map[string]any)), sorted(StatusUsed, StatusNotUsed, StatusOff, StatusSkipped); !slices.Equal(got, want) {
 		t.Errorf("status enum %v, want %v", got, want)
 	}
-	if got, want := enum(props["reason"].(map[string]any)), sorted("", ReasonOff, ReasonRepoContextUnavailable, ReasonReviewInParts,
+	if got, want := enum(props["reason"].(map[string]any)), sorted("", ReasonOff, ReasonRepoContextOff, ReasonRepoContextUnavailable, ReasonReviewInParts,
 		ReasonEndpointNoTools, ReasonNoRoom, ReasonNoModelCall, ReasonConversationFailed); !slices.Equal(got, want) {
 		t.Errorf("reason enum %v, want %v", got, want)
 	}
@@ -61,7 +61,7 @@ func TestUseReportAndNotes(t *testing.T) {
 			t.Errorf("%s: %q", reason, got)
 		}
 	}
-	for _, reason := range []string{ReasonRepoContextUnavailable, ReasonNoModelCall, ReasonOff} {
+	for _, reason := range []string{ReasonRepoContextUnavailable, ReasonNoModelCall, ReasonOff, ReasonRepoContextOff} {
 		if got := (Use{Status: StatusSkipped, Reason: reason}).Notes(); len(got) != 0 {
 			t.Errorf("%s: %q", reason, got)
 		}

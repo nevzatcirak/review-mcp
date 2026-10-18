@@ -32,7 +32,11 @@ const (
 // Reasons of the tool status (§2.2 item 1). ReasonOff goes with StatusOff,
 // the others with StatusSkipped.
 const (
-	ReasonOff                    = "off"
+	ReasonOff = "off"
+	// ReasonRepoContextOff goes with StatusOff when the rounds are above 0
+	// but repository context is off, which the tools need (WP-12b DQ-15;
+	// server_info also warns).
+	ReasonRepoContextOff         = "repo_context_off"
 	ReasonRepoContextUnavailable = "repo_context_unavailable"
 	ReasonReviewInParts          = "review_in_parts"
 	ReasonEndpointNoTools        = "endpoint_no_tools"

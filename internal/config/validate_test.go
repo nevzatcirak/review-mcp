@@ -325,6 +325,27 @@ func TestProviderEnablementRules(t *testing.T) {
 		}
 		assertNoSecrets(t, "warning", rep.Warnings[0])
 	})
+	t.Run("tool rounds without repository context warn", func(t *testing.T) {
+		const want = "context.repo.max_tool_rounds is set but context.repo.enabled is off"
+		warns := func(env map[string]string) bool {
+			_, rep := mustLoad(t, MemSource{Env: envWith(env)})
+			for _, w := range rep.Warnings {
+				if strings.Contains(w, want) {
+					return true
+				}
+			}
+			return false
+		}
+		if !warns(map[string]string{"REVIEW_MCP_CONTEXT_REPO_MAX_TOOL_ROUNDS": "3"}) {
+			t.Error("no warning for rounds 3 with repository context off")
+		}
+		if warns(map[string]string{"REVIEW_MCP_CONTEXT_REPO_MAX_TOOL_ROUNDS": "3", "REVIEW_MCP_CONTEXT_REPO_ENABLED": "true"}) {
+			t.Error("a warning with repository context on")
+		}
+		if warns(map[string]string{}) {
+			t.Error("a warning for rounds 0")
+		}
+	})
 	t.Run("both providers", func(t *testing.T) {
 		env := envWith(map[string]string{"REVIEW_MCP_BITBUCKET_SERVER_BASE_URL": "https://bitbucket.example.com", "REVIEW_MCP_BITBUCKET_SERVER_TOKEN": fakeBitbkt})
 		cfg, rep := mustLoad(t, MemSource{Env: env})

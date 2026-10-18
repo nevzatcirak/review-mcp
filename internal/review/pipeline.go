@@ -21,6 +21,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/related"
 	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 	"github.com/nevzatcirak/review-mcp/internal/repoctx"
+	"github.com/nevzatcirak/review-mcp/internal/repotools"
 	"github.com/nevzatcirak/review-mcp/internal/review/incremental"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 	"github.com/nevzatcirak/review-mcp/internal/yamlrepair"
@@ -253,6 +254,11 @@ type Plan struct {
 	toggles     Toggles
 	maxFindings int
 	log         *slog.Logger
+	// tools is the tool loop of a review in one call (X-43), nil when the
+	// run does not use tools; toolUse is what the run did with them.
+	tools   *toolPlan
+	toolUse toolUse
+
 	// own are review-mcp's own inline finding comments already on the PR
 	// (X-29, spec P7 §5.3); a finding on the place of one of them, or with
 	// the fingerprint of one, is not posted again. Prepare fills it from
@@ -343,19 +349,29 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 
 // run is Run without the rate-limit report.
 func run(ctx context.Context, deps Deps, args Args) (*Result, error) {
+	res, pl, err := runPlan(ctx, deps, args)
+	if res != nil && pl != nil {
+		// What the run did with the repository tools (X-43).
+		res.tools = pl.toolUse
+	}
+	return res, err
+}
+
+// runPlan is run, which also returns the plan once there is one.
+func runPlan(ctx context.Context, deps Deps, args Args) (*Result, *Plan, error) {
 	if deps.Config == nil || deps.ConfigErr != nil {
-		return nil, ErrConfigInvalid
+		return nil, nil, ErrConfigInvalid
 	}
 	if deps.Resolver == nil || deps.LLM == nil {
-		return nil, errNoWiring
+		return nil, nil, errNoWiring
 	}
 	args, err := args.Validated(deps.Config)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	pl, err := Prepare(ctx, deps, args)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// From here the run uses the configuration merged with the repository
 	// config and the arguments completed from it (X-40).
@@ -363,12 +379,12 @@ func run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 	if args.Findings != nil {
 		// A merged publish (X-33): the client's findings take the place of
 		// the model's answer, and no model is called.
-		return pl.publishSupplied(ctx, deps, args), nil
+		return pl.publishSupplied(ctx, deps, args), pl, nil
 	}
 	if pl.Unchanged {
 		// Nothing changed since the last review (X-36): no model call, and
 		// nothing is posted or edited, even with publish.
-		return pl.Result, nil
+		return pl.Result, pl, nil
 	}
 	res := pl.Result
 	if pl.Empty {
@@ -380,9 +396,10 @@ func run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 		pl.withCarried(res.Review)
 		res.Notes = append(res.Notes, NoteNoReviewableChanges)
 		publish(ctx, deps, args, pl)
-		return res, nil
+		return res, pl, nil
 	}
-	return pl.finish(ctx, deps, args)
+	res, err = pl.finish(ctx, deps, args)
+	return res, pl, err
 }
 
 // Prepare runs steps 1 to 6 of the pipeline: configuration, resolution,
@@ -460,7 +477,8 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// run's one read of the threads and of the token's user with the
 	// discussion and the publish.
 	pl := &Plan{ref: ref, p: p, pr: pr, d: d, toggles: toggles, maxFindings: maxFindings, log: log, flt: flt,
-		maxTotal: config.EffectiveMaxTotalFindings(cfg.Review, maxFindings), cfg: cfg, args: args, repo: rc}
+		maxTotal: config.EffectiveMaxTotalFindings(cfg.Review, maxFindings), cfg: cfg, args: args, repo: rc,
+		toolUse: toolsDefault(cfg.Context.Repo)}
 	supplied := args.Findings != nil
 
 	// The related pull requests (X-41, spec V-13a §1.2): resolved through
@@ -837,6 +855,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			noteIssueInParts(res, issueBlock)
 			pl.markRelated(related.StatusNotPlaced, related.ReasonReviewInParts)
 			pl.reportRelated(res)
+			pl.toolsSkipped(repotools.ReasonReviewInParts)
 			return pl, nil
 		}
 		if reserve > 0 {
@@ -857,6 +876,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 					noteIssueInParts(res, issueBlock)
 					pl.markRelated(related.StatusNotPlaced, related.ReasonReviewInParts)
 					pl.reportRelated(res)
+					pl.toolsSkipped(repotools.ReasonReviewInParts)
 					return pl, nil
 				}
 			}
@@ -924,7 +944,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		// The block goes into the room the diff leaves (placeRepo); the
 		// prompt tokens then include it.
 		pin, pfit, o := placeRepo(ctx, rcs, in, diffFiles(d.Files, prep.Included, prep.Clipped), nil, prep.Text, fit, budget)
-		fit = pfit
+		in, fit = pin, pfit
 		if pin.RepoContext != "" {
 			if res.Metadata.PromptTokens, err = ScaffoldingTokens(pin, factor); err != nil {
 				return nil, err
@@ -935,6 +955,9 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		log.Debug("review: repository context", "status", res.Coverage.RepoContext.Status,
 			"reason", res.Coverage.RepoContext.Reason, "symbols", o.Symbols, "references", o.References,
 			"files", o.Files, "omitted", o.Omitted)
+	}
+	if err := pl.planTools(ctx, deps, in, fit, prep.Text, budget, rcs, res.Coverage.RepoContext); err != nil {
+		return nil, err
 	}
 	pl.parts = []*part{{prep: prep, fit: fit}}
 	pl.Prompts = fit.prompts
@@ -1087,6 +1110,13 @@ func (pl *Plan) callPart(ctx context.Context, deps Deps, fit *fitted, i, n int) 
 			if attempt == 1 {
 				user = fit.reaskUser
 				a.reasked = true
+			}
+			if attempt == 0 && pl.tools != nil && n == 1 {
+				// The repository tools (X-43): the answer comes from the
+				// conversation. A re-ask is a plain Complete with the
+				// prompts without tools and does not count as a round.
+				resp, err = pl.converse(ctx, deps, fit, a)
+				break
 			}
 			resp, err = deps.LLM.Complete(ctx, fit.prompts.System, user)
 			a.calls++

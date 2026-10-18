@@ -24,3 +24,16 @@ func CompleteNext(ctx context.Context, c any, system, user string) (resp *llm.Re
 	}
 	return n.CompleteNext(ctx, system, user)
 }
+
+// ToolRefuser is the part of a model chain that knows whether the model a
+// run is on refuses tool calls (X-43): *llm.Chain implements it.
+type ToolRefuser interface {
+	ToolsRefused() bool
+}
+
+// ToolsRefused reports whether c is known to refuse tool calls; a
+// completer that does not say is not.
+func ToolsRefused(c any) bool {
+	r, ok := c.(ToolRefuser)
+	return ok && r.ToolsRefused()
+}

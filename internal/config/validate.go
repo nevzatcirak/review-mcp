@@ -266,6 +266,10 @@ const (
 	MaxContextRepoHits         = 20
 	MinContextRepoTokens       = 200
 	MaxContextRepoTokens       = 16000
+	// X-43 (v2.4 spec V-8 §0 items 1 and 3).
+	MaxContextRepoToolRounds = 6
+	MinContextRepoToolTokens = 500
+	MaxContextRepoToolTokens = 40000
 )
 
 // validateContextRepo checks the context.repo.* keys. They are validated
@@ -291,6 +295,8 @@ func (l *loader) validateContextRepo() {
 	rng("context.repo.max_symbols", c.MaxSymbols, 1, MaxContextRepoSymbols)
 	rng("context.repo.max_hits_per_symbol", c.MaxHitsPerSymbol, 1, MaxContextRepoHits)
 	rng("context.repo.max_tokens", c.MaxTokens, MinContextRepoTokens, MaxContextRepoTokens)
+	rng("context.repo.max_tool_rounds", c.MaxToolRounds, 0, MaxContextRepoToolRounds)
+	rng("context.repo.max_tool_tokens", c.MaxToolTokens, MinContextRepoToolTokens, MaxContextRepoToolTokens)
 	cacheOK := rng("context.repo.max_cache_mb", c.MaxCacheMB, 1, MaxContextRepoCacheMB)
 	repoOK := rng("context.repo.max_repo_mb", c.MaxRepoMB, 1, MaxContextRepoCacheMB)
 	if cacheOK && repoOK && c.MaxRepoMB > c.MaxCacheMB {

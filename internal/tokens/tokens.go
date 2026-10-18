@@ -186,6 +186,13 @@ func RequestTokens(system, user string, factor float64) int {
 	return Estimate(system, factor) + Estimate(user, factor) + 2*messageFraming + replyFraming
 }
 
+// MessageTokens estimates one further message of a conversation (X-43):
+// its text plus the per-message framing allowance, so that RequestTokens
+// plus MessageTokens of each later message estimates the whole request.
+func MessageTokens(text string, factor float64) int {
+	return Estimate(text, factor) + messageFraming
+}
+
 // Clip shortens text so that Estimate(result, factor) <= maxTokens.
 //
 //   - maxTokens <= 0 returns "".

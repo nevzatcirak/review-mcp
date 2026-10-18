@@ -127,6 +127,9 @@ var table = []entry{
 	{"context.repo.max_symbols", "REVIEW_MCP_CONTEXT_REPO_MAX_SYMBOLS", func(c *Config) any { return &c.Context.Repo.MaxSymbols }},
 	{"context.repo.max_hits_per_symbol", "REVIEW_MCP_CONTEXT_REPO_MAX_HITS_PER_SYMBOL", func(c *Config) any { return &c.Context.Repo.MaxHitsPerSymbol }},
 	{"context.repo.max_tokens", "REVIEW_MCP_CONTEXT_REPO_MAX_TOKENS", func(c *Config) any { return &c.Context.Repo.MaxTokens }},
+	// v2.4 spec V-8 §0 (X-43).
+	{"context.repo.max_tool_rounds", "REVIEW_MCP_CONTEXT_REPO_MAX_TOOL_ROUNDS", func(c *Config) any { return &c.Context.Repo.MaxToolRounds }},
+	{"context.repo.max_tool_tokens", "REVIEW_MCP_CONTEXT_REPO_MAX_TOOL_TOKENS", func(c *Config) any { return &c.Context.Repo.MaxToolTokens }},
 
 	// repo_config.* rows: v2.1 spec V-5 §1.1 (X-40).
 	{"repo_config.enabled", "REVIEW_MCP_REPO_CONFIG_ENABLED", func(c *Config) any { return &c.RepoConfig.Enabled }},

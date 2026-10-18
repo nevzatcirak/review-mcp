@@ -228,11 +228,14 @@ func (b *Box) Exhausted() bool { return b.exhausted }
 // Round runs the calls of one model turn, in order, and returns one tool
 // message per call, which the conversation must carry. At most
 // MaxCallsPerRound run; the others get ResultTooManyCalls. room is the most
-// tokens the results of this round may add to the request beside the whole
-// diff: a result that does not fit it, or the rest of the budget, gets
+// tokens the result texts of this round may add to the request beside the
+// whole diff; a short fixed result is reserved for every call out of it. A
+// result that does not fit the room left, or the rest of the budget, gets
 // ResultBudgetExhausted, and so does every later call of the round.
 func (b *Box) Round(ctx context.Context, round int, calls []llm.ToolCall, room int) []llm.Message {
 	out := make([]llm.Message, 0, len(calls))
+	short := ShortResultTokens(b.set.Factor)
+	free := room - len(calls)*short
 	for i, tc := range calls {
 		c := Call{Tool: toolName(tc.Name), Target: targetOf(tc)}
 		var text string
@@ -244,14 +247,14 @@ func (b *Box) Round(ctx context.Context, round int, calls []llm.ToolCall, room i
 		default:
 			c.Status, text = b.run(ctx, tc)
 			n := tokens.Estimate(text, b.set.Factor)
-			if n > min(b.set.MaxToolTokens-b.used, room) {
+			if n > min(b.set.MaxToolTokens-b.used, free+short) {
 				b.exhausted = true
 				c.Status, text = StatusBudgetExhausted, ResultBudgetExhausted
 				break
 			}
 			c.Tokens = n
 			b.used += n
-			room -= n
+			free -= n - short
 		}
 		b.calls = append(b.calls, c)
 		attrs := []any{"tool", c.Tool, "status", c.Status, "tokens", c.Tokens, "round", round}
@@ -262,6 +265,13 @@ func (b *Box) Round(ctx context.Context, round int, calls []llm.ToolCall, room i
 		out = append(out, llm.ToolResult(tc.ID, text))
 	}
 	return out
+}
+
+// ShortResultTokens is the estimate of the longest fixed result a call may
+// get without running (ResultTooManyCalls, ResultBudgetExhausted): the room
+// a round reserves for every call.
+func ShortResultTokens(factor float64) int {
+	return max(tokens.Estimate(ResultTooManyCalls, factor), tokens.Estimate(ResultBudgetExhausted, factor))
 }
 
 // toolName is the name of a call for the accounting: a known tool, or the

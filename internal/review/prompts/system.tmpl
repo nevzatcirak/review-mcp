@@ -42,6 +42,11 @@ Changes from upstream (spec P4 §4.2):
   compatibility, merge and deploy order), and KeyIssuesComponentLink gains
   the optional related field (R1 to R4); the example does not change;
   without a related block nothing is rendered;
+- intentional deviation (X-43): a run in which the model may read the
+  repository through tools gets one more instruction block after the
+  related block (the fixed text of ToolsInstruction: what the tools read,
+  when to use them, the round limit and the final YAML answer); without
+  tools nothing is rendered;
 - the schema classes and the example come from the field-descriptor table
   (.schema, .example; internal/review/fields.go);
 - intentional deviation (X-12, spec P7 §4.1): a performance_concerns field,
@@ -130,6 +135,10 @@ Determining what to flag:
 {{- if .related_instruction }}
 
 {{ .related_instruction }}
+{{- end }}
+{{- if .tools_instruction }}
+
+{{ .tools_instruction }}
 {{- end }}
 
 Constructing comments:

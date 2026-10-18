@@ -107,7 +107,7 @@ func TestAskRepoContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the answer failed: %v", err)
 	}
-	if got, want := res.Coverage.RepoContext, (llmrun.RepoContext{Status: "skipped", Reason: "not_found"}); got != want {
+	if got, want := withoutTools(res.Coverage.RepoContext), (llmrun.RepoContext{Status: "skipped", Reason: "not_found"}); got != want {
 		t.Errorf("coverage.repo_context = %+v, want %+v", got, want)
 	}
 	found := false

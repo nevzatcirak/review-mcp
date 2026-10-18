@@ -60,7 +60,8 @@ type Metadata struct {
 	// call).
 	RequestTokens int  `json:"request_tokens"`
 	FastPath      bool `json:"fast_path"`
-	// LLMCalls is the number of chat completions made (0 or 1).
+	// LLMCalls is the number of chat completions made: 0 or 1, and one per
+	// round of the repository tools (X-43).
 	LLMCalls    int  `json:"llm_calls"`
 	Truncated   bool `json:"truncated"`
 	DiffTrimmed bool `json:"diff_trimmed"`
@@ -74,4 +75,8 @@ type Metadata struct {
 	// (X-38); both always set. Model is the model that served the last call.
 	ModelsUsed    []string `json:"models_used"`
 	FallbackCalls int      `json:"fallback_calls"`
+	// ToolRounds is the number of rounds in which the repository tools'
+	// calls ran (X-43); 0 without them. Every round is a model call counted
+	// in LLMCalls.
+	ToolRounds int `json:"tool_rounds"`
 }

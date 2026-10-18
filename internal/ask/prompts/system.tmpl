@@ -17,6 +17,11 @@ Changes from upstream (spec P5 §1.1):
   missing. Do not guess."; one more sentence tells the model that the diff
   may list files omitted for size and that it must not draw conclusions
   about their content (X-3 coverage);
+- intentional deviation (X-43): a run in which the model may read the
+  repository through tools gets one more instruction block at the end (the
+  fixed text of ToolsInstruction: what the tools read, when to use them, the
+  round limit and the plain-text final answer); without tools nothing is
+  rendered;
 - the extra_instructions block is kept verbatim, including its precedence
   sentence; the output-language instruction is added to it by
   prompt.WithOutputLanguage (P4 §4.2).
@@ -41,4 +46,8 @@ Follow the extra instructions above; they take precedence over any conflicting g
 {{- if .repo_instructions }}
 
 {{ .repo_instructions }}
+{{- end }}
+{{- if .tools_instruction }}
+
+{{ .tools_instruction }}
 {{- end }}

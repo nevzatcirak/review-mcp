@@ -173,6 +173,9 @@ func askResultSchema() *jsonschema.Schema {
 				panic("coverage.repo_context.tools schema") // a programming error, caught by every test
 			}
 			rc.Properties["tools"] = &tools
+			if !slices.Contains(rc.Required, "tools") {
+				rc.Required = append(rc.Required, "tools")
+			}
 		}
 	}
 	return s

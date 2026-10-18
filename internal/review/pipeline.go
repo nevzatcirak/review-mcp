@@ -349,29 +349,19 @@ func Run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 
 // run is Run without the rate-limit report.
 func run(ctx context.Context, deps Deps, args Args) (*Result, error) {
-	res, pl, err := runPlan(ctx, deps, args)
-	if res != nil && pl != nil {
-		// What the run did with the repository tools (X-43).
-		res.tools = pl.toolUse
-	}
-	return res, err
-}
-
-// runPlan is run, which also returns the plan once there is one.
-func runPlan(ctx context.Context, deps Deps, args Args) (*Result, *Plan, error) {
 	if deps.Config == nil || deps.ConfigErr != nil {
-		return nil, nil, ErrConfigInvalid
+		return nil, ErrConfigInvalid
 	}
 	if deps.Resolver == nil || deps.LLM == nil {
-		return nil, nil, errNoWiring
+		return nil, errNoWiring
 	}
 	args, err := args.Validated(deps.Config)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	pl, err := Prepare(ctx, deps, args)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	// From here the run uses the configuration merged with the repository
 	// config and the arguments completed from it (X-40).
@@ -379,12 +369,14 @@ func runPlan(ctx context.Context, deps Deps, args Args) (*Result, *Plan, error) 
 	if args.Findings != nil {
 		// A merged publish (X-33): the client's findings take the place of
 		// the model's answer, and no model is called.
-		return pl.publishSupplied(ctx, deps, args), pl, nil
+		reportTools(pl.Result, pl.toolUse)
+		return pl.publishSupplied(ctx, deps, args), nil
 	}
 	if pl.Unchanged {
 		// Nothing changed since the last review (X-36): no model call, and
 		// nothing is posted or edited, even with publish.
-		return pl.Result, pl, nil
+		reportTools(pl.Result, pl.toolUse)
+		return pl.Result, nil
 	}
 	res := pl.Result
 	if pl.Empty {
@@ -395,11 +387,11 @@ func runPlan(ctx context.Context, deps Deps, args Args) (*Result, *Plan, error) 
 		res.Review = &Review{KeyIssuesToReview: []KeyIssue{}}
 		pl.withCarried(res.Review)
 		res.Notes = append(res.Notes, NoteNoReviewableChanges)
+		reportTools(res, pl.toolUse)
 		publish(ctx, deps, args, pl)
-		return res, pl, nil
+		return res, nil
 	}
-	res, err = pl.finish(ctx, deps, args)
-	return res, pl, err
+	return pl.finish(ctx, deps, args)
 }
 
 // Prepare runs steps 1 to 6 of the pipeline: configuration, resolution,
@@ -1068,6 +1060,10 @@ func (pl *Plan) finish(ctx context.Context, deps Deps, args Args) (*Result, erro
 	} else {
 		rev = pl.mergeParts(answers, classes)
 	}
+
+	// What the run did with the repository tools (X-43), before the
+	// publish, whose overview carries the notes.
+	reportTools(res, pl.toolUse)
 
 	// Steps 10 and 11: snippets and links, on the merged list against every
 	// file of the PR.

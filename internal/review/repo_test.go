@@ -219,7 +219,7 @@ func TestRepoContextFailureIsANote(t *testing.T) {
 			if err != nil {
 				t.Fatalf("the review failed: %v", err)
 			}
-			if got, want := res.Coverage.RepoContext, (llmrun.RepoContext{Status: "skipped", Reason: reason}); got != want {
+			if got, want := withoutTools(res.Coverage.RepoContext), (llmrun.RepoContext{Status: "skipped", Reason: reason}); got != want {
 				t.Errorf("coverage.repo_context = %+v, want %+v", got, want)
 			}
 			if !contains(res.Notes, gitctx.Note(reason)) {
@@ -396,7 +396,7 @@ func TestRepoContextPerPart(t *testing.T) {
 			t.Errorf("part %d: the block must precede the part line (block %d, part line %d)", i+1, block, hdr)
 		}
 	}
-	if got, want := res.Coverage.RepoContext, (llmrun.RepoContext{Status: "used", Symbols: 6, References: 6, Files: 6}); got != want {
+	if got, want := withoutTools(res.Coverage.RepoContext), (llmrun.RepoContext{Status: "used", Symbols: 6, References: 6, Files: 6}); got != want {
 		t.Errorf("coverage.repo_context = %+v, want %+v", got, want)
 	}
 
@@ -493,7 +493,7 @@ func TestRepoContextPartsSkipped(t *testing.T) {
 	if len(f.calls) != 3 || fb.ensures != 1 || len(fb.queries) != 0 {
 		t.Errorf("calls %d, ensures %d, greps %d", len(f.calls), fb.ensures, len(fb.queries))
 	}
-	if got, want := res.Coverage.RepoContext, (llmrun.RepoContext{Status: "skipped", Reason: "auth"}); got != want {
+	if got, want := withoutTools(res.Coverage.RepoContext), (llmrun.RepoContext{Status: "skipped", Reason: "auth"}); got != want {
 		t.Errorf("coverage.repo_context = %+v, want %+v", got, want)
 	}
 	n := 0

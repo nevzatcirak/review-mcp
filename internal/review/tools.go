@@ -23,13 +23,7 @@ type toolPlan struct {
 }
 
 // toolUse is what a run did with the tools.
-type toolUse struct {
-	status, reason string
-	rounds         int
-	calls          []repotools.Call
-	tokens         int
-	exhausted      bool
-}
+type toolUse = repotools.Use
 
 // toolsDefault is the tool use of a run before the plan decides: off when
 // context.repo.max_tool_rounds is 0 or repository context is off, else
@@ -37,17 +31,17 @@ type toolUse struct {
 // unchanged review and a publish of supplied findings).
 func toolsDefault(c config.ContextRepo) toolUse {
 	if !c.Enabled || c.MaxToolRounds <= 0 {
-		return toolUse{status: repotools.StatusOff, reason: repotools.ReasonOff}
+		return toolUse{Status: repotools.StatusOff, Reason: repotools.ReasonOff}
 	}
-	return toolUse{status: repotools.StatusSkipped, reason: repotools.ReasonNoModelCall}
+	return toolUse{Status: repotools.StatusSkipped, Reason: repotools.ReasonNoModelCall}
 }
 
 // toolsSkipped records why a run that could use tools does not.
 func (pl *Plan) toolsSkipped(reason string) {
-	if pl.toolUse.status == repotools.StatusOff {
+	if pl.toolUse.Status == repotools.StatusOff {
 		return
 	}
-	pl.toolUse = toolUse{status: repotools.StatusSkipped, reason: reason}
+	pl.toolUse = toolUse{Status: repotools.StatusSkipped, Reason: reason}
 	pl.log.Debug("review: repository tools not used", "reason", reason)
 }
 
@@ -59,7 +53,8 @@ func (pl *Plan) toolsSkipped(reason string) {
 // diff was prepared against.
 func (pl *Plan) planTools(ctx context.Context, deps Deps, in PromptInput, fit *fitted, diff string, b tokens.Budget,
 	rcs *repoctx.Session, rc llmrun.RepoContext) error {
-	if pl.toolUse.status == repotools.StatusOff {
+	if pl.toolUse.Status == repotools.StatusOff || pl.args.Findings != nil {
+		// Off, or a publish of supplied findings, which makes no model call.
 		return nil
 	}
 	c := pl.cfg.Context.Repo
@@ -113,28 +108,36 @@ func (pl *Plan) converse(ctx context.Context, deps Deps, fit *fitted, a *partAns
 	tp := pl.tools
 	lr, err := tp.box.Loop(ctx, tp.conv, tp.in)
 	a.calls += lr.Calls
-	u := toolUse{rounds: lr.Rounds, calls: tp.box.Calls(), tokens: tp.box.Tokens(), exhausted: tp.box.Exhausted()}
+	u := toolUse{Rounds: lr.Rounds, Calls: tp.box.Calls(), Tokens: tp.box.Tokens(), Exhausted: tp.box.Exhausted()}
 	switch {
 	case err != nil:
-		u.status, u.reason = repotools.StatusSkipped, repotools.ReasonConversationFailed
+		u.Status, u.Reason = repotools.StatusSkipped, repotools.ReasonConversationFailed
 		pl.toolUse = u
 		return nil, err
 	case lr.Fallback == repotools.FallbackNoTools:
-		u.status, u.reason = repotools.StatusSkipped, repotools.ReasonEndpointNoTools
+		u.Status, u.Reason = repotools.StatusSkipped, repotools.ReasonEndpointNoTools
 	case lr.Fallback != "":
-		u.status, u.reason = repotools.StatusSkipped, repotools.ReasonConversationFailed
-	case len(u.calls) > 0:
-		u.status = repotools.StatusUsed
+		u.Status, u.Reason = repotools.StatusSkipped, repotools.ReasonConversationFailed
+	case len(u.Calls) > 0:
+		u.Status = repotools.StatusUsed
 	default:
-		u.status = repotools.StatusNotUsed
+		u.Status = repotools.StatusNotUsed
 	}
 	pl.toolUse = u
-	pl.log.Debug("review: repository tools", "status", u.status, "reason", u.reason, "rounds", u.rounds,
-		"calls", len(u.calls), "tokens", u.tokens, "model_calls", lr.Calls, "restarted", lr.Restarted)
+	pl.log.Debug("review: repository tools", "status", u.Status, "reason", u.Reason, "rounds", u.Rounds,
+		"calls", len(u.Calls), "tokens", u.Tokens, "model_calls", lr.Calls, "restarted", lr.Restarted)
 	if lr.Fallback == "" {
 		return &llm.Response{Content: lr.Answer.Text, Truncated: lr.Answer.Truncated, Usage: lr.Answer.Usage}, nil
 	}
 	resp, err := deps.LLM.Complete(ctx, fit.prompts.System, fit.prompts.User)
 	a.calls++
 	return resp, err
+}
+
+// reportTools puts the tool use of a run into its result (§2.3): the
+// coverage, the metadata and the notes.
+func reportTools(res *Result, u toolUse) {
+	res.Coverage.RepoContext.Tools = u.Report()
+	res.Metadata.ToolRounds = u.Rounds
+	res.Notes = append(res.Notes, u.Notes()...)
 }

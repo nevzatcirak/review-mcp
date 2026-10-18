@@ -76,6 +76,7 @@ func ResultSchema() map[string]any {
 				"symbols":    integer("always 0 for pr_describe"),
 				"references": integer("always 0 for pr_describe"),
 				"files":      integer("always 0 for pr_describe"),
+				"tools":      llmrun.RepoToolsSchema("repository tools (X-43): pr_describe does not use them, so this is always absent"),
 			}, "status", "reason", "symbols", "references", "files"),
 			"guidelines": llmrun.GuidelinesSchema("project guidelines (X-32): pr_describe does not read them, so this is always absent"),
 			"file_tree":  llmrun.FileTreeSchema("file tree (X-32): pr_describe does not read it, so this is always absent"),

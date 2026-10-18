@@ -159,6 +159,35 @@ type RepoContext struct {
 	Symbols    int    `json:"symbols"`
 	References int    `json:"references"`
 	Files      int    `json:"files"`
+	// Tools is what the run did with the repository tools (X-43): always
+	// set by pr_review; nil, and omitted, in the tools that do not use
+	// them.
+	Tools *RepoTools `json:"tools,omitempty"`
+}
+
+// RepoTools is coverage.repo_context.tools (X-43, v2.4 spec V-8 §2.3): the
+// status of the repository tools in a run, the rounds whose calls ran, every
+// call, and the tokens of all results.
+type RepoTools struct {
+	// Status is used, not_used, off or skipped; Reason is off for off, the
+	// reason for skipped, and "" otherwise.
+	Status string `json:"status"`
+	Reason string `json:"reason"`
+	Rounds int    `json:"rounds"`
+	// Calls are the tool calls of the run, in order, also those that did
+	// not run.
+	Calls  []RepoToolCall `json:"calls"`
+	Tokens int            `json:"tokens"`
+}
+
+// RepoToolCall is one tool call: the tool, its target (the path or the
+// search text, cut to 200 characters without control characters), its
+// status and the tokens of its result.
+type RepoToolCall struct {
+	Tool   string `json:"tool"`
+	Target string `json:"target"`
+	Status string `json:"status"`
+	Tokens int    `json:"tokens"`
 }
 
 // MarshalJSON writes the zero value as "off", so a Coverage built without
@@ -431,6 +460,42 @@ func trimDeletedListed(c *Coverage, lines []string, kept int) {
 	}
 	c.DeletedListed = NonNil(stay)
 	c.Omitted.Deleted = NonNil(append(cut, c.Omitted.Deleted...))
+}
+
+// Values of the repository tools' accounting (X-43), as the schema lists
+// them; internal/repotools holds the constants.
+var (
+	repoToolStatuses     = []any{"used", "not_used", "off", "skipped"}
+	repoToolReasons      = []any{"", "off", "repo_context_unavailable", "review_in_parts", "endpoint_no_tools", "no_room", "no_model_call", "conversation_failed"}
+	repoToolCallStatuses = []any{"ok", "not_allowed", "not_available", "too_large", "budget_exhausted", "invalid_arguments", "too_many_calls"}
+)
+
+// RepoToolsSchema is the JSON schema of coverage.repo_context.tools (X-43)
+// under the description desc. Every property is required within the
+// object.
+func RepoToolsSchema(desc string) map[string]any {
+	str := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
+	integer := func(desc string) map[string]any { return map[string]any{"type": "integer", "description": desc} }
+	call := map[string]any{"type": "object", "description": "one tool call", "additionalProperties": false,
+		"required": []any{"tool", "target", "status", "tokens"},
+		"properties": map[string]any{
+			"tool":   str("read_file, list_dir or search; another name the model used, cut to 64 characters"),
+			"target": str("the path or the search text, cut to 200 characters without control characters; empty when the arguments name none"),
+			"status": map[string]any{"type": "string", "enum": repoToolCallStatuses,
+				"description": "ok; not_allowed: the path broke the path rules and nothing was read; not_available: binary, not fetched, not found, not a directory, or unreadable; too_large: over diff.max_file_bytes; budget_exhausted: over context.repo.max_tool_tokens or the room beside the diff, not run; invalid_arguments: not a JSON object of at most 4 KiB, a wrong argument, or an unknown tool; too_many_calls: beyond 4 calls in one round, not run"},
+			"tokens": integer("estimated tokens of the call's result; 0 when it did not run"),
+		}}
+	return map[string]any{"type": "object", "description": desc, "additionalProperties": false,
+		"required": []any{"status", "reason", "rounds", "calls", "tokens"},
+		"properties": map[string]any{
+			"status": map[string]any{"type": "string", "enum": repoToolStatuses,
+				"description": "used: the model read the head commit through tools; not_used: tools were allowed but the model made no call; off: context.repo.max_tool_rounds is 0 or repository context is off; skipped: tools were allowed but the run was single-pass, see reason"},
+			"reason": map[string]any{"type": "string", "enum": repoToolReasons,
+				"description": "off for off; for skipped: repo_context_unavailable, review_in_parts, endpoint_no_tools (the endpoint does not accept tool calls), no_room (no room beside the whole diff), no_model_call, or conversation_failed (single-pass after a failed conversation); empty otherwise"},
+			"rounds": integer("rounds whose tool calls ran"),
+			"calls":  map[string]any{"type": "array", "items": call, "description": "every tool call of the run, in order"},
+			"tokens": integer("estimated tokens of all tool results, counted against context.repo.max_tool_tokens"),
+		}}
 }
 
 // GuidelinesSchema is the JSON schema of coverage.guidelines (X-32) under

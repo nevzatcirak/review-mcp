@@ -27,9 +27,6 @@ const (
 // Result is the outcome of one review (§4.3 step 12). It is the MCP
 // structuredContent of pr_review (DQ-6); ResultSchema describes it.
 type Result struct {
-	// tools is what the run did with the repository tools (X-43).
-	tools toolUse
-
 	PR PRInfo `json:"pr"`
 	// EnabledFields are the review fields asked for, in descriptor order.
 	EnabledFields []string `json:"enabled_fields"`
@@ -134,6 +131,9 @@ type Metadata struct {
 	// (X-38); both always set. Model is the model that served the last call.
 	ModelsUsed    []string `json:"models_used"`
 	FallbackCalls int      `json:"fallback_calls"`
+	// ToolRounds is the number of rounds in which the repository tools'
+	// calls ran (X-43); 0 without them.
+	ToolRounds int `json:"tool_rounds"`
 }
 
 // PublishResult is the outcome of publishing (step 13): the posted or

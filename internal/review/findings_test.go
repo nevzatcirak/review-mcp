@@ -120,8 +120,11 @@ func TestRunSuppliedFindingsRepoContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (llmrun.RepoContext{Status: llmrun.RepoSkipped, Reason: repoctx.ReasonClientFindings}); res.Coverage.RepoContext != want {
+	if want := (llmrun.RepoContext{Status: llmrun.RepoSkipped, Reason: repoctx.ReasonClientFindings}); withoutTools(res.Coverage.RepoContext) != want {
 		t.Errorf("repo_context = %+v, want %+v", res.Coverage.RepoContext, want)
+	}
+	if rt := res.Coverage.RepoContext.Tools; rt == nil || rt.Status != "off" {
+		t.Errorf("repo_context.tools = %+v, want off", rt)
 	}
 }
 

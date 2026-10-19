@@ -5,6 +5,58 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Planned as `2.5.0-rc.1`. A `related` item may now also be a **repository**: a
+change that removes or renames something in one repository is checked against
+a repository that uses it, even when that repository has no pull request.
+Nothing in the tools or in the configuration of 2.4.0 is removed or renamed;
+a call without a repository URL in `related` behaves as before (a result with
+pull request items only is byte-identical to 2.4.0). Guide:
+[Repository items and consumer impact](docs/review.md#repository-items-and-consumer-impact).
+
+### Added
+
+- Repository items in `related` for `pr_review` and `pr_ask` (X-41, part b): a
+  repository URL, optionally with a branch (GitHub, Gitea, GitLab, Bitbucket
+  Server browse forms). The repository is fetched read-only at one pinned
+  commit (needs `context.repo.enabled`, stdio only), searched for the changed
+  contract surface of the reviewed diff (names removed or changed in contract
+  files, route prefixes, changed exported symbols; a stop list drops schema
+  keywords, type names and common words), and the hits go to the model as
+  fenced, budgeted context. A finding in the repository is listed in the
+  overview, never inline, with a link to the file and line at the pinned
+  commit. A search with no hits is `no_use_found` and says that text search
+  cannot see dynamic or generated uses; it is never "no impact".
+- `coverage.related[]` fields `kind`, `branch`, `commit`, `identifiers`,
+  `matches`, `matches_shown` and `source`, the status `no_use_found`, and the
+  reasons `repo_context_off`, `branch_not_found`, `primary_repository`,
+  `no_contract_change` and the git reasons, all only on repository items.
+- The repository tools (`read_file`, `list_dir`, `search`) take an optional
+  `repo` argument naming a readable related repository (`R1` to `R4`);
+  `coverage.repo_context.tools.calls[].repo` records it. Without a related
+  repository the tool definitions are exactly those of 2.4.0.
+- `[[related.repos]]` in the repository config (url, branch, paths), read at
+  the base revision and used only with the operator key
+  `related.from_repo_config` (default false) when the call passes no
+  `related`; every such item has `source: "repo_config"`.
+- Operator keys `related.max_identifiers` (default 20, 1 to 50) and
+  `related.from_repo_config`; both are reported by `server_info`.
+- `pr_info` lists repository items of `related` as `not_read`, with `kind` and
+  `branch`, without fetching them.
+- The MCP prompt `review_linked_prs` takes `repo_urls`, repositories passed as
+  related context to every pull request's review and never reviewed
+  themselves.
+
+### Changed
+
+- The `related` argument of `pr_review`, `pr_ask` and `pr_info` accepts
+  repository URLs; its refusal message is now "related[N] must be an http or
+  https pull request or repository URL without credentials".
+- `pr_ask` cites consumer locations as links to the file at the pinned commit.
+- Bitbucket Server's `FileLineURL` without a pull request number now returns a
+  browse link at the commit (not verified against a live server).
+
 ## [2.4.0]
 
 Seventh stable release. The code is the same as `2.4.0-rc.2`. The release
@@ -161,7 +213,7 @@ First 2.3 release candidate (the npm dist-tag `next`; `latest` stays on 2.2.0).
 requests on any configured provider, read as context only (X-41, V-13a). The
 reviewed pull request stays the only one under review and the only one
 published to. Nothing in the tools or in the configuration of 2.2.0 is removed
-or renamed. Guide: [Related pull requests](docs/review.md#related-pull-requests).
+or renamed. Guide: [Related pull requests](docs/review.md#related-pull-requests-and-repositories).
 
 ### Added
 

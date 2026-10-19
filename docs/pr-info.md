@@ -58,8 +58,8 @@ The structured result has the same facts:
 
 ## Related pull requests
 
-`related` takes up to four pull request URLs, on any configured provider, with
-the same rules as on `pr_review` ([Related pull requests](review.md#related-pull-requests)).
+`related` takes up to four pull request or repository URLs, on any configured
+provider, with the same rules as on `pr_review` ([Related pull requests](review.md#related-pull-requests-and-repositories)).
 Each is read with its own provider's token, with one request for the pull
 request itself; **no diff is read**, and `related.max_tokens` does not apply.
 The markdown lists them under "Related pull requests:", and `related` in the
@@ -71,6 +71,19 @@ result has one entry each:
 | `status` | `read`, `failed` or `ignored` |
 | `reason` | for `failed`: `url_not_configured`, `url_malformed`, `credentials_missing`, `not_found`, `forbidden`, `unauthorized` or `unreadable`; for `ignored`: `duplicate` or `primary` |
 | `title`, `state`, `draft`, `target_branch`, `head_sha` | as for the pull request itself, only when it was read (the title is third-party text) |
+| `kind`, `branch`, `source` | on a repository item only: `repository`, its branch (`""` for the default branch), and `repo_config` when the reviewed repository's config declares it |
+
+A **repository** item is resolved, never read: no request reaches the provider,
+nothing is fetched and no diff is searched, so its status is `not_read` (or
+`failed` / `ignored` with the reason a review would give: `url_not_configured`,
+`url_malformed`, `primary_repository`, `duplicate`). With the operator key
+`related.from_repo_config` set and no `related` argument, `pr_info` also reads
+the reviewed repository's `.review-mcp.toml` at the base revision (one file) and
+lists the repositories it declares
+([`[[related.repos]]`](repo-config.md#related-repositories)) the same way, with
+`source: "repo_config"`. With the key off (the default) it reads no repository
+config, as before. The markdown heading is then "Related pull requests and
+repositories:".
 
 Two information notes, not blockers: "Related pull request <url> is merged
 while this pull request is open." and "Related pull request <url> is closed

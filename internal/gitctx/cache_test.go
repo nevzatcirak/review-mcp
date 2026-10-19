@@ -346,16 +346,16 @@ func TestPlanGitLab(t *testing.T) {
 
 func TestClassifyStderr(t *testing.T) {
 	for stderr, want := range map[string]classified{
-		"fatal: could not read Username for 'https://h': terminal prompts disabled": {ReasonAuth, true},
-		"fatal: Authentication failed for 'https://h/o/r.git/'":                     {ReasonAuth, true},
-		"fatal: unable to access 'x': The requested URL returned error: 401":        {ReasonAuth, true},
-		"fatal: unable to access 'x': The requested URL returned error: 403":        {ReasonAuth, false},
-		"fatal: unable to access 'x': The requested URL returned error: 301":        {ReasonRedirect, false},
-		"fatal: repository 'https://h/o/r.git/' not found":                          {ReasonNotFound, false},
-		"fatal: couldn't find remote ref refs/pull/9/head":                          {ReasonNotFound, false},
-		"fatal: unable to access 'x': Operation timed out after 5000 milliseconds":  {ReasonTimeout, false},
-		"fatal: the remote end hung up unexpectedly":                                {ReasonGitFailed, false},
-		"": {ReasonGitFailed, false},
+		"fatal: could not read Username for 'https://h': terminal prompts disabled": {ReasonAuth, true, false},
+		"fatal: Authentication failed for 'https://h/o/r.git/'":                     {ReasonAuth, true, false},
+		"fatal: unable to access 'x': The requested URL returned error: 401":        {ReasonAuth, true, false},
+		"fatal: unable to access 'x': The requested URL returned error: 403":        {ReasonAuth, false, false},
+		"fatal: unable to access 'x': The requested URL returned error: 301":        {ReasonRedirect, false, false},
+		"fatal: repository 'https://h/o/r.git/' not found":                          {ReasonNotFound, false, false},
+		"fatal: couldn't find remote ref refs/pull/9/head":                          {ReasonNotFound, false, true},
+		"fatal: unable to access 'x': Operation timed out after 5000 milliseconds":  {ReasonTimeout, false, false},
+		"fatal: the remote end hung up unexpectedly":                                {ReasonGitFailed, false, false},
+		"": {ReasonGitFailed, false, false},
 	} {
 		if got := classifyStderr(stderr); got != want {
 			t.Errorf("classify(%q) = %+v, want %+v", stderr, got, want)

@@ -33,6 +33,10 @@ const (
 	// not hold (the fetch leaves out blobs above 1 MiB, and a read never
 	// fetches). It is a reason of a read, not of repository context.
 	ReasonBlobMissing = "blob_missing"
+	// ReasonBranchNotFound: the remote has no such branch (git's "couldn't
+	// find remote ref" on the fetch of EnsureBranch; v2.5 spec V-13b §1.2).
+	// A missing pull request ref stays not_found.
+	ReasonBranchNotFound = "branch_not_found"
 )
 
 // notes are the fixed sentences for each reason, for the review notes and
@@ -49,6 +53,7 @@ var notes = map[string]string{
 	ReasonBusy:           "repository context skipped: the cached repository is in use by another process",
 	ReasonCache:          "repository context skipped: the cache directory cannot be used",
 	ReasonUnsupported:    "repository context skipped: this repository cannot be fetched with git",
+	ReasonBranchNotFound: "repository context skipped: the branch was not found",
 }
 
 // Error is a failure of this package. It carries only a fixed reason; git's
@@ -92,6 +97,10 @@ type classified struct {
 	// unauthorized is true for an HTTP 401 (git reports it as a failed
 	// credential prompt): only that triggers the next auth scheme.
 	unauthorized bool
+	// missingRef is true when the remote answered but has no such ref
+	// ("couldn't find remote ref"); the reason stays not_found, and a branch
+	// fetch reports branch_not_found instead.
+	missingRef bool
 }
 
 // classifyStderr maps git's stderr to a fixed reason. Unknown text is
@@ -114,7 +123,9 @@ func classifyStderr(stderr string) classified {
 		return classified{reason: ReasonAuth}
 	case has("returned error: 30"):
 		return classified{reason: ReasonRedirect}
-	case has("couldn't find remote ref", "not found", "returned error: 404", "returned error: 410"):
+	case has("couldn't find remote ref"):
+		return classified{reason: ReasonNotFound, missingRef: true}
+	case has("not found", "returned error: 404", "returned error: 410"):
 		return classified{reason: ReasonNotFound}
 	case has("timed out", "timeout was reached"):
 		return classified{reason: ReasonTimeout}

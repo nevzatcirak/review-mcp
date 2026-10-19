@@ -66,44 +66,54 @@ func TestTokenNeverInArgv(t *testing.T) {
 			if _, err := r.Ensure(context.Background(), tc.repo, PR{Number: 7, HeadSHA: fakeSHA}); err != nil {
 				t.Fatalf("Ensure: %v", err)
 			}
-			calls := f.calls(t)
-			fetches := callsOf(calls, "fetch")
-			if len(fetches) != 1 {
-				t.Fatalf("%d fetches, want 1 (calls: %v)", len(fetches), calls)
-			}
-			secrets := []string{testToken, strings.TrimPrefix(basicOf("x-access-token", testToken), "Basic "),
-				strings.TrimPrefix(basicOf("oauth2", testToken), "Basic ")}
-			for _, c := range calls {
-				for i, a := range c.Args {
-					for _, sec := range secrets {
-						if strings.Contains(a, sec) {
-							t.Errorf("git %s: argument %d carries the credential", c.subcommand(), i)
-						}
-					}
-					if strings.Contains(strings.ToLower(a), "extraheader") {
-						t.Errorf("git %s: argument %d carries the credential", c.subcommand(), i)
-					}
-				}
-				env := strings.Join(c.Env, "\n")
-				for _, sec := range secrets {
-					if c.subcommand() != "fetch" && strings.Contains(env, sec) {
-						t.Errorf("git %s: the credential is in its environment", c.subcommand())
-					}
-				}
-			}
-			env := fetches[0].Env
-			for name, want := range map[string]string{
-				"GIT_CONFIG_COUNT":   "2",
-				"GIT_CONFIG_KEY_0":   "http.extraHeader",
-				"GIT_CONFIG_VALUE_0": "",
-				"GIT_CONFIG_KEY_1":   "http.extraHeader",
-				"GIT_CONFIG_VALUE_1": tc.header,
-			} {
-				if got, ok := envValue(env, name); !ok || got != want {
-					t.Errorf("fetch env %s = %q (set %v), want %q", name, got, ok, want)
-				}
-			}
+			assertTokenOnlyInFetchEnv(t, f.calls(t), tc.header)
 		})
+	}
+}
+
+// assertTokenOnlyInFetchEnv asserts the RC-3 rule on the recorded calls of
+// one fetch: exactly one fetch ran; no argument of any git command carries
+// the token (raw or in a Basic value) or an extraHeader; no command but the
+// fetch has it in its environment; and the fetch's environment carries the
+// header, after the empty value that resets the user's own, as
+// GIT_CONFIG_*.
+func assertTokenOnlyInFetchEnv(t *testing.T, calls []fakeCall, header string) {
+	t.Helper()
+	fetches := callsOf(calls, "fetch")
+	if len(fetches) != 1 {
+		t.Fatalf("%d fetches, want 1 (calls: %v)", len(fetches), calls)
+	}
+	secrets := []string{testToken, strings.TrimPrefix(basicOf("x-access-token", testToken), "Basic "),
+		strings.TrimPrefix(basicOf("oauth2", testToken), "Basic ")}
+	for _, c := range calls {
+		for i, a := range c.Args {
+			for _, sec := range secrets {
+				if strings.Contains(a, sec) {
+					t.Errorf("git %s: argument %d carries the credential", c.subcommand(), i)
+				}
+			}
+			if strings.Contains(strings.ToLower(a), "extraheader") {
+				t.Errorf("git %s: argument %d carries the credential", c.subcommand(), i)
+			}
+		}
+		env := strings.Join(c.Env, "\n")
+		for _, sec := range secrets {
+			if c.subcommand() != "fetch" && strings.Contains(env, sec) {
+				t.Errorf("git %s: the credential is in its environment", c.subcommand())
+			}
+		}
+	}
+	env := fetches[0].Env
+	for name, want := range map[string]string{
+		"GIT_CONFIG_COUNT":   "2",
+		"GIT_CONFIG_KEY_0":   "http.extraHeader",
+		"GIT_CONFIG_VALUE_0": "",
+		"GIT_CONFIG_KEY_1":   "http.extraHeader",
+		"GIT_CONFIG_VALUE_1": header,
+	} {
+		if got, ok := envValue(env, name); !ok || got != want {
+			t.Errorf("fetch env %s = %q (set %v), want %q", name, got, ok, want)
+		}
 	}
 }
 
@@ -295,6 +305,13 @@ func TestRedirectGuard(t *testing.T) {
 	if a := strings.Join(guards[0].Args, " "); !strings.HasSuffix(a, " ls-remote --get-url origin") {
 		t.Errorf("guard args = %s", a)
 	}
+	assertNoCredential(t, calls)
+}
+
+// assertNoCredential asserts that no recorded git command carries the
+// token or an extraHeader, in an argument or in its environment.
+func assertNoCredential(t *testing.T, calls []fakeCall) {
+	t.Helper()
 	for _, c := range calls {
 		all := strings.Join(c.Args, "\n") + "\n" + strings.Join(c.Env, "\n")
 		if strings.Contains(all, testToken) || strings.Contains(strings.ToLower(all), "extraheader") {

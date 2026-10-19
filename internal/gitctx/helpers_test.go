@@ -288,6 +288,9 @@ type gitServer struct {
 	hang   chan struct{}
 	// redirectTo is the target of mode "redirect".
 	redirectTo string
+	// src is the working repository the served commits come from, bare the
+	// served repository, gitPath the system git (addBranch uses them).
+	src, bare, gitPath string
 }
 
 // newGitServer serves owner/repo (Gitea layout, refs/pull/7/head) or
@@ -331,8 +334,11 @@ func newGitServerFiles(t *testing.T, kind provider.Kind, files map[string]string
 	gitOut(t, tmp, gitPath, "init", "-q", "--bare", bare)
 	gitOut(t, tmp, gitPath, "--git-dir="+bare, "config", "uploadpack.allowFilter", "true")
 	gitOut(t, src, gitPath, "push", "-q", bare, "HEAD:"+prRef, "HEAD:refs/heads/main")
+	// The remote's HEAD (its default branch) is main, whatever the system
+	// git's init.defaultBranch.
+	gitOut(t, tmp, gitPath, "--git-dir="+bare, "symbolic-ref", "HEAD", "refs/heads/main")
 
-	s := &gitServer{root: root, hang: make(chan struct{})}
+	s := &gitServer{root: root, hang: make(chan struct{}), src: src, bare: bare, gitPath: gitPath}
 	s.head = strings.TrimSpace(gitOut(t, src, gitPath, "rev-parse", "HEAD"))
 	cgiRoot := prefix
 	if kind == provider.KindBitbucketServer {
@@ -374,6 +380,18 @@ func newGitServerFiles(t *testing.T, kind provider.Kind, files map[string]string
 	})
 	s.base = s.srv.URL + prefix
 	return s
+}
+
+// addBranch commits files on top of the served commit and pushes the commit
+// to refs/heads/{name} of the served repository; it returns the commit.
+// The pull request ref and main stay where they are.
+func (s *gitServer) addBranch(t *testing.T, name string, files map[string]string) string {
+	t.Helper()
+	writeFiles(t, s.src, files)
+	gitOut(t, s.src, s.gitPath, "add", ".")
+	gitOut(t, s.src, s.gitPath, "commit", "-q", "-m", "branch "+name)
+	gitOut(t, s.src, s.gitPath, "push", "-q", s.bare, "HEAD:refs/heads/"+name)
+	return strings.TrimSpace(gitOut(t, s.src, s.gitPath, "rev-parse", "HEAD"))
 }
 
 func (s *gitServer) set(accept func(string) bool, mode string) {

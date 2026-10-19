@@ -102,6 +102,70 @@ func (Factory) ParsePRPath(remainder string) (namespace, repo string, number int
 	return namespace, segs[3], n, nil
 }
 
+// atBranchPrefix is the only form of the "at" query value a Bitbucket
+// Server repository URL may name its branch with.
+const atBranchPrefix = "refs/heads/"
+
+// ParseRepoPath implements provider.Factory (v2.5 spec V-13b §1.1).
+// remainder is escaped and starts with "/"; it must be
+// /projects/{KEY}/repos/{slug} or /users/{user}/repos/{slug} (namespace
+// "~{user}", as for pull requests), optionally followed by /browse. Only
+// the /browse form may name a branch, and only with the query key "at"
+// holding refs/heads/{branch} (one value; any other ref, such as a tag or a
+// commit, is refused). Other query keys are not read. A trailing ".git" on
+// the slug is dropped. Each segment is unescaped on its own; an escaped "/"
+// ("%2F"), an empty segment and a "." or ".." segment are refused, and so
+// is a branch that is not a provider.ValidBranchName.
+//
+// DESIGN-QUESTION (WP-13a DQ-1): the spec's table names
+// /projects/{KEY}/repos/{slug} only; personal repositories
+// (/users/{user}/repos/{slug}) are accepted too, with the namespace
+// ParsePRPath gives them. Recommendation: keep; a personal repository's
+// pull request is accepted, so its repository is too.
+func (Factory) ParseRepoPath(remainder string, query url.Values) (namespace, repo, branch string, err error) {
+	errShape := errors.New("not a Bitbucket Server repository path")
+	if !strings.HasPrefix(remainder, "/") {
+		return "", "", "", errShape
+	}
+	raw := strings.Split(remainder[1:], "/")
+	if len(raw) != 4 && len(raw) != 5 {
+		return "", "", "", errShape
+	}
+	segs := make([]string, len(raw))
+	for i, r := range raw {
+		s, uerr := url.PathUnescape(r)
+		if uerr != nil || s == "" || strings.Contains(s, "/") || isDots(s) {
+			return "", "", "", errShape
+		}
+		segs[i] = s
+	}
+	if segs[2] != "repos" || (len(segs) == 5 && segs[4] != "browse") {
+		return "", "", "", errShape
+	}
+	switch segs[0] {
+	case "projects":
+		namespace = segs[1]
+	case "users":
+		namespace = "~" + segs[1]
+	default:
+		return "", "", "", errShape
+	}
+	repo = provider.TrimGitSuffix(segs[3])
+	if repo == "" {
+		return "", "", "", errShape
+	}
+	if at, ok := query["at"]; ok {
+		if len(segs) != 5 || len(at) != 1 || !strings.HasPrefix(at[0], atBranchPrefix) {
+			return "", "", "", errShape
+		}
+		branch = strings.TrimPrefix(at[0], atBranchPrefix)
+		if !provider.ValidBranchName(branch) {
+			return "", "", "", errShape
+		}
+	}
+	return namespace, repo, branch, nil
+}
+
 func isDots(s string) bool { return s == "." || s == ".." }
 
 // parsePositive parses a positive base-10 integer made of ASCII digits only

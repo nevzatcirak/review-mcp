@@ -215,7 +215,7 @@ func TestRelatedArgumentErrors(t *testing.T) {
 		{map[string]any{"related": []any{"https://git.example/1", "https://git.example/2", "https://git.example/3",
 			"https://git.example/4", "https://git.example/5"}}, "related must have at most 4 items"},
 		{map[string]any{"related": []any{"https://git.example/1", "https://u:SECRET-VALUE@git.example/2"}},
-			"related[1] must be an http or https pull request URL without credentials"},
+			"related[1] must be an http or https pull request or repository URL without credentials"},
 		{map[string]any{"related": []any{"https://git.example/1"}, "focus": "security"},
 			"related cannot be combined with focus or findings"},
 		{map[string]any{"related": []any{"https://git.example/1"}, "findings": []any{}, "publish": true},
@@ -327,7 +327,7 @@ func TestInfoRelated(t *testing.T) {
 	}
 
 	res := callTool(t, cs, "pr_info", map[string]any{"pr_url": reviewPRURL(g), "related": []any{"ftp://x"}})
-	if !res.IsError || textOf(t, res) != "related[0] must be an http or https pull request URL without credentials" {
+	if !res.IsError || textOf(t, res) != "related[0] must be an http or https pull request or repository URL without credentials" {
 		t.Errorf("invalid related: %q", textOf(t, res))
 	}
 }

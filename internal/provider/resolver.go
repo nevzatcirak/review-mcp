@@ -21,6 +21,13 @@ type Factory interface {
 	// segment, so it cannot fabricate extra segments. ParsePRPath must split
 	// on "/" first and path-unescape each segment itself.
 	ParsePRPath(remainder string) (namespace, repo string, number int64, err error)
+	// ParseRepoPath parses the same remainder as a repository URL (v2.5 spec
+	// V-13b §1.1), with the same escaping rules, and the URL's query (only
+	// Bitbucket Server reads it: its "at" key names the branch). branch is
+	// "" for the default branch; a branch it returns is a
+	// ValidBranchName. It is tried only after ParsePRPath has refused the
+	// remainder.
+	ParseRepoPath(remainder string, query url.Values) (namespace, repo, branch string, err error)
 	// New builds a request-scoped Provider from the configuration.
 	New(cfg *config.Config, logger *slog.Logger) (Provider, error)
 }
@@ -209,16 +216,79 @@ func (r *Resolver) notConfigured(hint string) error {
 // longest prefix wins. Query and fragment are ignored. Userinfo in the PR
 // URL is rejected as url_malformed without being echoed.
 func (r *Resolver) Resolve(rawURL string) (PRRef, Provider, error) {
+	best, remainder, _, err := r.match(rawURL)
+	if err != nil {
+		return PRRef{}, nil, err
+	}
+	ns, repo, num, err := best.factory.ParsePRPath(remainder)
+	if err != nil || ns == "" || repo == "" || num <= 0 {
+		return PRRef{}, nil, &Error{Class: ClassURLMalformed, Hint: "expected a " + string(best.kind) + " pull request URL"}
+	}
+	p, err := r.build(best)
+	if err != nil {
+		return PRRef{}, nil, err
+	}
+	// DESIGN-QUESTION (WP-11a DQ-3): this line logged the redacted URL, path
+	// included, for every resolution. The related pull requests of X-41 are
+	// resolved here too, and their URL path must never be logged (spec
+	// V-13a §1.2 item 5), so the line names the provider kind only, for
+	// every URL. The primary's redacted URL is still logged by the tools
+	// ("url" of review: diff prepared). Recommendation: keep.
+	r.logger.Debug("resolved pull request URL", "kind", string(best.kind))
+	return PRRef{Kind: best.kind, Namespace: ns, Repo: repo, Number: num, URL: rawURL}, p, nil
+}
+
+// ResolveItem resolves a related item's URL (v2.5 spec V-13b §1.1 item 3):
+// a pull request URL or a repository URL. It matches the host and base path
+// exactly as Resolve does (pinned hosts; no token ever goes to a host that
+// is not configured), then tries the factory's ParsePRPath and, only when
+// that refuses the remainder, its ParseRepoPath with the URL's query. kind
+// says which reference is set: the PRRef of a pull request, or the RepoRef
+// of a repository. No network I/O happens here.
+//
+// A URL that is neither is url_malformed. The log line names the provider
+// kind and the item kind only: never the path or the branch.
+func (r *Resolver) ResolveItem(rawURL string) (ItemKind, PRRef, RepoRef, Provider, error) {
+	best, remainder, u, err := r.match(rawURL)
+	if err != nil {
+		return "", PRRef{}, RepoRef{}, nil, err
+	}
+	if ns, repo, num, err := best.factory.ParsePRPath(remainder); err == nil && ns != "" && repo != "" && num > 0 {
+		p, err := r.build(best)
+		if err != nil {
+			return "", PRRef{}, RepoRef{}, nil, err
+		}
+		r.logger.Debug("resolved pull request URL", "kind", string(best.kind))
+		return ItemPullRequest, PRRef{Kind: best.kind, Namespace: ns, Repo: repo, Number: num, URL: rawURL}, RepoRef{}, p, nil
+	}
+	ns, repo, branch, err := best.factory.ParseRepoPath(remainder, u.Query())
+	if err != nil || ns == "" || repo == "" || (branch != "" && !ValidBranchName(branch)) {
+		return "", PRRef{}, RepoRef{}, nil, &Error{Class: ClassURLMalformed,
+			Hint: "expected a " + string(best.kind) + " pull request or repository URL"}
+	}
+	p, err := r.build(best)
+	if err != nil {
+		return "", PRRef{}, RepoRef{}, nil, err
+	}
+	r.logger.Debug("resolved repository URL", "kind", string(best.kind))
+	return ItemRepository, PRRef{}, RepoRef{Kind: best.kind, Namespace: ns, Repo: repo, Branch: branch, URL: rawURL}, p, nil
+}
+
+// match finds the configured provider whose base rawURL lies under (see
+// Resolve) and returns it with the escaped path remainder after its base,
+// which starts with "/", and the parsed URL. A remainder segment that is
+// "." or ".." (escaped or not) is url_malformed.
+func (r *Resolver) match(rawURL string) (*candidate, string, *url.URL, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return PRRef{}, nil, &Error{Class: ClassURLMalformed, Hint: "the URL could not be parsed"}
+		return nil, "", nil, &Error{Class: ClassURLMalformed, Hint: "the URL could not be parsed"}
 	}
 	if u.User != nil {
-		return PRRef{}, nil, &Error{Class: ClassURLMalformed, Hint: "the URL must not contain credentials"}
+		return nil, "", nil, &Error{Class: ClassURLMalformed, Hint: "the URL must not contain credentials"}
 	}
 	scheme := strings.ToLower(u.Scheme)
 	if (scheme != "http" && scheme != "https") || u.Hostname() == "" {
-		return PRRef{}, nil, r.notConfigured(r.baseHint())
+		return nil, "", nil, r.notConfigured(r.baseHint())
 	}
 	host, port := strings.ToLower(u.Hostname()), effectivePort(u)
 	segs := splitSegments(u.EscapedPath())
@@ -234,38 +304,32 @@ func (r *Resolver) Resolve(rawURL string) (PRRef, Provider, error) {
 		}
 	}
 	if best == nil {
-		return PRRef{}, nil, r.notConfigured(r.baseHint())
+		return nil, "", nil, r.notConfigured(r.baseHint())
 	}
 	if best.factory == nil {
-		return PRRef{}, nil, r.notConfigured("no provider implementation is registered for " + string(best.kind))
+		return nil, "", nil, r.notConfigured("no provider implementation is registered for " + string(best.kind))
 	}
 
 	rest := segs[len(best.segs):]
 	for _, s := range rest {
 		if d, err := url.PathUnescape(s); err != nil || d == "." || d == ".." {
-			return PRRef{}, nil, &Error{Class: ClassURLMalformed, Hint: "invalid path segment"}
+			return nil, "", nil, &Error{Class: ClassURLMalformed, Hint: "invalid path segment"}
 		}
 	}
-	remainder := "/" + strings.Join(rest, "/")
-	ns, repo, num, err := best.factory.ParsePRPath(remainder)
-	if err != nil || ns == "" || repo == "" || num <= 0 {
-		return PRRef{}, nil, &Error{Class: ClassURLMalformed, Hint: "expected a " + string(best.kind) + " pull request URL"}
-	}
-	p, err := best.factory.New(r.cfg, r.logger)
+	return best, "/" + strings.Join(rest, "/"), u, nil
+}
+
+// build builds the request-scoped provider of c and remembers it for
+// CloseIdleConnections.
+func (r *Resolver) build(c *candidate) (Provider, error) {
+	p, err := c.factory.New(r.cfg, r.logger)
 	if err != nil {
-		return PRRef{}, nil, err
+		return nil, err
 	}
 	r.mu.Lock()
 	r.built = append(r.built, p)
 	r.mu.Unlock()
-	// DESIGN-QUESTION (WP-11a DQ-3): this line logged the redacted URL, path
-	// included, for every resolution. The related pull requests of X-41 are
-	// resolved here too, and their URL path must never be logged (spec
-	// V-13a §1.2 item 5), so the line names the provider kind only, for
-	// every URL. The primary's redacted URL is still logged by the tools
-	// ("url" of review: diff prepared). Recommendation: keep.
-	r.logger.Debug("resolved pull request URL", "kind", string(best.kind))
-	return PRRef{Kind: best.kind, Namespace: ns, Repo: repo, Number: num, URL: rawURL}, p, nil
+	return p, nil
 }
 
 func (r *Resolver) baseHint() string {

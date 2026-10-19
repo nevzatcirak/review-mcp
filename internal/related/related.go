@@ -105,8 +105,8 @@ func Normalize(raw string) (string, bool) {
 // spec's order: at most MaxItems items, each a URL Normalize accepts (the
 // error names its 0-based index), and no focus or findings with it
 // (combined is true when the call has either). It returns the normalised
-// URLs; an empty list is not given and returns nil. The error is an
-// *ArgumentError.
+// URLs, each with the Bitbucket Server branch query kept (keepAt); an empty
+// list is not given and returns nil. The error is an *ArgumentError.
 func Validate(items []string, combined bool) ([]string, error) {
 	if len(items) == 0 {
 		return nil, nil
@@ -118,14 +118,55 @@ func Validate(items []string, combined bool) ([]string, error) {
 	for i, raw := range items {
 		u, ok := Normalize(raw)
 		if !ok {
-			return nil, &ArgumentError{fmt.Sprintf("related[%d] must be an http or https pull request URL without credentials", i)}
+			return nil, &ArgumentError{fmt.Sprintf("related[%d] must be an http or https pull request or repository URL without credentials", i)}
 		}
-		out[i] = u
+		out[i] = keepAt(raw, u)
 	}
 	if combined {
 		return nil, &ArgumentError{errCombination}
 	}
 	return out, nil
+}
+
+// atKey is the one query key a related URL keeps: a Bitbucket Server
+// repository URL names its branch with it ("…/browse?at=refs/heads/x",
+// v2.5 spec V-13b §1.1 item 4).
+const atKey = "at"
+
+// keepAt returns the normalised URL norm of raw with raw's "at" query
+// values put back (only that key, in their order), when raw's path has the
+// shape of a Bitbucket Server repository URL: it ends in
+// /repos/{slug} or /repos/{slug}/browse. Any other URL is norm unchanged, so
+// a pull request URL stays exactly as V-13a normalised it. Whether the
+// value names a branch is the provider's ParseRepoPath's decision.
+//
+// DESIGN-QUESTION (WP-13a DQ-2): the related argument is normalised before
+// the URL is resolved, so the provider is not known yet. The query is kept
+// by the path's shape rather than for every URL, so that no other URL's
+// normalised form (the URL coverage.related reports) changes from 2.4.
+// Recommendation: keep.
+func keepAt(raw, norm string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return norm
+	}
+	vals, ok := u.Query()[atKey]
+	if !ok || !bitbucketRepoPath(u.Path) {
+		return norm
+	}
+	// "/" is legal in a query value; it is kept readable.
+	return norm + "?" + strings.ReplaceAll(url.Values{atKey: vals}.Encode(), "%2F", "/")
+}
+
+// bitbucketRepoPath reports whether p ends in /repos/{slug} or
+// /repos/{slug}/browse.
+func bitbucketRepoPath(p string) bool {
+	segs := strings.Split(strings.TrimSuffix(p, "/"), "/")
+	n := len(segs)
+	if n >= 1 && segs[n-1] == "browse" {
+		n--
+	}
+	return n >= 3 && segs[n-2] == "repos" && segs[n-1] != ""
 }
 
 // Resolver maps a pull request URL to a reference and a provider: the run's

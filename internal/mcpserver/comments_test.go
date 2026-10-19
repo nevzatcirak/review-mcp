@@ -84,6 +84,11 @@ func (fakeFactory) ParsePRPath(rem string) (string, string, int64, error) {
 	return parts[0], parts[1], n, err
 }
 
+// ParseRepoPath accepts no repository URL.
+func (fakeFactory) ParseRepoPath(string, url.Values) (string, string, string, error) {
+	return "", "", "", errors.New("bad path")
+}
+
 func (f fakeFactory) New(*config.Config, *slog.Logger) (provider.Provider, error) { return f.p, nil }
 
 // withFake returns deps whose resolver constructor serves p, and a counter of

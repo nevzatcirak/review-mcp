@@ -5,11 +5,12 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.5.0-rc.1]
 
-Planned as `2.5.0-rc.1`. A `related` item may now also be a **repository**: a
-change that removes or renames something in one repository is checked against
-a repository that uses it, even when that repository has no pull request.
+First 2.5 release candidate (the npm dist-tag `next`; `latest` stays on 2.4.0).
+A `related` item may now also be a **repository**: a change that removes or
+renames something in one repository is checked against a repository that uses
+it, even when that repository has no pull request.
 Nothing in the tools or in the configuration of 2.4.0 is removed or renamed;
 a call without a repository URL in `related` behaves as before (a result with
 pull request items only is byte-identical to 2.4.0). Guide:
@@ -1787,6 +1788,7 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[2.5.0-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.0-rc.1
 [2.4.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.4.0
 [2.4.0-rc.2]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.4.0-rc.2
 [2.4.0-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.4.0-rc.1

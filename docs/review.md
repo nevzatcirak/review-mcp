@@ -1624,9 +1624,14 @@ equally among the readable items, as for pull requests), after the issue block
 and before repository context, only in the room the reviewed diff leaves.
 
 **When the surface is empty, nothing is fetched.** If the reviewed pull request
-changes no contract file and no exported symbol, each readable repository is
-`not_placed` with `no_contract_change`, without a `commit`, and one note says
-so. A repository is also not fetched in a review in parts, in a review with
+gives no removed or changed name in its contract files or exported symbols
+(for example it only adds a field, or changes no contract file), each readable
+repository is `not_placed` with `no_contract_change`, without a `commit`, and
+one note says so: "No removed or changed name was found in the contract files
+or exported symbols of this pull request, so the related repositories were not
+searched." When the only removed names were dropped by the stop list (a rename
+of `name` alone), the note goes on: "Removed names too common to search:
+name." (at most 20 names), so that what was not searched is stated. A repository is also not fetched in a review in parts, in a review with
 nothing to review, in an unchanged incremental run, or when the diff is
 already trimmed (`not_placed` with the run's reason or `did_not_fit`).
 

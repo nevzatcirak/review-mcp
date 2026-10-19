@@ -251,7 +251,7 @@ func TestRelatedRepositoryCoverageValidates(t *testing.T) {
 		}
 		n := 0
 		for _, note := range res.Notes {
-			if note == "The pull request changes no contract file or exported symbol, so the related repositories were not searched." {
+			if note == related.NoteNoContractChange {
 				n++
 			}
 		}

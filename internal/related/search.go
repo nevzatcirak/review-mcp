@@ -54,11 +54,11 @@ func SearchFiles(ctx context.Context, items []*Item, files []provider.FilePatch,
 	if len(ids) > 0 && !possible {
 		return
 	}
-	if len(ids) > 0 {
-		stopped := StoppedRemovals(files, flt)
-		for _, it := range Pending(items) {
-			it.StoppedRemovals = stopped
-		}
+	// With an empty surface the stop-listed removals are why (they are named
+	// in the note); otherwise they are named in each repository's section.
+	stopped := StoppedRemovals(files, flt)
+	for _, it := range Pending(items) {
+		it.StoppedRemovals = stopped
 	}
 	Search(ctx, items, ids, dropped, limit, log)
 }

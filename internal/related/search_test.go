@@ -62,7 +62,7 @@ func TestSearchNoContractChange(t *testing.T) {
 		}
 	}
 	notes := Notes(items, placed)
-	want := "The pull request changes no contract file or exported symbol, so the related repositories were not searched."
+	want := "No removed or changed name was found in the contract files or exported symbols of this pull request, so the related repositories were not searched."
 	if !slices.Equal(notes, []string{want}) {
 		t.Errorf("notes %q, want once %q", notes, want)
 	}
@@ -278,5 +278,43 @@ func TestRepositorySectionNamesStoppedRemovals(t *testing.T) {
 		if strings.Replace(named[i].Text, line, "", 1) != plain[i].Text {
 			t.Errorf("section %d: more than the one line changed", i)
 		}
+	}
+}
+
+// TestNoContractChangeNoteIsTruthful: the note of an empty surface does not
+// claim that no contract file changed (V-13b spec §2.4 item 3, corrected in
+// the WP-13d review). Added lines only, or no contract file, give the base
+// sentence; a surface emptied by the stop list (a rename of name) adds the
+// removed names too common to search; nothing is fetched in all three.
+func TestNoContractChangeNoteIsTruthful(t *testing.T) {
+	base := "No removed or changed name was found in the contract files or exported symbols of this pull request, " +
+		"so the related repositories were not searched."
+	for name, c := range map[string]struct {
+		files []provider.FilePatch
+		want  string
+	}{
+		"added lines only": {[]provider.FilePatch{fp("api/openapi.yaml", "@@ -10,3 +10,4 @@ components:",
+			"       properties:", "+        nickname:", "           id:", "           type: string")}, base},
+		"no contract file": {[]provider.FilePatch{fp("docs/readme.md", "@@ -1,2 +1,2 @@", "-old text", "+new text")}, base},
+		"stop-listed removal only": {[]provider.FilePatch{fp("api/openapi.yaml", "@@ -10,4 +10,4 @@ components:",
+			"       properties:", "-        name:", "+        displayName:", "           id:")},
+			base + " Removed names too common to search: name."},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var trace []string
+			f := &fakeFetcher{trace: &trace}
+			items := consumerItems(t, f, "https://gitlab.example/repo/team/web-ui")
+			SearchFiles(context.Background(), items, c.files, surfaceFilter(t), 20, true, nil)
+			placed, err := Place(items, 30000, 0, repoConfig(), nil, true, accept)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if notes := Notes(items, placed); !slices.Equal(notes, []string{c.want}) {
+				t.Errorf("notes %q, want %q", notes, c.want)
+			}
+			if len(f.repos) != 0 {
+				t.Errorf("a repository was fetched: %q", trace)
+			}
+		})
 	}
 }

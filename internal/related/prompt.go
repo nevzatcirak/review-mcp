@@ -431,6 +431,7 @@ func repositoryCoverage(e *llmrun.RelatedItem, it *Item) {
 func Notes(items []*Item, placed []Section) []string {
 	var out []string
 	var notPlaced, inParts, off, noContract bool
+	var stopped []string
 	unsearched, limit := 0, 0
 	for _, it := range items {
 		if it.Searched && it.unsearched > 0 {
@@ -440,6 +441,9 @@ func Notes(items []*Item, placed []Section) []string {
 		case it.Status == StatusNoUseFound:
 			out = append(out, NoteNoUse(it.Name(), it.Commit12()))
 		case it.Reason == ReasonNoContractChange:
+			if !noContract {
+				stopped = it.StoppedRemovals
+			}
 			noContract = true
 		case it.Status == StatusFailed && it.IsRepository():
 			out = append(out, NoteRepositoryFailed(it.URL, it.Reason))
@@ -472,7 +476,7 @@ func Notes(items []*Item, placed []Section) []string {
 	for _, n := range []struct {
 		on   bool
 		note string
-	}{{notPlaced, NoteNotPlaced}, {inParts, NoteInParts}, {off, NoteOff}, {noContract, NoteNoContractChange}} {
+	}{{notPlaced, NoteNotPlaced}, {inParts, NoteInParts}, {off, NoteOff}, {noContract, NoteNoContractChangeStopped(stopped)}} {
 		if n.on {
 			out = append(out, n.note)
 		}
@@ -495,8 +499,26 @@ func NoteNoUse(name, commit string) string {
 
 // NoteNoContractChange: the primary diff gave no identifier, so no
 // repository was fetched or searched.
-const NoteNoContractChange = "The pull request changes no contract file or exported symbol, so the related " +
-	"repositories were not searched."
+//
+// The first wording said the pull request "changes no contract file", which
+// was false when a contract file changed with added lines only, or with
+// stop-listed removals only (WP-13d review, DQ-3; spec §2.4 item 3).
+const NoteNoContractChange = "No removed or changed name was found in the contract files or exported symbols of " +
+	"this pull request, so the related repositories were not searched."
+
+// NoteNoContractChangeStopped is NoteNoContractChange with the removed names
+// that only the stop list dropped, which is why the surface is empty (at
+// most 20, sanitised).
+func NoteNoContractChangeStopped(names []string) string {
+	if len(names) == 0 {
+		return NoteNoContractChange
+	}
+	clean := make([]string, len(names))
+	for i, n := range names {
+		clean[i] = oneLine(prompt.CleanText(n))
+	}
+	return NoteNoContractChange + " Removed names too common to search: " + strings.Join(clean, ", ") + "."
+}
 
 // NoteUnsearched: related.max_identifiers (limit) left n identifiers out.
 func NoteUnsearched(n, limit int) string {

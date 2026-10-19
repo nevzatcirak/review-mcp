@@ -31,6 +31,9 @@ var allowList = []string{
 	"review.docs_style",
 	"review.issue_compliance",
 	"related.contract_globs",
+	// related.repos is [[related.repos]], a list of tables (v2.5 spec V-13b
+	// §3.2), kept only with the operator key related.from_repo_config.
+	"related.repos",
 }
 
 var allowed = func() map[string]bool {

@@ -1070,6 +1070,31 @@ func TestFileLineURL(t *testing.T) {
 	}
 }
 
+// TestFileLineURLAtCommit: a reference without a pull request number (a
+// related repository, v2.5 spec V-13b §2.4) links the file at the given
+// commit, in the browse view; never without a commit.
+func TestFileLineURLAtCommit(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.BitbucketServer.BaseURL = "https://bitbucket.example.com/bitbucket/"
+	p, err := bitbucketserver.NewFactory().New(cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := provider.PRRef{Kind: provider.KindBitbucketServer, Namespace: "PROJ", Repo: "web"}
+	pr := &provider.PullRequest{HeadSHA: "0123456789abcdef0123456789abcdef01234567"}
+	got := p.FileLineURL(repo, pr, "src/a b.ts", 42)
+	if want := "https://bitbucket.example.com/bitbucket/projects/PROJ/repos/web/browse/src/a%20b.ts?at=0123456789abcdef0123456789abcdef01234567#42"; got != want {
+		t.Errorf("got %s", got)
+	}
+	repo.Namespace = "~jdoe"
+	if got := p.FileLineURL(repo, pr, "x.ts", 0); got != "https://bitbucket.example.com/bitbucket/users/jdoe/repos/web/browse/x.ts?at="+pr.HeadSHA {
+		t.Errorf("personal, no line: %s", got)
+	}
+	if got := p.FileLineURL(repo, &provider.PullRequest{}, "x.ts", 1); got != "" {
+		t.Errorf("without a commit: %s", got)
+	}
+}
+
 func TestResolverIntegration(t *testing.T) {
 	f := newFake(t, "/bitbucket")
 	f.standard()

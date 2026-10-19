@@ -103,6 +103,55 @@ func (Factory) ParsePRPath(remainder string) (namespace, repo string, number int
 	return segs[0], segs[1], n, nil
 }
 
+// ParseRepoPath implements provider.Factory (v2.5 spec V-13b §1.1).
+// remainder is escaped and starts with "/"; it must be /{owner}/{repo} or
+// /{owner}/{repo}/tree/{branch...}, the branch being every remaining
+// segment joined with "/". A trailing ".git" on the repository is dropped.
+// Each segment is unescaped on its own; an escaped "/" ("%2F"), an empty
+// segment and a "." or ".." segment are refused, and so is a branch that is
+// not a provider.ValidBranchName. The query is not read.
+func (Factory) ParseRepoPath(remainder string, _ url.Values) (namespace, repo, branch string, err error) {
+	errShape := errors.New("not a GitHub repository path")
+	segs, ok := repoSegments(remainder)
+	if !ok || len(segs) < 2 {
+		return "", "", "", errShape
+	}
+	repo = provider.TrimGitSuffix(segs[1])
+	if repo == "" {
+		return "", "", "", errShape
+	}
+	switch rest := segs[2:]; {
+	case len(rest) == 0:
+	case len(rest) >= 2 && rest[0] == "tree":
+		branch = strings.Join(rest[1:], "/")
+		if !provider.ValidBranchName(branch) {
+			return "", "", "", errShape
+		}
+	default:
+		return "", "", "", errShape
+	}
+	return segs[0], repo, branch, nil
+}
+
+// repoSegments splits an escaped remainder that starts with "/" into its
+// unescaped segments; ok is false for an empty, "." or ".." segment, a bad
+// escape, or an escaped "/".
+func repoSegments(remainder string) ([]string, bool) {
+	if !strings.HasPrefix(remainder, "/") {
+		return nil, false
+	}
+	raw := strings.Split(remainder[1:], "/")
+	segs := make([]string, len(raw))
+	for i, r := range raw {
+		s, err := url.PathUnescape(r)
+		if err != nil || s == "" || strings.Contains(s, "/") || isDots(s) {
+			return nil, false
+		}
+		segs[i] = s
+	}
+	return segs, true
+}
+
 func isDots(s string) bool { return s == "." || s == ".." }
 
 // parsePositive parses a positive base-10 integer made of ASCII digits only

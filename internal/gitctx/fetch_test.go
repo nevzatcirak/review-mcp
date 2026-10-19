@@ -263,13 +263,23 @@ func TestTokenNeverOnDisk(t *testing.T) {
 		t.Fatalf("bitbucket Ensure: %v", err)
 	}
 
+	assertNoTokenOnDisk(t, cacheDir, 3)
+}
+
+// assertNoTokenOnDisk asserts that no file anywhere under cacheDir
+// (including the bare repositories' configs) holds the token, the token in
+// base64, or the Basic credentials, and that the walk saw a populated cache
+// of exactly configs repositories.
+func assertNoTokenOnDisk(t *testing.T, cacheDir string, configs int) {
+	t.Helper()
 	secrets := [][]byte{
 		[]byte(testToken),
 		[]byte(base64.StdEncoding.EncodeToString([]byte(testToken))),
 		[]byte(strings.TrimPrefix(basicOf(testUser, testToken), "Basic ")),
 		[]byte(strings.TrimPrefix(basicOf("x-access-token", testToken), "Basic ")),
+		[]byte(strings.TrimPrefix(basicOf("oauth2", testToken), "Basic ")),
 	}
-	files, configs := 0, 0
+	files, seen := 0, 0
 	err := filepath.WalkDir(cacheDir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -279,7 +289,7 @@ func TestTokenNeverOnDisk(t *testing.T) {
 		}
 		files++
 		if d.Name() == "config" {
-			configs++
+			seen++
 		}
 		data, err := os.ReadFile(p) //nolint:gosec // G304: walking the test's own cache directory
 		if err != nil {
@@ -295,8 +305,8 @@ func TestTokenNeverOnDisk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if configs != 3 || files < 10 {
-		t.Fatalf("walked %d files and %d repository configs; the cache was not populated", files, configs)
+	if seen != configs || files < 10 {
+		t.Fatalf("walked %d files and %d repository configs; the cache was not populated", files, seen)
 	}
 }
 

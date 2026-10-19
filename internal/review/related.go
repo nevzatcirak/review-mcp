@@ -1,6 +1,7 @@
 package review
 
 import (
+	"context"
 	"strconv"
 	"strings"
 
@@ -51,19 +52,35 @@ const RelatedInstruction = "Cross-repository review: the user prompt carries rel
 	"In the text, name a related pull request by the repository and number shown in its header line, not by " +
 	"R1 to R4: readers of the comment do not see R numbers."
 
+// RelatedRepositoryInstruction is the paragraph RelatedInstruction gets
+// when the placed block holds a related repository (v2.5 spec V-13b §2.3
+// item 2).
+const RelatedRepositoryInstruction = "Related repositories (header line \"R<n> — repository ...\") are other " +
+	"repositories at one commit, given with the identifiers and routes the reviewed pull request removes, renames " +
+	"or changes, and the places where the repository uses them. Report a consumer that uses a removed or renamed " +
+	"identifier or route, or uses a changed one in a way the new contract breaks. Set related to that repository's " +
+	"R number, relevant_file to the consumer's file and start_line and end_line to its line as shown in the hits. " +
+	"Say \"needs verification\" in the text when only the name matches. A repository whose section says no use " +
+	"was found shows only that text search found none, not that nothing is affected."
+
 // markRelated sets the status of every read item that has none yet.
 func (pl *Plan) markRelated(status, reason string) { related.Mark(pl.related, status, reason) }
 
 // placeRelated tries the related block in the room the primary diff leaves
 // (related.Place), in numbered mode so that a finding can name real lines.
-// It is accepted only when the primary diff is not trimmed. It returns the
-// prompt input and the fit to use.
-func (pl *Plan) placeRelated(in PromptInput, fit *fitted, diff string, b tokens.Budget, cfg *config.Config) (PromptInput, *fitted, error) {
+// It is accepted only when the primary diff is not trimmed. The related
+// repositories are searched first, for the changed contract surface of
+// files, the files the run reviews (related.SearchFiles; V-13b §2.1a: only
+// when the surface names something, and only when the block can be
+// placed). It returns the prompt input and the fit to use.
+func (pl *Plan) placeRelated(ctx context.Context, in PromptInput, fit *fitted, diff string, files []provider.FilePatch,
+	b tokens.Budget, cfg *config.Config) (PromptInput, *fitted, error) {
+	related.SearchFiles(ctx, pl.related, files, pl.flt, cfg.Related.MaxIdentifiers, fit.keptLines < 0, pl.log)
 	cand, cfit := in, fit
 	placed, err := related.Place(pl.related, cfg.Related.MaxTokens, diffpipe.ModeNumbered, cfg, pl.flt, fit.keptLines < 0,
-		func(block string) (bool, error) {
+		func(block string, repositories bool) (bool, error) {
 			c := in
-			c.Related, c.Toggles.Related = block, true
+			c.Related, c.Toggles.Related, c.RelatedRepositories = block, true, repositories
 			f, err := fitPrompts(c, diff, b)
 			if err != nil {
 				return false, err
@@ -134,6 +151,9 @@ func (pl *Plan) attachRelated(ki *KeyIssue, primary map[string]*provider.FilePat
 		return false
 	}
 	it := rs.Item
+	if it.IsRepository() {
+		return attachRepository(ki, it, primary)
+	}
 	if primary[ki.RelevantFile] != nil && !changes(it, ki.RelevantFile) {
 		return false
 	}
@@ -151,6 +171,31 @@ func (pl *Plan) attachRelated(ki *KeyIssue, primary map[string]*provider.FilePat
 		}
 		break
 	}
+	return true
+}
+
+// attachRepository places a finding in the related repository it (v2.5
+// spec V-13b §2.4 items 1 and 2): Related, RelatedName and
+// RelatedRepository are set; the Link is the file at the repository's
+// pinned commit, built by its own provider, only when the run saw the file
+// there (a hit file, it.Saw); otherwise the finding is listed without a
+// link, LocationUnverified. A finding never gets a snippet from there. As
+// for a related pull request, the file decides: a file of the reviewed pull
+// request's diff that the run did not see in the repository makes a finding
+// on the reviewed pull request (tag dropped, placed inline as today).
+func attachRepository(ki *KeyIssue, it *related.Item, primary map[string]*provider.FilePatch) bool {
+	path := ki.RelevantFile
+	if primary[path] != nil && !it.Saw(path) {
+		return false
+	}
+	ki.Related, ki.RelatedName, ki.RelatedRepository = it.URL, it.Name(), true
+	ki.Snippet, ki.SnippetNote, ki.Link = "", "", ""
+	if !it.Saw(path) {
+		ki.LocationUnverified = true
+		return true
+	}
+	ki.Link = it.Provider.FileLineURL(provider.PRRef{Kind: it.Repo.Kind, Namespace: it.Repo.Namespace, Repo: it.Repo.Repo},
+		&provider.PullRequest{HeadSHA: it.Checkout.HeadSHA}, path, ki.StartLine)
 	return true
 }
 

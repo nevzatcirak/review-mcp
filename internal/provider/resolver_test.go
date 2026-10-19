@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -14,9 +15,11 @@ import (
 )
 
 type fakeFactory struct {
-	kind   Kind
-	gotRem []string
-	newErr error
+	kind     Kind
+	gotRem   []string
+	gotRepo  []string
+	gotQuery []url.Values
+	newErr   error
 }
 
 func (f *fakeFactory) Kind() Kind { return f.kind }
@@ -35,6 +38,20 @@ func (f *fakeFactory) ParsePRPath(rem string) (string, string, int64, error) {
 	ns, _ := urlUnescape(parts[0])
 	repo, _ := urlUnescape(parts[1])
 	return ns, repo, n, nil
+}
+
+// ParseRepoPath accepts /{ns}/{repo} and /{ns}/{repo}/tree/{branch...}.
+func (f *fakeFactory) ParseRepoPath(rem string, q url.Values) (string, string, string, error) {
+	f.gotRepo = append(f.gotRepo, rem)
+	f.gotQuery = append(f.gotQuery, q)
+	parts := strings.Split(strings.TrimPrefix(rem, "/"), "/")
+	switch {
+	case len(parts) == 2:
+		return parts[0], parts[1], "", nil
+	case len(parts) > 3 && parts[2] == "tree":
+		return parts[0], parts[1], strings.Join(parts[3:], "/"), nil
+	}
+	return "", "", "", errors.New("bad path")
 }
 
 func (f *fakeFactory) New(*config.Config, *slog.Logger) (Provider, error) {
@@ -301,5 +318,117 @@ func TestResolverCloseIdleConnectionsClosesBuiltProviders(t *testing.T) {
 	r.CloseIdleConnections() // a second call closes nothing twice
 	if got := closes.Load(); got != 2 {
 		t.Fatalf("second CloseIdleConnections: %d closes, want still 2", got)
+	}
+}
+
+// TestResolveItem: a pull request URL is a pull request item (ParsePRPath
+// first, the repository parser never asked); any other URL under a
+// configured base is tried as a repository URL, with the URL's query; an
+// URL that is neither is url_malformed, and a URL of no configured
+// provider is url_not_configured before any parser runs. Nothing is sent
+// anywhere.
+func TestResolveItem(t *testing.T) {
+	var hits atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hits.Add(1) }))
+	defer srv.Close()
+	r, g, b := newRes(cfgFor("https://your-gitea.example", "", "https://bitbucket.example.com/bb"))
+
+	kind, ref, repo, p, err := r.ResolveItem("https://your-gitea.example/o/r/pulls/7")
+	if err != nil || kind != ItemPullRequest || ref.Number != 7 || ref.Namespace != "o" || repo != (RepoRef{}) || p == nil {
+		t.Fatalf("pull request: %v %+v %+v %v", kind, ref, repo, err)
+	}
+	if len(g.gotRepo) != 0 {
+		t.Errorf("the repository parser ran for a pull request URL: %q", g.gotRepo)
+	}
+
+	const branchURL = "https://bitbucket.example.com/bb/P/R/tree/feature/x?at=refs%2Fheads%2Fy#frag"
+	kind, ref, repo, p, err = r.ResolveItem(branchURL)
+	if err != nil || kind != ItemRepository || ref != (PRRef{}) || p == nil || p.Kind() != KindBitbucketServer {
+		t.Fatalf("repository: %v %+v %v", kind, ref, err)
+	}
+	if want := (RepoRef{Kind: KindBitbucketServer, Namespace: "P", Repo: "R", Branch: "feature/x", URL: branchURL}); repo != want {
+		t.Errorf("repository %+v, want %+v", repo, want)
+	}
+	if len(b.gotQuery) != 1 || b.gotQuery[0].Get("at") != "refs/heads/y" {
+		t.Errorf("the query reached the parser as %v", b.gotQuery)
+	}
+	kind, _, repo, _, err = r.ResolveItem("https://your-gitea.example/o/r")
+	if err != nil || kind != ItemRepository || repo.Branch != "" || repo.Repo != "r" {
+		t.Errorf("default branch: %v %+v %v", kind, repo, err)
+	}
+
+	for _, u := range []string{
+		"https://your-gitea.example/o/r/issues/1",
+		"https://your-gitea.example/o",
+		"https://your-gitea.example/o/r/tree/a..b",   // the factory's branch is checked again
+		"https://your-gitea.example/o/r/tree/../x",   // a dot segment
+		"https://your-gitea.example/o/%2E%2E/tree/x", // an escaped dot segment
+	} {
+		if kind, _, _, p, err := r.ResolveItem(u); !errors.Is(err, ErrURLMalformed) || p != nil || kind != "" {
+			t.Errorf("%q: %v %v, want url_malformed", u, kind, err)
+		}
+	}
+	before := len(g.gotRepo) + len(b.gotRepo)
+	for _, u := range []string{srv.URL + "/o/r", "https://evil.example.org/o/r", "http://your-gitea.example/o/r",
+		"https://bitbucket.example.com/other/P/R"} {
+		if _, _, _, p, err := r.ResolveItem(u); !errors.Is(err, ErrURLNotConfigured) || p != nil {
+			t.Errorf("%q: %v, want url_not_configured", u, err)
+		}
+	}
+	if _, _, _, _, err := r.ResolveItem("https://u:SECRET-PW@your-gitea.example/o/r"); !errors.Is(err, ErrURLMalformed) ||
+		strings.Contains(err.Error(), "SECRET-PW") {
+		t.Errorf("credentials: %v", err)
+	}
+	if len(g.gotRepo)+len(b.gotRepo) != before {
+		t.Error("a parser ran for a URL of no configured provider")
+	}
+	if hits.Load() != 0 {
+		t.Fatalf("the server saw %d requests", hits.Load())
+	}
+}
+
+// TestResolveItemNeverLogsThePath: the resolution log names the provider
+// kind and nothing of the URL's path or branch.
+func TestResolveItemNeverLogsThePath(t *testing.T) {
+	var logs strings.Builder
+	log := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	r := NewResolver(cfgFor("https://your-gitea.example", "", ""), log, &fakeFactory{kind: KindGitea})
+	if _, _, _, _, err := r.ResolveItem("https://your-gitea.example/OWNER-MARK/REPO-MARK/tree/BRANCH-MARK"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(logs.String(), "kind=gitea") {
+		t.Errorf("the log lacks the kind:\n%s", logs.String())
+	}
+	for _, leak := range []string{"OWNER-MARK", "REPO-MARK", "BRANCH-MARK"} {
+		if strings.Contains(logs.String(), leak) {
+			t.Errorf("the log carries %q", leak)
+		}
+	}
+}
+
+// TestValidBranchName is the branch-name table (spec §1.1 item 2). [canary]
+func TestValidBranchName(t *testing.T) {
+	long := strings.Repeat("a", MaxBranchBytes)
+	for _, ok := range []string{"main", "feature/x", "release/2.5.0", "a_b-c.d", "x/y/z", "v1.0", "a-", "a.b/c_d", long, "HEADS", "a/HEAD"} {
+		if !ValidBranchName(ok) {
+			t.Errorf("ValidBranchName(%q) = false, want true", ok)
+		}
+	}
+	for _, bad := range []string{
+		"", long + "a", "HEAD",
+		"a..b", "..", "a/../b", // no ".."
+		"a//b",     // no "//"
+		"/a", "a/", // no leading or trailing "/"
+		".a", "a.", // no leading or trailing "."
+		"a/.b", "a/-b", // no segment starting with "." or "-"
+		"-a",                 // nor the first one
+		"a.lock", "a.lock/b", // no ".lock" ending, on any segment
+		"a b", "a~1", "a^", "a:b", // outside the set
+		"a@{1}", "a\\b", "a*", "a?b", // ref expressions and globs
+		"ä", "a\x00b", "a\nb",
+	} {
+		if ValidBranchName(bad) {
+			t.Errorf("ValidBranchName(%q) = true, want false", bad)
+		}
 	}
 }

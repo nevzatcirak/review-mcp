@@ -54,6 +54,7 @@ The operator turns it on and off and chooses the path; both settings are
 | `review.docs_style` | text, at most 1,000 bytes | replaces; used only by the [`docs` focus](review.md#the-docs-focus) |
 | `review.issue_compliance` | true or false | replaces; false turns [issue compliance](review.md#issue-compliance) off for the repository |
 | `related.contract_globs` | a list of globs, validated as `ignore.glob` | **added** to the operator's list; paths shown first in a [related pull request](review.md#contract-files-first) |
+| `related.repos` | up to 4 `[[related.repos]]` tables ([below](#related-repositories)) | used only with the operator key `related.from_repo_config`; otherwise ignored with a note |
 
 Every other key is ignored and named in a note. That covers `llm.*`, the
 provider sections, `context.*`, `serve.*`, `log.*`, `repo_config.*`, the other
@@ -62,6 +63,43 @@ names at most 10 ignored keys, then "and N more". An allowed key with an
 invalid value is ignored too, with a note that names the key. **A value of the
 file is never quoted** in a note, a result or a log. Key names appear,
 sanitised and cut to 64 bytes.
+
+### Related repositories
+
+```toml
+[[related.repos]]
+url = "https://git.example/team/web-ui"   # a repository URL, as in the related argument
+branch = "main"                           # optional
+paths = ["src/api/"]                      # optional, at most 10 prefixes
+```
+
+The file declares the repositories that consume what this repository exposes,
+so that a review looks there for uses of what a pull request changes
+([Repository items and consumer impact](review.md#repository-items-and-consumer-impact)).
+Because this makes the server read another repository with the user's token on
+the strength of a file in the repository, it is **off unless the operator turns
+it on** (`related.from_repo_config`, default false), and:
+
+- the file is read at the **base revision** like every repository config, so a
+  pull request cannot add relations to itself by editing its own file;
+- the declarations are used only when the call passes no `related`; a call's own
+  `related` always wins and the key stays applied, without a note;
+- each URL goes through the same resolver as the `related` argument: a URL on a
+  host that is not configured is `failed` with `url_not_configured` and nothing
+  is sent to it, so a declaration can never add a host;
+- `paths` confine the search and the repository tools' reads to those directory
+  prefixes (the tool path rules apply to them);
+- the result names every repository read this way (`source: "repo_config"`).
+
+At most 4 entries are kept. An invalid entry is reported like any invalid key,
+as `related.repos[i]` (`i` counts from 0, as in `related[i]` and
+`issue_context[i]`); entries from the fifth on are invalid; valid ones are kept.
+A declared URL that is malformed, that names a pull request, or whose `branch`
+differs from the branch in its URL is invalid. With the operator key off,
+`related.repos` is listed in `repo_config.ignored` with the note "The repository
+config names related repositories, but reading them is turned off by the
+operator (related.from_repo_config)." `pr_info` reports the declarations
+without reading them ([Pull request status](pr-info.md#related-pull-requests)).
 
 ### Merge rules
 

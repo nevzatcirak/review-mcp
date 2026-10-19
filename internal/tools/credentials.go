@@ -3,6 +3,7 @@ package tools
 import (
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/related"
 )
 
 // RequestErrorClass is the X-6 allowlist class of a serve-mode request
@@ -99,6 +100,37 @@ func (r credentialResolver) Resolve(rawURL string) (provider.PRRef, provider.Pro
 		return provider.PRRef{}, nil, err
 	}
 	return ref, p, nil
+}
+
+// ResolveItem resolves a related item's URL (v2.5 spec V-13b) through the
+// inner resolver, then applies the same credential check as Resolve to the
+// matched provider of a pull request or a repository.
+func (r credentialResolver) ResolveItem(rawURL string) (provider.ItemKind, provider.PRRef, provider.RepoRef, provider.Provider, error) {
+	kind, ref, repo, p, err := resolveItem(r.inner, rawURL)
+	if err != nil {
+		return kind, ref, repo, p, err
+	}
+	pk := ref.Kind
+	if kind == provider.ItemRepository {
+		pk = repo.Kind
+	}
+	if err := missingCredential(r.cfg, pk, r.needLLM); err != nil {
+		return "", provider.PRRef{}, provider.RepoRef{}, nil, err
+	}
+	return kind, ref, repo, p, nil
+}
+
+// resolveItem resolves rawURL with r's ResolveItem (related.ItemResolver),
+// or, for a resolver without it, as a pull request URL.
+func resolveItem(r PRResolver, rawURL string) (provider.ItemKind, provider.PRRef, provider.RepoRef, provider.Provider, error) {
+	if ir, ok := r.(related.ItemResolver); ok {
+		return ir.ResolveItem(rawURL)
+	}
+	ref, p, err := r.Resolve(rawURL)
+	if err != nil {
+		return "", provider.PRRef{}, provider.RepoRef{}, nil, err
+	}
+	return provider.ItemPullRequest, ref, provider.RepoRef{}, p, nil
 }
 
 // missingCredential returns the credentials_missing error of the first

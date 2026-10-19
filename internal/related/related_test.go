@@ -45,12 +45,12 @@ func TestValidate(t *testing.T) {
 		{"five", []string{"https://a.example/1", "https://a.example/2", "https://a.example/3", "https://a.example/4", "https://a.example/5"}, false,
 			"related must have at most 4 items"},
 		{"credentials", []string{"https://git.example/o/r/pulls/1", quoted}, false,
-			"related[1] must be an http or https pull request URL without credentials"},
-		{"empty item", []string{""}, false, "related[0] must be an http or https pull request URL without credentials"},
+			"related[1] must be an http or https pull request or repository URL without credentials"},
+		{"empty item", []string{""}, false, "related[0] must be an http or https pull request or repository URL without credentials"},
 		{"with focus or findings", []string{"https://git.example/o/r/pulls/1"}, true,
 			"related cannot be combined with focus or findings"},
 		{"count before form", []string{"x", "x", "x", "x", "x"}, true, "related must have at most 4 items"},
-		{"form before combination", []string{"x"}, true, "related[0] must be an http or https pull request URL without credentials"},
+		{"form before combination", []string{"x"}, true, "related[0] must be an http or https pull request or repository URL without credentials"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -72,6 +72,29 @@ func TestValidate(t *testing.T) {
 	got, err := Validate([]string{"https://git.example/o/r/pulls/2?tab=files", "https://gitlab.example/g/p/-/merge_requests/3"}, false)
 	if err != nil || !slices.Equal(got, []string{"https://git.example/o/r/pulls/2", "https://gitlab.example/g/p/-/merge_requests/3"}) {
 		t.Errorf("Validate = %q, %v", got, err)
+	}
+}
+
+// TestValidateKeepsTheBitbucketBranch: the "at" query of a URL shaped like
+// a Bitbucket Server repository URL survives normalisation (only that key,
+// every value); every other URL loses its query as in V-13a, a pull request
+// URL with an "at" included.
+func TestValidateKeepsTheBitbucketBranch(t *testing.T) {
+	cases := map[string]string{
+		"https://bitbucket.example/bb/projects/P/repos/r/browse?at=refs%2Fheads%2Ffeature%2Fx&until=1#L3": "https://bitbucket.example/bb/projects/P/repos/r/browse?at=refs/heads/feature/x",
+		"https://bitbucket.example/projects/P/repos/r/browse/?at=refs/heads/main":                         "https://bitbucket.example/projects/P/repos/r/browse/?at=refs/heads/main",
+		"https://bitbucket.example/projects/P/repos/r?at=refs/heads/a&at=refs/heads/b":                    "https://bitbucket.example/projects/P/repos/r?at=refs/heads/a&at=refs/heads/b",
+		"https://bitbucket.example/users/u/repos/r/browse?other=1":                                        "https://bitbucket.example/users/u/repos/r/browse",
+		"https://bitbucket.example/projects/P/repos/r/pull-requests/7/overview?at=refs/heads/x":           "https://bitbucket.example/projects/P/repos/r/pull-requests/7/overview",
+		"https://bitbucket.example/projects/P/repos/r/browse/src/x.go?at=refs/heads/x":                    "https://bitbucket.example/projects/P/repos/r/browse/src/x.go",
+		"https://git.example/o/r/src/branch/main?at=refs/heads/x":                                         "https://git.example/o/r/src/branch/main",
+		"https://git.example/o/r/pulls/2?at=refs/heads/x":                                                 "https://git.example/o/r/pulls/2",
+	}
+	for in, want := range cases {
+		got, err := Validate([]string{in}, false)
+		if err != nil || len(got) != 1 || got[0] != want {
+			t.Errorf("Validate(%q) = %q, %v; want %q", in, got, err, want)
+		}
 	}
 }
 
@@ -171,7 +194,7 @@ func TestRead(t *testing.T) {
 	var logs bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	items := Read(context.Background(), r, "https://git.example/gitea/primary-url/7", primary, urls,
-		func(p string) bool { return !strings.HasPrefix(p, "vendor/") }, false, log)
+		func(p string) bool { return !strings.HasPrefix(p, "vendor/") }, false, nil, log)
 
 	want := []struct{ status, reason string }{
 		{"", ""}, {StatusIgnored, ReasonPrimary}, {StatusIgnored, ReasonPrimary}, {StatusIgnored, ReasonDuplicate},
@@ -213,7 +236,7 @@ func TestReadOff(t *testing.T) {
 	r := &fakeResolver{providers: map[string]*fakeProvider{"gitlab.example": gitlab}}
 	items := Read(context.Background(), r, "https://git.example/p/7", provider.PRRef{}, []string{
 		"https://gitlab.example/gitlab/g/p/3", "https://git.example/p/7", "https://gitlab.example/gitlab/g/p/3",
-	}, nil, true, nil)
+	}, nil, true, nil, nil)
 	if len(r.calls) != 0 || len(gitlab.reads) != 0 {
 		t.Errorf("resolved %q, read %q", r.calls, gitlab.reads)
 	}

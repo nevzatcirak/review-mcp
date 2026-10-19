@@ -6,6 +6,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
+	"github.com/nevzatcirak/review-mcp/internal/related"
 	"github.com/nevzatcirak/review-mcp/internal/repoctx"
 	"github.com/nevzatcirak/review-mcp/internal/repotools"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
@@ -13,7 +14,10 @@ import (
 
 // Repository tools in pr_review (X-43, V-8 spec §2.2): in a review in one
 // call with repository context, the model may read the pull request's head
-// commit through tool calling before it answers.
+// commit through tool calling before it answers; from v2.5 (spec V-13b
+// §3.1) also the related repositories of the placed related block, at their
+// pinned commits. The block is placed before the tools are planned, so their
+// labels and checkouts are known here.
 
 // toolPlan is the tool loop of a review in one call.
 type toolPlan struct {
@@ -68,15 +72,16 @@ func (pl *Plan) planTools(ctx context.Context, deps Deps, in PromptInput, fit *f
 		pl.toolsSkipped(repotools.ReasonNoRoom)
 		return nil
 	}
+	repos := related.ToolRepositories(pl.relatedShown)
 	tin := in
-	tin.ToolRounds = c.MaxToolRounds
+	tin.ToolRounds, tin.ToolRepos = c.MaxToolRounds, repos
 	tf, err := fitPrompts(tin, diff, b)
 	if err != nil {
 		return err
 	}
 	limit := b.ContextWindow - b.HardReserve()
 	if tf.keptLines >= 0 || tf.prompts.User != fit.prompts.User ||
-		repotools.RequestTokens(repotools.Start(tf.prompts.System, tf.prompts.User), b.Factor) > limit {
+		repotools.RequestTokens(repotools.Start(tf.prompts.System, tf.prompts.User, repos...), b.Factor) > limit {
 		pl.toolsSkipped(repotools.ReasonNoRoom)
 		return nil
 	}
@@ -86,6 +91,7 @@ func (pl *Plan) planTools(ctx context.Context, deps Deps, in PromptInput, fit *f
 		pl.toolsSkipped(repotools.ReasonRepoContextUnavailable)
 		return nil
 	}
+	box.WithRepos(repos)
 	pl.tools = &toolPlan{box: box, conv: conv, in: repotools.LoopInput{
 		System: tf.prompts.System, User: tf.prompts.User, MaxRounds: c.MaxToolRounds, Limit: limit, Factor: b.Factor,
 	}}
@@ -119,6 +125,9 @@ func (pl *Plan) converse(ctx context.Context, deps Deps, fit *fitted, a *partAns
 	pl.log.Debug("review: repository tools", "status", u.Status, "reason", u.Reason, "rounds", u.Rounds,
 		"calls", len(u.Calls), "tokens", u.Tokens, "model_calls", lr.Calls, "restarted", lr.Restarted)
 	if lr.Fallback == "" {
+		// The answer came from the conversation: a file a tool showed the
+		// model in a related repository is one the run saw (V-13b §2.4).
+		related.MarkToolReads(pl.relatedShown, tp.box.Seen)
 		return &llm.Response{Content: lr.Answer.Text, Truncated: lr.Answer.Truncated, Usage: lr.Answer.Usage}, nil
 	}
 	resp, err := deps.LLM.Complete(ctx, fit.prompts.System, fit.prompts.User)

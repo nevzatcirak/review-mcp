@@ -78,6 +78,10 @@ type PromptInput struct {
 	// budget order (issue, related, repository context) is the spec's.
 	// Recommendation: keep.
 	Related string
+	// RelatedRepositories is set when the related block holds a related
+	// repository (V-13b): the related instruction then gets
+	// RelatedRepositoryInstruction.
+	RelatedRepositories bool
 	// Discussion is the rendered existing-discussion block (DiscussionHeader
 	// and the fenced threads, see renderDiscussion); empty omits it. It is
 	// third-party text, and part of the scaffolding the diff budget reserves.
@@ -111,6 +115,10 @@ type PromptInput struct {
 	// model may read the repository through tools (X-43): the system prompt
 	// carries ToolsInstruction. 0 renders as before.
 	ToolRounds int
+	// ToolRepos are the related repositories the tools may also read
+	// (v2.5 spec V-13b §3.1, related.ToolRepositories): the tools'
+	// instruction names them. None renders as before.
+	ToolRepos []repotools.Repo
 	// Date is the prompt date (prompt.Date).
 	Date string
 	// PartHeader is the part line of a review in several parts (PartHeader);
@@ -142,7 +150,7 @@ func (in *PromptInput) vars() map[string]any {
 		"issue":               in.Issue,
 		"issue_verdict":       in.EarlierVerdict,
 		"related":             in.Related,
-		"related_instruction": relatedInstruction(in.Related),
+		"related_instruction": relatedInstruction(in.Related, in.RelatedRepositories),
 		"issue_instruction":   issueInstruction(in.Issue),
 		"discussion":          in.Discussion,
 		"ci":                  in.CI,
@@ -152,19 +160,23 @@ func (in *PromptInput) vars() map[string]any {
 		"focus":               focusInstruction(in.Focus),
 		"focus_block":         focusBlock(in.Focus),
 		"incremental":         incrementalInstruction(in.Incremental),
-		"tools_instruction":   ToolsInstruction(in.ToolRounds),
+		"tools_instruction":   ToolsInstruction(in.ToolRounds, in.ToolRepos...),
 		"part_header":         in.PartHeader,
 		"diff":                in.Diff,
 	}
 }
 
-// relatedInstruction is RelatedInstruction with a related block, ""
-// otherwise.
-func relatedInstruction(block string) string {
-	if block != "" {
-		return RelatedInstruction
+// relatedInstruction is RelatedInstruction with a related block, followed
+// by RelatedRepositoryInstruction when the block holds a related
+// repository; "" otherwise.
+func relatedInstruction(block string, repositories bool) string {
+	switch {
+	case block == "":
+		return ""
+	case repositories:
+		return RelatedInstruction + "\n\n" + RelatedRepositoryInstruction
 	}
-	return ""
+	return RelatedInstruction
 }
 
 // issueInstruction is the system prompt's paragraph of a run with an issue
@@ -181,12 +193,13 @@ func issueInstruction(block string) string {
 const ToolsFinalAnswer = "Your final answer is the usual YAML described below, with no tool call in it."
 
 // ToolsInstruction is the system prompt's block of a run with tools (X-43,
-// repotools.Instruction), "" for rounds 0.
-func ToolsInstruction(rounds int) string {
+// repotools.Instruction), naming the related repositories repos the tools
+// may also read; "" for rounds 0.
+func ToolsInstruction(rounds int, repos ...repotools.Repo) string {
 	if rounds <= 0 {
 		return ""
 	}
-	return repotools.Instruction(rounds, ToolsFinalAnswer)
+	return repotools.Instruction(rounds, ToolsFinalAnswer, repos...)
 }
 
 // incrementalInstruction is the system prompt's sentence of an incremental

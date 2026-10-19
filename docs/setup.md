@@ -563,8 +563,8 @@ review-mcp never contacts another tracker and holds no tracker credential.
 ### Related pull requests
 
 `pr_review`, `pr_ask` and `pr_info` take a `related` argument: up to four pull
-requests read as context, on any configured provider
-([Related pull requests](review.md#related-pull-requests)). Each is read with
+requests (or repositories, below) read as context, on any configured provider
+([Related pull requests](review.md#related-pull-requests-and-repositories)). Each is read with
 the token of **its own** provider, so every provider you name a related pull
 request on needs its section and a token that can read that repository; a
 related pull request on a host that is not configured is never contacted.
@@ -575,6 +575,16 @@ for them.
 |---|---|---|---|
 | `related.max_tokens` | `REVIEW_MCP_RELATED_MAX_TOKENS` | `8000` | Token budget of all related pull requests of one prompt together, shared equally, 0 to 40,000; 0 turns them off (the argument is accepted, nothing is read, one note). `pr_info` reads no diff and is not limited by it. |
 | `related.contract_globs` | `REVIEW_MCP_RELATED_CONTRACT_GLOBS` | (empty) | Globs (as `ignore.glob`) of paths shown first in a related pull request, as API descriptions. A repository config adds to the list. |
+| `related.max_identifiers` | `REVIEW_MCP_RELATED_MAX_IDENTIFIERS` | `20` | Most changed identifiers searched in a related repository, 1 to 50. Operator-only. |
+| `related.from_repo_config` | `REVIEW_MCP_RELATED_FROM_REPO_CONFIG` | `false` | Read the related repositories that the reviewed repository's `.review-mcp.toml` declares (`[[related.repos]]`), only when the call passes no `related`. Operator-only; off by default because the server then reads another repository on the strength of a file in the repository. |
+
+`related` also takes **repository** URLs, optionally with a branch
+([Repository items and consumer impact](review.md#repository-items-and-consumer-impact)).
+A repository is read only with `context.repo.enabled` (stdio only), by git,
+with the token of its provider; a repository item costs a shallow fetch and a
+text search per run. Content of a related repository can reach a comment on
+the reviewed pull request, whose audience can differ: name only repositories
+whose content you are willing to show there.
 
 ### Repository tools
 

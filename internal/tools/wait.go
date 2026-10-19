@@ -52,3 +52,13 @@ func (r pinnedResolver) Resolve(rawURL string) (provider.PRRef, provider.Provide
 	}
 	return r.inner.Resolve(rawURL)
 }
+
+// ResolveItem answers the pinned URL as the pull request it resolved to and
+// passes any other URL (a related item's, v2.5 spec V-13b) to the inner
+// resolver.
+func (r pinnedResolver) ResolveItem(rawURL string) (provider.ItemKind, provider.PRRef, provider.RepoRef, provider.Provider, error) {
+	if rawURL == r.url {
+		return provider.ItemPullRequest, r.ref, provider.RepoRef{}, r.p, nil
+	}
+	return resolveItem(r.inner, rawURL)
+}

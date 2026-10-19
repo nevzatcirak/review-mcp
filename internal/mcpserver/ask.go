@@ -22,7 +22,7 @@ type prAskInput struct {
 	ExtraInstructions string   `json:"extra_instructions,omitempty" jsonschema:"extra instructions for the model; replaces ask.extra_instructions for this call"`
 	OutputLanguage    string   `json:"output_language,omitempty" jsonschema:"locale code for the answer, for example en-US or tr-TR; replaces output.language for this call"`
 	Publish           bool     `json:"publish,omitempty" jsonschema:"also post the question and answer as a PR comment (default false)"`
-	Related           []string `json:"related,omitempty" jsonschema:"Up to 4 related pull request URLs on configured providers, for example the backend change a UI pull request depends on. Read as context only; nothing is published to them."`
+	Related           []string `json:"related,omitempty" jsonschema:"Up to 4 related pull request or repository URLs on configured providers, for example the backend change a UI pull request depends on, or a repository (optionally a branch) that may use what the pull request changes. Read as context only; nothing is published to them. A repository needs context.repo.enabled (stdio only)."`
 	WaitSeconds       *int     `json:"wait_seconds,omitempty" jsonschema:"seconds to wait for the result before answering with a job_id for job_result, 0 to 600; replaces llm.wait_seconds (default 45) for this call; ignored in serve mode"`
 }
 

@@ -209,26 +209,38 @@ func IssueSchema() map[string]any {
 }
 
 // RelatedCoverageSchema is the JSON schema of coverage.related (X-41, v2.3
-// spec V-13a §1.5), for the output schemas of the tools with the related
-// argument.
+// spec V-13a §1.5; repository items v2.5 spec V-13b §1.3), for the output
+// schemas of the tools with the related argument. The repository fields are
+// declared optional, so a pull request item without them validates as in
+// 2.4, and additionalProperties stays false.
 func RelatedCoverageSchema() map[string]any {
 	str := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
 	integer := func(desc string) map[string]any { return map[string]any{"type": "integer", "description": desc} }
-	item := map[string]any{"type": "object", "description": "one item of the related argument", "properties": map[string]any{
-		"url": str("the URL as normalised (query and fragment dropped)"),
-		"status": map[string]any{"type": "string", "enum": []any{"full", "partial", "not_placed", "failed", "ignored"},
-			"description": "full: every changed file shown; partial: some files listed by path only; not_placed: read but not in the prompt; failed: not read; ignored: the reviewed pull request itself or a duplicate"},
+	item := map[string]any{"type": "object", "description": "one item of the related argument: a pull request or a repository", "properties": map[string]any{
+		"url": str("the URL as normalised (query and fragment dropped; the at query of a Bitbucket Server repository URL kept)"),
+		"status": map[string]any{"type": "string", "enum": []any{"full", "partial", "not_placed", "failed", "ignored", "no_use_found"},
+			"description": "full: every changed file (repository: every hit) shown; partial: some files listed by path only (repository: some hits cut by a cap or the budget); not_placed: read but not in the prompt; failed: not read; ignored: the reviewed pull request itself, its own repository, or a duplicate; no_use_found (repository only): searched, and no use of the changed identifiers was found at the commit, which is not a statement that nothing is affected"},
 		"reason": map[string]any{"type": "string", "enum": relatedReasons(),
 			"description": "for failed: url_not_configured, url_malformed, credentials_missing, not_found, forbidden, " +
-				"unauthorized or unreadable (never meaning it does not exist); for ignored: duplicate or primary; for " +
-				"not_placed: did_not_fit, review_in_parts, off (related.max_tokens is 0) or nothing_to_review (the primary " +
-				"pull request has nothing to review); absent otherwise"},
+				"unauthorized or unreadable (never meaning it does not exist); for a repository also repo_context_off " +
+				"(context.repo.enabled is off, always so in serve mode), branch_not_found, or the fixed reason of the git " +
+				"fetch (timeout, too_large, redirect, git_failed, git_unavailable, busy, cache_unusable, unsupported); for " +
+				"ignored: duplicate, primary or primary_repository; for not_placed: did_not_fit, review_in_parts, off " +
+				"(related.max_tokens is 0), nothing_to_review (the primary pull request has nothing to review) or, for a " +
+				"repository, no_contract_change (the primary diff gave no identifier to search); absent otherwise"},
 		"head_sha":       str("the related pull request's head revision when it was read"),
 		"files_included": integer("files shown with hunks"),
 		"files_listed":   integer("files listed by path only"),
+		"kind":           map[string]any{"type": "string", "enum": []any{related.KindRepository}, "description": "repository on a repository item; absent on a pull request item"},
+		"branch":         str("repository items: the branch, or an empty string for the default branch"),
+		"commit":         str("repository items: the commit the repository was read at, pinned when the run fetched it"),
+		"identifiers":    integer("repository items: how many identifiers of the primary diff were searched"),
+		"matches":        integer("repository items: the hits found"),
+		"matches_shown":  integer("repository items: the hits placed in the prompt"),
+		"source":         map[string]any{"type": "string", "enum": []any{related.SourceRepoConfig}, "description": "repo_config when the item was read from the reviewed repository's config; absent otherwise"},
 	}, "required": []any{"url", "status", "files_included", "files_listed"}, "additionalProperties": false}
 	return map[string]any{"type": "array", "items": item,
-		"description": "related pull requests (X-41): one entry per item of the related argument, in order; [] without it. They are context only: nothing is published to them"}
+		"description": "related pull requests and repositories (X-41): one entry per item of the related argument, in order; [] without it. They are context only: nothing is published to them"}
 }
 
 // relatedReasons are the values of coverage.related[].reason.
@@ -237,7 +249,12 @@ func relatedReasons() []any {
 	for _, r := range []string{related.ReasonURLNotConfigured, related.ReasonURLMalformed, related.ReasonCredentialsMissing,
 		related.ReasonNotFound, related.ReasonForbidden, related.ReasonUnauthorized, related.ReasonUnreadable,
 		related.ReasonDuplicate, related.ReasonPrimary, related.ReasonDidNotFit, related.ReasonReviewInParts,
-		related.ReasonOff, ReasonNothingToReview} {
+		related.ReasonOff, ReasonNothingToReview,
+		related.ReasonRepoContextOff, related.ReasonBranchNotFound, related.ReasonPrimaryRepository,
+		related.ReasonNoContractChange} {
+		out = append(out, r)
+	}
+	for _, r := range related.GitReasons {
 		out = append(out, r)
 	}
 	return out

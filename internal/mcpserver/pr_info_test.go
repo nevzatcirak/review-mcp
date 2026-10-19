@@ -183,3 +183,36 @@ func TestPRInfoDegradedStartMakesNoResolverCall(t *testing.T) {
 		t.Errorf("IsError=%v text=%q built=%d calls=%d", res.IsError, textOf(t, res), built.Load(), f.calls.Load())
 	}
 }
+
+// TestPRInfoDeclaredRelationsValidate [WP-10d]: a pr_info result listing
+// declared related repositories (v2.5 spec V-13b §3.2 item 4: not_read, or
+// failed with a reason, with kind, branch and source; the default branch
+// as "") next to a related pull request validates against the declared
+// output schema; one without them is the 2.4 result.
+func TestPRInfoDeclaredRelationsValidate(t *testing.T) {
+	f := &infoFake{status: fullStatus()}
+	deps, _ := withFake(depsFor(validEnv(), nil), f)
+	cs := connect(t, deps)
+	schemas := outputSchemas(t, cs)
+	res := callTool(t, cs, "pr_info", map[string]any{"pr_url": prURL})
+	if res.IsError {
+		t.Fatalf("tool error: %+v", res.Content)
+	}
+	var base tools.PRInfoResult
+	decodeStructured(t, res, &base)
+	main, def := "main", ""
+	base.Related = []tools.RelatedInfo{
+		{URL: "https://gitlab.example/grp/svc/-/merge_requests/3", Status: "read", State: "open", TargetBranch: "main",
+			HeadSHA: "1234567890abcdef1234567890abcdef12345678"},
+		{URL: "https://gitlab.example/grp/web-ui", Status: tools.StatusNotRead, Kind: "repository", Branch: &main, Source: "repo_config"},
+		{URL: "https://unknown.example/team/web-ui", Status: "failed", Reason: "url_not_configured", Kind: "repository", Branch: &def,
+			Source: "repo_config"},
+		{URL: "https://your-gitea.example/octo/demo", Status: "ignored", Reason: "primary_repository", Kind: "repository",
+			Branch: &def, Source: "repo_config"},
+		// A repository of the related argument has no source (V-13b §4 item 2).
+		{URL: "https://gitlab.example/grp/api", Status: tools.StatusNotRead, Kind: "repository", Branch: &def},
+	}
+	if err := validateOutput(t, schemas["pr_info"], base); err != nil {
+		t.Fatalf("declared relations: %v", err)
+	}
+}

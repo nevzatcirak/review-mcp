@@ -1,6 +1,7 @@
 package render
 
 import (
+	"fmt"
 	"html"
 	"net/url"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	llmrender "github.com/nevzatcirak/review-mcp/internal/llmrun/render"
 	"github.com/nevzatcirak/review-mcp/internal/mdutil"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/related"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 )
 
@@ -48,6 +50,8 @@ const (
 	textCarriedSuffix    = ", listed here only)"
 	textInRelated        = "(in related pull request "
 	textRelatedSuffix    = ", listed here only)"
+	textInRelatedRepo    = "(in related repository "
+	textUnverified       = " (location not verified)"
 	textDiscussed        = "Already discussed"
 	textCode             = "Code:"
 	textPublish          = "Publishing"
@@ -155,19 +159,28 @@ func listedHereOnly(i *review.KeyIssue) bool {
 // otherwise. The commit is a validated id, never model text.
 func listedSuffix(i *review.KeyIssue, gfm bool) string {
 	if i.Related != "" {
-		// Spec V-13a §2.2 item 4: "(in related pull request [<repo>#<number>](<pr url>), listed here only)".
+		// Spec V-13a §2.2 item 4: "(in related pull request [<repo>#<number>](<pr url>), listed here only)";
+		// for a related repository (V-13b §2.4) "(in related repository [<namespace>/<name>](<url>), listed
+		// here only)", followed by " (location not verified)" for a file the run never saw there.
 		name := i.RelatedName
 		if name == "" {
 			name = relatedName(i.Related)
 		}
+		prefix, suffix := textInRelated, textRelatedSuffix
+		if i.RelatedRepository {
+			prefix = textInRelatedRepo
+			if i.LocationUnverified {
+				suffix += textUnverified
+			}
+		}
 		l := safeLink(i.Related)
 		switch {
 		case l == "":
-			return textInRelated + mdutil.Inline(name) + textRelatedSuffix
+			return prefix + mdutil.Inline(name) + suffix
 		case gfm:
-			return textInRelated + "<a href='" + html.EscapeString(l) + "'>" + html.EscapeString(name) + "</a>" + textRelatedSuffix
+			return prefix + "<a href='" + html.EscapeString(l) + "'>" + html.EscapeString(name) + "</a>" + suffix
 		default:
-			return textInRelated + "[" + mdutil.Inline(name) + "](" + l + ")" + textRelatedSuffix
+			return prefix + "[" + mdutil.Inline(name) + "](" + l + ")" + suffix
 		}
 	}
 	if i.CarriedFrom != "" {
@@ -234,28 +247,62 @@ func writeCoverage(b *strings.Builder, heading string, res *review.Result) {
 }
 
 // writeRelated lists the related pull requests that were read (X-41, v2.3
-// spec V-13a §1.5 item 3), as links with their status; the others are in
-// the notes. Nothing without one.
+// spec V-13a §1.5 item 3), as links with their status, and the related
+// repositories that were searched (V-13b §2.4 item 4), as links with
+// "searched {i} identifiers at {commit 12}: {m} matches" or "no use found at
+// {commit 12}"; the others are in the notes. A repository read because the
+// repository config declares it is marked so (V-13b §3.2 item 3). The
+// heading names repositories only when one is listed, so a list of pull
+// requests reads as in 2.4.
+// Nothing without one.
 func writeRelated(b *strings.Builder, items []review.RelatedItem) {
 	var lines []string
+	repositories := false
 	for _, it := range items {
-		if it.HeadSHA == "" {
+		var status string
+		switch {
+		case it.Kind == "" && it.HeadSHA != "":
+			status = it.Status
+			if it.Reason != "" {
+				status += " (" + it.Reason + ")"
+			}
+		case it.Kind != "" && it.Status == related.StatusNoUseFound && it.Commit != "":
+			status = "no use found at " + commit12(it.Commit)
+		case it.Kind != "" && it.Commit != "" && it.Identifiers != nil && *it.Identifiers > 0 && it.Matches != nil:
+			status = fmt.Sprintf("searched %d identifiers at %s: %d matches", *it.Identifiers, commit12(it.Commit), *it.Matches)
+		default:
 			continue
 		}
+		repositories = repositories || it.Kind != ""
 		text := literal(relatedName(it.URL))
 		if l := safeLink(it.URL); l != "" {
 			text = "[" + mdutil.Inline(relatedName(it.URL)) + "](" + l + ")"
 		}
-		status := it.Status
-		if it.Reason != "" {
-			status += " (" + it.Reason + ")"
+		line := "- " + text + ": " + literal(status)
+		if it.Source == related.SourceRepoConfig {
+			// Read because the repository config declares it (V-13b §3.2
+			// item 3): the overview names every repository read this way.
+			line += " (declared in the repository config)"
 		}
-		lines = append(lines, "- "+text+": "+literal(status))
+		lines = append(lines, line)
 	}
 	if len(lines) == 0 {
 		return
 	}
-	b.WriteString("\nRelated pull requests (context only; nothing was published to them):\n\n" + strings.Join(lines, "\n") + "\n")
+	heading := "Related pull requests"
+	if repositories {
+		heading = "Related pull requests and repositories"
+	}
+	b.WriteString("\n" + heading + " (context only; nothing was published to them):\n\n" + strings.Join(lines, "\n") + "\n")
+}
+
+// commit12 is the first 12 characters of a validated commit id, "" when sha
+// is not one.
+func commit12(sha string) string {
+	if shortSHA(sha) == "" || len(sha) < 12 {
+		return ""
+	}
+	return strings.ToLower(sha[:12])
 }
 
 // relatedName is a related URL without its scheme.

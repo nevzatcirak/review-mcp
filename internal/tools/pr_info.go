@@ -3,15 +3,18 @@ package tools
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
+	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/mdutil"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/related"
+	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 	"github.com/nevzatcirak/review-mcp/internal/review/render"
 )
@@ -100,13 +103,19 @@ type RelatedInfo struct {
 	// but no status for one that was read (pr_info shows no diff, so full,
 	// partial and not_placed do not apply). It is read; failed and ignored
 	// keep their reasons. Recommendation: keep.
-	Status       string `json:"status" jsonschema:"read, failed or ignored"`
-	Reason       string `json:"reason,omitempty" jsonschema:"for failed: url_not_configured, url_malformed, credentials_missing, not_found, forbidden, unauthorized or unreadable (never meaning it does not exist); for ignored: duplicate or primary"`
+	Status       string `json:"status" jsonschema:"read, failed or ignored; not_read for a declared related repository that resolves to a configured provider (pr_info never reads one)"`
+	Reason       string `json:"reason,omitempty" jsonschema:"for failed: url_not_configured, url_malformed, credentials_missing, not_found, forbidden, unauthorized or unreadable (never meaning it does not exist); for ignored: duplicate or primary, or for a repository primary_repository"`
 	Title        string `json:"title,omitempty" jsonschema:"the pull request's title, when read; untrusted third-party text"`
 	State        string `json:"state,omitempty" jsonschema:"open, merged, closed or unknown, when read"`
 	Draft        *bool  `json:"draft,omitempty" jsonschema:"whether it is a draft, when read and reported"`
 	TargetBranch string `json:"target_branch,omitempty" jsonschema:"the branch it merges into, when read"`
 	HeadSHA      string `json:"head_sha,omitempty" jsonschema:"its head commit, when read"`
+	// Kind, Branch and Source are set only on a related repository (v2.5
+	// spec V-13b §4 item 2; Source on one the reviewed repository's config
+	// declares, §3.2 item 4), so a 2.4 result serialises as before.
+	Kind   string  `json:"kind,omitempty" jsonschema:"repository on a related repository; absent on a related pull request"`
+	Branch *string `json:"branch,omitempty" jsonschema:"a related repository's branch; empty for its default branch; absent on a related pull request"`
+	Source string  `json:"source,omitempty" jsonschema:"repo_config on a related repository the reviewed repository's config declares; absent otherwise"`
 }
 
 // Notes of related pull requests in pr_info (spec V-13a §3.2, verbatim):
@@ -122,6 +131,52 @@ func noteRelatedClosed(url string) string {
 // StatusRead is the status of a related pull request pr_info read.
 const StatusRead = "read"
 
+// StatusNotRead is the status of a declared related repository that
+// resolves to a configured provider: pr_review and pr_ask would read it,
+// pr_info does not (V-13b §3.2 item 4).
+const StatusNotRead = "not_read"
+
+// declaredInfo resolves the related repositories the repository config of
+// the pull request declares, without reading them (v2.5 spec V-13b §3.2
+// item 4): only when the operator key related.from_repo_config is set
+// (otherwise pr_review and pr_ask would not read them either, and pr_info
+// makes no request for the file) and the call passes no related argument
+// (which would win). The config is read at the base revision, as every tool
+// reads it (X-40): one GetFileAt.
+//
+// DESIGN-QUESTION (WP-13c DQ-8): the spec says pr_info "reports declared
+// relations without reading them" but not where, and gives pr_info's
+// repository items (kind, branch, status not_read) to WP-13d. The declared
+// ones are listed in related, after the shape WP-13d gives repository
+// items, with source repo_config and status not_read, or failed or ignored
+// with the reason a review would give. pr_info read no repository config
+// before (X-40); it reads it only in this case, at the base revision like
+// every tool, since the declarations are there. With
+// related.from_repo_config false nothing is read or listed, so pr_info
+// stays as in 2.4. Recommendation: keep; WP-13d adds the repository URLs
+// of the argument.
+func declaredInfo(ctx context.Context, cfg *config.Config, resolver PRResolver, p provider.Provider, ref provider.PRRef,
+	pr *provider.PullRequest, log *slog.Logger) []RelatedInfo {
+	if cfg == nil || !cfg.Related.FromRepoConfig {
+		return nil
+	}
+	rc := repocfg.ForRun(ctx, log, cfg, p, ref, pr)
+	if len(rc.Related) == 0 {
+		return nil
+	}
+	var out []RelatedInfo
+	for _, it := range related.ResolveDeclared(resolver, ref, rc.Related, log) {
+		branch := it.Repo.Branch
+		e := RelatedInfo{URL: it.URL, Status: it.Status, Reason: it.Reason, Kind: related.KindRepository, Branch: &branch,
+			Source: it.Source}
+		if e.Status == "" {
+			e.Status = StatusNotRead
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
 // relatedInfo reads the related pull requests of a pr_info call (their
 // pull requests only, no diff) and returns them with their notes.
 func relatedInfo(ctx context.Context, resolver PRResolver, prURL string, ref provider.PRRef, primaryState string,
@@ -134,6 +189,15 @@ func relatedInfo(ctx context.Context, resolver PRResolver, prURL string, ref pro
 	var notes []string
 	for _, it := range related.ReadPullRequests(ctx, resolver, primaryURL, ref, urls, log) {
 		e := RelatedInfo{URL: it.URL, Status: it.Status, Reason: it.Reason}
+		if it.IsRepository() {
+			// A repository is resolved, never read or fetched (V-13b §4
+			// item 2): not_read unless it is failed or ignored.
+			branch := it.Repo.Branch
+			e.Kind, e.Branch = related.KindRepository, &branch
+			if e.Status == "" {
+				e.Status = StatusNotRead
+			}
+		}
 		if it.Read {
 			e.Status = StatusRead
 			e.Title, e.State, e.Draft = validUTF8(it.PR.Title), prInfoState(it.PR), it.PR.Draft
@@ -165,6 +229,16 @@ func PRInfoTool(ctx context.Context, resolver PRResolver, prURL string, log *slo
 // Related with their notes. A related pull request that cannot be read
 // never fails the call.
 func PRInfoWithRelated(ctx context.Context, resolver PRResolver, prURL string, relatedURLs []string, log *slog.Logger) (PRInfoResult, error) {
+	return PRInfoFor(ctx, nil, resolver, prURL, relatedURLs, log)
+}
+
+// PRInfoFor is PRInfoWithRelated with the call's configuration cfg: with
+// related.from_repo_config set and no related argument, the related
+// repositories the reviewed repository's config declares are listed in
+// Related without being read (declaredInfo). cfg nil reads no repository
+// config.
+func PRInfoFor(ctx context.Context, cfg *config.Config, resolver PRResolver, prURL string, relatedURLs []string,
+	log *slog.Logger) (PRInfoResult, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
@@ -225,6 +299,9 @@ func PRInfoWithRelated(ctx context.Context, resolver PRResolver, prURL string, r
 	rel, relNotes := relatedInfo(ctx, resolver, prURL, ref, prInfoState(pr), relatedURLs, log)
 	for _, n := range relNotes {
 		addNote(n)
+	}
+	if len(relatedURLs) == 0 {
+		rel = append(rel, declaredInfo(ctx, cfg, resolver, p, ref, pr, log)...)
 	}
 
 	// A canceled or expired call must not pass for a complete answer.
@@ -378,11 +455,22 @@ func RenderPRInfoMarkdown(r PRInfoResult) string {
 	}
 	b.WriteString("\n")
 	if len(r.Related) > 0 {
-		b.WriteString("\nRelated pull requests:\n\n")
+		heading := "Related pull requests"
+		if slices.ContainsFunc(r.Related, func(it RelatedInfo) bool { return it.Kind != "" }) {
+			heading = "Related pull requests and repositories"
+		}
+		b.WriteString("\n" + heading + ":\n\n")
 		for _, it := range r.Related {
 			line := "- " + mdutil.Literal(it.URL) + ": "
-			switch it.Status {
-			case StatusRead:
+			switch {
+			case it.Kind != "":
+				// A declared related repository (V-13b §3.2 item 4).
+				st := it.Status
+				if it.Reason != "" {
+					st += " (" + it.Reason + ")"
+				}
+				line += mdutil.Literal(st) + ", repository declared in the repository config"
+			case it.Status == StatusRead:
 				line += mdutil.Literal(it.State) + ", into " + mdutil.Literal(it.TargetBranch) + ", head " +
 					mdutil.Literal(shortSHA(it.HeadSHA)) + " — " + mdutil.Inline(it.Title)
 			default:

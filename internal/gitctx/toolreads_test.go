@@ -130,6 +130,29 @@ func TestSearchTextSkipsMissingBlobs(t *testing.T) {
 	}
 }
 
+// TestSearchTextPaths: Paths confines a search to its directory prefixes
+// (a related repository from the repository config, v2.5 spec V-13b §3.1):
+// a sibling that only shares a name prefix is not searched; a prefix that
+// cannot name a path is refused before git runs.
+func TestSearchTextPaths(t *testing.T) {
+	r, co := localCheckout(t, map[string]string{
+		"src/api/a.ts":  "needle\n",
+		"src/apix/b.ts": "needle\n",
+		"web/c.ts":      "needle\n",
+		"docs/d.md":     "needle\n",
+	}, "")
+	ctx := context.Background()
+	res, err := r.SearchText(ctx, co, TextQuery{Text: "needle", Paths: []string{"src/api/", "web"}})
+	if err != nil || !slices.Equal(pathsOf(res.Hits), []string{"src/api/a.ts", "web/c.ts"}) {
+		t.Fatalf("paths: %q %v", pathsOf(res.Hits), err)
+	}
+	for _, bad := range []string{"", "/src", "a//b", "a\nb"} {
+		if _, err := r.SearchText(ctx, co, TextQuery{Text: "needle", Paths: []string{bad}}); ReasonOf(err) != ReasonUnsupported {
+			t.Errorf("prefix %q: %v, want unsupported", bad, err)
+		}
+	}
+}
+
 // TestToolReadsRunOffline [canary]: every git process of the tools' reads
 // runs offline: protocol.allow=never with no https or http allowance,
 // GIT_NO_LAZY_FETCH=1, no credential, the allowlisted environment.

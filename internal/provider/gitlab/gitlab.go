@@ -127,6 +127,49 @@ func (Factory) ParsePRPath(remainder string) (namespace, repo string, number int
 	return strings.Join(segs[:dash-1], "/"), segs[dash-1], n, nil
 }
 
+// ParseRepoPath implements provider.Factory (v2.5 spec V-13b §1.1).
+// remainder is escaped and starts with "/"; it must be
+// /{namespace...}/{project} or /{namespace...}/{project}/-/tree/{branch...},
+// the namespace being every segment before the project, at least one
+// (nested groups), and the branch every segment after /-/tree/ joined with
+// "/". A trailing ".git" on the project is dropped. Each segment is
+// unescaped on its own; an escaped "/" ("%2F"), an empty segment and a "."
+// or ".." segment are refused, and so is a branch that is not a
+// provider.ValidBranchName. The query is not read.
+func (Factory) ParseRepoPath(remainder string, _ url.Values) (namespace, repo, branch string, err error) {
+	errShape := errors.New("not a GitLab repository path")
+	if !strings.HasPrefix(remainder, "/") {
+		return "", "", "", errShape
+	}
+	raw := strings.Split(remainder[1:], "/")
+	segs := make([]string, len(raw))
+	for i, r := range raw {
+		s, uerr := url.PathUnescape(r)
+		if uerr != nil || s == "" || strings.Contains(s, "/") || isDots(s) {
+			return "", "", "", errShape
+		}
+		segs[i] = s
+	}
+	path := segs
+	if dash := slices.Index(segs, "-"); dash >= 0 {
+		if len(segs) < dash+3 || segs[dash+1] != "tree" {
+			return "", "", "", errShape
+		}
+		path, branch = segs[:dash], strings.Join(segs[dash+2:], "/")
+		if !provider.ValidBranchName(branch) {
+			return "", "", "", errShape
+		}
+	}
+	if len(path) < 2 {
+		return "", "", "", errShape
+	}
+	repo = provider.TrimGitSuffix(path[len(path)-1])
+	if repo == "" {
+		return "", "", "", errShape
+	}
+	return strings.Join(path[:len(path)-1], "/"), repo, branch, nil
+}
+
 func isDots(s string) bool { return s == "." || s == ".." }
 
 // parsePositive parses a positive base-10 integer made of ASCII digits only

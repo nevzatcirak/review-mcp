@@ -160,16 +160,38 @@ shortened by the request-size guard.
 
 ## Related pull requests
 
-`related` takes up to four pull request URLs, as on `pr_review`, for a question
-such as "Does this change match the related pull request?". They are read,
+`related` takes up to four pull request or repository URLs, as on `pr_review`, for
+a question such as "Does this change match the related pull request?". They are read,
 budgeted (`related.max_tokens`), fenced and placed exactly as for a review
-([Related pull requests](review.md#related-pull-requests)): only in the room
+([Related pull requests](review.md#related-pull-requests-and-repositories)): only in the room
 the diff leaves, before repository context, never shortening the diff; in
 plain mode, like `pr_ask`'s own diff. The answer may refer to them; there are
 no findings and no links. `coverage.related` (always present, `[]` without the
 argument) and the notes are those of a review; the answer's markdown does not
 list them separately. The refusal of `related` with `focus` or `findings` does
 not arise: `pr_ask` has neither.
+
+### Related repositories
+
+A repository URL (optionally with a branch) in `related` is searched for what
+the pull request changes, exactly as for a review ([Repository items and consumer
+impact](review.md#repository-items-and-consumer-impact)): the changed contract
+surface of the whole diff, a fetch at one pinned commit, up to 5 hits per
+identifier and 30 per repository, a section in the same block, and the
+repository tools with their `repo` argument. It needs `context.repo.enabled`
+(stdio only); otherwise the item is `failed` with `repo_context_off` and the
+answer is made without it. Ask, for example, "Which code in the related
+repository uses the renamed field?".
+
+The model is asked to cite a consumer location as `R<n>:path:line`. Each such
+citation in the answer becomes a link to that file and line **at the pinned
+commit**, built by the repository's own provider, when the run saw the file (a
+hit in the prompt, or a file a tool read); a citation of a file the run never
+saw keeps its text and gets " (location not verified)". The rest of the answer
+is not changed. A repository with no hits is `no_use_found`, with the same note
+as for a review: it shows that text search found nothing, not that nothing is
+affected. A removed name that only the stop list dropped is named in the
+section as `Removed but not searched (too common): ...`.
 
 ## Repository context
 

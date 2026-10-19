@@ -26,7 +26,9 @@
 // the remote's URL through every url.*.insteadOf it would apply (ls-remote
 // --get-url, no network, no credential); anything but the pinned URL stops
 // the fetch with reason redirect. The fetched commit must equal the pull
-// request's head SHA (RC-5). The cache, one entry per
+// request's head SHA (RC-5). EnsureBranch fetches a branch (or the default
+// branch) the same way, into the same entry, and pins the commit it brings
+// (v2.5 spec V-13b §1.2). The cache, one entry per
 // host/base path/namespace/repository, sweeps idle and least-recently-used
 // repositories at the start of every use (RC-6).
 //
@@ -102,17 +104,20 @@ type PR struct {
 	HeadSHA string
 }
 
-// Checkout is a fetched pull request head in the cache. The directory is a
+// Checkout is a fetched pull request head, or a fetched branch
+// (EnsureBranch), in the cache. The directory is a
 // bare repository; nothing is checked out. It stays valid until the cache
 // sweeps it: the LRU sweep never removes a repository used within the last
 // lockStaleAfter, so a Grep shortly after Ensure finds it.
 type Checkout struct {
 	// GitDir is the bare repository.
 	GitDir string
-	// HeadSHA is the verified head commit (lower case). Searches use it as a
+	// HeadSHA is the verified head commit (lower case); for a branch, the
+	// commit the fetch brought, which is the pin. Searches use it as a
 	// tree-ish, never a working tree.
 	HeadSHA string
-	// Ref is the local ref that holds HeadSHA, refs/review-mcp/pr/<n>.
+	// Ref is the local ref that holds HeadSHA, refs/review-mcp/pr/<n> or
+	// refs/review-mcp/branch/<hash> (branchRef).
 	Ref string
 }
 

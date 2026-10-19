@@ -443,6 +443,19 @@ func Render(hits []gitctx.Hit, maxTokens int, factor float64) Block {
 // RenderMarked is Render with marks: the text after the symbol of an entry
 // whose path is a key (see Scope.Marks).
 func RenderMarked(hits []gitctx.Hit, maxTokens int, factor float64, marks map[string]string) Block {
+	return render(hits, maxTokens, factor, marks, Header)
+}
+
+// RenderHits renders hits as Render does (sanitised, whole entries in
+// order, a fence no snippet can close, within maxTokens), without the
+// block's header: the hits of a related repository (v2.5 spec V-13b §2.2
+// item 4), which sit under their own line inside the related block.
+func RenderHits(hits []gitctx.Hit, maxTokens int, factor float64) Block {
+	return render(hits, maxTokens, factor, nil, "")
+}
+
+// render is RenderMarked with the header above the fence; "" for none.
+func render(hits []gitctx.Hit, maxTokens int, factor float64, marks map[string]string, header string) Block {
 	if len(hits) == 0 {
 		return Block{}
 	}
@@ -456,7 +469,7 @@ func RenderMarked(hits []gitctx.Hit, maxTokens int, factor float64, marks map[st
 	// The largest prefix that fits, by bisection (an estimate per probe
 	// costs a tokenizer pass over the whole block), then verified downward:
 	// BPE counts are not strictly monotone across a cut.
-	fits := func(n int) bool { return tokens.Estimate(blockText(entries[:n]), factor) <= maxTokens }
+	fits := func(n int) bool { return tokens.Estimate(blockText(header, entries[:n]), factor) <= maxTokens }
 	lo, hi := 0, len(hits)
 	for lo < hi {
 		mid := (lo + hi + 1) / 2
@@ -471,7 +484,7 @@ func RenderMarked(hits []gitctx.Hit, maxTokens int, factor float64, marks map[st
 	}
 	var best Block
 	if lo > 0 {
-		best = Block{Text: blockText(entries[:lo]), Entries: lo}
+		best = Block{Text: blockText(header, entries[:lo]), Entries: lo}
 	}
 	best.Omitted = len(hits) - best.Entries
 	files := map[string]bool{}
@@ -482,12 +495,14 @@ func RenderMarked(hits []gitctx.Hit, maxTokens int, factor float64, marks map[st
 	return best
 }
 
-// blockText joins the entries under the header, inside a fence that no
-// snippet can close: mdutil.WriteFenced makes it one backtick longer than
-// the longest backtick run in the entries.
-func blockText(entries []string) string {
+// blockText joins the entries under the header (none when ""), inside a
+// fence that no snippet can close: mdutil.WriteFenced makes it one backtick
+// longer than the longest backtick run in the entries.
+func blockText(header string, entries []string) string {
 	var b strings.Builder
-	b.WriteString(Header + "\n")
+	if header != "" {
+		b.WriteString(header + "\n")
+	}
 	mdutil.WriteFenced(&b, strings.Join(entries, "\n\n"), "", "")
 	return strings.TrimRight(b.String(), "\n")
 }

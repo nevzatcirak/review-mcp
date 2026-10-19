@@ -22,18 +22,30 @@ import (
 const (
 	fetchFilter = "blob:limit=1m"
 	localRefFmt = "refs/review-mcp/pr/"
+	// branchRefFmt is the prefix of a fetched branch's local ref (v2.5 spec
+	// V-13b §1.2); branchRef names the rest.
+	branchRefFmt = "refs/review-mcp/branch/"
 )
 
-// plan is everything Ensure derives from a Repo and a PR before any I/O.
+// plan is everything Ensure and EnsureBranch derive from a Repo and a PR or
+// a branch before any I/O.
 type plan struct {
-	cloneURL  string
-	remoteRef string // refs/pull/{n}/head, refs/pull-requests/{n}/from or refs/merge-requests/{n}/head
+	cloneURL string
+	// remoteRef is refs/pull/{n}/head, refs/pull-requests/{n}/from or
+	// refs/merge-requests/{n}/head for a pull request; refs/heads/{branch}
+	// or HEAD for a branch.
+	remoteRef string
 	localRef  string
 	rel       string // <host>/<base>/<namespace dir>/<repo> under the cache directory
-	headSHA   string
-	net       netPolicy
-	schemes   []scheme
-	cacheKey  string // the auth-scheme cache key
+	// headSHA is the commit the fetch must bring (a pull request's head);
+	// "" for a branch, whose fetched commit is the pin.
+	headSHA string
+	// branch is set for a branch fetch: a missing remote ref is then
+	// branch_not_found rather than not_found.
+	branch   bool
+	net      netPolicy
+	schemes  []scheme
+	cacheKey string // the auth-scheme cache key
 }
 
 var (
@@ -120,11 +132,71 @@ func baseSegment(escapedPath string) string {
 // (RC-5) and the cache path.
 func newPlan(repo Repo, pr PR) (*plan, error) {
 	unsupported := fail(ReasonUnsupported)
-	if !safeNamespace(repo.Namespace) || !safeSegment(repo.Name) || pr.Number <= 0 {
+	if pr.Number <= 0 {
 		return nil, unsupported
 	}
 	sha := strings.ToLower(strings.TrimSpace(pr.HeadSHA))
 	if !shaRE.MatchString(sha) {
+		return nil, unsupported
+	}
+	p, err := newRepoPlan(repo)
+	if err != nil {
+		return nil, err
+	}
+	n := strconv.FormatInt(pr.Number, 10)
+	p.localRef, p.headSHA = localRefFmt+n, sha
+	switch repo.Kind {
+	case provider.KindGitea, provider.KindGitHub:
+		p.remoteRef = "refs/pull/" + n + "/head"
+	case provider.KindBitbucketServer:
+		p.remoteRef = "refs/pull-requests/" + n + "/from"
+	case provider.KindGitLab:
+		// Y-21: the merge request ref is fixed.
+		p.remoteRef = "refs/merge-requests/" + n + "/head"
+	}
+	return p, nil
+}
+
+// newBranchPlan validates repo and branch and builds the plan of a branch
+// fetch (v2.5 spec V-13b §1.2): the repository's clone URL, cache path and
+// auth schemes, exactly as for its pull requests, with the remote ref
+// refs/heads/{branch} (HEAD for "", the remote's default branch) and the
+// local ref branchRef(branch). A branch that is not a
+// provider.ValidBranchName is unsupported before any I/O; callers check it
+// earlier (a related item's URL is url_malformed).
+func newBranchPlan(repo Repo, branch string) (*plan, error) {
+	if branch != "" && !provider.ValidBranchName(branch) {
+		return nil, fail(ReasonUnsupported)
+	}
+	p, err := newRepoPlan(repo)
+	if err != nil {
+		return nil, err
+	}
+	p.remoteRef, p.localRef, p.branch = "HEAD", branchRef(branch), true
+	if branch != "" {
+		p.remoteRef = "refs/heads/" + branch
+	}
+	return p, nil
+}
+
+// branchRef is the local ref of a fetched branch:
+// refs/review-mcp/branch/{the first 16 hex digits of the branch name's
+// SHA-256}, or refs/review-mcp/branch/default for the default branch (""),
+// so that a branch name never forms a path or a ref expression of its own.
+func branchRef(branch string) string {
+	if branch == "" {
+		return branchRefFmt + "default"
+	}
+	sum := sha256.Sum256([]byte(branch))
+	return branchRefFmt + hex.EncodeToString(sum[:])[:16]
+}
+
+// newRepoPlan validates repo and builds what every fetch of it shares: the
+// clone URL (RC-4), the auth schemes, the network policy and the cache
+// path. One bare repository serves its pull requests and its branches.
+func newRepoPlan(repo Repo) (*plan, error) {
+	unsupported := fail(ReasonUnsupported)
+	if !safeNamespace(repo.Namespace) || !safeSegment(repo.Name) {
 		return nil, unsupported
 	}
 	u, err := url.Parse(strings.TrimRight(strings.TrimSpace(repo.BaseURL), "/"))
@@ -135,10 +207,7 @@ func newPlan(repo Repo, pr PR) (*plan, error) {
 	if urlScheme != "https" && urlScheme != "http" {
 		return nil, unsupported
 	}
-	n := strconv.FormatInt(pr.Number, 10)
 	p := &plan{
-		localRef: localRefFmt + n,
-		headSHA:  sha,
 		net: netPolicy{
 			allowHTTP:          urlScheme == "http",
 			caCert:             repo.CACert,
@@ -150,26 +219,22 @@ func newPlan(repo Repo, pr PR) (*plan, error) {
 	switch repo.Kind {
 	case provider.KindGitea:
 		p.cloneURL = base + "/" + ns + "/" + name + ".git"
-		p.remoteRef = "refs/pull/" + n + "/head"
 		p.schemes = []scheme{schemeToken, schemeBasic}
 	case provider.KindBitbucketServer:
 		p.cloneURL = base + "/scm/" + ns + "/" + name + ".git"
-		p.remoteRef = "refs/pull-requests/" + n + "/from"
 		p.schemes = []scheme{schemeBearer, schemeBasic}
 	case provider.KindGitHub:
 		// Y-16. The base is the web base, never the API base. GitHub does
 		// not accept a bare Bearer token for git over HTTPS, so Basic with
 		// the fixed user comes first; Bearer is only the second attempt.
 		p.cloneURL = base + "/" + ns + "/" + name + ".git"
-		p.remoteRef = "refs/pull/" + n + "/head"
 		p.schemes = []scheme{schemeAccessToken, schemeBearer}
 	case provider.KindGitLab:
-		// Y-21. The base is the web base (it may carry a context path), the
-		// namespace may be nested groups, and the merge request ref is
-		// fixed. GitLab takes a token as the password of HTTP Basic with
-		// any user name: "oauth2", the fixed one, as GitLab documents it.
+		// Y-21. The base is the web base (it may carry a context path) and
+		// the namespace may be nested groups. GitLab takes a token as the
+		// password of HTTP Basic with any user name: "oauth2", the fixed
+		// one, as GitLab documents it.
 		p.cloneURL = base + "/" + ns + "/" + name + ".git"
-		p.remoteRef = "refs/merge-requests/" + n + "/head"
 		p.schemes = []scheme{schemeOAuth2}
 	default:
 		return nil, unsupported
@@ -277,6 +342,41 @@ func (r *Runner) Ensure(ctx context.Context, repo Repo, pr PR) (Checkout, error)
 	if err != nil {
 		return Checkout{}, err
 	}
+	return r.ensure(ctx, repo, p)
+}
+
+// EnsureBranch makes one branch of repo available in the cache, at the
+// commit the fetch brings, and returns it (v2.5 spec V-13b §1.2): a related
+// repository is read at that one commit for the whole run.
+//
+// It is Ensure with another ref, and every rule of Ensure holds unchanged:
+// the cache entry (the same one as the repository's pull requests), the
+// lock, the sweep, the redirect guard, the credential only in the fetch's
+// environment, the auth scheme order, the partial-clone filter, --depth=1,
+// no tags, no submodules, MaxRepoBytes and FetchTimeout. The remote ref is
+// refs/heads/{branch}, or the remote's HEAD for "" (its default branch);
+// the local ref is branchRef(branch), never the branch name itself. There
+// is no SHA to compare with: the fetched commit is the pin, and
+// Checkout.HeadSHA reports it.
+//
+// A remote without the branch is branch_not_found; every other failure has
+// Ensure's reasons. branch must be "" or a provider.ValidBranchName
+// (otherwise unsupported, before git runs).
+func (r *Runner) EnsureBranch(ctx context.Context, repo Repo, branch string) (Checkout, error) {
+	if err := ctx.Err(); err != nil {
+		return Checkout{}, err
+	}
+	p, err := newBranchPlan(repo, branch)
+	if err != nil {
+		return Checkout{}, err
+	}
+	return r.ensure(ctx, repo, p)
+}
+
+// ensure fetches p.remoteRef into p.localRef of the repository's cache
+// entry under the entry's lock, and returns the checkout. With p.headSHA
+// set the fetched commit must equal it.
+func (r *Runner) ensure(ctx context.Context, repo Repo, p *plan) (Checkout, error) {
 	probe := gitProbe(r.opts.GitPath)
 	if !probe.ok() {
 		return Checkout{}, fail(ReasonGitUnavailable)
@@ -325,8 +425,11 @@ func (r *Runner) Ensure(ctx context.Context, repo Repo, pr PR) (Checkout, error)
 	if err != nil {
 		return Checkout{}, err
 	}
-	if got != p.headSHA {
+	if p.headSHA != "" && got != p.headSHA {
 		return Checkout{}, fail(ReasonSHAMismatch)
+	}
+	if !shaRE.MatchString(got) {
+		return Checkout{}, fail(ReasonGitFailed)
 	}
 	if treeSize(gitDir) > r.opts.MaxRepoBytes {
 		_ = removeEntryLocked(root, entry)
@@ -409,7 +512,7 @@ func (g *gitRun) prepare(ctx context.Context, p *plan) error {
 	return nil
 }
 
-// fetch fetches the PR ref with the first auth scheme and, on HTTP 401, once
+// fetch fetches the plan's remote ref (a PR ref or a branch) with the first auth scheme and, on HTTP 401, once
 // more with the next (§3.0). The scheme that worked is remembered for the
 // process. The header reaches git only through the environment.
 func (g *gitRun) fetch(ctx context.Context, repo Repo, p *plan) error {
@@ -443,6 +546,9 @@ func (g *gitRun) fetch(ctx context.Context, repo Repo, p *plan) error {
 			return nil
 		}
 		c, err := res.failure()
+		if c.missingRef && p.branch {
+			return fail(ReasonBranchNotFound)
+		}
 		if !c.unauthorized {
 			return err
 		}

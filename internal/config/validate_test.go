@@ -75,6 +75,8 @@ func TestValidationRules(t *testing.T) {
 		{"related tokens negative", map[string]string{"REVIEW_MCP_RELATED_MAX_TOKENS": "-1"}, "related.max_tokens: -1 is out of range (0-40000; 0 turns related pull requests off)"},
 		{"related tokens too many", map[string]string{"REVIEW_MCP_RELATED_MAX_TOKENS": "40001"}, "related.max_tokens: 40001 is out of range (0-40000; 0 turns related pull requests off)"},
 		{"related glob", map[string]string{"REVIEW_MCP_RELATED_CONTRACT_GLOBS": "*.proto,[bad"}, "related.contract_globs[1]: not a valid glob pattern (doublestar syntax)"},
+		{"related identifiers zero", map[string]string{"REVIEW_MCP_RELATED_MAX_IDENTIFIERS": "0"}, "related.max_identifiers: 0 is out of range (1-50)"},
+		{"related identifiers too many", map[string]string{"REVIEW_MCP_RELATED_MAX_IDENTIFIERS": "51"}, "related.max_identifiers: 51 is out of range (1-50)"},
 		{"issue tokens negative", map[string]string{"REVIEW_MCP_REVIEW_MAX_ISSUE_TOKENS": "-1"}, "review.max_issue_tokens: -1 is out of range (0-20000; 0 turns issue compliance off)"},
 		{"issue tokens too many", map[string]string{"REVIEW_MCP_REVIEW_MAX_ISSUE_TOKENS": "20001"}, "review.max_issue_tokens: 20001 is out of range (0-20000; 0 turns issue compliance off)"},
 		{"log level", map[string]string{"REVIEW_MCP_LOG_LEVEL": "loud"}, "log.level: invalid log level"},

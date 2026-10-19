@@ -65,6 +65,14 @@ type PromptInput struct {
 	// model may read the repository through tools (X-43): the system prompt
 	// carries ToolsInstruction. 0 renders as before.
 	ToolRounds int
+	// ToolRepos are the related repositories the tools may also read
+	// (v2.5 spec V-13b §3.1, related.ToolRepositories): the tools'
+	// instruction names them. None renders as before.
+	ToolRepos []repotools.Repo
+	// RelatedRepositories is set when the placed related block holds a
+	// related repository (v2.5 spec V-13b §4 item 1): the system prompt
+	// carries RelatedRepositoryInstruction. False renders as before.
+	RelatedRepositories bool
 	// Diff is the prepared plain diff; empty for the scaffolding
 	// measurement.
 	Diff string
@@ -75,12 +83,22 @@ type PromptInput struct {
 const ToolsFinalAnswer = "Your final answer is the plain-text answer to the question, with no tool call in it."
 
 // ToolsInstruction is the system prompt's block of a run with tools (X-43),
-// "" for rounds 0.
-func ToolsInstruction(rounds int) string {
+// naming the related repositories repos the tools may also read; "" for
+// rounds 0.
+func ToolsInstruction(rounds int, repos ...repotools.Repo) string {
 	if rounds <= 0 {
 		return ""
 	}
-	return repotools.QuestionInstruction(rounds, ToolsFinalAnswer)
+	return repotools.QuestionInstruction(rounds, ToolsFinalAnswer, repos...)
+}
+
+// relatedInstruction is RelatedRepositoryInstruction for a run whose placed
+// related block holds a repository, "" otherwise.
+func relatedInstruction(repositories bool) string {
+	if !repositories {
+		return ""
+	}
+	return RelatedRepositoryInstruction
 }
 
 // Prompts is one rendered system and user prompt pair.
@@ -97,17 +115,18 @@ func (in *PromptInput) vars() map[string]any {
 		lang = ""
 	}
 	return map[string]any{
-		"extra_instructions": prompt.WithOutputLanguage(in.ExtraInstructions, in.Language),
-		"repo_instructions":  in.RepoInstructions,
-		"title":              in.Title,
-		"branch":             in.Branch,
-		"description":        in.Description,
-		"language":           lang,
-		"repo_context":       in.RepoContext,
-		"related":            in.Related,
-		"tools_instruction":  ToolsInstruction(in.ToolRounds),
-		"diff":               in.Diff,
-		"questions":          in.Question,
+		"extra_instructions":  prompt.WithOutputLanguage(in.ExtraInstructions, in.Language),
+		"repo_instructions":   in.RepoInstructions,
+		"title":               in.Title,
+		"branch":              in.Branch,
+		"description":         in.Description,
+		"language":            lang,
+		"repo_context":        in.RepoContext,
+		"related":             in.Related,
+		"related_instruction": relatedInstruction(in.RelatedRepositories),
+		"tools_instruction":   ToolsInstruction(in.ToolRounds, in.ToolRepos...),
+		"diff":                in.Diff,
+		"questions":           in.Question,
 	}
 }
 

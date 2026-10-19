@@ -1401,15 +1401,18 @@ review in one call, full or incremental; a review in parts uses no tools, with a
 note. The result reports it in `coverage.repo_context.tools` and
 `metadata.tool_rounds`. See [Repository tools](repo-context.md#repository-tools).
 
-## Related pull requests
+## Related pull requests and repositories
 
 A change often has another side in another repository: a UI pull request and
 the backend change it depends on, a client and the service it calls, a schema
 and its consumer. `pr_review` can read up to four such pull requests as
-**context** and look for problems between them and the reviewed one. The
-reviewed pull request is always the only one under review and the only one
-anything is published to. review-mcp never looks for related pull requests
-itself: you name them.
+**context** and look for problems between them and the reviewed one. A related
+item may also be a **repository** that has no pull request of its own: review-mcp
+then looks there for uses of what the reviewed pull request changes
+([Repository items and consumer impact](#repository-items-and-consumer-impact)).
+The reviewed pull request is always the only one under review and the only one
+anything is published to. review-mcp never looks for related items itself: you
+name them.
 
 ### The `related` argument
 
@@ -1420,11 +1423,11 @@ itself: you name them.
 }
 ```
 
-- 1 to 4 pull request URLs; an empty list counts as not given. More than 4 is
-  refused: "related must have at most 4 items".
+- 1 to 4 URLs of pull requests or repositories, together; an empty list counts
+  as not given. More than 4 is refused: "related must have at most 4 items".
 - Each must be an `http` or `https` URL without credentials, at most 2,048
-  bytes: "related[N] must be an http or https pull request URL without
-  credentials" (`N` counts from 0; the value is never repeated).
+  bytes: "related[N] must be an http or https pull request or repository URL
+  without credentials" (`N` counts from 0; the value is never repeated).
 - Query and fragment are dropped. A URL given twice, or one that names the
   same pull request as an earlier item, is `ignored` with the reason
   `duplicate`; the reviewed pull request itself is `ignored` with `primary`.
@@ -1534,6 +1537,151 @@ A finding that names a related pull request that was not in the review (an
 unknown `R5`, or a block that was not placed) is kept as a finding on the
 reviewed pull request, with one note per run.
 
+### Repository items and consumer impact
+
+A related repository answers a different question from a related pull
+request: not "does the other change match this one?" but "does anything over
+there still use what this change removes or renames?". A backend renames a
+field, and the UI repository, which has no pull request yet, still reads it.
+
+**URL forms.** A repository URL names the repository, or a branch of it, in the
+provider's own browse form. Without a branch, the repository's default branch
+is used.
+
+| Provider | Repository | With a branch |
+|---|---|---|
+| GitHub | `https://github.example/owner/repo` | `.../owner/repo/tree/feature/x` |
+| Gitea | `https://your-gitea.example/owner/repo` | `.../owner/repo/src/branch/feature/x` |
+| GitLab | `https://gitlab.example/group/sub/repo` | `.../group/sub/repo/-/tree/feature/x` |
+| Bitbucket Server | `https://bitbucket.example/projects/KEY/repos/slug` (or `.../browse`) | `.../browse?at=refs/heads/feature/x` (only `refs/heads/`) |
+
+A trailing `.git` on the repository name is dropped. A pull request URL is
+always read as a pull request first. **A branch URL must point at the branch
+root.** A tree URL can also name a path inside the repository, and review-mcp
+cannot tell a branch called `feature/x` from the folder `x` of the branch
+`feature`: a longer URL is read as a longer branch name, which then fails with
+`branch_not_found`. A branch name is checked before any git call: 1 to 255
+bytes of `A-Z a-z 0-9 / . _ -`, no `..` or `//`, no leading or trailing `/` or
+`.`, no segment starting with `.` or `-`, no `.lock`, not `HEAD`; a refused
+branch is `url_malformed`.
+
+**Needs repository context.** Repository items are read only with
+`context.repo.enabled` (stdio only). Otherwise each is `failed` with
+`repo_context_off`, no git command runs, and the review goes on with its pull
+request items.
+
+**One pinned commit.** The repository is fetched read-only through the
+repository-context machinery ([Repository context](repo-context.md)): shallow,
+offline afterwards, no credential on disk or in a command line. The commit is
+whatever `git fetch` brings for the branch (or the remote's `HEAD`) when the
+run starts; it is reported as `commit` and used for every search, read and
+link of the run. A repository is never built or run. Items are fetched one
+after the other, after the pull request items, only when the related block can
+be placed (see below).
+
+**What is searched.** review-mcp derives the *changed contract surface* from
+the reviewed diff, by fixed rules, and searches each repository for it:
+
+1. *Contract files* are the API descriptions and API-surface files of
+   [Contract files first](#contract-files-first) (tiers 1 and 2) and
+   `related.contract_globs`. From their removed and added lines it takes
+   names (`[A-Za-z_][A-Za-z0-9_]{2,99}`): a name on a removed line and on no
+   added line of the file is **removed or renamed**; one on a removed line and
+   on an added line of the same hunk is **changed** (a type, a requiredness, a
+   format). Only removed-line names matter: a consumer can only use a name that
+   existed before.
+2. *Routes*: in a YAML or JSON API description, a removed line whose key is a
+   path gives the route's static prefix (the segments before the first
+   `{...}`), kept when it has a static segment of 3 or more characters, and
+   searched as a fixed string.
+3. *Changed exported symbols*: the symbols whose definition line was removed or
+   changed, from the same extraction as [Repository context](repo-context.md)
+   (test files excluded).
+4. *The stop list.* A name is dropped when it names the description language, a
+   type or a common word, not something a consumer uses: schema keywords
+   (OpenAPI and JSON Schema, protobuf, GraphQL, Avro, Thrift, WSDL and XML
+   Schema: `properties`, `required`, `message`, `enum`, `namespace`, ...), type
+   names (`string`, `integer`, `int32`, `boolean`, `object`, `array`, `uuid`,
+   ...) and common words (`the`, `and`, `description`, `example`, `summary`,
+   `true`, `false`, `null`, ...). The list is a fixed table
+   (`internal/related/data/stopwords.go`) and includes `name` and `type`,
+   which are also real field names. **A removed name that only the stop list
+   dropped is not searched, but the repository section names it** on one
+   line, `Removed but not searched (too common): ...` (at most 20), so that an
+   empty result is not read as "no use". The coverage counts do not change.
+5. Order and limit: removed or renamed, routes, changed, then exported symbols,
+   duplicates dropped (the first kind wins), at most `related.max_identifiers`
+   (default 20, 1 to 50, operator-only). What the limit drops is counted in a
+   note.
+
+The search is `git grep -n -F -I` on the pinned commit, offline: identifiers
+match whole words, routes match anywhere. It uses the operator's `ignore.*`
+filter, includes test files (a consumer's tests are consumers), and stops at
+**5 hits per identifier, 30 per repository**, with 2 lines of context. The hits
+go to the model like repository context: sanitised, whole entries, fenced as
+untrusted data, in the repository's share of `related.max_tokens` (shared
+equally among the readable items, as for pull requests), after the issue block
+and before repository context, only in the room the reviewed diff leaves.
+
+**When the surface is empty, nothing is fetched.** If the reviewed pull request
+gives no removed or changed name in its contract files or exported symbols
+(for example it only adds a field, or changes no contract file), each readable
+repository is `not_placed` with `no_contract_change`, without a `commit`, and
+one note says so: "No removed or changed name was found in the contract files
+or exported symbols of this pull request, so the related repositories were not
+searched." When the only removed names were dropped by the stop list (a rename
+of `name` alone), the note goes on: "Removed names too common to search:
+name." (at most 20 names), so that what was not searched is stated. A repository is also not fetched in a review in parts, in a review with
+nothing to review, in an unchanged incremental run, or when the diff is
+already trimmed (`not_placed` with the run's reason or `did_not_fit`).
+
+**What a search with no hits means.** It is reported as `no_use_found` with the
+note "No use of the changed identifiers was found in <repository> at <commit>.
+Text search does not see dynamic or generated uses, so this is not a
+statement that nothing is affected." It is never "no impact": a field read
+through reflection, a generated client or a string built at run time is
+invisible to text search.
+
+**Findings.** With a repository placed, the model is also asked to report a
+consumer that uses a removed or renamed identifier or route, or uses a changed
+one in a way the new contract breaks, to tag it with the repository's label
+(`R<n>`) and to say "needs verification" when only the name matches. Such a
+finding is **listed in the overview only**, never inline, as "(in related
+repository [team/web-ui](...), listed here only)". Its link points to the file
+and line **at the pinned commit** (not at the branch), built by that
+repository's own provider, when the run saw the file in it: a hit that was
+placed in the prompt, or a file a repository tool read. A finding that names a
+file the run never saw there is listed without a link and with "(location
+not verified)". On Bitbucket Server the link is `.../browse/{path}?at={commit}#{line}`;
+this form has not been verified against a live server.
+
+**Repository tools in related repositories.** With
+`context.repo.max_tool_rounds` above 0 and at least one repository in the placed
+block, the three [repository tools](repo-context.md#repository-tools) take an
+optional `repo` argument, the repository's label (`R1` to `R4`), and read it at
+its pinned commit with the same path rules, caps and fence. Absent means the
+reviewed pull request's head commit, as before; without a related repository the
+tool definitions are exactly those of 2.4. A label that is not a readable
+repository (unknown, or a related *pull request*) is `invalid_arguments`.
+`context.repo.max_tool_tokens` is one budget for all repositories, and
+`coverage.repo_context.tools.calls[].repo` names the label of a call that read
+a related repository.
+
+**Relations declared in the repository config.** The reviewed repository's
+`.review-mcp.toml` may declare related repositories
+([`[[related.repos]]`](repo-config.md#related-repositories)). They are read only
+when the call passes no `related`, only with the operator key
+`related.from_repo_config` set to true (default false), and only when they
+resolve to a configured provider (a declaration can never add a host). Every
+item read this way has `source: "repo_config"` in `coverage.related` and is
+named in the overview ("declared in the repository config"). A call's own
+`related` always wins.
+
+**Cost.** Every repository adds a fetch (shallow, partial clone, within
+`context.repo.max_repo_mb` and the fetch timeout) and a search before the
+model call, one after the other; with tools on, each round is a model call as
+before. Nothing is read from a repository whose prompt block does not fit.
+
 ### Incremental reviews
 
 An overview made with related pull requests records them (URL and head
@@ -1551,6 +1699,15 @@ read in this run. A doubt is always a change. Two consequences:
   full review; its overview has no related record, and the run after it is
   incremental again.
 
+A related **repository** is recorded by URL and branch, not by commit, because
+a default branch moves for reasons unrelated to the pull request. An
+incremental run searches it again at its new pinned commit, with the
+identifiers of the files it reviews, and the overview names that commit; a
+different set (a repository added, removed, or on another branch) is a full
+review, as for pull requests. A repository that failed in this run stays part
+of the recorded set and is no change by itself. Consumer findings are not
+carried forward: the run searches again.
+
 A record longer than 10,000 bytes (four very long URLs) is not written, so the
 next incremental run reviews in full. Findings carried forward from a related
 pull request are kept only while the related set is the same as the
@@ -1563,16 +1720,21 @@ without it):
 
 | Field | Meaning |
 |---|---|
-| `url` | the URL as normalised (query and fragment dropped) |
-| `status` | `full` (every changed file shown), `partial` (some files listed by path only), `not_placed`, `failed` or `ignored` |
-| `reason` | for `failed`: `url_not_configured`, `url_malformed`, `credentials_missing`, `not_found`, `forbidden`, `unauthorized` or `unreadable`; for `ignored`: `duplicate` or `primary`; for `not_placed`: `did_not_fit`, `review_in_parts`, `off` or `nothing_to_review`; absent otherwise |
+| `url` | the URL as normalised (query and fragment dropped; a Bitbucket Server branch query is kept) |
+| `status` | `full` (every changed file or hit shown), `partial` (some files listed by path only, or some hits cut), `no_use_found` (a repository was searched and nothing was found), `not_placed`, `failed` or `ignored` |
+| `reason` | for `failed`: `url_not_configured`, `url_malformed`, `credentials_missing`, `not_found`, `forbidden`, `unauthorized` or `unreadable`, and for a repository also `repo_context_off`, `branch_not_found` and the git reasons `timeout`, `too_large`, `redirect`, `git_unavailable`, `git_failed`, `busy`, `cache_unusable` and `unsupported`; for `ignored`: `duplicate` or `primary`, and for a repository `primary_repository`; for `not_placed`: `did_not_fit`, `review_in_parts`, `off` or `nothing_to_review`, and for a repository `no_contract_change`; absent otherwise |
 | `head_sha` | the related pull request's head commit, when it was read |
 | `files_included`, `files_listed` | files shown with hunks and files listed by path only |
+| `kind` | `repository` on a repository item; absent on a pull request item |
+| `branch`, `commit` | a repository's branch (`""` for the default branch) and its pinned commit, when fetched |
+| `identifiers`, `matches`, `matches_shown` | a repository's identifiers searched, hits found and hits placed in the prompt |
+| `source` | `repo_config` on an item read from the repository config; absent otherwise |
 
 A related pull request that could not be read is never reported as one that
 does not exist: `not_found` can also mean the token may not see it. The
 overview's coverage section lists the related pull requests that were read,
-as links, with their status; the notes give every other case (see
+as links, with their status, and a searched repository as `searched {i}
+identifiers at {commit}: {m} matches` or `no use found at {commit}`; the notes give every other case (see
 [Troubleshooting](troubleshooting.md#related-pull-request-notes)).
 
 ### What leaves the related repository
@@ -1592,6 +1754,7 @@ client the steps for a set of pull requests that belong together:
 | Argument | Required | Meaning |
 |---|---|---|
 | `pr_urls` | yes | 2 to 5 different pull request URLs, separated by commas, spaces or new lines, each checked as `multi_perspective_review`'s `pr_url` (query and fragment dropped) |
+| `repo_urls` | no | repository URLs (optionally with a branch) that may use what the pull requests change, given to every review as related context and never reviewed themselves; with `pr_urls` at most 5 in all |
 | `publish` | no | `true` to publish each review to its own pull request; default `false` |
 
 It returns one user message that tells the client to call `pr_review` once per
@@ -1601,7 +1764,7 @@ each review to its own pull request only when `publish` is `true`; and never
 to merge the reviews across pull requests. The URLs appear only inside JSON
 strings. A bad argument is an `InvalidParams` error: "pr_urls must hold 2 to 5
 different http or https pull request URLs without credentials, separated by
-commas, spaces or new lines" or "publish must be true or false".
+commas, spaces or new lines", "repo_urls must hold different http or https repository URLs without credentials, separated by commas, spaces or new lines, and with pr_urls at most 5 in all" or "publish must be true or false". Repositories get their own argument because the prompt resolves nothing and cannot tell a repository URL from a pull request URL.
 
 ## MCP instructions and the `multi_perspective_review` prompt
 

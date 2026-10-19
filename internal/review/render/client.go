@@ -135,6 +135,11 @@ func writeClientIssues(b *strings.Builder, issues []review.KeyIssue, none string
 		if loc := clientLocation(i); loc != "" {
 			b.WriteString(" — " + loc)
 		}
+		if i.LocationUnverified {
+			// A consumer's file the run never saw (V-13b §2.4 item 2): the
+			// result has no field for it, so the client view says it too.
+			b.WriteString(textUnverified)
+		}
 		b.WriteString("\n")
 		if c := strings.TrimSpace(i.IssueContent); c != "" {
 			b.WriteString("\n" + indentLines(proseText(c), indent) + "\n")

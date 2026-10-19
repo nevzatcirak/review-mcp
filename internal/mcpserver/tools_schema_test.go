@@ -51,6 +51,9 @@ func TestOutputSchemasDeclareRepoTools(t *testing.T) {
 			if items["additionalProperties"] != false {
 				t.Errorf("%s: a tool call allows additional properties: %v", name, items)
 			}
+			if ip, _ := items["properties"].(map[string]any); ip["repo"] == nil {
+				t.Errorf("%s: a tool call's repo is not declared", name)
+			}
 			rcReq, _ := rc["required"].([]any)
 			if required && !slices.Contains(rcReq, any("tools")) {
 				t.Errorf("%s: coverage.repo_context.tools is not required", name)
@@ -98,6 +101,9 @@ func TestPRAskToolsResultsValidate(t *testing.T) {
 		{Tool: repotools.ListDir, Target: "", Status: repotools.StatusInvalidArguments, Tokens: 5},
 		{Tool: repotools.Search, Target: "needle", Status: repotools.StatusTooManyCalls},
 		{Tool: "run_shell", Target: "", Status: repotools.StatusBudgetExhausted},
+		// A call of a related repository (v2.5 spec V-13b §3.1 item 3).
+		{Tool: repotools.ReadFile, Target: "src/client/profile.ts", Status: repotools.StatusOK, Tokens: 40, Repo: "R2"},
+		{Tool: repotools.Search, Target: "userName", Status: repotools.StatusInvalidArguments, Tokens: 5, Repo: "R1"},
 	}
 	uses := []repotools.Use{
 		{Status: repotools.StatusUsed, Rounds: 2, Tokens: 95, Calls: allCalls, Exhausted: true},

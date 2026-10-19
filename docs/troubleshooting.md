@@ -496,8 +496,8 @@ Configuration problem (at startup, in `server_info`):
 
 ## Related pull request notes
 
-`pr_review` and `pr_ask` add these fixed sentences about the pull requests of
-the `related` argument ([Related pull requests](review.md#related-pull-requests));
+`pr_review` and `pr_ask` add these fixed sentences about the pull requests (and
+[repositories](#related-repository-notes)) of the `related` argument ([Related pull requests](review.md#related-pull-requests-and-repositories));
 `coverage.related` gives each one's status and reason. `<url>` is the URL you
 gave, without its query and fragment. A related pull request's title, text or
 diff is never quoted in a note or a log.
@@ -534,7 +534,7 @@ Reasons of a related pull request that could not be read (`failed`):
 | Sentence | What to do |
 |---|---|
 | related must have at most 4 items | Name at most 4 related pull requests. |
-| related[N] must be an http or https pull request URL without credentials | Pass the pull request's web URL, at most 2,048 bytes, without a user or password. |
+| related[N] must be an http or https pull request or repository URL without credentials | Pass the pull request's or repository's web URL, at most 2,048 bytes, without a user or password. |
 | related cannot be combined with focus or findings | Run focused reviews and the merged publish without `related`. |
 
 `pr_info` adds two information notes, not blockers: "Related pull request
@@ -543,7 +543,9 @@ Reasons of a related pull request that could not be read (`failed`):
 
 `review_linked_prs` argument errors (`InvalidParams`): "pr_urls must hold 2 to
 5 different http or https pull request URLs without credentials, separated by
-commas, spaces or new lines" and "publish must be true or false".
+commas, spaces or new lines", "repo_urls must hold different http or https
+repository URLs without credentials, separated by commas, spaces or new lines,
+and with pr_urls at most 5 in all" and "publish must be true or false".
 
 Configuration problems (at startup, in `server_info`):
 
@@ -551,6 +553,49 @@ Configuration problems (at startup, in `server_info`):
 |---|---|
 | related.max_tokens: N is out of range (0-40000; 0 turns related pull requests off) | Use 0 to 40,000. |
 | related.contract_globs[N]: ... | Fix that glob as you would an `ignore.glob` entry. |
+| related.max_identifiers: N is out of range (1-50) | Use 1 to 50. |
+
+### Related repository notes
+
+A repository in `related` ([Repository items and consumer
+impact](review.md#repository-items-and-consumer-impact)) adds these fixed
+sentences. `<repo>` is `namespace/name`, `<commit>` the first 12 digits of the
+pinned commit; no path, branch, identifier or hit is ever quoted.
+
+| Sentence | Cause and what to do |
+|---|---|
+| Related repository <url> could not be read (<reason>) and was not used. | See the reasons below. The review ran without it. |
+| Related repository <url> was ignored: it is the reviewed pull request's own repository or a duplicate. | `primary_repository` (its contents are already repository context) or `duplicate` (same repository and branch). Leave it out. |
+| No use of the changed identifiers was found in <repo> at <commit>. Text search does not see dynamic or generated uses, so this is not a statement that nothing is affected. | The search ran and found nothing (`no_use_found`). Read it as a limit of text search, not as "no impact": generated or dynamic uses are invisible to it. Check the removed names the section lists, and the stop-listed ones (below). |
+| No removed or changed name was found in the contract files or exported symbols of this pull request, so the related repositories were not searched. | The reviewed diff gave no identifier (`not_placed`, `no_contract_change`), so nothing was fetched. This is true also when a contract file changed with added lines only (a new field breaks no existing consumer by name). If a contract file is not recognised, add it to `related.contract_globs`. The sentence may continue " Removed names too common to search: <names>." (at most 20): the only removed names were on the stop list (for example `name` or `type`), which is not searched; with other names to search, the repository section lists such names under `Removed but not searched (too common)` instead. |
+| <n> of the changed identifiers were not searched (limit <max>). | More identifiers than `related.max_identifiers`. Raise it (at most 50), or review a smaller change. |
+| Hits in <repo> were cut at <k> (limit). | The caps (5 hits per identifier, 30 per repository) kept <k> hits (`partial`). |
+| Hits in <repo> did not fit in full; <s> of <m> are shown. | The repository's share of `related.max_tokens` held only <s> of <m> hits (`partial`). The section then ends with "<k> more hits were found but do not fit here." so the missing hits are not read as "no use". Raise `related.max_tokens`, or name fewer related items. |
+| The repository config names related repositories, but reading them is turned off by the operator (related.from_repo_config). | The file declares `[[related.repos]]`; set the operator key `related.from_repo_config` to true to read them, or remove the declarations. A call's own `related` is always allowed. |
+
+Reasons of a related repository that could not be read (`failed`), besides
+`url_not_configured`, `url_malformed`, `credentials_missing` and `unreadable`
+above:
+
+| Reason | Cause and what to do |
+|---|---|
+| `repo_context_off` | `context.repo.enabled` is off, or the server runs in serve mode (stdio only). No git command ran. Turn repository context on. |
+| `branch_not_found` | The remote has no such branch. A tree URL that names a path inside the branch is read as a longer branch name; use the branch root URL. |
+| `unauthorized` | The token was refused (git cannot tell 401 from 403 once both authentication schemes failed). |
+| `not_found` | The repository is not there, or the token cannot see it. |
+| `timeout`, `too_large`, `redirect`, `git_unavailable`, `git_failed`, `busy`, `cache_unusable`, `unsupported` | The same fixed reasons as [repository context](troubleshooting.md#repository-context-was-skipped). |
+
+For the `not_placed` reasons of a repository: `did_not_fit` (the diff is
+already trimmed, or the repository's share does not hold its section),
+`review_in_parts` and `nothing_to_review` as for pull requests, `off` for
+`related.max_tokens` 0, and `no_contract_change` above. A repository that is
+not placed is not fetched, so it has no `commit`.
+
+Repository config problems: an invalid `[[related.repos]]` entry is named
+`related.repos[i]` (`i` counts from 0) in `repo_config.ignored`, with the usual
+invalid-key note; entries from the fifth on are invalid; a declared URL that is
+malformed, names a pull request, or has a `branch` that differs from the
+branch of its URL is `url_malformed` when read.
 
 ## Focus and findings refusals
 

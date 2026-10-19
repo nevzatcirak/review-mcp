@@ -215,7 +215,7 @@ func TestRelatedArgumentErrors(t *testing.T) {
 		{map[string]any{"related": []any{"https://git.example/1", "https://git.example/2", "https://git.example/3",
 			"https://git.example/4", "https://git.example/5"}}, "related must have at most 4 items"},
 		{map[string]any{"related": []any{"https://git.example/1", "https://u:SECRET-VALUE@git.example/2"}},
-			"related[1] must be an http or https pull request URL without credentials"},
+			"related[1] must be an http or https pull request or repository URL without credentials"},
 		{map[string]any{"related": []any{"https://git.example/1"}, "focus": "security"},
 			"related cannot be combined with focus or findings"},
 		{map[string]any{"related": []any{"https://git.example/1"}, "findings": []any{}, "publish": true},
@@ -327,7 +327,7 @@ func TestInfoRelated(t *testing.T) {
 	}
 
 	res := callTool(t, cs, "pr_info", map[string]any{"pr_url": reviewPRURL(g), "related": []any{"ftp://x"}})
-	if !res.IsError || textOf(t, res) != "related[0] must be an http or https pull request URL without credentials" {
+	if !res.IsError || textOf(t, res) != "related[0] must be an http or https pull request or repository URL without credentials" {
 		t.Errorf("invalid related: %q", textOf(t, res))
 	}
 }
@@ -345,6 +345,103 @@ func TestInfoRelatedNotes(t *testing.T) {
 		out := callValid(t, cs, outputSchemas(t, cs), "pr_info", map[string]any{"pr_url": reviewPRURL(g), "related": []any{glURL}})
 		if notes := list(t, out, "notes"); !slices.Contains(notes, any("Related pull request "+glURL+want)) {
 			t.Errorf("%s: notes %v", state, notes)
+		}
+	}
+}
+
+// TestRelatedRepositoryServeMode: in serve mode (where context.repo.enabled
+// can never be set) a related repository is failed with repo_context_off:
+// no git request reaches its host, the review runs, and the pull request
+// item next to it is read as before.
+func TestRelatedRepositoryServeMode(t *testing.T) {
+	g, gl, l := newFakeGiteaHost(t), newFakeGitLabHost(t), newFakeLLMHost(t, 200, goodAnswer)
+	env := relatedEnv(g, gl, l)
+	for k := range env {
+		if strings.HasSuffix(k, "_TOKEN") || k == "REVIEW_MCP_LLM_API_KEY" {
+			delete(env, k)
+		}
+	}
+	cfg, _, err := config.LoadWith(config.MemSource{Env: env}, config.LoadOptions{Mode: config.ModeServe})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Secrets.GiteaToken, cfg.Secrets.GitLabToken = config.NewSecret(fakeGitea), config.NewSecret(fakeGitLab)
+	cfg.Secrets.LLMAPIKey = config.NewSecret(fakeLLMKey)
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	resolver := tools.RequireCredentials(wiring.NewResolver(cfg, logger), cfg, true)
+	repoURL, mrURL := gl.srv.URL+"/grp/web-ui/-/tree/feature/x", gl.srv.URL+"/grp/svc/-/merge_requests/3"
+	call, err := tools.PreparePRReview(tools.ReviewDeps{Config: cfg, Resolver: resolver, NewLLM: wiring.NewLLM, Logger: logger},
+		tools.PRReviewArgs{PRURL: reviewPRURL(g), Related: []string{repoURL, mrURL}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, _, err := call.Run(context.Background(), nil)
+	if err != nil || res == nil || res.Review == nil {
+		t.Fatalf("the review did not run: %v", err)
+	}
+	rel := res.Coverage.Related
+	if len(rel) != 2 || rel[0].Status != "failed" || rel[0].Reason != "repo_context_off" || rel[0].Kind != "repository" ||
+		rel[0].Branch == nil || *rel[0].Branch != "feature/x" || rel[0].Commit != "" || rel[1].Status != "full" || rel[1].Kind != "" {
+		t.Errorf("coverage.related %+v", rel)
+	}
+	for _, r := range gl.requests() {
+		if strings.Contains(r, "web-ui") {
+			t.Errorf("a request reached the related repository: %s", r)
+		}
+	}
+	if !strings.Contains(logs.String(), "index=0 item=repository kind=gitlab status=failed reason=repo_context_off") ||
+		strings.Contains(logs.String(), "web-ui") || strings.Contains(logs.String(), "feature/x") {
+		t.Errorf("the logs:\n%s", logs.String())
+	}
+
+	// Without the caller's GitLab token the repository item is
+	// credentials_missing, as a pull request item on that provider is.
+	cfg.Secrets.GitLabToken = config.Secret{}
+	resolver = tools.RequireCredentials(wiring.NewResolver(cfg, logger), cfg, true)
+	call, err = tools.PreparePRReview(tools.ReviewDeps{Config: cfg, Resolver: resolver, NewLLM: wiring.NewLLM, Logger: logger},
+		tools.PRReviewArgs{PRURL: reviewPRURL(g), Related: []string{repoURL}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, _, err = call.Run(context.Background(), nil)
+	if err != nil || res == nil {
+		t.Fatalf("the review did not run: %v", err)
+	}
+	if e := res.Coverage.Related[0]; e.Status != "failed" || e.Reason != "credentials_missing" {
+		t.Errorf("without the token: %+v", e)
+	}
+}
+
+// TestRelatedRepositoryResultsValidate: pr_review and pr_ask with a
+// repository item (stdio, repository context off: repo_context_off) return
+// results that validate against their declared output schemas, the
+// repository entry with kind, branch and zero counts, the pull request
+// entry without them.
+func TestRelatedRepositoryResultsValidate(t *testing.T) {
+	g, gl, l := newFakeGiteaHost(t), newFakeGitLabHost(t), newFakeLLMHost(t, 200, goodAnswer)
+	cs := connect(t, realDeps(relatedEnv(g, gl, l), nil))
+	schemas := outputSchemas(t, cs)
+	related := []any{gl.srv.URL + "/grp/web-ui", gl.srv.URL + "/grp/svc/-/merge_requests/3"}
+	for _, c := range []struct {
+		tool string
+		args map[string]any
+	}{
+		{"pr_review", map[string]any{"pr_url": reviewPRURL(g), "related": related}},
+		{"pr_ask", map[string]any{"pr_url": reviewPRURL(g), "question": "Does it match?", "related": related}},
+	} {
+		out := callValid(t, cs, schemas, c.tool, c.args)
+		rel := list(t, out["coverage"].(map[string]any), "related")
+		repo, _ := rel[0].(map[string]any)
+		pr, _ := rel[1].(map[string]any)
+		if repo["kind"] != "repository" || repo["branch"] != "" || repo["status"] != "failed" || repo["reason"] != "repo_context_off" ||
+			repo["identifiers"] != float64(0) || repo["matches"] != float64(0) || repo["matches_shown"] != float64(0) {
+			t.Errorf("%s: repository entry %v", c.tool, repo)
+		}
+		for _, k := range []string{"kind", "branch", "commit", "identifiers", "matches", "matches_shown", "source"} {
+			if _, ok := pr[k]; ok {
+				t.Errorf("%s: the pull request entry carries %q: %v", c.tool, k, pr)
+			}
 		}
 	}
 }

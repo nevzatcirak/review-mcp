@@ -634,6 +634,11 @@ type TextQuery struct {
 	Text string
 	// Dir limits the search to a directory ("" is the whole tree).
 	Dir string
+	// Paths, when set, confines the search to these directory prefixes
+	// (slash-separated, relative to the root), as TermQuery.Paths does: a
+	// related repository from the repository config (v2.5 spec V-13b §2.2
+	// item 2). A prefix that cannot name a path is refused (unsupported).
+	Paths []string
 	// Filter, when set, leaves out the files it does not include, like the
 	// symbol search.
 	Filter *filter.Filter
@@ -685,6 +690,10 @@ func (r *Runner) SearchText(ctx context.Context, c Checkout, q TextQuery) (TextR
 	if !shaRE.MatchString(sha) || !usableText(q.Text) || !usablePath(q.Dir) {
 		return res, fail(ReasonUnsupported)
 	}
+	prefixes, ok := cleanPrefixes(q.Paths)
+	if !ok {
+		return res, fail(ReasonUnsupported)
+	}
 	g, err := r.openCheckout(c)
 	if err != nil {
 		return res, err
@@ -705,6 +714,9 @@ func (r *Runner) SearchText(ctx context.Context, c Checkout, q TextQuery) (TextR
 	if q.Dir != "" {
 		specs = append(specs, ":(top,literal)"+q.Dir)
 	}
+	for _, p := range prefixes {
+		specs = append(specs, ":(top,literal)"+p)
+	}
 	specs = append(specs, s.pathspecs(missing)...)
 	raw, truncated, err := s.search(total, q.Text, specs, false)
 	if err != nil {
@@ -712,6 +724,15 @@ func (r *Runner) SearchText(ctx context.Context, c Checkout, q TextQuery) (TextR
 			return res, ctx.Err()
 		}
 		return res, err
+	}
+	if len(prefixes) > 0 {
+		kept := raw[:0]
+		for _, h := range raw {
+			if withinPrefixes(h.path, prefixes) {
+				kept = append(kept, h)
+			}
+		}
+		raw = kept
 	}
 	res.More = truncated || len(raw) > maxHits
 	if len(raw) > maxHits {

@@ -194,7 +194,7 @@ func TestRead(t *testing.T) {
 	var logs bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	items := Read(context.Background(), r, "https://git.example/gitea/primary-url/7", primary, urls,
-		func(p string) bool { return !strings.HasPrefix(p, "vendor/") }, false, log)
+		func(p string) bool { return !strings.HasPrefix(p, "vendor/") }, false, nil, log)
 
 	want := []struct{ status, reason string }{
 		{"", ""}, {StatusIgnored, ReasonPrimary}, {StatusIgnored, ReasonPrimary}, {StatusIgnored, ReasonDuplicate},
@@ -236,7 +236,7 @@ func TestReadOff(t *testing.T) {
 	r := &fakeResolver{providers: map[string]*fakeProvider{"gitlab.example": gitlab}}
 	items := Read(context.Background(), r, "https://git.example/p/7", provider.PRRef{}, []string{
 		"https://gitlab.example/gitlab/g/p/3", "https://git.example/p/7", "https://gitlab.example/gitlab/g/p/3",
-	}, nil, true, nil)
+	}, nil, true, nil, nil)
 	if len(r.calls) != 0 || len(gitlab.reads) != 0 {
 		t.Errorf("resolved %q, read %q", r.calls, gitlab.reads)
 	}

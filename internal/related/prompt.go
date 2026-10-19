@@ -187,8 +187,21 @@ func Block(secs []Section) string {
 	return prompt.FencedBlock(Header, strings.Join(parts, "\n\n"))
 }
 
-// Mark sets the status of every read item of items that has none yet.
+// Mark sets the status of every read pull request item and every fetched
+// repository item of items that has none yet (the run's not_placed
+// reasons: review_in_parts, nothing_to_review).
 func Mark(items []*Item, status, reason string) {
+	markRead(items, status, reason)
+	for _, it := range items {
+		if it.Fetched && it.Status == "" {
+			it.Status, it.Reason = status, reason
+		}
+	}
+}
+
+// markRead sets the status of every read pull request item of items that
+// has none yet.
+func markRead(items []*Item, status, reason string) {
 	for _, it := range ReadItems(items) {
 		if it.Status == "" {
 			it.Status, it.Reason = status, reason
@@ -203,7 +216,9 @@ func Mark(items []*Item, status, reason string) {
 // error that is not tokens.ErrDoesNotFit fails the run. On acceptance the
 // items are full or partial and the placed sections are returned; otherwise
 // every read item is not_placed with did_not_fit. With possible false (the
-// primary diff is already trimmed) nothing is tried.
+// primary diff is already trimmed) nothing is tried. Repository items are
+// not placed here in WP-13a (they have no section yet) and keep their
+// status.
 func Place(items []*Item, maxTokens int, mode diffpipe.Mode, cfg *config.Config, flt *filter.Filter, possible bool,
 	try func(block string) (bool, error)) ([]Section, error) {
 	read := ReadItems(items)
@@ -231,7 +246,7 @@ func Place(items []*Item, maxTokens int, mode diffpipe.Mode, cfg *config.Config,
 		}
 		share /= 2
 	}
-	Mark(items, StatusNotPlaced, ReasonDidNotFit)
+	markRead(items, StatusNotPlaced, ReasonDidNotFit)
 	return nil, nil
 }
 
@@ -252,9 +267,39 @@ func Coverage(items []*Item, placed []Section) []llmrun.RelatedItem {
 		if s, ok := shown[it]; ok {
 			e.FilesIncluded, e.FilesListed = s.Included, s.Listed
 		}
+		if it.IsRepository() {
+			repositoryCoverage(&e, it)
+		}
 		out = append(out, e)
 	}
 	return out
+}
+
+// repositoryCoverage adds a repository item's fields to its entry (V-13b
+// §1.3 item 1): kind, branch ("" for the default branch), the pinned commit
+// when it was fetched, the counts and the source. A pull request item never
+// gets them, so a result with only pull request items serialises as 2.4.
+//
+// DESIGN-QUESTION (WP-13a DQ-5): WP-13a fetches a repository item but
+// derives no identifiers yet (WP-13b), so its final status (full, partial,
+// no_use_found, or not_placed with no_contract_change) cannot be known. A
+// fetched item without a status from the run (review_in_parts,
+// nothing_to_review) is reported as not_placed without a reason, with
+// identifiers 0: it was fetched and nothing of it is in the prompt.
+// Claiming no_contract_change would state something about the primary diff
+// that was never checked. Recommendation: keep for WP-13a only; WP-13b sets
+// the spec's statuses and this case disappears.
+func repositoryCoverage(e *llmrun.RelatedItem, it *Item) {
+	branch := it.Repo.Branch
+	identifiers, matches, shown := it.Identifiers, it.Matches, it.MatchesShown
+	e.Kind, e.Branch, e.Source = KindRepository, &branch, it.Source
+	e.Identifiers, e.Matches, e.MatchesShown = &identifiers, &matches, &shown
+	if it.Fetched {
+		e.Commit = it.Checkout.HeadSHA
+		if e.Status == "" {
+			e.Status = StatusNotPlaced
+		}
+	}
 }
 
 // Notes are the related notes of a run (spec §1.5): per item, failed,
@@ -266,6 +311,10 @@ func Notes(items []*Item, placed []Section) []string {
 	var notPlaced, inParts, off bool
 	for _, it := range items {
 		switch {
+		case it.Status == StatusFailed && it.IsRepository():
+			out = append(out, NoteRepositoryFailed(it.URL, it.Reason))
+		case it.Status == StatusIgnored && it.IsRepository():
+			out = append(out, NoteRepositoryIgnored(it.URL))
 		case it.Status == StatusFailed:
 			out = append(out, NoteFailed(it.URL, it.Reason))
 		case it.Status == StatusIgnored:

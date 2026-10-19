@@ -478,11 +478,12 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// the repository config and before the issue, with the run's filter. A
 	// failure is the item's status, never the run's error. They are read
 	// before the incremental lookup, which compares them with the last
-	// review's record (spec §2.3).
+	// review's record (spec §2.3). Related repositories (v2.5 spec V-13b)
+	// are fetched after them, only with context.repo.enabled.
 	if len(args.Related) > 0 {
 		primaryURL, _ := related.Normalize(args.PRURL)
 		pl.related = related.Read(ctx, deps.Resolver, primaryURL, ref, args.Related, flt.Include,
-			cfg.Related.MaxTokens == 0, log)
+			cfg.Related.MaxTokens == 0, related.RepositoriesFor(cfg, deps.RepoContext), log)
 	}
 
 	// An incremental review (X-36) continues from the commit the last

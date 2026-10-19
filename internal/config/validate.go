@@ -99,7 +99,14 @@ func (l *loader) validate() {
 // MaxRelatedTokens is the largest related.max_tokens (X-41).
 const MaxRelatedTokens = 40000
 
-// validateRelated checks related.max_tokens (0 to MaxRelatedTokens) and
+// Bounds of related.max_identifiers (v2.5 spec V-13b §0 item 4).
+const (
+	DefaultRelatedIdentifiers = 20
+	MaxRelatedIdentifiers     = 50
+)
+
+// validateRelated checks related.max_tokens (0 to MaxRelatedTokens),
+// related.max_identifiers (1 to MaxRelatedIdentifiers) and
 // related.contract_globs (as ignore.glob; the index is reported, not the
 // pattern).
 func (l *loader) validateRelated() {
@@ -107,6 +114,9 @@ func (l *loader) validateRelated() {
 	if !l.bad["related.max_tokens"] && (r.MaxTokens < 0 || r.MaxTokens > MaxRelatedTokens) {
 		l.problem("related.max_tokens: %d is out of range (0-%d; 0 turns related pull requests off)", r.MaxTokens,
 			MaxRelatedTokens)
+	}
+	if !l.bad["related.max_identifiers"] && (r.MaxIdentifiers < 1 || r.MaxIdentifiers > MaxRelatedIdentifiers) {
+		l.problem("related.max_identifiers: %d is out of range (1-%d)", r.MaxIdentifiers, MaxRelatedIdentifiers)
 	}
 	for i, g := range r.ContractGlobs {
 		if reason := GlobProblem(g); reason != "" {

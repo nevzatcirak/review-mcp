@@ -470,7 +470,9 @@ func TestRelatedTagIsRead(t *testing.T) {
 
 // TestRelatedReasonEnum pins the reasons coverage.related declares,
 // including the four not_placed reasons: the spec's did_not_fit and
-// review_in_parts, and off and nothing_to_review (WP-11a DQ-1 and DQ-5).
+// review_in_parts, and off and nothing_to_review (WP-11a DQ-1 and DQ-5);
+// and those of repository items (v2.5 spec V-13b §1.3 item 2): the new
+// failed, ignored and not_placed reasons and the git fetch's fixed reasons.
 func TestRelatedReasonEnum(t *testing.T) {
 	cov := ResultSchema()["properties"].(map[string]any)["coverage"].(map[string]any)
 	item := cov["properties"].(map[string]any)["related"].(map[string]any)["items"].(map[string]any)
@@ -479,12 +481,14 @@ func TestRelatedReasonEnum(t *testing.T) {
 		got = append(got, v.(string))
 	}
 	for _, want := range []string{"did_not_fit", "review_in_parts", "off", "nothing_to_review", "url_not_configured",
-		"url_malformed", "credentials_missing", "not_found", "forbidden", "unauthorized", "unreadable", "duplicate", "primary"} {
+		"url_malformed", "credentials_missing", "not_found", "forbidden", "unauthorized", "unreadable", "duplicate", "primary",
+		"repo_context_off", "branch_not_found", "primary_repository", "no_contract_change",
+		"timeout", "too_large", "redirect", "git_failed", "git_unavailable", "busy", "cache_unusable", "unsupported"} {
 		if !slices.Contains(got, want) {
 			t.Errorf("the reason enum lacks %q: %q", want, got)
 		}
 	}
-	if len(got) != 13 {
+	if len(got) != 25 {
 		t.Errorf("the reason enum has %d values: %q", len(got), got)
 	}
 }

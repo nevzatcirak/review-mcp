@@ -11,21 +11,45 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 )
 
-// RelatedItem is one related pull request in the coverage (X-41, v2.3
-// spec V-13a §1.5).
+// RelatedItem is one related item in the coverage: a related pull request
+// (X-41, v2.3 spec V-13a §1.5) or a related repository (v2.5 spec V-13b
+// §1.3).
+//
+// The repository fields (Kind to Source) are nil or empty, and therefore
+// absent from the JSON, on a pull request item, so that a result with only
+// pull request items serialises byte for byte as 2.4 did. Branch and the
+// counts are pointers because a repository item reports them even when
+// they are "" (the default branch) or 0.
 type RelatedItem struct {
-	// URL is the URL as normalised (query and fragment dropped).
+	// URL is the URL as normalised (query and fragment dropped; the "at"
+	// query of a Bitbucket Server repository URL kept).
 	URL string `json:"url"`
-	// Status is full, partial, not_placed, failed or ignored.
+	// Status is full, partial, not_placed, failed or ignored; no_use_found
+	// for a repository item only.
 	Status string `json:"status"`
 	// Reason says why for failed, ignored and not_placed; "" otherwise.
 	Reason string `json:"reason,omitempty"`
 	// HeadSHA is the related pull request's head revision when it was read.
 	HeadSHA string `json:"head_sha,omitempty"`
 	// FilesIncluded counts the files shown with hunks, FilesListed those
-	// listed by path only.
+	// listed by path only (0 for a repository item).
 	FilesIncluded int `json:"files_included"`
 	FilesListed   int `json:"files_listed"`
+	// Kind is "repository" on a repository item; absent on a pull request
+	// item.
+	Kind string `json:"kind,omitempty"`
+	// Branch is the repository item's branch, "" for its default branch.
+	Branch *string `json:"branch,omitempty"`
+	// Commit is the repository item's pinned commit, when it was fetched.
+	Commit string `json:"commit,omitempty"`
+	// Identifiers is how many identifiers the repository item was searched
+	// for; Matches the hits found, MatchesShown those placed in the prompt.
+	Identifiers  *int `json:"identifiers,omitempty"`
+	Matches      *int `json:"matches,omitempty"`
+	MatchesShown *int `json:"matches_shown,omitempty"`
+	// Source is "repo_config" for an item read from the repository config
+	// (V-13b §3.2); absent otherwise.
+	Source string `json:"source,omitempty"`
 }
 
 // Coverage accounts for every changed file (X-3): the files whose diff the

@@ -250,7 +250,8 @@ type Review struct {
 }
 
 // Related configures related pull requests (X-41, v2.3 spec V-13a): pull
-// requests the caller names as read-only context of a review.
+// requests the caller names as read-only context of a review; and, from
+// v2.5 (V-13b), related repositories.
 type Related struct {
 	// MaxTokens is the token budget of all related pull requests of one
 	// prompt together, shared equally by the readable ones; 0 turns them
@@ -260,6 +261,14 @@ type Related struct {
 	// contract tier) inside a related pull request's share. The repository
 	// config can add to them.
 	ContractGlobs []string `toml:"contract_globs" json:"contract_globs"`
+	// MaxIdentifiers is the most identifiers of the primary diff a related
+	// repository is searched for (v2.5 spec V-13b §0 item 4; 1 to
+	// MaxRelatedIdentifiers). Operator only.
+	MaxIdentifiers int `toml:"max_identifiers" json:"max_identifiers"`
+	// FromRepoConfig lets the reviewed repository's config name related
+	// repositories, read when a call passes no related argument (V-13b §0
+	// item 6). Operator only; off by default.
+	FromRepoConfig bool `toml:"from_repo_config" json:"from_repo_config"`
 }
 
 // Ask configures the pr_ask tool.
@@ -410,7 +419,7 @@ func Defaults() *Config {
 			MaxToolTokens:       6000,
 		}},
 		RepoConfig: RepoConfig{Enabled: true, Path: DefaultRepoConfigPath},
-		Related:    Related{MaxTokens: 8000, ContractGlobs: []string{}},
+		Related:    Related{MaxTokens: 8000, ContractGlobs: []string{}, MaxIdentifiers: DefaultRelatedIdentifiers},
 		Log:        Log{Level: "info"},
 		Serve: Serve{
 			Listen:             DefaultServeListen,

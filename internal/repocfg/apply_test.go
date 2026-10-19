@@ -363,3 +363,19 @@ func TestApplyRelatedContractGlobsAreAdded(t *testing.T) {
 		t.Errorf("ignored %q: max_tokens is not allowed and the glob is invalid", o.Result.Ignored)
 	}
 }
+
+// TestApplyRelatedRepositoryKeysAreOperatorOnly: a repository config cannot
+// set related.max_identifiers or related.from_repo_config (v2.5 spec V-13b
+// §0 items 4 and 6, operator keys): both are ignored, and the operator's
+// values stay.
+func TestApplyRelatedRepositoryKeysAreOperatorOnly(t *testing.T) {
+	base := operatorConfig()
+	o := Apply(base, readBase(t, "[related]\nmax_identifiers = 50\nfrom_repo_config = true\n"))
+	if !slices.Equal(o.Result.Applied, []string{}) ||
+		!slices.Equal(o.Result.Ignored, []string{"related.max_identifiers", "related.from_repo_config"}) {
+		t.Errorf("applied %q, ignored %q", o.Result.Applied, o.Result.Ignored)
+	}
+	if o.Config.Related.MaxIdentifiers != base.Related.MaxIdentifiers || o.Config.Related.FromRepoConfig {
+		t.Errorf("related %+v", o.Config.Related)
+	}
+}

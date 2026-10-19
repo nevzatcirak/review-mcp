@@ -78,6 +78,8 @@ func TestDefaultsAppliedWhenNothingSet(t *testing.T) {
 		{"context.repo.max_tool_tokens", cfg.Context.Repo.MaxToolTokens, 6000},
 		{"repo_config.enabled", cfg.RepoConfig.Enabled, true},
 		{"related.max_tokens", cfg.Related.MaxTokens, 8000},
+		{"related.max_identifiers", cfg.Related.MaxIdentifiers, 20},
+		{"related.from_repo_config", cfg.Related.FromRepoConfig, false},
 		{"related.contract_globs", cfg.Related.ContractGlobs, []string{}},
 		{"repo_config.path", cfg.RepoConfig.Path, ".review-mcp.toml"},
 		{"log.level", cfg.Log.Level, "info"},

@@ -483,3 +483,38 @@ func TestServerInfoRepoTools(t *testing.T) {
 		t.Error("the LLM key reached the result")
 	}
 }
+
+// TestServerInfoRelatedRepositoryKeys: server_info reports
+// related.max_identifiers (default 20) and related.from_repo_config
+// (default false), and an operator's values with their source (v2.5 spec
+// V-13b §1.3 item 4).
+func TestServerInfoRelatedRepositoryKeys(t *testing.T) {
+	cfg, rep, err := load(validEnv())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := ServerInfo(cfg, rep, nil)
+	if v := r.Config.Values["related.max_identifiers"]; v.Value != 20 || v.Source != config.OriginDefault {
+		t.Errorf("related.max_identifiers = %+v", v)
+	}
+	if v := r.Config.Values["related.from_repo_config"]; v.Value != false || v.Source != config.OriginDefault {
+		t.Errorf("related.from_repo_config = %+v", v)
+	}
+	env := validEnv()
+	env["REVIEW_MCP_RELATED_MAX_IDENTIFIERS"] = "50"
+	env["REVIEW_MCP_RELATED_FROM_REPO_CONFIG"] = "true"
+	if cfg, rep, err = load(env); err != nil {
+		t.Fatal(err)
+	}
+	r = ServerInfo(cfg, rep, nil)
+	if v := r.Config.Values["related.max_identifiers"]; v.Value != 50 || v.Source != config.OriginEnv {
+		t.Errorf("related.max_identifiers = %+v", v)
+	}
+	if v := r.Config.Values["related.from_repo_config"]; v.Value != true || v.Source != config.OriginEnv {
+		t.Errorf("related.from_repo_config = %+v", v)
+	}
+	md := RenderServerInfoMarkdown(r)
+	if !strings.Contains(md, "`related.max_identifiers` = `50` (env)") || !strings.Contains(md, "`related.from_repo_config` = `true` (env)") {
+		t.Errorf("markdown lacks the keys:\n%s", md)
+	}
+}

@@ -301,11 +301,13 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 	// The related pull requests (X-41, spec V-13a §3.1), read as pr_review
 	// reads them: through the run's resolver, with the run's filter; a
-	// failure is the item's status, never the run's error.
+	// failure is the item's status, never the run's error. Related
+	// repositories (v2.5 spec V-13b) are fetched as pr_review fetches them.
 	var rel []*related.Item
 	if len(args.Related) > 0 {
 		primaryURL, _ := related.Normalize(args.PRURL)
-		rel = related.Read(ctx, deps.Resolver, primaryURL, ref, args.Related, flt.Include, cfg.Related.MaxTokens == 0, log)
+		rel = related.Read(ctx, deps.Resolver, primaryURL, ref, args.Related, flt.Include, cfg.Related.MaxTokens == 0,
+			related.RepositoriesFor(cfg, deps.RepoContext), log)
 	}
 	// Repository context (X-22): the head is fetched now, under its own
 	// progress stage, when the diff defines a symbol to look for. pr_ask

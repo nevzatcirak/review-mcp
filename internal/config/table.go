@@ -138,6 +138,9 @@ var table = []entry{
 	// related.* rows: v2.3 spec V-13a §0 (X-41).
 	{"related.max_tokens", "REVIEW_MCP_RELATED_MAX_TOKENS", func(c *Config) any { return &c.Related.MaxTokens }},
 	{"related.contract_globs", "REVIEW_MCP_RELATED_CONTRACT_GLOBS", func(c *Config) any { return &c.Related.ContractGlobs }},
+	// v2.5 spec V-13b §0 items 4 and 6.
+	{"related.max_identifiers", "REVIEW_MCP_RELATED_MAX_IDENTIFIERS", func(c *Config) any { return &c.Related.MaxIdentifiers }},
+	{"related.from_repo_config", "REVIEW_MCP_RELATED_FROM_REPO_CONFIG", func(c *Config) any { return &c.Related.FromRepoConfig }},
 
 	{"log.level", "REVIEW_MCP_LOG_LEVEL", func(c *Config) any { return &c.Log.Level }},
 

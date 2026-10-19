@@ -5,13 +5,19 @@
 // needs: the pull request's title, state, draft flag, target branch, head
 // revision and diff (no description, no comments).
 //
+// From v2.5 (spec V-13b) a related item may also be a repository, or a
+// branch of it: it is fetched read-only at one commit, pinned when the run
+// reads it, through the repository-context machinery (gitctx.EnsureBranch),
+// and only with context.repo.enabled. Nothing in it is built or run (R-1).
+//
 // Every related URL goes through the run's resolver, the same one as the
 // primary's: an URL that matches no configured provider is never sent
 // anywhere, and in serve mode a provider without the caller's token is
 // refused before any request. A related pull request that cannot be read
 // never fails the run, and never means that it does not exist. Logs carry
 // an item's index, provider kind, status and reason only: never its URL
-// path, title or diff.
+// path, title or diff; for a repository item also its item kind and counts,
+// never its branch, commit, identifiers, paths or hits.
 package related
 
 import (
@@ -22,6 +28,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/gitctx"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 )
 
@@ -45,7 +53,19 @@ const (
 	StatusFailed = "failed"
 	// StatusIgnored: the primary pull request itself, or a duplicate.
 	StatusIgnored = "ignored"
+	// StatusNoUseFound: a repository item was searched and no use of the
+	// changed identifiers was found (v2.5 spec V-13b §1.3 item 2). It is
+	// declared for the schema; the search that sets it is WP-13b's.
+	StatusNoUseFound = "no_use_found"
 )
+
+// KindRepository is coverage.related[].kind of a repository item; a pull
+// request item has no kind (V-13b §1.3 item 1).
+const KindRepository = string(provider.ItemRepository)
+
+// SourceRepoConfig is coverage.related[].source of an item read from the
+// repository config (V-13b §3.2); declared for the schema.
+const SourceRepoConfig = "repo_config"
 
 // Reason values (coverage.related[].reason).
 const (
@@ -69,7 +89,28 @@ const (
 	// this reason. Recommendation: keep; an item that is in the argument
 	// but was not read or shown is not_placed, and the reason says why.
 	ReasonOff = "off"
+
+	// Reasons of repository items (v2.5 spec V-13b §1.3 item 2).
+
+	// ReasonRepoContextOff: context.repo.enabled is not set (always so in
+	// serve mode), so the repository was not fetched; no git command ran.
+	ReasonRepoContextOff = "repo_context_off"
+	// ReasonBranchNotFound: the repository has no such branch.
+	ReasonBranchNotFound = gitctx.ReasonBranchNotFound
+	// ReasonPrimaryRepository: the item names the reviewed pull request's own
+	// repository, whose contents are already repository context.
+	ReasonPrimaryRepository = "primary_repository"
+	// ReasonNoContractChange: the primary diff gave no identifier, so the
+	// repository was not searched. Declared for the schema; WP-13b derives
+	// the identifiers.
+	ReasonNoContractChange = "no_contract_change"
 )
+
+// GitReasons are the failed reasons a repository item takes from gitctx
+// (besides branch_not_found and not_found, and auth, which is reported as
+// unauthorized): the fetch's fixed reasons, passed on as they are.
+var GitReasons = []string{gitctx.ReasonTimeout, gitctx.ReasonTooLarge, gitctx.ReasonRedirect, gitctx.ReasonGitFailed,
+	gitctx.ReasonGitUnavailable, gitctx.ReasonBusy, gitctx.ReasonCache, gitctx.ReasonUnsupported}
 
 // Fixed argument errors (spec §1.1 item 2). They never repeat a value.
 const (
@@ -176,13 +217,63 @@ type Resolver interface {
 	Resolve(rawURL string) (provider.PRRef, provider.Provider, error)
 }
 
-// Item is one related pull request of a run, in argument order.
+// ItemResolver is a Resolver that also resolves repository URLs
+// (provider.Resolver.ResolveItem, kept by the tools' wrappers). Read uses it
+// for repository items; a resolver without it resolves pull request URLs
+// only.
+type ItemResolver interface {
+	ResolveItem(rawURL string) (provider.ItemKind, provider.PRRef, provider.RepoRef, provider.Provider, error)
+}
+
+// BranchFetcher fetches a branch of a repository at the commit the fetch
+// brings (gitctx.Runner.EnsureBranch).
+type BranchFetcher interface {
+	EnsureBranch(ctx context.Context, repo gitctx.Repo, branch string) (gitctx.Checkout, error)
+}
+
+// Repositories is what Read needs for repository items (v2.5 spec V-13b).
+// A nil *Repositories resolves every URL as a pull request URL, as in
+// V-13a (pr_info).
+type Repositories struct {
+	// Enabled is context.repo.enabled (never set in serve mode). Without it
+	// every repository item is failed with repo_context_off and no git
+	// command runs.
+	Enabled bool
+	// Config is the run's configuration, for the provider base URL, token
+	// and TLS settings of each repository (gitctx.RepoFor).
+	Config *config.Config
+	// Fetcher fetches the branches. Nil with Enabled set fails the items
+	// with unsupported (a test backend without branches).
+	Fetcher BranchFetcher
+}
+
+// RepositoriesFor returns the Repositories of a run with configuration cfg
+// and repository-context backend (pipeline Deps.RepoContext): nil selects
+// the real git runner, as repoctx.Open does; a backend that cannot fetch a
+// branch leaves Fetcher nil. Nothing is fetched here.
+func RepositoriesFor(cfg *config.Config, backend any) *Repositories {
+	r := &Repositories{Enabled: cfg.Context.Repo.Enabled, Config: cfg}
+	if !r.Enabled {
+		return r
+	}
+	switch b := backend.(type) {
+	case nil:
+		r.Fetcher = gitctx.New(gitctx.OptionsFromConfig(cfg.Context.Repo))
+	case BranchFetcher:
+		r.Fetcher = b
+	}
+	return r
+}
+
+// Item is one related item of a run, in argument order: a pull request or,
+// with Kind ItemRepository, a repository.
 type Item struct {
 	// URL is the normalised URL the caller gave.
 	URL string
 	// Status and Reason are the item's outcome so far: StatusFailed and
 	// StatusIgnored are final; a read item has Read set and gets its status
-	// when the prompt is built (full, partial or not_placed).
+	// when the prompt is built (full, partial or not_placed); a fetched
+	// repository item has Fetched set.
 	Status, Reason string
 	// Read is set when the pull request and its diff were read.
 	Read     bool
@@ -190,19 +281,45 @@ type Item struct {
 	Provider provider.Provider
 	PR       *provider.PullRequest
 	Diff     *provider.Diff
+
+	// Kind is provider.ItemRepository for a repository item, "" for a pull
+	// request item or an item that was not resolved (off).
+	Kind provider.ItemKind
+	// Repo is the repository item's reference.
+	Repo provider.RepoRef
+	// Fetched is set when the repository was fetched; Checkout holds it at
+	// its pinned commit (Checkout.HeadSHA) for the whole run.
+	Fetched  bool
+	Checkout gitctx.Checkout
+	// Identifiers, Matches and MatchesShown are the repository item's
+	// search counts (V-13b §1.3 item 1).
+	Identifiers, Matches, MatchesShown int
+	// Source is SourceRepoConfig for an item from the repository config.
+	Source string
 }
 
-// Read resolves and reads the related pull requests urls (normalised, in
-// argument order) of the primary pull request primary (its normalised URL
-// and its resolved reference). A URL equal to the primary's, or resolving
-// to the same pull request, is ignored with ReasonPrimary; a repeat of an
-// earlier item (by URL or by the pull request it resolves to) with
+// IsRepository reports whether it is a repository item.
+func (it *Item) IsRepository() bool { return it.Kind == provider.ItemRepository }
+
+// Read resolves and reads the related items urls (normalised, in argument
+// order) of the primary pull request primary (its normalised URL and its
+// resolved reference). A URL equal to the primary's, or resolving to the
+// same pull request, is ignored with ReasonPrimary; a repeat of an earlier
+// item (by URL or by the pull request it resolves to) with
 // ReasonDuplicate. Each other item is resolved through r, then read with
 // GetPullRequest and GetDiff (include filters the files, as for the
 // primary; nil keeps them all), sequentially, under ctx. A failure is the
 // item's status and reason, never the run's error. With off set nothing is
 // resolved or read: every item that is not ignored is not_placed with
 // ReasonOff.
+//
+// With repos set and r an ItemResolver, an item may also be a repository
+// (v2.5 spec V-13b): one naming the primary's own repository is ignored with
+// ReasonPrimaryRepository, a repeat of the same repository and branch with
+// ReasonDuplicate. The others are fetched after the pull request items,
+// sequentially in argument order, each at the commit its branch points to
+// now (fetchRepositories); without repos.Enabled none is, and each is
+// failed with ReasonRepoContextOff.
 //
 // DESIGN-QUESTION (WP-11a DQ-2): the spec ignores the primary URL and
 // duplicates "after normalisation". Two different URLs can name the same
@@ -211,13 +328,15 @@ type Item struct {
 // item's, before anything is read. Recommendation: keep; the same pull
 // request is never read twice nor shown as its own context.
 func Read(ctx context.Context, r Resolver, primaryURL string, primary provider.PRRef, urls []string,
-	include func(string) bool, off bool, log *slog.Logger) []*Item {
-	return read(ctx, r, primaryURL, primary, urls, include, off, true, log)
+	include func(string) bool, off bool, repos *Repositories, log *slog.Logger) []*Item {
+	return read(ctx, r, primaryURL, primary, urls, include, off, true, repos, log)
 }
 
 // ReadPullRequests is Read without the diffs (pr_info, spec V-13a §3.2):
 // each related pull request is resolved and read with GetPullRequest only;
 // related.max_tokens does not apply, since nothing goes into a prompt.
+// Repository URLs are resolved as pull request URLs only (url_malformed),
+// as in V-13a, until pr_info lists repository items (V-13b §4).
 //
 // DESIGN-QUESTION (WP-11c DQ-2): related.max_tokens 0 turns related pull
 // requests off for the prompts of pr_review and pr_ask. pr_info has no
@@ -225,37 +344,64 @@ func Read(ctx context.Context, r Resolver, primaryURL string, primary provider.P
 // Recommendation: keep.
 func ReadPullRequests(ctx context.Context, r Resolver, primaryURL string, primary provider.PRRef, urls []string,
 	log *slog.Logger) []*Item {
-	return read(ctx, r, primaryURL, primary, urls, nil, false, false, log)
+	return read(ctx, r, primaryURL, primary, urls, nil, false, false, nil, log)
 }
 
 func read(ctx context.Context, r Resolver, primaryURL string, primary provider.PRRef, urls []string,
-	include func(string) bool, off, withDiff bool, log *slog.Logger) []*Item {
+	include func(string) bool, off, withDiff bool, repos *Repositories, log *slog.Logger) []*Item {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
+	resolve := func(u string) (provider.ItemKind, provider.PRRef, provider.RepoRef, provider.Provider, error) {
+		ref, p, err := r.Resolve(u)
+		return provider.ItemPullRequest, ref, provider.RepoRef{}, p, err
+	}
+	if ir, ok := r.(ItemResolver); ok && repos != nil {
+		resolve = ir.ResolveItem
+	}
 	items := make([]*Item, 0, len(urls))
-	seenURL := map[string]bool{}
+	firstByURL := map[string]*Item{}
 	var seenRefs []provider.PRRef
+	var seenRepos []provider.RepoRef
+	var pending []int // the repository items to fetch, by index
 	for i, u := range urls {
 		it := &Item{URL: u}
 		items = append(items, it)
-		switch {
+		switch first := firstByURL[u]; {
 		case u == primaryURL:
 			it.Status, it.Reason = StatusIgnored, ReasonPrimary
-		case seenURL[u]:
+		case first != nil:
 			it.Status, it.Reason = StatusIgnored, ReasonDuplicate
+			it.Kind, it.Repo = first.Kind, first.Repo
 		case off:
 			it.Status, it.Reason = StatusNotPlaced, ReasonOff
 		}
-		seenURL[u] = true
+		if firstByURL[u] == nil {
+			firstByURL[u] = it
+		}
 		if it.Status != "" {
 			log.Debug("related pull request", "index", i, "status", it.Status, "reason", it.Reason)
 			continue
 		}
-		ref, p, err := r.Resolve(u)
+		kind, ref, repo, p, err := resolve(u)
 		if err != nil {
 			it.Status, it.Reason = StatusFailed, reasonOf(err)
 			log.Debug("related pull request", "index", i, "status", it.Status, "reason", it.Reason)
+			continue
+		}
+		if kind == provider.ItemRepository {
+			it.Kind, it.Repo, it.Provider = kind, repo, p
+			switch {
+			case sameRepo(repo, primary):
+				it.Status, it.Reason = StatusIgnored, ReasonPrimaryRepository
+			case containsRepo(seenRepos, repo):
+				it.Status, it.Reason = StatusIgnored, ReasonDuplicate
+			default:
+				seenRepos = append(seenRepos, repo)
+				pending = append(pending, i)
+				continue
+			}
+			logRepository(log, i, it)
 			continue
 		}
 		switch {
@@ -284,7 +430,91 @@ func read(ctx context.Context, r Resolver, primaryURL string, primary provider.P
 		log.Debug("related pull request", "index", i, "kind", string(ref.Kind), "status", "read",
 			"files", len(d.Files), "skipped", len(d.Skipped))
 	}
+	for _, i := range pending {
+		fetchRepository(ctx, items[i], repos, log, i)
+	}
 	return items
+}
+
+// fetchRepository fetches the repository item it (index i) at the commit
+// its branch, or its default branch, points to now (V-13b §1.2): only with
+// repos.Enabled (otherwise repo_context_off, and no git command runs), with
+// the configured provider's base URL and token, under ctx. A failure is the
+// item's status and gitctx's fixed reason (auth reported as unauthorized).
+//
+// For WP-13a the fetched item gets no status here: the identifiers of the
+// primary diff are not derived yet (WP-13b, spec §2.1), so nothing is
+// searched and Identifiers, Matches and MatchesShown stay 0. Mark may still
+// set the run's not_placed reasons (review_in_parts, nothing_to_review), and
+// Coverage reports an item without one as not_placed without a reason.
+func fetchRepository(ctx context.Context, it *Item, repos *Repositories, log *slog.Logger, i int) {
+	switch {
+	case !repos.Enabled:
+		it.Status, it.Reason = StatusFailed, ReasonRepoContextOff
+	case repos.Fetcher == nil:
+		it.Status, it.Reason = StatusFailed, gitctx.ReasonUnsupported
+	}
+	if it.Status != "" {
+		logRepository(log, i, it)
+		return
+	}
+	repo, ok := gitctx.RepoFor(repos.Config,
+		provider.PRRef{Kind: it.Repo.Kind, Namespace: it.Repo.Namespace, Repo: it.Repo.Repo}, it.Provider)
+	if !ok {
+		it.Status, it.Reason = StatusFailed, gitctx.ReasonUnsupported
+		logRepository(log, i, it)
+		return
+	}
+	co, err := repos.Fetcher.EnsureBranch(ctx, repo, it.Repo.Branch)
+	if err != nil {
+		it.Status, it.Reason = StatusFailed, gitReason(err)
+		logRepository(log, i, it)
+		return
+	}
+	it.Fetched, it.Checkout = true, co
+	logRepository(log, i, it)
+}
+
+// logRepository logs a repository item's outcome: its index, item kind,
+// provider kind, status (fetched when it has none yet), reason and counts;
+// never its URL, branch, commit or anything found in it.
+func logRepository(log *slog.Logger, i int, it *Item) {
+	status := it.Status
+	if status == "" && it.Fetched {
+		status = "fetched"
+	}
+	log.Debug("related repository", "index", i, "item", KindRepository, "kind", string(it.Repo.Kind),
+		"status", status, "reason", it.Reason, "identifiers", it.Identifiers, "matches", it.Matches,
+		"matches_shown", it.MatchesShown)
+}
+
+// gitReason is the failed reason of a repository fetch: gitctx's fixed
+// reason, with auth (git cannot tell 401 from 403 apart once both schemes
+// were refused) reported as unauthorized.
+func gitReason(err error) string {
+	if r := gitctx.ReasonOf(err); r != gitctx.ReasonAuth {
+		return r
+	}
+	return ReasonUnauthorized
+}
+
+// sameRepo reports whether repo names the primary pull request's own
+// repository (any branch).
+func sameRepo(repo provider.RepoRef, primary provider.PRRef) bool {
+	return repo.Kind == primary.Kind && strings.EqualFold(repo.Namespace, primary.Namespace) &&
+		strings.EqualFold(repo.Repo, primary.Repo) && repo.Kind != ""
+}
+
+// containsRepo reports whether repos holds the same repository and branch
+// as repo (branch names are case-sensitive; "" is the default branch).
+func containsRepo(repos []provider.RepoRef, repo provider.RepoRef) bool {
+	for _, r := range repos {
+		if r.Kind == repo.Kind && strings.EqualFold(r.Namespace, repo.Namespace) && strings.EqualFold(r.Repo, repo.Repo) &&
+			r.Branch == repo.Branch {
+			return true
+		}
+	}
+	return false
 }
 
 // ReadItems are the items of items that were read, in order.
@@ -356,6 +586,23 @@ func NoteFailed(url, reason string) string {
 // NoteIgnored: the item is the primary pull request or a duplicate.
 func NoteIgnored(url string) string {
 	return "Related pull request " + url + " was ignored: it is the reviewed pull request itself or a duplicate."
+}
+
+// NoteRepositoryFailed: the repository item could not be fetched.
+//
+// DESIGN-QUESTION (WP-13a DQ-4): the spec gives notes for searches
+// (§2.4) but none for a repository item that is failed or ignored; the
+// pull request notes would call it a pull request. These two follow their
+// wording with "repository". Recommendation: keep, and list them in the
+// troubleshooting docs (WP-13d).
+func NoteRepositoryFailed(url, reason string) string {
+	return "Related repository " + url + " could not be read (" + reason + ") and was not used."
+}
+
+// NoteRepositoryIgnored: the repository item is the reviewed pull request's
+// own repository or a duplicate.
+func NoteRepositoryIgnored(url string) string {
+	return "Related repository " + url + " was ignored: it is the reviewed pull request's own repository or a duplicate."
 }
 
 // NotePartial: n of the item's files were listed by path only.

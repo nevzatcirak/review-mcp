@@ -271,9 +271,10 @@ func TestReadRepositoriesContextOff(t *testing.T) {
 }
 
 // TestReadRepositoriesOffAndPRInfo: with related.max_tokens 0 nothing is
-// resolved or fetched; without Repositories (pr_info) or with a resolver
-// that cannot resolve repository URLs, every URL is a pull request URL, as
-// in V-13a.
+// resolved or fetched; pr_info (ReadPullRequests) resolves a repository URL
+// without reading it (no status, nothing fetched, V-13b §4 item 2); with a
+// resolver that cannot resolve repository URLs, every URL is a pull request
+// URL, as in V-13a.
 func TestReadRepositoriesOffAndPRInfo(t *testing.T) {
 	var trace []string
 	r, _, _ := newItemResolver(&trace)
@@ -284,7 +285,8 @@ func TestReadRepositoriesOffAndPRInfo(t *testing.T) {
 		t.Errorf("off: %+v, trace %q", it, trace)
 	}
 	items = ReadPullRequests(context.Background(), r, "", provider.PRRef{}, []string{"https://gitlab.example/repo/team/web-ui"}, nil)
-	if it := items[0]; it.Status != StatusFailed || it.Reason != ReasonURLNotConfigured || it.IsRepository() || len(trace) != 0 {
+	if it := items[0]; it.Status != "" || !it.IsRepository() || it.Repo.Repo != "web-ui" || it.Fetched || len(Pending(items)) != 0 ||
+		len(f.repos) != 0 || slices.Contains(trace, "fetch") {
 		t.Errorf("pr_info: %+v, trace %q", it, trace)
 	}
 	items = Read(context.Background(), r.fakeResolver, "", provider.PRRef{}, []string{"https://gitlab.example/repo/team/web-ui"}, nil,

@@ -209,6 +209,8 @@ func TestPRInfoDeclaredRelationsValidate(t *testing.T) {
 			Source: "repo_config"},
 		{URL: "https://your-gitea.example/octo/demo", Status: "ignored", Reason: "primary_repository", Kind: "repository",
 			Branch: &def, Source: "repo_config"},
+		// A repository of the related argument has no source (V-13b §4 item 2).
+		{URL: "https://gitlab.example/grp/api", Status: tools.StatusNotRead, Kind: "repository", Branch: &def},
 	}
 	if err := validateOutput(t, schemas["pr_info"], base); err != nil {
 		t.Fatalf("declared relations: %v", err)

@@ -158,12 +158,17 @@ func checkGuidance(t *testing.T, cs *mcp.ClientSession) {
 		t.Fatal(err)
 	}
 	// Two prompts: multi_perspective_review (X-33) and review_linked_prs
-	// (X-41), each with a required first argument and an optional second.
+	// (X-41), each with a required first argument and optional others
+	// (review_linked_prs: repo_urls, V-13b §4 item 3, and publish).
 	if len(list.Prompts) != 2 || list.Prompts[0].Name != "multi_perspective_review" || list.Prompts[1].Name != "review_linked_prs" {
 		t.Fatalf("prompts = %+v", list.Prompts)
 	}
 	for _, p := range list.Prompts {
-		if len(p.Arguments) != 2 || !p.Arguments[0].Required || p.Arguments[1].Required {
+		n := 2
+		if p.Name == "review_linked_prs" {
+			n = 3
+		}
+		if len(p.Arguments) != n || !p.Arguments[0].Required || p.Arguments[1].Required {
 			t.Fatalf("prompt %s arguments = %+v", p.Name, p.Arguments)
 		}
 	}

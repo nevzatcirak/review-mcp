@@ -264,6 +264,11 @@ type Repositories struct {
 	// the reviewed repository's own config does not reach another
 	// repository.
 	Filter *filter.Filter
+	// ResolveOnly lists the repository items without reading them (pr_info,
+	// V-13b spec §4 item 2): they are resolved and checked for the primary's
+	// own repository and duplicates, then keep no status and nothing is
+	// fetched.
+	ResolveOnly bool
 }
 
 // RepositoriesFor returns the Repositories of a run with configuration cfg,
@@ -572,8 +577,8 @@ func requestsOf(urls []string) []request {
 // ReadPullRequests is Read without the diffs (pr_info, spec V-13a §3.2):
 // each related pull request is resolved and read with GetPullRequest only;
 // related.max_tokens does not apply, since nothing goes into a prompt.
-// Repository URLs are resolved as pull request URLs only (url_malformed),
-// as in V-13a, until pr_info lists repository items (V-13b §4).
+// A repository URL is resolved, not read (Repositories.ResolveOnly): it
+// keeps no status, the caller lists it as not_read (V-13b §4 item 2).
 //
 // DESIGN-QUESTION (WP-11c DQ-2): related.max_tokens 0 turns related pull
 // requests off for the prompts of pr_review and pr_ask. pr_info has no
@@ -581,7 +586,7 @@ func requestsOf(urls []string) []request {
 // Recommendation: keep.
 func ReadPullRequests(ctx context.Context, r Resolver, primaryURL string, primary provider.PRRef, urls []string,
 	log *slog.Logger) []*Item {
-	return read(ctx, r, primaryURL, primary, requestsOf(urls), nil, false, false, nil, log)
+	return read(ctx, r, primaryURL, primary, requestsOf(urls), nil, false, false, &Repositories{ResolveOnly: true}, log)
 }
 
 func read(ctx context.Context, r Resolver, primaryURL string, primary provider.PRRef, reqs []request,
@@ -697,6 +702,7 @@ func read(ctx context.Context, r Resolver, primaryURL string, primary provider.P
 // Search.
 func readable(it *Item, repos *Repositories, log *slog.Logger, i int) {
 	switch {
+	case repos.ResolveOnly:
 	case !repos.Enabled:
 		it.Status, it.Reason = StatusFailed, ReasonRepoContextOff
 	case repos.Fetcher == nil || repos.Searcher == nil:

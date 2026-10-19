@@ -110,9 +110,9 @@ type RelatedInfo struct {
 	Draft        *bool  `json:"draft,omitempty" jsonschema:"whether it is a draft, when read and reported"`
 	TargetBranch string `json:"target_branch,omitempty" jsonschema:"the branch it merges into, when read"`
 	HeadSHA      string `json:"head_sha,omitempty" jsonschema:"its head commit, when read"`
-	// Kind, Branch and Source are set only on a related repository the
-	// reviewed repository's config declares (v2.5 spec V-13b §3.2 item 4),
-	// so a 2.4 result serialises as before.
+	// Kind, Branch and Source are set only on a related repository (v2.5
+	// spec V-13b §4 item 2; Source on one the reviewed repository's config
+	// declares, §3.2 item 4), so a 2.4 result serialises as before.
 	Kind   string  `json:"kind,omitempty" jsonschema:"repository on a related repository; absent on a related pull request"`
 	Branch *string `json:"branch,omitempty" jsonschema:"a related repository's branch; empty for its default branch; absent on a related pull request"`
 	Source string  `json:"source,omitempty" jsonschema:"repo_config on a related repository the reviewed repository's config declares; absent otherwise"`
@@ -189,6 +189,15 @@ func relatedInfo(ctx context.Context, resolver PRResolver, prURL string, ref pro
 	var notes []string
 	for _, it := range related.ReadPullRequests(ctx, resolver, primaryURL, ref, urls, log) {
 		e := RelatedInfo{URL: it.URL, Status: it.Status, Reason: it.Reason}
+		if it.IsRepository() {
+			// A repository is resolved, never read or fetched (V-13b §4
+			// item 2): not_read unless it is failed or ignored.
+			branch := it.Repo.Branch
+			e.Kind, e.Branch = related.KindRepository, &branch
+			if e.Status == "" {
+				e.Status = StatusNotRead
+			}
+		}
 		if it.Read {
 			e.Status = StatusRead
 			e.Title, e.State, e.Draft = validUTF8(it.PR.Title), prInfoState(it.PR), it.PR.Draft

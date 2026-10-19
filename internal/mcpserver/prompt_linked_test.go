@@ -97,3 +97,52 @@ func TestLinkedPromptRateLimit(t *testing.T) {
 		t.Error("the queueing sentence without a rate limit")
 	}
 }
+
+// TestLinkedPromptRepositories: repo_urls are related context for every
+// pull request's call, after the other pull requests, and are never
+// reviewed themselves (V-13b spec §4 item 3); the text of a set without
+// them is unchanged; a Bitbucket Server branch query is kept, any other
+// query dropped.
+func TestLinkedPromptRepositories(t *testing.T) {
+	cs := connect(t, depsFor(validEnv(), nil))
+	a, b := "https://your-gitea.example/octo/ui/pulls/4", "https://gitlab.example/grp/api/-/merge_requests/9"
+	r1, r2 := "https://gitlab.example/grp/web-ui/-/tree/feature/x", "https://bitbucket.example/projects/K/repos/svc/browse"
+	plain, err := getLinked(t, cs, map[string]string{"pr_urls": a + " " + b})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, err := getLinked(t, cs, map[string]string{"pr_urls": a + " " + b,
+		"repo_urls": r1 + "?x=1,\n" + r2 + "?at=refs/heads/rel&y=2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2n := r2 + "?at=refs/heads/rel"
+	for _, want := range []struct {
+		url string
+		rel []string
+	}{{a, []string{b, r1, r2n}}, {b, []string{a, r1, r2n}}} {
+		raw, _ := json.Marshal(map[string]any{"pr_url": want.url, "related": want.rel})
+		if !strings.Contains(text, "   - "+string(raw)+"\n") {
+			t.Errorf("the prompt lacks the call %s:\n%s", raw, text)
+		}
+	}
+	if strings.Contains(text, `"pr_url":"`+r1) || strings.Contains(text, `"pr_url":"`+r2) ||
+		!strings.Contains(text, "never review them") || !strings.Contains(text, "never that nothing is affected") {
+		t.Errorf("repositories are not context only:\n%s", text)
+	}
+	if strings.Contains(plain, "never review them") || strings.Contains(plain, "no_use_found") {
+		t.Errorf("a set without repositories changed:\n%s", plain)
+	}
+	for name, args := range map[string]map[string]string{
+		"too many in all": {"pr_urls": a + " " + b, "repo_urls": "https://g.example/a https://g.example/b https://g.example/c https://g.example/d"},
+		"a repeat":        {"pr_urls": a + " " + b, "repo_urls": r1 + " " + r1 + "?x=2"},
+		"credentials":     {"pr_urls": a + " " + b, "repo_urls": "https://u:" + "SECRET-VALUE" + "@g.example/a"},
+		"not http":        {"pr_urls": a + " " + b, "repo_urls": "ftp://g.example/a"},
+	} {
+		_, err := getLinked(t, cs, args)
+		var je *jsonrpc.Error
+		if err == nil || !errors.As(err, &je) || je.Code != jsonrpc.CodeInvalidParams || strings.Contains(err.Error(), "SECRET-VALUE") {
+			t.Errorf("%s: err = %v", name, err)
+		}
+	}
+}

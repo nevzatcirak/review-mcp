@@ -14,7 +14,7 @@ const prInfoDescription = "Reports which branch a pull request merges into and w
 
 type prInfoInput struct {
 	PRURL   string   `json:"pr_url" jsonschema:"URL of the pull request, on a configured Gitea, Bitbucket Server, GitHub or GitLab host"`
-	Related []string `json:"related,omitempty" jsonschema:"Up to 4 related pull request URLs on configured providers, for example the backend change a UI pull request depends on: their title, state, draft flag, target branch and head are reported, with a note when one is merged while this pull request is open or closed without being merged. No diff is read."`
+	Related []string `json:"related,omitempty" jsonschema:"Up to 4 related pull request or repository URLs on configured providers, for example the backend change a UI pull request depends on: a pull request's title, state, draft flag, target branch and head are reported; a repository (optionally with a branch) is resolved and listed as not_read, never fetched, with a note when one is merged while this pull request is open or closed without being merged. No diff is read."`
 }
 
 func registerPRInfo(s *mcp.Server, deps Deps) {

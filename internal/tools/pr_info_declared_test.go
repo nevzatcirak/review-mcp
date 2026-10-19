@@ -96,3 +96,56 @@ func TestPRInfoDeclaredRelations(t *testing.T) {
 		}
 	}
 }
+
+// argInfoResolver resolves repository URLs under gitlab.example (a "/tree/"
+// suffix names the branch) and the primary's own repository, with no
+// request; anything else is not configured.
+type argInfoResolver struct{ declInfoResolver }
+
+func (r argInfoResolver) ResolveItem(u string) (provider.ItemKind, provider.PRRef, provider.RepoRef, provider.Provider, error) {
+	switch {
+	case strings.HasPrefix(u, "https://your-gitea.example/octo/demo"):
+		return provider.ItemRepository, provider.PRRef{}, provider.RepoRef{Kind: provider.KindGitea, Namespace: "octo",
+			Repo: "demo", URL: u}, r.p, nil
+	case strings.HasPrefix(u, "https://gitlab.example/"):
+		repo, branch, _ := strings.Cut(strings.TrimPrefix(u, "https://gitlab.example/"), "/tree/")
+		return provider.ItemRepository, provider.PRRef{}, provider.RepoRef{Kind: provider.KindGitLab, Namespace: "grp",
+			Repo: repo[strings.Index(repo, "/")+1:], Branch: branch, URL: u}, r.p, nil
+	}
+	return "", provider.PRRef{}, provider.RepoRef{}, nil, &provider.Error{Class: provider.ClassURLNotConfigured}
+}
+
+// TestPRInfoRepositoryItems: a repository URL of the related argument is
+// resolved and listed with kind, branch and status not_read (V-13b spec §4
+// item 2); it is never read or fetched (no repository config file, no
+// request); an unconfigured host is failed, the primary's own repository
+// and a repeat are ignored; pull request items are listed as before, and
+// the declared relations do not apply with a related argument.
+func TestPRInfoRepositoryItems(t *testing.T) {
+	f := &declInfoProvider{infoProvider: newInfoProvider()}
+	cfg := config.Defaults()
+	cfg.Related.FromRepoConfig = true
+	urls := []string{"https://gitlab.example/grp/web-ui/tree/feature/x", "https://gitlab.example/grp/api",
+		"https://gitlab.example/grp/web-ui/tree/feature/x", "https://unknown.example/team/web-ui",
+		"https://your-gitea.example/octo/demo"}
+	res, err := PRInfoFor(context.Background(), cfg, argInfoResolver{declInfoResolver{f}}, testPRURL, urls, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := json.Marshal(res.Related)
+	want := `[{"url":"https://gitlab.example/grp/web-ui/tree/feature/x","status":"not_read","kind":"repository","branch":"feature/x"},` +
+		`{"url":"https://gitlab.example/grp/api","status":"not_read","kind":"repository","branch":""},` +
+		`{"url":"https://gitlab.example/grp/web-ui/tree/feature/x","status":"ignored","reason":"duplicate","kind":"repository","branch":"feature/x"},` +
+		`{"url":"https://unknown.example/team/web-ui","status":"failed","reason":"url_not_configured"},` +
+		`{"url":"https://your-gitea.example/octo/demo","status":"ignored","reason":"primary_repository","kind":"repository","branch":""}]`
+	if string(got) != want {
+		t.Errorf("related %s\nwant    %s", got, want)
+	}
+	if len(f.reads) != 0 {
+		t.Errorf("a file was read: %q", f.reads)
+	}
+	md := RenderPRInfoMarkdown(res)
+	if !strings.Contains(md, "`not_read`, repository") {
+		t.Errorf("the markdown does not mark a repository:\n%s", md)
+	}
+}

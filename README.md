@@ -12,7 +12,7 @@ mode), are never logged and are never persisted. There is no telemetry and there
 are no embedded defaults for URLs or endpoints: everything comes from your
 configuration.
 
-**Status: stable (1.1.0).** Stable releases are published under the npm
+**Status: stable (2.4.0).** Stable releases are published under the npm
 dist-tag `latest`; release candidates of the next version under `next`. See the
 [changelog](CHANGELOG.md).
 
@@ -22,7 +22,7 @@ dist-tag `latest`; release candidates of the next version under `next`. See the
    ([Setup guide, steps 2 and 3](docs/setup.md#2-create-tokens)). A read-only
    token is enough for reviews and questions that are not published.
 2. Register the server with your client. With npm there is nothing to install.
-   Pin the exact version (for example `@nevzatcirak/review-mcp@1.1.0`) so that
+   Pin the exact version (for example `@nevzatcirak/review-mcp@2.4.0`) so that
    `npx` does not reuse an older cached copy; update the pin to upgrade.
 
    **Claude Code**
@@ -34,7 +34,7 @@ dist-tag `latest`; release candidates of the next version under `next`. See the
      --env REVIEW_MCP_GITEA_BASE_URL=https://your-gitea.example \
      --env REVIEW_MCP_LLM_API_KEY="$REVIEW_MCP_LLM_API_KEY" \
      --env REVIEW_MCP_GITEA_TOKEN="$REVIEW_MCP_GITEA_TOKEN" \
-     -- npx -y @nevzatcirak/review-mcp@1.1.0
+     -- npx -y @nevzatcirak/review-mcp@2.4.0
    ```
 
    **opencode** (`opencode.json`)
@@ -45,7 +45,7 @@ dist-tag `latest`; release candidates of the next version under `next`. See the
      "mcp": {
        "review-mcp": {
          "type": "local",
-         "command": ["npx", "-y", "@nevzatcirak/review-mcp@1.1.0"],
+         "command": ["npx", "-y", "@nevzatcirak/review-mcp@2.4.0"],
          "enabled": true,
          "environment": {
            "REVIEW_MCP_LLM_BASE_URL": "https://llm.example.com/v1",
@@ -143,6 +143,14 @@ dist-tag `latest`; release candidates of the next version under `next`. See the
      running after `REVIEW_MCP_LLM_WAIT_SECONDS` (default 45) answers with a
      `job_id`; ask the client to fetch the result and it calls `job_result`.
      This keeps every call under typical client timeouts.
+   - **Gateway limits:** `REVIEW_MCP_LLM_REQUESTS_PER_MINUTE` and
+     `REVIEW_MCP_LLM_MAX_CONCURRENT_REQUESTS` (default 0, no limit) keep every
+     model call of the process within your gateway's limits, so parallel calls
+     wait their turn instead of failing with HTTP 429; an HTTP 429 cools the
+     endpoint down for every caller. Up to three fallback models
+     (`[[llm.fallback]]`) are tried in order when the current one cannot serve
+     a call. See [Rate limits](docs/setup.md#rate-limits) and
+     [Fallback models](docs/setup.md#fallback-models).
 
    All settings, their defaults and the TOML equivalents are in the
    [Setup guide](docs/setup.md) and [Reviewing pull requests](docs/review.md).
@@ -171,6 +179,18 @@ touches disk or logs. Settings:
 | `context.repo.max_symbols` | `REVIEW_MCP_CONTEXT_REPO_MAX_SYMBOLS` | `20` |
 | `context.repo.max_hits_per_symbol` | `REVIEW_MCP_CONTEXT_REPO_MAX_HITS_PER_SYMBOL` | `5` |
 | `context.repo.max_tokens` | `REVIEW_MCP_CONTEXT_REPO_MAX_TOKENS` | `2000` |
+| `context.repo.max_tool_rounds` | `REVIEW_MCP_CONTEXT_REPO_MAX_TOOL_ROUNDS` | `0` |
+| `context.repo.max_tool_tokens` | `REVIEW_MCP_CONTEXT_REPO_MAX_TOOL_TOKENS` | `6000` |
+
+**Repository tools** (opt-in on top of repository context): with
+`context.repo.max_tool_rounds` above 0 (at most 6), the model in `pr_review`
+and `pr_ask` can read the pull request's head commit itself while it answers
+(`read_file`, `list_dir`, `search`), offline, confined to the repository and
+within `context.repo.max_tool_tokens`. Nothing is built, run or loaded as code.
+The endpoint must support tool calling; one that does not gets the single-pass
+review with a note. Every tool round is a model call, so a review with tools
+takes more time and tokens. See
+[Repository tools](docs/repo-context.md#repository-tools).
 
 See [Repository context](docs/repo-context.md) for the details. `review-mcp
 diag cache [--prune]` lists and sweeps the cache.
@@ -184,29 +204,36 @@ except `job_result`).
 |---|---|
 | `server_info` | Version, enabled providers and the effective non-secret configuration; secrets show only as set or unset. |
 | `pr_comments` | Lists a pull request's comment threads. |
-| `pr_info` | Which branch a pull request merges into and who has reviewed or approved it: human reviewers with their states, approval counts, required approvals and merge status where the provider exposes them. review-mcp's own reviews and comments are reported separately and never count as approvals. Also reports the CI results of the head commit (`ci`: state, counts and the failing checks), read from the provider; nothing is built or run. Read-only, no LLM call; see [Pull request status](docs/pr-info.md). |
+| `pr_info` | Which branch a pull request merges into and who has reviewed or approved it: human reviewers with their states, approval counts, required approvals and merge status where the provider exposes them. review-mcp's own reviews and comments are reported separately and never count as approvals. Also reports the CI results of the head commit (`ci`: state, counts and the failing checks), read from the provider; nothing is built or run. With `related` (up to four pull request URLs) it also reports their title, state, draft flag, target branch and head, without reading their diffs. Read-only, no LLM call; see [Pull request status](docs/pr-info.md). |
 | `pr_comment_reply` | Replies to a pull request comment (inside the thread on Bitbucket Server and GitLab, and on GitHub for an inline comment; as a quoting PR-level comment on Gitea, and on GitHub for a general comment). |
 | `pr_comment_create` | Posts a new comment on a pull request, PR-level or on a changed line (`file` and `line`). A line outside the diff is refused, never posted at PR level instead. |
-| `pr_review` | Reviews a pull request with your LLM. The title, description, existing comments and diff are sent to your LLM endpoint. Optionally publishes the review: one overview comment, edited in place on later runs, and inline comments on the changed lines. The model is also given the head commit's CI results (failing and pending checks, and a CI line in the overview), the project's guidelines file (`.review-mcp/guidelines.md`, else `CONTRIBUTING.md`) and a listing of the directories the change touches, both read at the target branch so a pull request cannot rewrite its own rules. `focus` (`security`, `architecture`, `performance`, `ux`, `tests`, `docs` or free text) reviews one area and never publishes; the findings of several focused reviews are merged by the client and published once with `findings` and `publish=true`, without another model call (the `multi_perspective_review` prompt describes the steps). With `incremental=true` (or `review.incremental`) it reviews only the files whose content changed since the last review it published, and lists the earlier findings the overview held without an inline comment on files that did not change; nothing changed means no model call and nothing posted. See [Reviewing pull requests](docs/review.md#incremental-review). It also checks the pull request against the issue it implements (requirements met, not met, needing human verification, and a verdict): an issue the pull request names on its own host, or one the client passes as `issue_context`, for example from a tracker MCP server; review-mcp never contacts trackers itself. See [Issue compliance](docs/review.md#issue-compliance). |
-| `pr_ask` | Answers a free-text question about a pull request, grounded in its title, description and diff. Optionally publishes the question and answer as a PR comment. |
+| `pr_review` | Reviews a pull request with your LLM. The title, description, existing comments and diff are sent to your LLM endpoint. Optionally publishes the review: one overview comment, edited in place on later runs, and inline comments on the changed lines. The model is also given the head commit's CI results (failing and pending checks, and a CI line in the overview), the project's guidelines file (`.review-mcp/guidelines.md`, else `CONTRIBUTING.md`) and a listing of the directories the change touches, both read at the target branch so a pull request cannot rewrite its own rules. `focus` (`security`, `architecture`, `performance`, `ux`, `tests`, `docs` or free text) reviews one area and never publishes; the findings of several focused reviews are merged by the client and published once with `findings` and `publish=true`, without another model call (the `multi_perspective_review` prompt describes the steps). With `incremental=true` (or `review.incremental`) it reviews only the files whose content changed since the last review it published, and lists the earlier findings the overview held without an inline comment on files that did not change; nothing changed means no model call and nothing posted. See [Reviewing pull requests](docs/review.md#incremental-review). It also checks the pull request against the issue it implements (requirements met, not met, needing human verification, and a verdict): an issue the pull request names on its own host, or one the client passes as `issue_context`, for example from a tracker MCP server; review-mcp never contacts trackers itself. See [Issue compliance](docs/review.md#issue-compliance). With `related` (up to four pull request URLs on any configured provider, each read with its own provider's token) it reviews the pull request together with the ones it belongs to, read as context only and never published to: their diffs are budgeted (`related.max_tokens`, contract files first), and mismatches between the pull requests, rollout compatibility and merge order are reported, with a finding in a related pull request listed in the overview with a link. See [Related pull requests](docs/review.md#related-pull-requests). |
+| `pr_ask` | Answers a free-text question about a pull request, grounded in its title, description and diff. Takes `related` pull requests as context, as `pr_review` does. Optionally publishes the question and answer as a PR comment. |
 | `pr_describe` | Describes a pull request with your LLM: a title, the change types, a short summary and a walkthrough of the changed files. The title, description, branch names, commit messages and diff are sent to your LLM endpoint. By default it only reads; `publish=true` writes to the pull request, either one comment that later runs edit in place or a marked region at the end of the description (the author's text is never changed), and `update_title=true` also replaces the title. Files the model did not describe are listed, never padded in. The pull request's issue (or `issue_context`) is used as context, without a verdict. See [Describing pull requests](docs/describe.md). |
 | `pr_improve` | Suggests code changes for a pull request with your LLM: for each suggestion the existing and the improved code, a label and a score from 0 to 10 given by a second, self-review model call; suggestions below `improve.min_score` are dropped and counted, never silently lost. Each suggestion is checked against the head version of the file before it is called anchored; ones that cannot be are marked, not hidden. The title, description, branch names, existing comments and diff are sent to your LLM endpoint, with the project's guidelines file and the listing of the touched directories read at the target branch, as for `pr_review`. By default it only reads; `publish=true` writes to the pull request: one overview comment that later runs edit in place, and an inline comment on each verified suggestion that is on changed lines of one hunk (not repeated on later runs), with the change as a native suggestion block on GitHub and GitLab and as a diff block on Gitea and Bitbucket Server. See [Suggesting code changes](docs/improve.md). |
 | `job_result` | Returns the result of a `pr_review`, `pr_ask`, `pr_describe` or `pr_improve` call that took longer than `wait_seconds` and answered with a `job_id` instead. stdio only; see [Slow endpoints](docs/review.md#slow-endpoints). |
 
+The server also offers two MCP prompts:
+
+| Prompt | What it does |
+|---|---|
+| `multi_perspective_review` | Runs several focused `pr_review` calls (`focuses`; by default `review.focuses` of the repository config, else security, architecture, performance and tests, with `docs` added when documentation changed) and publishes their findings once, merged; see [Focused reviews and the merged publish](docs/review.md#focused-reviews-and-the-merged-publish). |
+| `review_linked_prs` | Reviews 2 to 5 pull requests that belong together, each with the others as `related` context, and publishes each review to its own pull request only (`publish`, default `false`); see [The `review_linked_prs` prompt](docs/review.md#the-review_linked_prs-prompt). |
+
 ## Documentation
 
-- [Setup guide](docs/setup.md): install, token checklist, LLM endpoint, client configuration, first run.
+- [Setup guide](docs/setup.md): install, token checklist, LLM endpoint (rate limits, fallback models), client configuration, first run.
 - [Serve mode](docs/serve.md): one shared HTTP server for a team, the header contract, TLS, the container.
-- [Reviewing pull requests](docs/review.md): what `pr_review` sends to the LLM, choosing `llm.context_window`, reading coverage and notes, large pull requests reviewed in parts, `publish` (the overview and inline comments), discussion awareness, CI results, project guidelines and the file tree, focused reviews and the merged publish (the `multi_perspective_review` prompt), incremental review, slow endpoints and `job_result`, `diag review --dry-run`.
+- [Reviewing pull requests](docs/review.md): what `pr_review` sends to the LLM, choosing `llm.context_window`, reading coverage and notes, large pull requests reviewed in parts, `publish` (the overview and inline comments), discussion awareness, CI results, project guidelines and the file tree, focused reviews and the merged publish (the `multi_perspective_review` prompt), incremental review, issue compliance, related pull requests and cross-repository findings (the `review_linked_prs` prompt), slow endpoints and `job_result`, `diag review --dry-run`.
 - [Asking questions about a pull request](docs/ask.md): what `pr_ask` sends to the LLM, files the question names, grounding and honesty, coverage, `publish` and the slash sanitization, `diag ask --dry-run`.
 - [Describing pull requests](docs/describe.md): what `pr_describe` sends to the LLM, the result, large pull requests described in parts with a summary call, files that were not described, `publish` as a comment or as a marked region of the description (how to remove it, `update_title`, concurrent edits, Bitbucket Server reviewers), permissions, `diag describe --dry-run`.
 - [Suggesting code changes](docs/improve.md): what `pr_improve` sends to the LLM (and what the self-review does not get), parts, the self-review score and `improve.min_score`, ranking and the cap, verification against the head file, `publish` (the overview edited in place, inline comments with a diff block, no repeated suggestions), permissions, `improve.*` settings, `diag improve --dry-run`.
 - [GitHub](docs/github.md): the token and its permissions, URL shapes and GitHub Enterprise Server, how the API address is derived, rate limits, the 3000-file and 250-commit limits, comment threads and why resolved state is not shown, replies and edits, one review per run, native suggestion blocks and their re-indentation rule, `pr_info` (approvals from rulesets and classic protection, the merge status), the description edit, repository context, and what is not supported.
 - [GitLab](docs/gitlab.md): the token and its scopes, URL shapes (nested groups, a context path), the minimum version 16.0, the diff base and the "diff not ready" case, the diff limits, rate limits, comment threads and replies, inline discussions and native suggestions, quick-action safety (what is sanitised, the diff fallback, the description refusal), `pr_info` (reviewers, approvals, the merge status), CI from commit statuses and what is not read, repository context, a proxy or `external_url` that differs from the base URL, and what is not supported.
-- [Pull request status](docs/pr-info.md): what `pr_info` reports (target branch, human reviewers, approvals, merge status, CI results), where each fact comes from, and why review-mcp's own reviews are not reviewers.
+- [Pull request status](docs/pr-info.md): what `pr_info` reports (target branch, human reviewers, approvals, merge status, CI results, related pull requests), where each fact comes from, and why review-mcp's own reviews are not reviewers.
 - [Issue compliance](docs/review.md#issue-compliance): `pr_review` checks the pull request against its issue (met, not met, needs verification) from the provider's own issues or an `issue_context` the client fetches from any tracker; budgeted, fenced, never followed as instructions; [with a tracker MCP server](docs/setup.md#with-a-tracker-mcp-server).
 - [Repository config](docs/repo-config.md): a `.review-mcp.toml` in the reviewed repository, read at the target branch, tunes its reviews (language, ignore rules, guidelines paths, toggles, tighter caps, extra instructions, default focuses, documentation style) within an allow-list that never reaches hosts, models, limits or secrets.
-- [Repository context](docs/repo-context.md): opt-in, stdio only: shows the model where the symbols a pull request changes are used elsewhere in the project (a cached `git` fetch of the head, `git grep`, a budgeted prompt block), its configuration, the cache, the security properties, the coverage line and the evaluation harness.
+- [Repository context](docs/repo-context.md): opt-in, stdio only: shows the model where the symbols a pull request changes are used elsewhere in the project (a cached `git` fetch of the head, `git grep`, a budgeted prompt block) and, optionally, lets the model read the head commit itself (repository tools); its configuration, the cache, the security properties, the coverage line and the evaluation harness.
 - [Getting started](docs/getting-started.md): the minimal configuration and the diff budget in detail.
 - [Troubleshooting](docs/troubleshooting.md): the `diag` commands and every error sentence.
 - [Changelog](CHANGELOG.md).

@@ -22,6 +22,11 @@ Changes from upstream (spec P5 §1.1):
   fixed text of ToolsInstruction: what the tools read, when to use them, the
   round limit and the plain-text final answer); without tools nothing is
   rendered;
+- intentional deviation (X-41, v2.5 spec V-13b §4): a run whose related
+  block holds a related repository gets the fixed paragraph of
+  RelatedRepositoryInstruction after the repository instructions and before
+  the tools' block (how to cite a consumer location); without one nothing is
+  rendered;
 - the extra_instructions block is kept verbatim, including its precedence
   sentence; the output-language instruction is added to it by
   prompt.WithOutputLanguage (P4 §4.2).
@@ -46,6 +51,10 @@ Follow the extra instructions above; they take precedence over any conflicting g
 {{- if .repo_instructions }}
 
 {{ .repo_instructions }}
+{{- end }}
+{{- if .related_instruction }}
+
+{{ .related_instruction }}
 {{- end }}
 {{- if .tools_instruction }}
 

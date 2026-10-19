@@ -2,6 +2,7 @@ package related
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -243,5 +244,35 @@ func TestStopped(t *testing.T) {
 		if Stopped(w) {
 			t.Errorf("%q is stopped", w)
 		}
+	}
+}
+
+// TestStoppedRemovals: a removed name that only the stop list kept out of
+// the surface is named (V-13b spec §4 item 1a); a name that is searched, a
+// stop-listed name that is only changed, and a file that is no contract
+// file are not.
+func TestStoppedRemovals(t *testing.T) {
+	flt := surfaceFilter(t)
+	files := []provider.FilePatch{
+		fp("api/openapi.yaml",
+			"@@ -10,7 +10,6 @@ components:",
+			"     User:",
+			"       properties:",
+			"-        name:",
+			"-        userName:",
+			"-        type:",
+			"+        displayName:",
+			"         id:",
+			"-        name:"),
+		fp("src/app.go", "@@ -1,2 +1,1 @@", "-var description = 1", "+var x = 1"),
+	}
+	if got := StoppedRemovals(files, flt); !slices.Equal(got, []string{"name", "type"}) {
+		t.Errorf("StoppedRemovals = %v, want [name type]", got)
+	}
+	if ids := Surface(files, flt, 50); len(ids) != 1 || ids[0].Text != "userName" {
+		t.Errorf("the stop-listed names are searched: %v", ids)
+	}
+	if got := StoppedRemovals(nil, flt); got != nil {
+		t.Errorf("StoppedRemovals(nil) = %v", got)
 	}
 }

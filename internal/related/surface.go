@@ -158,6 +158,40 @@ func surfaceAll(files []provider.FilePatch, flt *filter.Filter) []Identifier {
 	return out
 }
 
+// maxStoppedNamed is how many stop-listed removals the repository section
+// names (spec §4 item 1a).
+const maxStoppedNamed = 20
+
+// StoppedRemovals returns the gone tokens of the contract files of files that
+// only the stop list kept out of the surface (for example name or type), in
+// diff order, at most maxStoppedNamed (V-13b spec §4 item 1a). They are not
+// searched; the repository section names them so that the model does not
+// read the missing hits as "no use": a rename of name is a real break.
+func StoppedRemovals(files []provider.FilePatch, flt *filter.Filter) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, fp := range files {
+		if fp.Binary || fp.Patch == "" {
+			continue
+		}
+		if tier := flt.ContractTier(fp.Path); tier != filter.TierDescription && tier != filter.TierSurface {
+			continue
+		}
+		hunks, err := patch.ParseHunks(fp.Patch)
+		if err != nil {
+			continue
+		}
+		gone, _ := contractTokens(hunks)
+		for _, t := range gone {
+			if Stopped(t) && !seen[t] {
+				seen[t] = true
+				out = append(out, t)
+			}
+		}
+	}
+	return out[:min(len(out), maxStoppedNamed)]
+}
+
 // contractTokens returns the gone and changed tokens of one contract file's
 // hunks, each in diff order: a token of a removed line is gone when no added
 // line of the file carries it, and changed when an added line of the same

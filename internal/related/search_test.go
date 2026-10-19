@@ -246,3 +246,37 @@ func TestSearchCapsAndBudget(t *testing.T) {
 		t.Errorf("notes %q", notes)
 	}
 }
+
+// TestRepositorySectionNamesStoppedRemovals: the section names the removals
+// the stop list kept out of the search on one line, before the hits and
+// also before the no-use sentence (V-13b spec §4 item 1a); without any it
+// is unchanged.
+func TestRepositorySectionNamesStoppedRemovals(t *testing.T) {
+	place := func(stopped []string) []Section {
+		var trace []string
+		f := &fakeFetcher{trace: &trace, hits: map[string][]gitctx.Hit{"web-ui": hitsOf(1, "userName")}}
+		items := consumerItems(t, f, "https://gitlab.example/repo/team/api/main", "https://gitlab.example/repo/team/web-ui")
+		for _, it := range items {
+			it.StoppedRemovals = stopped
+		}
+		Search(context.Background(), items, surface, 0, 20, nil)
+		placed, err := Place(items, 30000, 0, repoConfig(), nil, true, accept)
+		if err != nil || len(placed) != 3 {
+			t.Fatal(err, len(placed))
+		}
+		return placed
+	}
+	plain, named := place(nil), place([]string{"name", "type"})
+	if strings.Contains(plain[1].Text, StoppedSentence) {
+		t.Errorf("a line without stopped removals:\n%s", plain[1].Text)
+	}
+	line := "\nRemoved but not searched (too common): name, type"
+	if !strings.Contains(named[1].Text, line+"\n"+NoUseSentence) {
+		t.Errorf("the line is missing before the no-use sentence:\n%s", named[1].Text)
+	}
+	for i := 1; i <= 2; i++ {
+		if strings.Replace(named[i].Text, line, "", 1) != plain[i].Text {
+			t.Errorf("section %d: more than the one line changed", i)
+		}
+	}
+}

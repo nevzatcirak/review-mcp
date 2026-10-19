@@ -340,8 +340,11 @@ type Item struct {
 	// MaxHitsPerRepository), and Cut how many hits the caps dropped.
 	Searched bool
 	Surface  []Identifier
-	Hits     []gitctx.Hit
-	Cut      int
+	// StoppedRemovals are removed identifiers only the stop list kept out
+	// of the search (StoppedRemovals; spec §4 item 1a).
+	StoppedRemovals []string
+	Hits            []gitctx.Hit
+	Cut             int
 	// toolSeen are the files of the repository a repository tool showed the
 	// model (MarkSeen, V-13b §3.1).
 	toolSeen []string

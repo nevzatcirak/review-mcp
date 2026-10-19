@@ -40,6 +40,10 @@ const HeaderWithRepositories = "Related pull requests and repositories, given by
 const NoUseSentence = "No use of these identifiers was found at this commit. Text search does not see dynamic or " +
 	"generated uses."
 
+// StoppedSentence starts the line that names the removed identifiers the
+// stop list kept out of the search (spec §4 item 1a).
+const StoppedSentence = "Removed but not searched (too common): "
+
 // The labels of the identifiers of a repository section, by kind (V-13b
 // §2.3 item 1), in the order of the surface.
 var kindLabels = []struct {
@@ -216,6 +220,13 @@ func repositorySection(it *Item, n, share int, factor float64) Section {
 		if len(names) > 0 {
 			b.WriteString("\n" + k.label + strings.Join(names, ", "))
 		}
+	}
+	if len(it.StoppedRemovals) > 0 {
+		names := make([]string, len(it.StoppedRemovals))
+		for i, n := range it.StoppedRemovals {
+			names[i] = oneLine(prompt.CleanText(n))
+		}
+		b.WriteString("\n" + StoppedSentence + strings.Join(names, ", "))
 	}
 	sec := Section{Item: it, Shown: map[string]bool{}}
 	if it.Matches == 0 {

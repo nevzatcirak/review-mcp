@@ -404,3 +404,20 @@ func TestRelatedRepositoryInstruction(t *testing.T) {
 		t.Error("an unplaced repository item reached the prompt")
 	}
 }
+
+// TestRelatedRepositoryNamesStoppedRemovals: a removed name that only the
+// stop list kept out of the search is named on one line in the repository
+// section (V-13b spec §4 item 1a), also in pr_review; a rename of a common
+// name is a real break and the empty section must not read as "no use".
+func TestRelatedRepositoryNamesStoppedRemovals(t *testing.T) {
+	h, b := consumerHarness(true, goodAnswer)
+	f := contractFile()
+	f.Patch = "@@ -10,5 +10,4 @@ components:\n       properties:\n-        userName:\n-        name:\n+        displayName:\n" +
+		"           type: string\n           format: text\n"
+	h.prov.files = append(h.prov.files, f)
+	b.hits = map[string][]gitctx.Hit{"web-ui@feature/x": {consumerHit}}
+	pl := prepareWith(t, h, Args{Related: []string{relatedURL, consumerBranchURL}})
+	if want := "\nRemoved or renamed: userName\n" + related.StoppedSentence + "name\n"; !strings.Contains(pl.Prompts.User, want) {
+		t.Errorf("the section does not name the stop-listed removal:\n%s", pl.Prompts.User)
+	}
+}

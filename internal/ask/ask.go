@@ -137,7 +137,10 @@ type Plan struct {
 	// use tools; toolUse is what the run did with them.
 	tools   *toolPlan
 	toolUse toolUse
-	cfg     *config.Config
+	// placed are the sections of the placed related block, for the links
+	// of the consumer citations in the answer (linkConsumers).
+	placed []related.Section
+	cfg    *config.Config
 
 	ref provider.PRRef
 	p   provider.Provider
@@ -227,7 +230,7 @@ func run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 
 	// Step 8: the result, with what the run did with the repository tools
 	// (X-43), before the publish, whose comment carries the notes.
-	res.Answer = answer
+	res.Answer = linkConsumers(answer, pl.placed)
 	reportTools(res, pl.toolUse)
 
 	// Step 9: publish.
@@ -430,9 +433,9 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// adds the instruction.
 	related.SearchFiles(ctx, rel, d.Files, flt, cfg.Related.MaxIdentifiers, fit.KeptLines < 0, log)
 	placed, err := related.Place(rel, cfg.Related.MaxTokens, diffpipe.ModePlain, cfg, flt, fit.KeptLines < 0,
-		func(block string, _ bool) (bool, error) {
+		func(block string, repositories bool) (bool, error) {
 			cand := in
-			cand.Related = block
+			cand.Related, cand.RelatedRepositories = block, repositories
 			f, err := fitPlain(cand, prep.Text, budget)
 			if err != nil || f.KeptLines >= 0 {
 				return false, err
@@ -511,6 +514,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	res.Notes = append(res.Notes, llmrun.PartialNotes(&res.Coverage, budget)...)
 	res.Notes = append(res.Notes, repoNotes...)
 	reportRelated(res, rel, placed)
+	pl.placed = placed
 	return pl, nil
 }
 

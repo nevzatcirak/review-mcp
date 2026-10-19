@@ -5,19 +5,25 @@ import (
 
 	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
+	"github.com/nevzatcirak/review-mcp/internal/related"
 	"github.com/nevzatcirak/review-mcp/internal/repoctx"
 	"github.com/nevzatcirak/review-mcp/internal/repotools"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 )
 
 // Repository tools in pr_ask (X-43, V-8 spec §3 item 1): the same loop as
-// pr_review, with a free-text final answer, so there is no re-ask.
+// pr_review, with a free-text final answer, so there is no re-ask; from v2.5
+// (spec V-13b §3.1) also over the related repositories of the placed
+// related block.
 
 // toolPlan is the tool loop of a run.
 type toolPlan struct {
 	box  *repotools.Box
 	conv repotools.Conversant
 	in   repotools.LoopInput
+	// placed are the placed related sections, whose repositories the tools
+	// may read.
+	placed []related.Section
 }
 
 // toolUse is what a run did with the tools.
@@ -36,9 +42,10 @@ func (pl *Plan) toolsSkipped(reason string) {
 // pr_review (§2.2 item 1): rounds above 0, repository context used and its
 // head fetched, an endpoint not known to refuse tools, and room for the
 // instruction block and the tool definitions beside the whole diff. in is
-// the final prompt input and fit its fitted prompts.
+// the final prompt input and fit its fitted prompts; placed are the placed
+// related sections, whose fetched repositories the tools may also read.
 func (pl *Plan) planTools(ctx context.Context, deps Deps, in PromptInput, fit *llmrun.Fitted, diff string, b tokens.Budget,
-	rcs *repoctx.Session, rc llmrun.RepoContext) error {
+	rcs *repoctx.Session, rc llmrun.RepoContext, placed []related.Section) error {
 	if pl.toolUse.Status == repotools.StatusOff {
 		return nil
 	}
@@ -56,15 +63,16 @@ func (pl *Plan) planTools(ctx context.Context, deps Deps, in PromptInput, fit *l
 		pl.toolsSkipped(repotools.ReasonNoRoom)
 		return nil
 	}
+	repos := related.ToolRepositories(placed)
 	tin := in
-	tin.ToolRounds = c.MaxToolRounds
+	tin.ToolRounds, tin.ToolRepos = c.MaxToolRounds, repos
 	tf, err := fitPlain(tin, diff, b)
 	if err != nil {
 		return err
 	}
 	limit := b.ContextWindow - b.HardReserve()
 	if tf.KeptLines >= 0 || tf.Rendered.User != fit.Rendered.User ||
-		repotools.RequestTokens(repotools.Start(tf.Rendered.System, tf.Rendered.User), b.Factor) > limit {
+		repotools.RequestTokens(repotools.Start(tf.Rendered.System, tf.Rendered.User, repos...), b.Factor) > limit {
 		pl.toolsSkipped(repotools.ReasonNoRoom)
 		return nil
 	}
@@ -74,9 +82,10 @@ func (pl *Plan) planTools(ctx context.Context, deps Deps, in PromptInput, fit *l
 		pl.toolsSkipped(repotools.ReasonRepoContextUnavailable)
 		return nil
 	}
+	box.WithRepos(repos)
 	pl.tools = &toolPlan{box: box, conv: conv, in: repotools.LoopInput{
 		System: tf.Rendered.System, User: tf.Rendered.User, MaxRounds: c.MaxToolRounds, Limit: limit, Factor: b.Factor,
-	}}
+	}, placed: placed}
 	return nil
 }
 
@@ -111,6 +120,7 @@ func (pl *Plan) answer(ctx context.Context, deps Deps) (resp *llm.Response, call
 	pl.log.Debug("ask: repository tools", "status", u.Status, "reason", u.Reason, "rounds", u.Rounds,
 		"calls", len(u.Calls), "tokens", u.Tokens, "model_calls", lr.Calls, "restarted", lr.Restarted)
 	if lr.Fallback == "" {
+		related.MarkToolReads(tp.placed, tp.box.Seen)
 		return &llm.Response{Content: lr.Answer.Text, Truncated: lr.Answer.Truncated, Usage: lr.Answer.Usage}, lr.Calls, nil
 	}
 	resp, err = deps.LLM.Complete(ctx, pl.Prompts.System, pl.Prompts.User)

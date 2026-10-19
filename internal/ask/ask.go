@@ -477,7 +477,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			"files", o.Files, "omitted", o.Omitted)
 	}
 	if rcs != nil {
-		if err := pl.planTools(ctx, deps, in, fit, prep.Text, budget, rcs, res.Coverage.RepoContext); err != nil {
+		if err := pl.planTools(ctx, deps, in, fit, prep.Text, budget, rcs, res.Coverage.RepoContext, placed); err != nil {
 			return nil, err
 		}
 	}

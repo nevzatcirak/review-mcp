@@ -14,6 +14,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/prompt"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/repoctx"
+	"github.com/nevzatcirak/review-mcp/internal/repotools"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 )
 
@@ -506,4 +507,47 @@ func NoteHitsCut(name string, k int) string {
 // troubleshooting docs (WP-13d).
 func NoteHitsDidNotFit(name string, shown, found int) string {
 	return fmt.Sprintf("Hits in %s did not fit in full; %d of %d are shown.", name, shown, found)
+}
+
+// Label is the label of the n-th placed section (0-based): R1 to R4, as
+// the block numbers its items.
+func Label(n int) string { return fmt.Sprintf("R%d", n+1) }
+
+// ToolRepositories are the related repositories the repository tools of a
+// run may read (v2.5 spec V-13b §3.1): the repository items of the placed
+// sections that were fetched, at their pinned commits, each by the label
+// the block gives it, with the operator's filter and their Paths. A related
+// pull request is never among them (its head commit is not readable by
+// tools, §0 item 7), nor a repository that is not in the block. Without
+// such an item it is nil, and the tools are those of 2.4.
+//
+// DESIGN-QUESTION (WP-13c DQ-1): the spec calls the repositories the tools
+// may read "the readable repository items", labelled R1 to R4. A label only
+// means something to the model when the block it numbers is in the prompt,
+// so only the items of the placed block are readable by tools: a repository
+// that was fetched but whose block did not fit (did_not_fit), or a run in
+// parts, has no label and no repo argument. Recommendation: keep.
+func ToolRepositories(placed []Section) []repotools.Repo {
+	var out []repotools.Repo
+	for i, s := range placed {
+		it := s.Item
+		if !it.IsRepository() || !it.Fetched {
+			continue
+		}
+		out = append(out, repotools.Repo{Label: Label(i), Name: it.Name(), Checkout: it.Checkout,
+			Filter: it.SearchFilter(), Paths: it.Paths})
+	}
+	return out
+}
+
+// MarkToolReads records on the repository items of the placed sections the
+// files the repository tools showed the model there (seen: the tools'
+// Box.Seen by label), so that a finding located in one is linked at the
+// item's pinned commit (V-13b §2.4 item 1).
+func MarkToolReads(placed []Section, seen func(label string) []string) {
+	for i, s := range placed {
+		if s.Item.IsRepository() {
+			s.Item.MarkSeen(seen(Label(i))...)
+		}
+	}
 }

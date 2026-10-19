@@ -75,13 +75,9 @@ func (r *Runner) SearchTerms(ctx context.Context, c Checkout, q TermQuery) (Term
 	if !shaRE.MatchString(sha) {
 		return res, fail(ReasonUnsupported)
 	}
-	prefixes := make([]string, 0, len(q.Paths))
-	for _, p := range q.Paths {
-		p = strings.TrimSuffix(p, "/")
-		if p == "" || !usablePath(p) {
-			return res, fail(ReasonUnsupported)
-		}
-		prefixes = append(prefixes, p)
+	prefixes, ok := cleanPrefixes(q.Paths)
+	if !ok {
+		return res, fail(ReasonUnsupported)
 	}
 	g, err := r.openCheckout(c)
 	if err != nil {
@@ -100,17 +96,7 @@ func (r *Runner) SearchTerms(ctx context.Context, c Checkout, q TermQuery) (Term
 		specs = append(specs, ":(top,literal)"+p)
 	}
 	specs = append(specs, s.pathspecs(missing)...)
-	within := func(path string) bool {
-		if len(prefixes) == 0 {
-			return true
-		}
-		for _, p := range prefixes {
-			if path == p || strings.HasPrefix(path, p+"/") {
-				return true
-			}
-		}
-		return false
-	}
+	within := func(path string) bool { return len(prefixes) == 0 || withinPrefixes(path, prefixes) }
 
 	var firstErr error
 	seen := map[string]bool{}
@@ -163,4 +149,28 @@ func (r *Runner) SearchTerms(ctx context.Context, c Checkout, q TermQuery) (Term
 		s.addContext(total, res.Hits, n)
 	}
 	return res, nil
+}
+
+// cleanPrefixes returns the directory prefixes of a confined search without
+// a trailing "/"; ok is false when one cannot name a path.
+func cleanPrefixes(paths []string) ([]string, bool) {
+	prefixes := make([]string, 0, len(paths))
+	for _, p := range paths {
+		p = strings.TrimSuffix(p, "/")
+		if p == "" || !usablePath(p) {
+			return nil, false
+		}
+		prefixes = append(prefixes, p)
+	}
+	return prefixes, true
+}
+
+// withinPrefixes reports whether path is one of prefixes or lies below one.
+func withinPrefixes(path string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if path == p || strings.HasPrefix(path, p+"/") {
+			return true
+		}
+	}
+	return false
 }

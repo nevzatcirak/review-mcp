@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
@@ -340,6 +341,9 @@ type Item struct {
 	Surface  []Identifier
 	Hits     []gitctx.Hit
 	Cut      int
+	// toolSeen are the files of the repository a repository tool showed the
+	// model (MarkSeen, V-13b §3.1).
+	toolSeen []string
 
 	// repos is the run's Repositories of a repository item that can be
 	// fetched (Search fetches it); nil otherwise.
@@ -366,18 +370,44 @@ func (it *Item) Commit12() string {
 }
 
 // Saw reports whether the run saw the file path in the repository item: a
-// file of one of its kept hits. A finding located there gets a link at the
-// pinned commit; any other path of the repository is unverified.
+// file of one of its kept hits, or a file a repository tool showed the
+// model there (MarkSeen, V-13b §2.4 item 1). A finding located there gets a
+// link at the pinned commit; any other path of the repository is
+// unverified.
 func (it *Item) Saw(path string) bool {
-	if !it.Searched || path == "" {
+	if !it.Fetched || path == "" {
 		return false
 	}
-	for _, h := range it.Hits {
-		if h.Path == path {
-			return true
+	if it.Searched {
+		for _, h := range it.Hits {
+			if h.Path == path {
+				return true
+			}
 		}
 	}
-	return false
+	return slices.Contains(it.toolSeen, path)
+}
+
+// MarkSeen records that a repository tool showed the model the files paths
+// of the fetched repository item (V-13b §3.1): Saw reports them from now on.
+func (it *Item) MarkSeen(paths ...string) {
+	if !it.IsRepository() || !it.Fetched {
+		return
+	}
+	for _, p := range paths {
+		if p != "" && !slices.Contains(it.toolSeen, p) {
+			it.toolSeen = append(it.toolSeen, p)
+		}
+	}
+}
+
+// SearchFilter is the filter a search of the repository item applies: the
+// operator's (Repositories.Filter); nil for an item that is not readable.
+func (it *Item) SearchFilter() *filter.Filter {
+	if it.repos == nil {
+		return nil
+	}
+	return it.repos.Filter
 }
 
 // Read resolves and reads the related items urls (normalised, in argument

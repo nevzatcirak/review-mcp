@@ -65,6 +65,10 @@ type PromptInput struct {
 	// model may read the repository through tools (X-43): the system prompt
 	// carries ToolsInstruction. 0 renders as before.
 	ToolRounds int
+	// ToolRepos are the related repositories the tools may also read
+	// (v2.5 spec V-13b §3.1, related.ToolRepositories): the tools'
+	// instruction names them. None renders as before.
+	ToolRepos []repotools.Repo
 	// Diff is the prepared plain diff; empty for the scaffolding
 	// measurement.
 	Diff string
@@ -75,12 +79,13 @@ type PromptInput struct {
 const ToolsFinalAnswer = "Your final answer is the plain-text answer to the question, with no tool call in it."
 
 // ToolsInstruction is the system prompt's block of a run with tools (X-43),
-// "" for rounds 0.
-func ToolsInstruction(rounds int) string {
+// naming the related repositories repos the tools may also read; "" for
+// rounds 0.
+func ToolsInstruction(rounds int, repos ...repotools.Repo) string {
 	if rounds <= 0 {
 		return ""
 	}
-	return repotools.QuestionInstruction(rounds, ToolsFinalAnswer)
+	return repotools.QuestionInstruction(rounds, ToolsFinalAnswer, repos...)
 }
 
 // Prompts is one rendered system and user prompt pair.
@@ -105,7 +110,7 @@ func (in *PromptInput) vars() map[string]any {
 		"language":           lang,
 		"repo_context":       in.RepoContext,
 		"related":            in.Related,
-		"tools_instruction":  ToolsInstruction(in.ToolRounds),
+		"tools_instruction":  ToolsInstruction(in.ToolRounds, in.ToolRepos...),
 		"diff":               in.Diff,
 		"questions":          in.Question,
 	}

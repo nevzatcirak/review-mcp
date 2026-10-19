@@ -206,12 +206,15 @@ type RepoTools struct {
 
 // RepoToolCall is one tool call: the tool, its target (the path or the
 // search text, cut to 200 characters without control characters), its
-// status and the tokens of its result.
+// status and the tokens of its result; and, from v2.5 (spec V-13b §3.1 item
+// 3), the label of the related repository it read, omitted for the pull
+// request's head commit, so that a 2.4 result serialises as before.
 type RepoToolCall struct {
 	Tool   string `json:"tool"`
 	Target string `json:"target"`
 	Status string `json:"status"`
 	Tokens int    `json:"tokens"`
+	Repo   string `json:"repo,omitempty"`
 }
 
 // MarshalJSON writes the zero value as "off", so a Coverage built without
@@ -520,6 +523,7 @@ func RepoToolsSchema(desc string) map[string]any {
 			"status": map[string]any{"type": "string", "enum": repoToolCallStatuses,
 				"description": "ok; not_allowed: the path broke the path rules and nothing was read; not_available: binary, not fetched, not found, not a directory, or unreadable; too_large: over diff.max_file_bytes; budget_exhausted: over context.repo.max_tool_tokens or the room beside the diff, not run; invalid_arguments: not a JSON object of at most 4 KiB, a wrong argument, or an unknown tool; too_many_calls: beyond 4 calls in one round, not run"},
 			"tokens": integer("estimated tokens of the call's result; 0 when it did not run"),
+			"repo":   str("the label (R1 to R4) of the related repository the call named, read at its pinned commit; absent for the pull request's head commit"),
 		}}
 	return map[string]any{"type": "object", "description": desc, "additionalProperties": false,
 		"required": []any{"status", "reason", "rounds", "calls", "tokens"},

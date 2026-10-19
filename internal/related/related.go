@@ -8,7 +8,10 @@
 // From v2.5 (spec V-13b) a related item may also be a repository, or a
 // branch of it: it is fetched read-only at one commit, pinned when the run
 // reads it, through the repository-context machinery (gitctx.EnsureBranch),
-// and only with context.repo.enabled. Nothing in it is built or run (R-1).
+// and only with context.repo.enabled, and searched there for the changed
+// contract surface of the primary diff (Surface, Search). It is fetched only
+// when there is something to search for. Nothing in it is built or run
+// (R-1).
 //
 // Every related URL goes through the run's resolver, the same one as the
 // primary's: an URL that matches no configured provider is never sent
@@ -29,6 +32,7 @@ import (
 	"strings"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/filter"
 	"github.com/nevzatcirak/review-mcp/internal/gitctx"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 )
@@ -54,8 +58,9 @@ const (
 	// StatusIgnored: the primary pull request itself, or a duplicate.
 	StatusIgnored = "ignored"
 	// StatusNoUseFound: a repository item was searched and no use of the
-	// changed identifiers was found (v2.5 spec V-13b §1.3 item 2). It is
-	// declared for the schema; the search that sets it is WP-13b's.
+	// changed identifiers was found (v2.5 spec V-13b §1.3 item 2). It never
+	// means that nothing is affected: text search does not see dynamic or
+	// generated uses.
 	StatusNoUseFound = "no_use_found"
 )
 
@@ -101,8 +106,7 @@ const (
 	// repository, whose contents are already repository context.
 	ReasonPrimaryRepository = "primary_repository"
 	// ReasonNoContractChange: the primary diff gave no identifier, so the
-	// repository was not searched. Declared for the schema; WP-13b derives
-	// the identifiers.
+	// repository was neither fetched nor searched (V-13b §2.1a).
 	ReasonNoContractChange = "no_contract_change"
 )
 
@@ -231,9 +235,15 @@ type BranchFetcher interface {
 	EnsureBranch(ctx context.Context, repo gitctx.Repo, branch string) (gitctx.Checkout, error)
 }
 
-// Repositories is what Read needs for repository items (v2.5 spec V-13b).
-// A nil *Repositories resolves every URL as a pull request URL, as in
-// V-13a (pr_info).
+// ConsumerSearcher searches a fetched repository for fixed strings
+// (gitctx.Runner.SearchTerms).
+type ConsumerSearcher interface {
+	SearchTerms(ctx context.Context, c gitctx.Checkout, q gitctx.TermQuery) (gitctx.TermResult, error)
+}
+
+// Repositories is what Read and Search need for repository items (v2.5
+// spec V-13b). A nil *Repositories resolves every URL as a pull request
+// URL, as in V-13a (pr_info).
 type Repositories struct {
 	// Enabled is context.repo.enabled (never set in serve mode). Without it
 	// every repository item is failed with repo_context_off and no git
@@ -242,26 +252,48 @@ type Repositories struct {
 	// Config is the run's configuration, for the provider base URL, token
 	// and TLS settings of each repository (gitctx.RepoFor).
 	Config *config.Config
-	// Fetcher fetches the branches. Nil with Enabled set fails the items
-	// with unsupported (a test backend without branches).
-	Fetcher BranchFetcher
+	// Fetcher fetches the branches and Searcher searches them. Either nil
+	// with Enabled set fails the items with unsupported (a test backend
+	// without branches), before any git command.
+	Fetcher  BranchFetcher
+	Searcher ConsumerSearcher
+	// Filter is the operator's filter (ignore.*, generated, lockfile,
+	// minified and binary rules), applied to the search (spec §2.2 item 1):
+	// the reviewed repository's own config does not reach another
+	// repository.
+	Filter *filter.Filter
 }
 
-// RepositoriesFor returns the Repositories of a run with configuration cfg
-// and repository-context backend (pipeline Deps.RepoContext): nil selects
-// the real git runner, as repoctx.Open does; a backend that cannot fetch a
-// branch leaves Fetcher nil. Nothing is fetched here.
-func RepositoriesFor(cfg *config.Config, backend any) *Repositories {
+// RepositoriesFor returns the Repositories of a run with configuration cfg,
+// the operator's configuration operator (before the repository config was
+// merged; nil uses cfg) and repository-context backend (pipeline
+// Deps.RepoContext): nil selects the real git runner, as repoctx.Open does;
+// a backend that cannot fetch a branch or search it leaves Fetcher or
+// Searcher nil. Nothing is fetched here.
+func RepositoriesFor(cfg, operator *config.Config, backend any) *Repositories {
 	r := &Repositories{Enabled: cfg.Context.Repo.Enabled, Config: cfg}
 	if !r.Enabled {
 		return r
 	}
-	switch b := backend.(type) {
-	case nil:
-		r.Fetcher = gitctx.New(gitctx.OptionsFromConfig(cfg.Context.Repo))
-	case BranchFetcher:
+	if operator == nil {
+		operator = cfg
+	}
+	if backend == nil {
+		backend = gitctx.New(gitctx.OptionsFromConfig(cfg.Context.Repo))
+	}
+	if b, ok := backend.(BranchFetcher); ok {
 		r.Fetcher = b
 	}
+	if b, ok := backend.(ConsumerSearcher); ok {
+		r.Searcher = b
+	}
+	f, err := filter.New(operator)
+	if err != nil {
+		// The operator's configuration was validated at start; a filter that
+		// cannot be built searches nothing rather than everything.
+		r.Searcher = nil
+	}
+	r.Filter = f
 	return r
 }
 
@@ -292,14 +324,61 @@ type Item struct {
 	Fetched  bool
 	Checkout gitctx.Checkout
 	// Identifiers, Matches and MatchesShown are the repository item's
-	// search counts (V-13b §1.3 item 1).
+	// search counts (V-13b §1.3 item 1): the identifiers searched, every
+	// hit found, and the hits placed in the prompt.
 	Identifiers, Matches, MatchesShown int
 	// Source is SourceRepoConfig for an item from the repository config.
 	Source string
+	// Paths confines the search of an item from the repository config to
+	// these directory prefixes (V-13b §2.2 item 2); nil searches the whole
+	// tree.
+	Paths []string
+	// Searched is set when the repository was searched; Surface holds the
+	// identifiers it was searched for, Hits the hits the caps kept (at most
+	// MaxHitsPerRepository), and Cut how many hits the caps dropped.
+	Searched bool
+	Surface  []Identifier
+	Hits     []gitctx.Hit
+	Cut      int
+
+	// repos is the run's Repositories of a repository item that can be
+	// fetched (Search fetches it); nil otherwise.
+	repos *Repositories
+	// unsearched and limit are the identifiers related.max_identifiers
+	// left out of the search, and that limit (the note of spec §2.4 item 3).
+	unsearched, limit int
 }
 
 // IsRepository reports whether it is a repository item.
 func (it *Item) IsRepository() bool { return it.Kind == provider.ItemRepository }
+
+// Name is a repository item's "{namespace}/{name}", one line.
+func (it *Item) Name() string { return oneLine(it.Repo.Namespace) + "/" + oneLine(it.Repo.Repo) }
+
+// Commit12 is the first 12 hexadecimal digits of a fetched repository
+// item's pinned commit.
+func (it *Item) Commit12() string {
+	c := it.Checkout.HeadSHA
+	if len(c) > 12 {
+		c = c[:12]
+	}
+	return c
+}
+
+// Saw reports whether the run saw the file path in the repository item: a
+// file of one of its kept hits. A finding located there gets a link at the
+// pinned commit; any other path of the repository is unverified.
+func (it *Item) Saw(path string) bool {
+	if !it.Searched || path == "" {
+		return false
+	}
+	for _, h := range it.Hits {
+		if h.Path == path {
+			return true
+		}
+	}
+	return false
+}
 
 // Read resolves and reads the related items urls (normalised, in argument
 // order) of the primary pull request primary (its normalised URL and its
@@ -316,10 +395,10 @@ func (it *Item) IsRepository() bool { return it.Kind == provider.ItemRepository 
 // With repos set and r an ItemResolver, an item may also be a repository
 // (v2.5 spec V-13b): one naming the primary's own repository is ignored with
 // ReasonPrimaryRepository, a repeat of the same repository and branch with
-// ReasonDuplicate. The others are fetched after the pull request items,
-// sequentially in argument order, each at the commit its branch points to
-// now (fetchRepositories); without repos.Enabled none is, and each is
-// failed with ReasonRepoContextOff.
+// ReasonDuplicate. Without repos.Enabled each other one is failed with
+// ReasonRepoContextOff, and no git command runs. Otherwise it is readable
+// and keeps no status: it is fetched and searched by Search, once the
+// changed contract surface is known (spec §2.1a), or never.
 //
 // DESIGN-QUESTION (WP-11a DQ-2): the spec ignores the primary URL and
 // duplicates "after normalisation". Two different URLs can name the same
@@ -431,57 +510,42 @@ func read(ctx context.Context, r Resolver, primaryURL string, primary provider.P
 			"files", len(d.Files), "skipped", len(d.Skipped))
 	}
 	for _, i := range pending {
-		fetchRepository(ctx, items[i], repos, log, i)
+		readable(items[i], repos, log, i)
 	}
 	return items
 }
 
-// fetchRepository fetches the repository item it (index i) at the commit
-// its branch, or its default branch, points to now (V-13b §1.2): only with
-// repos.Enabled (otherwise repo_context_off, and no git command runs), with
-// the configured provider's base URL and token, under ctx. A failure is the
-// item's status and gitctx's fixed reason (auth reported as unauthorized).
-//
-// For WP-13a the fetched item gets no status here: the identifiers of the
-// primary diff are not derived yet (WP-13b, spec §2.1), so nothing is
-// searched and Identifiers, Matches and MatchesShown stay 0. Mark may still
-// set the run's not_placed reasons (review_in_parts, nothing_to_review), and
-// Coverage reports an item without one as not_placed without a reason.
-func fetchRepository(ctx context.Context, it *Item, repos *Repositories, log *slog.Logger, i int) {
+// readable decides whether the repository item it (index i) can be read:
+// only with repos.Enabled (otherwise repo_context_off) and a backend that
+// can fetch and search a branch (otherwise unsupported). Nothing is fetched
+// here and no git command runs; a readable item keeps no status until
+// Search.
+func readable(it *Item, repos *Repositories, log *slog.Logger, i int) {
 	switch {
 	case !repos.Enabled:
 		it.Status, it.Reason = StatusFailed, ReasonRepoContextOff
-	case repos.Fetcher == nil:
+	case repos.Fetcher == nil || repos.Searcher == nil:
 		it.Status, it.Reason = StatusFailed, gitctx.ReasonUnsupported
+	default:
+		it.repos = repos
 	}
-	if it.Status != "" {
-		logRepository(log, i, it)
-		return
-	}
-	repo, ok := gitctx.RepoFor(repos.Config,
-		provider.PRRef{Kind: it.Repo.Kind, Namespace: it.Repo.Namespace, Repo: it.Repo.Repo}, it.Provider)
-	if !ok {
-		it.Status, it.Reason = StatusFailed, gitctx.ReasonUnsupported
-		logRepository(log, i, it)
-		return
-	}
-	co, err := repos.Fetcher.EnsureBranch(ctx, repo, it.Repo.Branch)
-	if err != nil {
-		it.Status, it.Reason = StatusFailed, gitReason(err)
-		logRepository(log, i, it)
-		return
-	}
-	it.Fetched, it.Checkout = true, co
 	logRepository(log, i, it)
 }
 
 // logRepository logs a repository item's outcome: its index, item kind,
-// provider kind, status (fetched when it has none yet), reason and counts;
-// never its URL, branch, commit or anything found in it.
+// provider kind, status (readable, fetched or searched when it has none
+// yet), reason and counts; never its URL, branch, commit or anything found
+// in it.
 func logRepository(log *slog.Logger, i int, it *Item) {
 	status := it.Status
-	if status == "" && it.Fetched {
+	switch {
+	case status != "":
+	case it.Searched:
+		status = "searched"
+	case it.Fetched:
 		status = "fetched"
+	default:
+		status = "readable"
 	}
 	log.Debug("related repository", "index", i, "item", KindRepository, "kind", string(it.Repo.Kind),
 		"status", status, "reason", it.Reason, "identifiers", it.Identifiers, "matches", it.Matches,

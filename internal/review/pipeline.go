@@ -407,6 +407,9 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		return nil, errNoWiring
 	}
 	cfg := deps.Config
+	// operator is the operator's configuration, before the repository config
+	// is merged into cfg: a related repository is searched with its filter.
+	operator := cfg
 	log := deps.Logger
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
@@ -479,11 +482,12 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// failure is the item's status, never the run's error. They are read
 	// before the incremental lookup, which compares them with the last
 	// review's record (spec §2.3). Related repositories (v2.5 spec V-13b)
-	// are fetched after them, only with context.repo.enabled.
+	// are resolved here and fetched only when the related block is placed,
+	// for the changed contract surface of the files the run reviews.
 	if len(args.Related) > 0 {
 		primaryURL, _ := related.Normalize(args.PRURL)
 		pl.related = related.Read(ctx, deps.Resolver, primaryURL, ref, args.Related, flt.Include,
-			cfg.Related.MaxTokens == 0, related.RepositoriesFor(cfg, deps.RepoContext), log)
+			cfg.Related.MaxTokens == 0, related.RepositoriesFor(cfg, operator, deps.RepoContext), log)
 	}
 
 	// An incremental review (X-36) continues from the commit the last
@@ -924,7 +928,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 	// The related block (X-41) goes next into the room the diff leaves,
 	// before the repository context; it never trims the primary diff.
-	if pin, pfit, err := pl.placeRelated(in, fit, prep.Text, budget, cfg); err != nil {
+	if pin, pfit, err := pl.placeRelated(ctx, in, fit, prep.Text, d.Files, budget, cfg); err != nil {
 		return nil, err
 	} else if pin.Related != in.Related {
 		in, fit = pin, pfit

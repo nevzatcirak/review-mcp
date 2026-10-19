@@ -281,6 +281,9 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// The repository config (X-40): read once at the base revision, then the
 	// run continues on the merged copy of the configuration.
 	rc := repocfg.ForRun(ctx, log, cfg, p, ref, pr)
+	// operator keeps the operator's configuration: a related repository is
+	// searched with its filter.
+	operator := cfg
 	cfg = rc.Config
 	factor := cfg.LLM.TokenEstimateFactor
 	extra := cfg.Ask.ExtraInstructions
@@ -302,12 +305,13 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// The related pull requests (X-41, spec V-13a §3.1), read as pr_review
 	// reads them: through the run's resolver, with the run's filter; a
 	// failure is the item's status, never the run's error. Related
-	// repositories (v2.5 spec V-13b) are fetched as pr_review fetches them.
+	// repositories (v2.5 spec V-13b) are resolved here and, as in pr_review,
+	// fetched and searched only when the related block is placed.
 	var rel []*related.Item
 	if len(args.Related) > 0 {
 		primaryURL, _ := related.Normalize(args.PRURL)
 		rel = related.Read(ctx, deps.Resolver, primaryURL, ref, args.Related, flt.Include, cfg.Related.MaxTokens == 0,
-			related.RepositoriesFor(cfg, deps.RepoContext), log)
+			related.RepositoriesFor(cfg, operator, deps.RepoContext), log)
 	}
 	// Repository context (X-22): the head is fetched now, under its own
 	// progress stage, when the diff defines a symbol to look for. pr_ask
@@ -410,8 +414,16 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// diffs are numbered so that a finding can name real lines. pr_ask has
 	// no findings and its own diff is plain (X-21), so its related diffs are
 	// plain too. Recommendation: keep.
+	//
+	// DESIGN-QUESTION (WP-13b DQ-6): pr_ask's repository items are WP-13d's
+	// (its instruction and cited links). Read no longer fetches, so without
+	// the search a readable repository item would keep no status; pr_ask
+	// searches them as pr_review does, for the surface of its whole diff, and
+	// their sections go into the same block. Recommendation: keep; WP-13d
+	// adds the instruction.
+	related.SearchFiles(ctx, rel, d.Files, flt, cfg.Related.MaxIdentifiers, fit.KeptLines < 0, log)
 	placed, err := related.Place(rel, cfg.Related.MaxTokens, diffpipe.ModePlain, cfg, flt, fit.KeptLines < 0,
-		func(block string) (bool, error) {
+		func(block string, _ bool) (bool, error) {
 			cand := in
 			cand.Related = block
 			f, err := fitPlain(cand, prep.Text, budget)

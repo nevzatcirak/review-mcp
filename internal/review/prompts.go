@@ -78,6 +78,10 @@ type PromptInput struct {
 	// budget order (issue, related, repository context) is the spec's.
 	// Recommendation: keep.
 	Related string
+	// RelatedRepositories is set when the related block holds a related
+	// repository (V-13b): the related instruction then gets
+	// RelatedRepositoryInstruction.
+	RelatedRepositories bool
 	// Discussion is the rendered existing-discussion block (DiscussionHeader
 	// and the fenced threads, see renderDiscussion); empty omits it. It is
 	// third-party text, and part of the scaffolding the diff budget reserves.
@@ -142,7 +146,7 @@ func (in *PromptInput) vars() map[string]any {
 		"issue":               in.Issue,
 		"issue_verdict":       in.EarlierVerdict,
 		"related":             in.Related,
-		"related_instruction": relatedInstruction(in.Related),
+		"related_instruction": relatedInstruction(in.Related, in.RelatedRepositories),
 		"issue_instruction":   issueInstruction(in.Issue),
 		"discussion":          in.Discussion,
 		"ci":                  in.CI,
@@ -158,13 +162,17 @@ func (in *PromptInput) vars() map[string]any {
 	}
 }
 
-// relatedInstruction is RelatedInstruction with a related block, ""
-// otherwise.
-func relatedInstruction(block string) string {
-	if block != "" {
-		return RelatedInstruction
+// relatedInstruction is RelatedInstruction with a related block, followed
+// by RelatedRepositoryInstruction when the block holds a related
+// repository; "" otherwise.
+func relatedInstruction(block string, repositories bool) string {
+	switch {
+	case block == "":
+		return ""
+	case repositories:
+		return RelatedInstruction + "\n\n" + RelatedRepositoryInstruction
 	}
-	return ""
+	return RelatedInstruction
 }
 
 // issueInstruction is the system prompt's paragraph of a run with an issue

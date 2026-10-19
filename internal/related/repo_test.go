@@ -42,12 +42,18 @@ func (r itemResolver) ResolveItem(raw string) (provider.ItemKind, provider.PRRef
 	return provider.ItemPullRequest, ref, provider.RepoRef{}, p, err
 }
 
-// fakeFetcher records the branch fetches, in order, into trace; errs fails
-// a repository (by name) with an error.
+// fakeFetcher records the branch fetches and searches, in order, into
+// trace; errs fails a repository's fetch (by name) with an error, and
+// searchErrs its search. A search returns the hits of hits for the
+// repository (by name), with found as Found when set.
 type fakeFetcher struct {
-	trace *[]string
-	repos []gitctx.Repo
-	errs  map[string]error
+	trace      *[]string
+	repos      []gitctx.Repo
+	errs       map[string]error
+	searchErrs map[string]error
+	hits       map[string][]gitctx.Hit
+	found      map[string]int
+	queries    []gitctx.TermQuery
 }
 
 func (f *fakeFetcher) EnsureBranch(_ context.Context, repo gitctx.Repo, branch string) (gitctx.Checkout, error) {
@@ -56,8 +62,32 @@ func (f *fakeFetcher) EnsureBranch(_ context.Context, repo gitctx.Repo, branch s
 	if err := f.errs[repo.Name]; err != nil {
 		return gitctx.Checkout{}, err
 	}
-	return gitctx.Checkout{GitDir: "/cache/git", HeadSHA: pinnedCommit, Ref: "refs/review-mcp/branch/x"}, nil
+	return gitctx.Checkout{GitDir: "/cache/" + repo.Name + "/git", HeadSHA: pinnedCommit, Ref: "refs/review-mcp/branch/x"}, nil
 }
+
+func (f *fakeFetcher) SearchTerms(_ context.Context, c gitctx.Checkout, q gitctx.TermQuery) (gitctx.TermResult, error) {
+	name := strings.TrimSuffix(strings.TrimPrefix(c.GitDir, "/cache/"), "/git")
+	*f.trace = append(*f.trace, "search "+name)
+	f.queries = append(f.queries, q)
+	if err := f.searchErrs[name]; err != nil {
+		return gitctx.TermResult{}, err
+	}
+	hits := f.hits[name]
+	found := len(hits)
+	if n, ok := f.found[name]; ok {
+		found = n
+	}
+	return gitctx.TermResult{Hits: hits, Found: found, Searched: len(q.Terms)}, nil
+}
+
+// enabledRepos is Repositories with f as fetcher and searcher.
+func enabledRepos(f *fakeFetcher) *Repositories {
+	return &Repositories{Enabled: true, Config: repoConfig(), Fetcher: f, Searcher: f}
+}
+
+// surface is a fixed changed contract surface of the tests.
+var surface = []Identifier{{Text: "userName", Kind: KindGone}, {Text: "/users", Kind: KindRoute},
+	{Text: "amountDue", Kind: KindChanged}, {Text: "FetchUser", Kind: KindSymbol}}
 
 // repoConfig enables Gitea and GitLab with tokens, as RepoFor needs.
 func repoConfig() *config.Config {
@@ -76,11 +106,12 @@ func newItemResolver(trace *[]string) (itemResolver, *fakeProvider, *fakeProvide
 }
 
 // TestReadRepositories: repository items are resolved in argument order with
-// the pull request items, fetched after them, sequentially, each with the
-// configured provider's base URL and token; the primary's own repository
-// (any branch) and a repeat of the same repository and branch are ignored;
-// a fetch failure is the item's fixed reason; the logs carry no URL path,
-// branch, commit or name.
+// the pull request items, and not fetched by Read; Search fetches them after
+// that, sequentially in argument order, each with the configured provider's
+// base URL and token, and searches each one fetched; the primary's own
+// repository (any branch) and a repeat of the same repository and branch
+// are ignored; a fetch failure is the item's fixed reason; the logs carry no
+// URL path, branch, commit, identifier or name.
 func TestReadRepositories(t *testing.T) {
 	var trace []string
 	r, _, gitlab := newItemResolver(&trace)
@@ -104,8 +135,14 @@ func TestReadRepositories(t *testing.T) {
 	}
 	var logs bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	items := Read(context.Background(), r, "https://git.example/gitea/o/r/7", primary, urls, nil, false,
-		&Repositories{Enabled: true, Config: repoConfig(), Fetcher: f}, log)
+	items := Read(context.Background(), r, "https://git.example/gitea/o/r/7", primary, urls, nil, false, enabledRepos(f), log)
+	if slices.ContainsFunc(trace, func(s string) bool { return strings.HasPrefix(s, "fetch") }) {
+		t.Fatalf("Read fetched: %q", trace)
+	}
+	if got := len(Pending(items)); got != 5 {
+		t.Errorf("%d pending repository items, want 5", got)
+	}
+	Search(context.Background(), items, surface, 0, 20, log)
 
 	want := []struct{ status, reason string }{
 		{"", ""}, {"", ""}, {StatusIgnored, ReasonPrimaryRepository}, {StatusIgnored, ReasonDuplicate},
@@ -125,18 +162,22 @@ func TestReadRepositories(t *testing.T) {
 	if items[1].IsRepository() || !items[1].Read || items[9].IsRepository() {
 		t.Errorf("pull request item %+v, unresolved item %+v", items[1], items[9])
 	}
-	if it := items[0]; !it.Fetched || it.Checkout.HeadSHA != pinnedCommit || it.Repo.Branch != "feature/BRANCH-MARK" ||
-		it.Read || len(ReadItems(items)) != 1 {
+	if it := items[0]; !it.Fetched || !it.Searched || it.Checkout.HeadSHA != pinnedCommit || it.Repo.Branch != "feature/BRANCH-MARK" ||
+		it.Read || len(ReadItems(items)) != 1 || it.Identifiers != 4 {
 		t.Errorf("fetched item %+v", it)
 	}
-	if !items[5].Fetched || items[5].Repo.Branch != "" {
+	if !items[5].Fetched || !items[5].Searched || items[5].Repo.Branch != "" {
 		t.Errorf("default-branch item %+v", items[5])
 	}
-	// Resolution in argument order, then the pull request's reads, and the
-	// fetches only after every item was resolved, in argument order.
+	if items[6].Fetched || items[6].Searched {
+		t.Errorf("a failed fetch is searched: %+v", items[6])
+	}
+	// Resolution in argument order, then the pull request's reads; the
+	// fetches only in Search, in argument order, each followed by its search.
 	wantTrace := []string{"resolve repo web-ui", "resolve pr", "resolve repo R", "resolve repo web-ui", "resolve repo web-ui",
 		"resolve repo gone", "resolve repo locked", "resolve repo slow",
-		"fetch web-ui@feature/BRANCH-MARK", "fetch web-ui@", "fetch gone@x", "fetch locked@", "fetch slow@"}
+		"fetch web-ui@feature/BRANCH-MARK", "search web-ui", "fetch web-ui@", "search web-ui", "fetch gone@x", "fetch locked@",
+		"fetch slow@"}
 	if !slices.Equal(trace, wantTrace) {
 		t.Errorf("trace %q\nwant  %q", trace, wantTrace)
 	}
@@ -150,12 +191,18 @@ func TestReadRepositories(t *testing.T) {
 	if got := f.repos[4]; got.Kind != provider.KindGitea || got.BaseURL != "https://git.example" {
 		t.Errorf("gitea repository %+v", got)
 	}
-	for _, leak := range []string{"BRANCH-MARK", "web-ui", "team", pinnedCommit, "gitlab.example", "/repo/"} {
+	q := f.queries[0]
+	if len(q.Terms) != 4 || !q.Terms[0].Word || q.Terms[1].Word || q.Terms[1].Text != "/users" || q.Filter != nil ||
+		q.MaxPerTerm != 5 || q.MaxTotal != 30 || q.ContextLines != 2 || q.Paths != nil {
+		t.Errorf("query %+v", q)
+	}
+	for _, leak := range []string{"BRANCH-MARK", "web-ui", "team", pinnedCommit, "gitlab.example", "/repo/", "userName", "/users"} {
 		if strings.Contains(logs.String(), leak) {
 			t.Errorf("the logs carry %q", leak)
 		}
 	}
-	for _, want := range []string{"index=0 item=repository kind=gitlab status=fetched reason=\"\" identifiers=0 matches=0 matches_shown=0",
+	for _, want := range []string{"index=0 item=repository kind=gitlab status=readable reason=\"\" identifiers=0 matches=0 matches_shown=0",
+		"index=0 item=repository kind=gitlab status=searched reason=\"\" identifiers=4 matches=0 matches_shown=0",
 		"index=6 item=repository kind=gitlab status=failed reason=branch_not_found",
 		"index=2 item=repository kind=gitea status=ignored reason=primary_repository"} {
 		if !strings.Contains(logs.String(), want) {
@@ -173,7 +220,8 @@ func TestReadRepositoriesContextOff(t *testing.T) {
 	f := &fakeFetcher{trace: &trace}
 	items := Read(context.Background(), r, "https://git.example/gitea/o/r/7", provider.PRRef{}, []string{
 		"https://gitlab.example/repo/team/web-ui", "https://gitlab.example/gitlab/g/p/3", "https://git.example/repo/team/api/main",
-	}, nil, false, &Repositories{Enabled: false, Config: repoConfig(), Fetcher: f}, nil)
+	}, nil, false, &Repositories{Enabled: false, Config: repoConfig(), Fetcher: f, Searcher: f}, nil)
+	Search(context.Background(), items, surface, 0, 20, nil)
 	for _, i := range []int{0, 2} {
 		if it := items[i]; it.Status != StatusFailed || it.Reason != ReasonRepoContextOff || !it.IsRepository() || it.Fetched {
 			t.Errorf("item %d: %+v", i, it)
@@ -186,27 +234,39 @@ func TestReadRepositoriesContextOff(t *testing.T) {
 		t.Errorf("a git fetch ran: %q", trace)
 	}
 	// RepositoriesFor builds no fetcher without context.repo.enabled, and
-	// keeps a test backend that cannot fetch branches out.
-	cfg := repoConfig()
-	if rs := RepositoriesFor(cfg, f); rs.Enabled || rs.Fetcher != nil {
+	// keeps a test backend that cannot fetch branches out. The search
+	// filter is the operator's: the ignore globs of the merged configuration
+	// do not reach it.
+	cfg, operator := repoConfig(), repoConfig()
+	cfg.Ignore.Glob = []string{"web/**"}
+	if rs := RepositoriesFor(cfg, operator, f); rs.Enabled || rs.Fetcher != nil || rs.Searcher != nil {
 		t.Errorf("off: %+v", rs)
 	}
 	cfg.Context.Repo.Enabled = true
-	if rs := RepositoriesFor(cfg, f); !rs.Enabled || rs.Fetcher != f {
+	rs := RepositoriesFor(cfg, operator, f)
+	if !rs.Enabled || rs.Fetcher != f || rs.Searcher != f || rs.Filter == nil || !rs.Filter.Include("web/app.ts") {
 		t.Errorf("on with a fetcher: %+v", rs)
 	}
-	if rs := RepositoriesFor(cfg, struct{}{}); rs.Fetcher != nil {
+	if rs := RepositoriesFor(cfg, nil, f); rs.Filter == nil || rs.Filter.Include("web/app.ts") {
+		t.Errorf("without an operator configuration the run's filter is used: %+v", rs)
+	}
+	if rs := RepositoriesFor(cfg, operator, struct{}{}); rs.Fetcher != nil || rs.Searcher != nil {
 		t.Errorf("a backend without branches: %+v", rs)
 	}
-	if rs := RepositoriesFor(cfg, nil); rs.Fetcher == nil {
+	if rs := RepositoriesFor(cfg, operator, nil); rs.Fetcher == nil || rs.Searcher == nil {
 		t.Error("no backend: the real runner is not selected")
 	}
-	// With a fetcher missing, the item fails as unsupported, still without
-	// a git command.
-	items = Read(context.Background(), r, "", provider.PRRef{}, []string{"https://gitlab.example/repo/team/web-ui"}, nil, false,
-		&Repositories{Enabled: true, Config: repoConfig()}, nil)
-	if it := items[0]; it.Status != StatusFailed || it.Reason != gitctx.ReasonUnsupported {
-		t.Errorf("no fetcher: %+v", it)
+	// With a fetcher or a searcher missing, the item fails as unsupported,
+	// still without a git command.
+	for _, repos := range []*Repositories{{Enabled: true, Config: repoConfig()}, {Enabled: true, Config: repoConfig(), Fetcher: f}} {
+		items = Read(context.Background(), r, "", provider.PRRef{}, []string{"https://gitlab.example/repo/team/web-ui"}, nil, false,
+			repos, nil)
+		if it := items[0]; it.Status != StatusFailed || it.Reason != gitctx.ReasonUnsupported || len(Pending(items)) != 0 {
+			t.Errorf("no fetcher or searcher: %+v", it)
+		}
+	}
+	if len(f.repos) != 0 {
+		t.Errorf("a git fetch ran: %q", trace)
 	}
 }
 
@@ -218,7 +278,7 @@ func TestReadRepositoriesOffAndPRInfo(t *testing.T) {
 	var trace []string
 	r, _, _ := newItemResolver(&trace)
 	f := &fakeFetcher{trace: &trace}
-	repos := &Repositories{Enabled: true, Config: repoConfig(), Fetcher: f}
+	repos := enabledRepos(f)
 	items := Read(context.Background(), r, "", provider.PRRef{}, []string{"https://gitlab.example/repo/team/web-ui"}, nil, true, repos, nil)
 	if it := items[0]; it.Status != StatusNotPlaced || it.Reason != ReasonOff || len(trace) != 0 {
 		t.Errorf("off: %+v, trace %q", it, trace)
@@ -236,38 +296,37 @@ func TestReadRepositoriesOffAndPRInfo(t *testing.T) {
 
 // TestCoverageRepositoryItems: a repository item's entry carries kind,
 // branch ("" for the default branch), the counts (0 included) and, when
-// fetched, the commit; a pull request item carries none of them. A fetched
-// item takes the run's not_placed reasons (Mark), is never did_not_fit
-// (Place has nothing of it to place in WP-13a), and is otherwise not_placed
-// without a reason. Failed and ignored repository items get their notes.
+// fetched, the commit; a pull request item carries none of them. An item is
+// fetched only by Search, so one the run marks first (review_in_parts,
+// nothing_to_review) has no commit; a block that does not fit marks the
+// searched repository items too. Failed and ignored repository items get
+// their notes.
 func TestCoverageRepositoryItems(t *testing.T) {
 	var trace []string
 	r, _, _ := newItemResolver(&trace)
-	f := &fakeFetcher{trace: &trace, errs: map[string]error{"gone": &gitctx.Error{Reason: gitctx.ReasonBranchNotFound}}}
+	f := &fakeFetcher{trace: &trace, errs: map[string]error{"gone": &gitctx.Error{Reason: gitctx.ReasonBranchNotFound}},
+		hits: map[string][]gitctx.Hit{"web-ui": {{Symbol: "userName", Path: "src/a.ts", Line: 3, Snippet: "x.userName"}}}}
 	read := func() []*Item {
 		return Read(context.Background(), r, "", provider.PRRef{Kind: provider.KindGitea, Namespace: "o", Repo: "r"}, []string{
 			"https://gitlab.example/gitlab/g/p/3", "https://gitlab.example/repo/team/web-ui",
 			"https://gitlab.example/repo/team/api/release/2.5", "https://gitlab.example/repo/team/gone/x",
 			"https://git.example/repo/o/r",
-		}, nil, false, &Repositories{Enabled: true, Config: repoConfig(), Fetcher: f}, nil)
+		}, nil, false, enabledRepos(f), nil)
 	}
 	items := read()
-	raw, err := json.Marshal(Coverage(items, nil))
-	if err != nil {
+	Search(context.Background(), items, surface, 0, 20, nil)
+	if _, err := Place(items, 100000, 0, repoConfig(), nil, true, func(string, bool) (bool, error) { return true, nil }); err != nil {
 		t.Fatal(err)
 	}
-	var got []map[string]any
-	if err := json.Unmarshal(raw, &got); err != nil {
-		t.Fatal(err)
-	}
+	got := coverageMaps(t, items, nil)
 	for _, k := range []string{"kind", "branch", "commit", "identifiers", "matches", "matches_shown", "source"} {
 		if _, ok := got[0][k]; ok {
 			t.Errorf("the pull request item carries %q: %v", k, got[0])
 		}
 	}
 	wantRepo := []map[string]any{
-		{"kind": "repository", "branch": "", "commit": pinnedCommit, "status": "not_placed", "identifiers": 0.0, "matches": 0.0, "matches_shown": 0.0},
-		{"kind": "repository", "branch": "release/2.5", "commit": pinnedCommit, "status": "not_placed"},
+		{"kind": "repository", "branch": "", "commit": pinnedCommit, "status": "full", "identifiers": 4.0, "matches": 1.0, "matches_shown": 1.0},
+		{"kind": "repository", "branch": "release/2.5", "commit": pinnedCommit, "status": "no_use_found", "identifiers": 4.0, "matches": 0.0},
 		{"kind": "repository", "branch": "x", "status": "failed", "reason": "branch_not_found", "identifiers": 0.0},
 		{"kind": "repository", "branch": "", "status": "ignored", "reason": "primary_repository"},
 	}
@@ -284,7 +343,7 @@ func TestCoverageRepositoryItems(t *testing.T) {
 	}
 	for _, i := range []int{1, 2} {
 		if _, ok := got[i]["reason"]; ok {
-			t.Errorf("fetched entry %d has a reason: %v", i, got[i])
+			t.Errorf("searched entry %d has a reason: %v", i, got[i])
 		}
 	}
 	for _, i := range []int{3, 4} {
@@ -296,32 +355,78 @@ func TestCoverageRepositoryItems(t *testing.T) {
 	for _, n := range []string{
 		"Related repository https://gitlab.example/repo/team/gone/x could not be read (branch_not_found) and was not used.",
 		"Related repository https://git.example/repo/o/r was ignored: it is the reviewed pull request's own repository or a duplicate.",
+		"No use of the changed identifiers was found in team/api at " + pinnedCommit[:12] + ". Text search does not see dynamic " +
+			"or generated uses, so this is not a statement that nothing is affected.",
 	} {
 		if !slices.Contains(notes, n) {
 			t.Errorf("notes %q lack %q", notes, n)
 		}
 	}
-	if len(notes) != 2 {
+	if len(notes) != 3 {
 		t.Errorf("notes %q", notes)
 	}
 
-	// The run's reasons: review_in_parts reaches the fetched items; a block
-	// that does not fit marks only the pull request item.
+	// The run's reasons reach the readable repository items, which are then
+	// never fetched.
+	trace = nil
 	items = read()
 	Mark(items, StatusNotPlaced, ReasonReviewInParts)
-	for _, i := range []int{0, 1, 2} {
-		if items[i].Status != StatusNotPlaced || items[i].Reason != ReasonReviewInParts {
-			t.Errorf("in parts, item %d: %q %q", i, items[i].Status, items[i].Reason)
+	for _, i := range []int{0, 1, 2, 3} {
+		if items[i].Status != StatusNotPlaced || items[i].Reason != ReasonReviewInParts || items[i].Fetched {
+			t.Errorf("in parts, item %d: %+v", i, items[i])
 		}
 	}
-	if items[3].Reason != ReasonBranchNotFound {
-		t.Errorf("a failed item was marked: %+v", items[3])
+	Search(context.Background(), items, surface, 0, 20, nil)
+	if slices.ContainsFunc(trace, func(s string) bool { return strings.HasPrefix(s, "fetch") }) {
+		t.Errorf("a marked item was fetched: %q", trace)
+	}
+	if got := coverageMaps(t, items, nil); got[1]["commit"] != nil || got[1]["reason"] != ReasonReviewInParts {
+		t.Errorf("in parts: %v", got[1])
+	}
+
+	// A block that does not fit marks the pull request and the searched
+	// repositories; one that cannot be tried (the primary diff is trimmed)
+	// leaves the repositories unsearched and marks them too.
+	items = read()
+	Search(context.Background(), items, surface, 0, 20, nil)
+	if _, err := Place(items, 1000, 0, repoConfig(), nil, true, func(string, bool) (bool, error) { return false, nil }); err != nil {
+		t.Fatal(err)
+	}
+	for _, i := range []int{0, 1, 2} {
+		if items[i].Status != StatusNotPlaced || items[i].Reason != ReasonDidNotFit {
+			t.Errorf("did not fit, item %d: %+v", i, items[i])
+		}
+	}
+	if items[1].MatchesShown != 0 || items[1].Matches != 1 {
+		t.Errorf("did not fit: counts %+v", items[1])
 	}
 	items = read()
+	trace = nil
+	SearchFiles(context.Background(), items, []provider.FilePatch{fp("a.proto", "@@ -1,1 +1,0 @@", "-  string gone_field = 1;")},
+		nil, 20, false, nil)
 	if _, err := Place(items, 1000, 0, repoConfig(), nil, false, nil); err != nil {
 		t.Fatal(err)
 	}
-	if items[0].Reason != ReasonDidNotFit || items[1].Status != "" || items[2].Status != "" {
-		t.Errorf("did not fit: %+v %+v", items[0], items[1])
+	for _, i := range []int{0, 1, 2} {
+		if items[i].Status != StatusNotPlaced || items[i].Reason != ReasonDidNotFit || items[i].Fetched {
+			t.Errorf("no room, item %d: %+v", i, items[i])
+		}
 	}
+	if len(trace) != 0 {
+		t.Errorf("git ran without room for the block: %q", trace)
+	}
+}
+
+// coverageMaps is Coverage as decoded JSON objects.
+func coverageMaps(t *testing.T, items []*Item, placed []Section) []map[string]any {
+	t.Helper()
+	raw, err := json.Marshal(Coverage(items, placed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	return got
 }

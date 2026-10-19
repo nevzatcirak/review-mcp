@@ -307,10 +307,17 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// failure is the item's status, never the run's error. Related
 	// repositories (v2.5 spec V-13b) are resolved here and, as in pr_review,
 	// fetched and searched only when the related block is placed.
+	// Without a related argument, the related repositories the repository
+	// config declares are read instead (V-13b §3.2; rc.Related holds them
+	// only with related.from_repo_config). A call's own related always wins.
 	var rel []*related.Item
-	if len(args.Related) > 0 {
-		primaryURL, _ := related.Normalize(args.PRURL)
+	primaryURL, _ := related.Normalize(args.PRURL)
+	switch {
+	case len(args.Related) > 0:
 		rel = related.Read(ctx, deps.Resolver, primaryURL, ref, args.Related, flt.Include, cfg.Related.MaxTokens == 0,
+			related.RepositoriesFor(cfg, operator, deps.RepoContext), log)
+	case len(rc.Related) > 0:
+		rel = related.ReadDeclared(ctx, deps.Resolver, primaryURL, ref, rc.Related, cfg.Related.MaxTokens == 0,
 			related.RepositoriesFor(cfg, operator, deps.RepoContext), log)
 	}
 	// Repository context (X-22): the head is fetched now, under its own

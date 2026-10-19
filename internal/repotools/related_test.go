@@ -19,6 +19,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/llm"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 )
 
 // Repository tools in related repositories (v2.5 spec V-13b §3.1).
@@ -385,4 +386,18 @@ func TestRepoToolCallJSON(t *testing.T) {
 		t.Fatalf("calls %s\nwant  %s", got, want)
 	}
 	_ = llmrun.RepoToolCall(Call{Repo: "R2"})
+}
+
+// TestDeclaredPathPrefixesFollowThePathRules: a path prefix the repository
+// config may declare (repocfg.ValidPathPrefix) is exactly a directory the
+// tools' path rules accept, other than the root.
+func TestDeclaredPathPrefixesFollowThePathRules(t *testing.T) {
+	for _, p := range []string{"src", "src/", "src/api/", "a..b/c", ".github", "", "/", "src//", "..", "a/../b", ".", "./a",
+		"/etc", `a\b`, ".git", "sub/.Git/", "a\nb", "a\x00b", "\xff", "dir with space/ü", strings.Repeat("a", MaxPathBytes),
+		strings.Repeat("a", MaxPathBytes+1), strings.Repeat("a", MaxPathBytes) + "/"} {
+		got, ok := AllowedPath(p, true)
+		if want := ok && got != ""; repocfg.ValidPathPrefix(p) != want {
+			t.Errorf("%q: repocfg %v, path rules %v", p, !want, want)
+		}
+	}
 }

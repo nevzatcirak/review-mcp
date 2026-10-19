@@ -36,6 +36,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/filter"
 	"github.com/nevzatcirak/review-mcp/internal/gitctx"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 )
 
 // Limits of the related argument (spec §1.1).
@@ -69,8 +70,8 @@ const (
 // request item has no kind (V-13b §1.3 item 1).
 const KindRepository = string(provider.ItemRepository)
 
-// SourceRepoConfig is coverage.related[].source of an item read from the
-// repository config (V-13b §3.2); declared for the schema.
+// SourceRepoConfig is coverage.related[].source of an item the repository
+// config declares (V-13b §3.2, ReadDeclared).
 const SourceRepoConfig = "repo_config"
 
 // Reason values (coverage.related[].reason).
@@ -438,7 +439,131 @@ func (it *Item) SearchFilter() *filter.Filter {
 // request is never read twice nor shown as its own context.
 func Read(ctx context.Context, r Resolver, primaryURL string, primary provider.PRRef, urls []string,
 	include func(string) bool, off bool, repos *Repositories, log *slog.Logger) []*Item {
-	return read(ctx, r, primaryURL, primary, urls, include, off, true, repos, log)
+	return read(ctx, r, primaryURL, primary, requestsOf(urls), include, off, true, repos, log)
+}
+
+// ReadDeclared is Read for the related repositories the reviewed
+// repository's config declares (v2.5 spec V-13b §3.2), which a run reads
+// only when the call passes no related argument and the operator key
+// related.from_repo_config is set: the caller decides. Each item has Source
+// SourceRepoConfig, is a repository item whatever happens to it, and keeps
+// the declaration's Paths, which confine its search and the tools' reads.
+// Its URL goes through the run's resolver like any related URL, so a URL
+// that matches no configured provider is failed with url_not_configured
+// before any request or git command: a declaration can never add a host.
+//
+// DESIGN-QUESTION (WP-13c DQ-6): the spec declares repositories only. A
+// declared URL that is malformed, or that resolves to a pull request URL,
+// is failed with url_malformed; a declaration whose branch differs from the
+// branch its URL names is failed with url_malformed too, since either
+// choice would read a branch the file does not name unambiguously; the
+// same branch twice, or a branch with a URL without one, is that branch.
+// Recommendation: keep.
+func ReadDeclared(ctx context.Context, r Resolver, primaryURL string, primary provider.PRRef, decls []repocfg.Declared,
+	off bool, repos *Repositories, log *slog.Logger) []*Item {
+	reqs := make([]request, len(decls))
+	for i := range decls {
+		reqs[i] = declaredRequest(decls[i])
+	}
+	return read(ctx, r, primaryURL, primary, reqs, nil, off, true, repos, log)
+}
+
+// ResolveDeclared resolves the related repositories the repository config
+// declares without reading them (pr_info, V-13b §3.2 item 4): each is a
+// repository item with Source SourceRepoConfig; one that resolves to a
+// configured provider keeps no status (it would be read), the others are
+// failed or ignored as ReadDeclared makes them. Nothing is fetched, and the
+// resolver makes no request.
+func ResolveDeclared(r Resolver, primary provider.PRRef, decls []repocfg.Declared, log *slog.Logger) []*Item {
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
+	ir, _ := r.(ItemResolver)
+	items := make([]*Item, 0, len(decls))
+	var seen []provider.RepoRef
+	for i, d := range decls {
+		rq := declaredRequest(d)
+		it := declaredItem(rq)
+		items = append(items, it)
+		switch {
+		case rq.malformed, ir == nil:
+			it.Status, it.Reason = StatusFailed, ReasonURLMalformed
+		default:
+			kind, _, repo, p, err := ir.ResolveItem(rq.url)
+			if err != nil {
+				it.Status, it.Reason = StatusFailed, reasonOf(err)
+				break
+			}
+			repo, ok := declaredRef(rq.declared, kind, repo)
+			if !ok {
+				it.Status, it.Reason = StatusFailed, ReasonURLMalformed
+				break
+			}
+			it.Repo, it.Provider = repo, p
+			switch {
+			case sameRepo(repo, primary):
+				it.Status, it.Reason = StatusIgnored, ReasonPrimaryRepository
+			case containsRepo(seen, repo):
+				it.Status, it.Reason = StatusIgnored, ReasonDuplicate
+			default:
+				seen = append(seen, repo)
+			}
+		}
+		logRepository(log, i, it)
+	}
+	return items
+}
+
+// declaredRequest is the request of a declaration: its URL as the related
+// argument would normalise it, or as written when Normalize refuses it
+// (malformed).
+func declaredRequest(d repocfg.Declared) request {
+	u, ok := Normalize(d.URL)
+	if ok {
+		u = keepAt(d.URL, u)
+	} else {
+		u = strings.TrimSpace(d.URL)
+	}
+	return request{url: u, declared: &d, malformed: !ok}
+}
+
+// declaredItem is the item of a declared request before it is resolved: a
+// repository item whatever happens to it, with its source, paths and
+// declared branch.
+func declaredItem(rq request) *Item {
+	d := rq.declared
+	return &Item{URL: rq.url, Kind: provider.ItemRepository, Source: SourceRepoConfig, Paths: d.Paths,
+		Repo: provider.RepoRef{Branch: d.Branch, URL: rq.url}}
+}
+
+// declaredRef applies the declaration d to what its URL resolved to: ok is
+// false when the URL is not a repository's, or names another branch than
+// d (WP-13c DQ-6); d's branch is the repository's otherwise.
+func declaredRef(d *repocfg.Declared, kind provider.ItemKind, repo provider.RepoRef) (provider.RepoRef, bool) {
+	if kind != provider.ItemRepository || (d.Branch != "" && repo.Branch != "" && d.Branch != repo.Branch) {
+		return repo, false
+	}
+	if d.Branch != "" {
+		repo.Branch = d.Branch
+	}
+	return repo, true
+}
+
+// request is one item to read: a URL of the related argument, or a
+// declaration of the repository config (declared set; malformed when its URL
+// is not one Normalize accepts).
+type request struct {
+	url       string
+	declared  *repocfg.Declared
+	malformed bool
+}
+
+func requestsOf(urls []string) []request {
+	out := make([]request, len(urls))
+	for i, u := range urls {
+		out[i] = request{url: u}
+	}
+	return out
 }
 
 // ReadPullRequests is Read without the diffs (pr_info, spec V-13a §3.2):
@@ -453,10 +578,10 @@ func Read(ctx context.Context, r Resolver, primaryURL string, primary provider.P
 // Recommendation: keep.
 func ReadPullRequests(ctx context.Context, r Resolver, primaryURL string, primary provider.PRRef, urls []string,
 	log *slog.Logger) []*Item {
-	return read(ctx, r, primaryURL, primary, urls, nil, false, false, nil, log)
+	return read(ctx, r, primaryURL, primary, requestsOf(urls), nil, false, false, nil, log)
 }
 
-func read(ctx context.Context, r Resolver, primaryURL string, primary provider.PRRef, urls []string,
+func read(ctx context.Context, r Resolver, primaryURL string, primary provider.PRRef, reqs []request,
 	include func(string) bool, off, withDiff bool, repos *Repositories, log *slog.Logger) []*Item {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
@@ -468,15 +593,21 @@ func read(ctx context.Context, r Resolver, primaryURL string, primary provider.P
 	if ir, ok := r.(ItemResolver); ok && repos != nil {
 		resolve = ir.ResolveItem
 	}
-	items := make([]*Item, 0, len(urls))
+	items := make([]*Item, 0, len(reqs))
 	firstByURL := map[string]*Item{}
 	var seenRefs []provider.PRRef
 	var seenRepos []provider.RepoRef
 	var pending []int // the repository items to fetch, by index
-	for i, u := range urls {
+	for i, rq := range reqs {
+		u := rq.url
 		it := &Item{URL: u}
+		if rq.declared != nil {
+			it = declaredItem(rq)
+		}
 		items = append(items, it)
 		switch first := firstByURL[u]; {
+		case rq.malformed:
+			it.Status, it.Reason = StatusFailed, ReasonURLMalformed
 		case u == primaryURL:
 			it.Status, it.Reason = StatusIgnored, ReasonPrimary
 		case first != nil:
@@ -497,6 +628,17 @@ func read(ctx context.Context, r Resolver, primaryURL string, primary provider.P
 			it.Status, it.Reason = StatusFailed, reasonOf(err)
 			log.Debug("related pull request", "index", i, "status", it.Status, "reason", it.Reason)
 			continue
+		}
+		if rq.declared != nil {
+			// A declaration must name a repository, and its branch must agree
+			// with its URL's (WP-13c DQ-6).
+			var ok bool
+			if repo, ok = declaredRef(rq.declared, kind, repo); !ok {
+				it.Status, it.Reason = StatusFailed, ReasonURLMalformed
+				logRepository(log, i, it)
+				continue
+			}
+			kind = provider.ItemRepository
 		}
 		if kind == provider.ItemRepository {
 			it.Kind, it.Repo, it.Provider = kind, repo, p

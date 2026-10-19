@@ -91,3 +91,19 @@ func TestConsumerImpactRendering(t *testing.T) {
 		})
 	}
 }
+
+// TestDeclaredRepositoryRendering: the overview names a related repository
+// read because the repository config declares it (V-13b §3.2 item 3); one
+// given by the call is listed as before.
+func TestDeclaredRepositoryRendering(t *testing.T) {
+	res := consumerResult()
+	res.Coverage.Related[2].Source = "repo_config"
+	for name, out := range map[string]string{"client": Client(res), "gfm": Provider(res, capsGitea), "plain": Provider(res, capsBB)} {
+		if want := "(https://gitlab.example/grp/api): `no use found at 0fedcba98765` (declared in the repository config)"; !strings.Contains(out, want) {
+			t.Errorf("%s: the overview lacks %q:\n%s", name, want, out)
+		}
+		if strings.Count(out, "declared in the repository config") != 1 {
+			t.Errorf("%s: the mark appears %d times", name, strings.Count(out, "declared in the repository config"))
+		}
+	}
+}

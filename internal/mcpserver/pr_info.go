@@ -41,7 +41,7 @@ func registerPRInfo(s *mcp.Server, deps Deps) {
 			return nil, zero, err
 		}
 		defer sc.release()
-		res, err := tools.PRInfoWithRelated(ctx, sc.resolver, in.PRURL, relatedURLs, logger(deps))
+		res, err := tools.PRInfoFor(ctx, sc.cfg, sc.resolver, in.PRURL, relatedURLs, logger(deps))
 		if err != nil {
 			msg := tools.UserMessage(err)
 			logger(deps).Debug("pr_info failed", "error", msg)

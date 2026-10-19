@@ -250,8 +250,10 @@ func writeCoverage(b *strings.Builder, heading string, res *review.Result) {
 // spec V-13a §1.5 item 3), as links with their status, and the related
 // repositories that were searched (V-13b §2.4 item 4), as links with
 // "searched {i} identifiers at {commit 12}: {m} matches" or "no use found at
-// {commit 12}"; the others are in the notes. The heading names repositories
-// only when one is listed, so a list of pull requests reads as in 2.4.
+// {commit 12}"; the others are in the notes. A repository read because the
+// repository config declares it is marked so (V-13b §3.2 item 3). The
+// heading names repositories only when one is listed, so a list of pull
+// requests reads as in 2.4.
 // Nothing without one.
 func writeRelated(b *strings.Builder, items []review.RelatedItem) {
 	var lines []string
@@ -276,7 +278,13 @@ func writeRelated(b *strings.Builder, items []review.RelatedItem) {
 		if l := safeLink(it.URL); l != "" {
 			text = "[" + mdutil.Inline(relatedName(it.URL)) + "](" + l + ")"
 		}
-		lines = append(lines, "- "+text+": "+literal(status))
+		line := "- " + text + ": " + literal(status)
+		if it.Source == related.SourceRepoConfig {
+			// Read because the repository config declares it (V-13b §3.2
+			// item 3): the overview names every repository read this way.
+			line += " (declared in the repository config)"
+		}
+		lines = append(lines, line)
 	}
 	if len(lines) == 0 {
 		return

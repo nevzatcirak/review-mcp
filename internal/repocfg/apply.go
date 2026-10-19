@@ -53,6 +53,11 @@ type Outcome struct {
 	// checked against the known focus values): the default of the
 	// multi_perspective_review prompt. Nil when the file has none.
 	Focuses []string
+	// Related are the related repositories the file declares
+	// ([[related.repos]], v2.5 spec V-13b §3.2), the valid ones in file
+	// order, kept only with related.from_repo_config. Nil when there are
+	// none or reading them is off.
+	Related []Declared
 }
 
 // Apply merges the allowed settings of f into a copy of base and reports what
@@ -85,10 +90,21 @@ func Apply(base *config.Config, f *File) *Outcome {
 		return o
 	}
 
-	var invalid, cut []string
+	var invalid, cut, off []string
 	for _, key := range allowList {
 		v, ok := f.values[key]
 		if !ok {
+			continue
+		}
+		if key == keyRelatedRepos {
+			applied, bad, isOff := applyRelated(o, v)
+			switch {
+			case isOff:
+				off = append(off, key)
+			case applied:
+				o.Result.Applied = append(o.Result.Applied, key)
+			}
+			invalid = append(invalid, bad...)
 			continue
 		}
 		switch applyKey(o, key, v) {
@@ -106,7 +122,7 @@ func Apply(base *config.Config, f *File) *Outcome {
 	if len(o.Result.Applied) == 0 {
 		o.Result.Status = StatusNothingApplied
 	}
-	o.Result.Ignored = capNames(append(slices.Clone(f.ignored), invalid...))
+	o.Result.Ignored = capNames(append(append(slices.Clone(f.ignored), invalid...), off...))
 
 	if len(o.Result.Applied) > 0 {
 		o.Notes = append(o.Notes, fmt.Sprintf("Settings from `%s` on the target branch were applied: %s.", f.path, strings.Join(o.Result.Applied, ", ")))
@@ -117,6 +133,9 @@ func Apply(base *config.Config, f *File) *Outcome {
 	}
 	for _, k := range cut {
 		o.Notes = append(o.Notes, fmt.Sprintf("The value of %s in `%s` is longer than 2,000 bytes and was cut.", k, f.path))
+	}
+	if len(off) > 0 {
+		o.Notes = append(o.Notes, NoteRelatedOff)
 	}
 	return o
 }

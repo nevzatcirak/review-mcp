@@ -484,9 +484,24 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// review's record (spec §2.3). Related repositories (v2.5 spec V-13b)
 	// are resolved here and fetched only when the related block is placed,
 	// for the changed contract surface of the files the run reviews.
-	if len(args.Related) > 0 {
-		primaryURL, _ := related.Normalize(args.PRURL)
+	//
+	// Without a related argument, the related repositories the repository
+	// config declares are read the same way (V-13b §3.2): rc.Related holds
+	// them only with the operator key related.from_repo_config. A call's own
+	// related always wins.
+	//
+	// DESIGN-QUESTION (WP-13c DQ-7): the related argument is refused with
+	// focus or findings (V-13a, kept by V-13b §0 item 9). Declared relations
+	// are not an argument the caller can drop, so a focused run or a merged
+	// publish simply does not read them (no coverage entry, no note), as it
+	// would not read the argument's. Recommendation: keep.
+	primaryURL, _ := related.Normalize(args.PRURL)
+	switch {
+	case len(args.Related) > 0:
 		pl.related = related.Read(ctx, deps.Resolver, primaryURL, ref, args.Related, flt.Include,
+			cfg.Related.MaxTokens == 0, related.RepositoriesFor(cfg, operator, deps.RepoContext), log)
+	case len(rc.Related) > 0 && args.Focus == "" && !supplied:
+		pl.related = related.ReadDeclared(ctx, deps.Resolver, primaryURL, ref, rc.Related,
 			cfg.Related.MaxTokens == 0, related.RepositoriesFor(cfg, operator, deps.RepoContext), log)
 	}
 

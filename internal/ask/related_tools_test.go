@@ -10,6 +10,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/gitctx"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
+	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 	"github.com/nevzatcirak/review-mcp/internal/repotools"
 )
 
@@ -115,4 +116,39 @@ func mustJSONText(t *testing.T, v any) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+// TestAskDeclaredRelations: pr_ask reads the related repositories the
+// repository config declares at the base revision only with
+// related.from_repo_config and without a related argument (source
+// repo_config); with the switch off the key is ignored with the note and
+// nothing is fetched.
+func TestAskDeclaredRelations(t *testing.T) {
+	for _, on := range []bool{false, true} {
+		h, tr, _ := toolHarness(0)
+		h.deps.LLM = h.llm
+		h.prov.files = append(h.prov.files, provider.FilePatch{Path: "api/openapi.yaml", Type: provider.ChangeModified,
+			Patch:      "@@ -10,3 +10,3 @@ components:\n       properties:\n-        userName:\n+        displayName:\n           type: string\n",
+			BaseStatus: provider.ContentNotFetchedSizeCap, HeadStatus: provider.ContentNotFetchedSizeCap})
+		h.prov.repoFiles = map[string]string{".review-mcp.toml@" + h.prov.pr.BaseSHA: "[[related.repos]]\nurl = \"" + askConsumerURL + "\"\n"}
+		h.deps.Resolver = askRepoResolver{relResolver{primary: h.prov, rel: &relProvider{}}}
+		h.deps.Config.GitLab.BaseURL, h.deps.Config.Secrets.GitLabToken = "https://gitlab.example", config.NewSecret("gitlab-token")
+		h.deps.Config.Related.FromRepoConfig = on
+		h.deps.RepoContext = &askConsumer{toolRepo: tr}
+		res, err := Run(context.Background(), h.deps, h.args())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !on {
+			if len(res.Coverage.Related) != 0 || !slices.Equal(res.RepoConfig.Ignored, []string{"related.repos"}) ||
+				!slices.Contains(res.Notes, repocfg.NoteRelatedOff) {
+				t.Errorf("off: related %+v, repo_config %+v, notes %q", res.Coverage.Related, res.RepoConfig, res.Notes)
+			}
+			continue
+		}
+		if len(res.Coverage.Related) != 1 || res.Coverage.Related[0].Source != "repo_config" ||
+			res.Coverage.Related[0].Commit != askConsumerCommit {
+			t.Errorf("on: related %+v", res.Coverage.Related)
+		}
+	}
 }

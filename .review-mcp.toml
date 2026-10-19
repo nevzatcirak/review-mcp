@@ -1,0 +1,4 @@
+# Acceptance fixture for review-mcp 2.5.0-rc.1 (V-13b); throwaway base branch.
+[[related.repos]]
+url = "https://gitlab.com/nevzatcirak/rmcp-accept/-/tree/accept-v25-consumer"
+paths = ["contract-v25/web/"]

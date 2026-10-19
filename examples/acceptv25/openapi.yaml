@@ -1,0 +1,32 @@
+openapi: 3.0.3
+info:
+  title: Profile service
+  version: 1.0.0
+paths:
+  /profiles/{id}:
+    get:
+      operationId: getProfile
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: One profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+components:
+  schemas:
+    Profile:
+      type: object
+      required: [id, userName]
+      properties:
+        id:
+          type: string
+        userName:
+          type: string
+          description: The name shown on the profile page.

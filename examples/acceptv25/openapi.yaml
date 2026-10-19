@@ -23,10 +23,10 @@ components:
   schemas:
     Profile:
       type: object
-      required: [id, userName]
+      required: [id, displayName]
       properties:
         id:
           type: string
-        userName:
+        displayName:
           type: string
           description: The name shown on the profile page.

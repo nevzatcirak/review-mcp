@@ -178,7 +178,7 @@ func decodeHeld(payload string) (heldRecord, bool) {
 // "from" a full lower-case commit id.
 func (r heldRecord) valid() bool {
 	return r.V == heldVersion && heldPath(r.F) && r.S >= 0 && r.E >= 0 && (r.S == 0 || r.E == 0 || r.E >= r.S) &&
-		len(r.H) <= maxHeldHeaderBytes && len(r.C) <= maxHeldContentBytes && isReviewedSHA(r.From) && validRelatedURL(r.R, true)
+		len(r.H) <= maxHeldHeaderBytes && len(r.C) <= maxHeldContentBytes && isReviewedSHA(r.From) && (validRelatedURL(r.R, true) || validRepoURL(r.R))
 }
 
 // heldPath reports whether p is a path a held record may name.

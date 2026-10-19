@@ -151,6 +151,9 @@ func (pl *Plan) attachRelated(ki *KeyIssue, primary map[string]*provider.FilePat
 		return false
 	}
 	it := rs.Item
+	if it.IsRepository() {
+		return attachRepository(ki, it, primary)
+	}
 	if primary[ki.RelevantFile] != nil && !changes(it, ki.RelevantFile) {
 		return false
 	}
@@ -168,6 +171,31 @@ func (pl *Plan) attachRelated(ki *KeyIssue, primary map[string]*provider.FilePat
 		}
 		break
 	}
+	return true
+}
+
+// attachRepository places a finding in the related repository it (v2.5
+// spec V-13b §2.4 items 1 and 2): Related, RelatedName and
+// RelatedRepository are set; the Link is the file at the repository's
+// pinned commit, built by its own provider, only when the run saw the file
+// there (a hit file, it.Saw); otherwise the finding is listed without a
+// link, LocationUnverified. A finding never gets a snippet from there. As
+// for a related pull request, the file decides: a file of the reviewed pull
+// request's diff that the run did not see in the repository makes a finding
+// on the reviewed pull request (tag dropped, placed inline as today).
+func attachRepository(ki *KeyIssue, it *related.Item, primary map[string]*provider.FilePatch) bool {
+	path := ki.RelevantFile
+	if primary[path] != nil && !it.Saw(path) {
+		return false
+	}
+	ki.Related, ki.RelatedName, ki.RelatedRepository = it.URL, it.Name(), true
+	ki.Snippet, ki.SnippetNote, ki.Link = "", "", ""
+	if !it.Saw(path) {
+		ki.LocationUnverified = true
+		return true
+	}
+	ki.Link = it.Provider.FileLineURL(provider.PRRef{Kind: it.Repo.Kind, Namespace: it.Repo.Namespace, Repo: it.Repo.Repo},
+		&provider.PullRequest{HeadSHA: it.Checkout.HeadSHA}, path, ki.StartLine)
 	return true
 }
 

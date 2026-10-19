@@ -146,9 +146,17 @@ type KeyIssue struct {
 	// reviewed pull request. Such a finding is listed in the overview only,
 	// never inline; its Link and Snippet come from that pull request.
 	Related string `json:"related,omitempty"`
-	// RelatedName is "<repo>#<number>" of that pull request, for the
-	// overview; not part of the result.
+	// RelatedName is "<repo>#<number>" of that pull request, or
+	// "<namespace>/<name>" of a related repository, for the overview; not
+	// part of the result.
 	RelatedName string `json:"-"`
+	// RelatedRepository is set when Related names a related repository
+	// (v2.5 spec V-13b): the finding is a consumer's, its Link points to the
+	// file at the repository's pinned commit. LocationUnverified is set when
+	// the file is none the run saw there: no link, and the overview says so.
+	// Neither is part of the result.
+	RelatedRepository  bool `json:"-"`
+	LocationUnverified bool `json:"-"`
 	// relatedTag is the answer's related value of the finding ("R1" to
 	// "R4"), before it is mapped to a related pull request (X-41); "" when
 	// the answer gave none. It is not part of the result.

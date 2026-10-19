@@ -176,6 +176,16 @@ func (pl *Plan) carryForward(d *provider.Diff, r incremental.Result) []KeyIssue 
 			// A finding in a related pull request (X-41): carried only when
 			// the run's related set is the recorded one, and with its link
 			// into that pull request.
+			//
+			// DESIGN-QUESTION (WP-13b DQ-5): a finding in a related
+			// repository (V-13b) is held but never carried: owner default 8
+			// has the incremental run search the repository again, at its new
+			// commit, for the identifiers of the files it reviews, so the
+			// model reports the consumers again where they still apply. A
+			// consumer finding about a contract file that did not change
+			// since the last review is then not repeated. Recommendation:
+			// keep for 2.5; carrying such findings (without a link, as their
+			// commit moved) can follow if the acceptance runs miss them.
 			if ki, ok := pl.carryRelated(h); ok {
 				out = append(out, ki)
 			}

@@ -443,12 +443,17 @@ func (p *Provider) newComment(ref provider.PRRef, id int64) *provider.Comment {
 // prWebURL returns {base_url}/projects/{K}/repos/{s}/pull-requests/{id}
 // (/users/{u}/... for a personal repository) from escaped segments.
 func (p *Provider) prWebURL(ref provider.PRRef) string {
+	return p.repoWebURL(ref) + "/pull-requests/" + strconv.FormatInt(ref.Number, 10)
+}
+
+// repoWebURL is the repository's web URL: {base_url}/projects/{K}/repos/{s},
+// or /users/{user}/repos/{s} for a personal repository.
+func (p *Provider) repoWebURL(ref provider.PRRef) string {
 	owner := "/projects/" + url.PathEscape(ref.Namespace)
 	if user, ok := strings.CutPrefix(ref.Namespace, "~"); ok {
 		owner = "/users/" + url.PathEscape(user)
 	}
-	return p.baseURL + owner + "/repos/" + url.PathEscape(ref.Repo) +
-		"/pull-requests/" + strconv.FormatInt(ref.Number, 10)
+	return p.baseURL + owner + "/repos/" + url.PathEscape(ref.Repo)
 }
 
 // FileLineURL implements provider.Provider. It is pure.
@@ -457,13 +462,28 @@ func (p *Provider) prWebURL(ref provider.PRRef) string {
 // (/users/{user}/... for a personal repository). It returns "" when pr is
 // nil, mirroring the Gitea provider. The anchor format is a live-verification
 // item.
+//
+// A reference without a pull request number (a related repository at its
+// pinned commit, v2.5 spec V-13b §2.4) links the file at pr.HeadSHA:
+// {base_url}/projects/{K}/repos/{s}/browse/{path}?at={sha}#{line}; "" without
+// a head.
 func (p *Provider) FileLineURL(ref provider.PRRef, pr *provider.PullRequest, path string, line int) string {
-	if pr == nil || ref.Namespace == "" || ref.Namespace == "~" || ref.Repo == "" || ref.Number <= 0 {
+	if pr == nil || ref.Namespace == "" || ref.Namespace == "~" || ref.Repo == "" || ref.Number < 0 {
 		return ""
 	}
 	segs := strings.Split(path, "/")
 	for i, s := range segs {
 		segs[i] = url.PathEscape(s)
+	}
+	if ref.Number == 0 {
+		if pr.HeadSHA == "" {
+			return ""
+		}
+		u := p.repoWebURL(ref) + "/browse/" + strings.Join(segs, "/") + "?at=" + url.QueryEscape(pr.HeadSHA)
+		if line > 0 {
+			u += "#" + strconv.Itoa(line)
+		}
+		return u
 	}
 	u := p.prWebURL(ref) + "/diff#" + strings.Join(segs, "/")
 	if line > 0 {

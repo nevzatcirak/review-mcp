@@ -5,6 +5,34 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Planned as `2.5.0-rc.2`. It fixes three defects found in the 2.5.0-rc.1
+acceptance (record #55); nothing else changes. A result whose findings and
+answer name no path in a code span is byte-identical to 2.5.0-rc.1.
+
+### Fixed
+
+- Paths the run never saw are marked. In the acceptance the model named
+  `contract-v25/web/src/api/header.ts` for a consumer file that the prompt
+  showed as `.../ui/header.ts`. A code span of a `pr_review` finding (title
+  and body) or of the `pr_ask` answer whose whole content looks like a
+  repository path, and that names no file the run showed the model (the diff,
+  repository context, related sections and hits, files the repository tools
+  read, the guidelines file and the file tree), now gets one last line "Path
+  not seen in this review: `p`" ("Paths ...", at most 5, then "and N more"),
+  and the new result fields `key_issues_to_review[].unverified_paths` and
+  `answer_unverified_paths` list them (omitted when empty). The text itself is
+  not changed. Guide: [Paths the review never saw](docs/review.md#paths-the-review-never-saw).
+- The coverage line of a searched related repository counts in words:
+  "searched 1 identifier at ...: 1 match" (it read "1 identifiers", "1
+  matches").
+- The note "The repository config names related repositories, but reading
+  them is turned off by the operator (related.from_repo_config)." is given only
+  when the call passes no `related`, where the declarations would have been
+  read. With a call's `related`, `related.repos` is still listed in
+  `repo_config.ignored`, without the note.
+
 ## [2.5.0-rc.1]
 
 First 2.5 release candidate (the npm dist-tag `next`; `latest` stays on 2.4.0).

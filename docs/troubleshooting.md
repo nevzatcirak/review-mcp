@@ -349,6 +349,15 @@ fails with the first part's error sentence, as a review in one call does.
 | A finding was posted again at a place that has a comment | That comment's thread is **outdated** (the code under it changed), or it is not by the token's user, or it has no finding marker, or it sits on the old path of a renamed file. These never suppress a finding. On Gitea and Bitbucket Server only the first line of an earlier range comment is known. |
 | A finding was not posted, and you want it | Delete the earlier comment and run again. Resolving it is not enough, a resolved thread still counts; only an outdated thread lets a finding at the same place through. |
 
+## Paths not seen in this review
+
+| You see | Meaning and what to do |
+|---|---|
+| A finding ends with "Path not seen in this review: `p`" (or "Paths not seen in this review: `p`, `q`", at most 5, then "and N more"); `unverified_paths` lists them | The finding's title or body names `p` in a code span, and the review never showed the model that file: it is not in the diff, the repository context, a related section or hit, a file a repository tool read, the guidelines file or the file tree. The model may have made the path up from a similar one; look the file up before acting on it. A path the model wrote with `R<n>:` was checked against that related item only. See [Paths the review never saw](review.md#paths-the-review-never-saw). |
+| A `pr_ask` answer ends with the same line; `answer_unverified_paths` lists them | The same check on the answer ([Paths the run never saw](ask.md#paths-the-run-never-saw)). |
+| A path you know exists is marked | The run did not show it to the model, so the model named it from memory or by guess. Nothing in the text was changed; the mark says only that the review cannot confirm it. A path in a fenced code block is never checked. |
+| A finding that carries the mark was posted again inline next to the same finding of 2.5.0-rc.1 | The added line is part of the finding's text, so a short finding gets another fingerprint than the comment posted without it. Delete one of the two comments. |
+
 ## CI, guidelines and file-tree notes
 
 `pr_review` (and `pr_improve` for the guidelines and the tree) never fails
@@ -571,7 +580,7 @@ pinned commit; no path, branch, identifier or hit is ever quoted.
 | <n> of the changed identifiers were not searched (limit <max>). | More identifiers than `related.max_identifiers`. Raise it (at most 50), or review a smaller change. |
 | Hits in <repo> were cut at <k> (limit). | The caps (5 hits per identifier, 30 per repository) kept <k> hits (`partial`). |
 | Hits in <repo> did not fit in full; <s> of <m> are shown. | The repository's share of `related.max_tokens` held only <s> of <m> hits (`partial`). The section then ends with "<k> more hits were found but do not fit here." so the missing hits are not read as "no use". Raise `related.max_tokens`, or name fewer related items. |
-| The repository config names related repositories, but reading them is turned off by the operator (related.from_repo_config). | The file declares `[[related.repos]]`; set the operator key `related.from_repo_config` to true to read them, or remove the declarations. A call's own `related` is always allowed. |
+| The repository config names related repositories, but reading them is turned off by the operator (related.from_repo_config). | The file declares `[[related.repos]]` and the call passes no `related`; set the operator key `related.from_repo_config` to true to read them, or remove the declarations. A call's own `related` is always allowed; with it the declarations are not used, so there is no note (`related.repos` is still listed in `repo_config.ignored`). |
 
 Reasons of a related repository that could not be read (`failed`), besides
 `url_not_configured`, `url_malformed`, `credentials_missing` and `unreadable`

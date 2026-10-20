@@ -82,6 +82,20 @@ is an instruction to the model, not a guarantee: models can still be wrong.
 Read answers about code the way you would read a colleague's guess, and check
 the file and line it names.
 
+### Paths the run never saw
+
+A path the answer names in an inline code span is checked as a review checks
+its findings ([Paths the review never saw](review.md#paths-the-review-never-saw)):
+the same pattern (a `:line` suffix ignored, an `R1:` to `R4:` label selecting
+that related item), and the same sources, except the guidelines and the file
+tree, which `pr_ask` does not send. The check reads the model's own text,
+before consumer citations become links. When a path names no file the run
+saw, the answer gets one last line, ``Path not seen in this review: `p` `` (or
+``Paths not seen in this review: `p`, `q` ``, at most 5 named, then "and N
+more"), and `answer_unverified_paths` lists them. Nothing else in the answer
+changes; an answer without such a span is returned as the model wrote it, and
+has no `answer_unverified_paths`.
+
 ## Files the question names go first
 
 `pr_ask` makes one model call; unlike `pr_review` it does not use parts. When
@@ -187,8 +201,9 @@ The model is asked to cite a consumer location as `R<n>:path:line`. Each such
 citation in the answer becomes a link to that file and line **at the pinned
 commit**, built by the repository's own provider, when the run saw the file (a
 hit in the prompt, or a file a tool read); a citation of a file the run never
-saw keeps its text and gets " (location not verified)". The rest of the answer
-is not changed. A repository with no hits is `no_use_found`, with the same note
+saw keeps its text and gets " (location not verified)", and its path is also
+named in the answer's last line ([Paths the run never saw](#paths-the-run-never-saw)).
+The rest of the answer is not changed. A repository with no hits is `no_use_found`, with the same note
 as for a review: it shows that text search found nothing, not that nothing is
 affected. A removed name that only the stop list dropped is named in the
 section as `Removed but not searched (too common): ...`.

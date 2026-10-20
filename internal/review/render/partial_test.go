@@ -4,8 +4,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
+	"github.com/nevzatcirak/review-mcp/internal/mdutil"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/review"
+	"github.com/nevzatcirak/review-mcp/internal/tokens"
 )
 
 const (
@@ -219,6 +222,27 @@ func TestCoverageModelCalls(t *testing.T) {
 		cov.ModelCalls = 1
 		if out := render(noFindingsResult(cov)); strings.Contains(out, "model calls") {
 			t.Errorf("%s: a review in one call names its model calls:\n%s", name, out)
+		}
+	}
+}
+
+// TestFileLimitNoteIsRendered (WP-14 A.2): the note that names
+// diff.max_files_full_content is in the client text and in the published
+// overview of every profile, like every other note (as markdown, which
+// escapes the underscores of the key).
+func TestFileLimitNoteIsRendered(t *testing.T) {
+	cov := completeCoverage()
+	cov.Skipped = append(cov.Skipped, review.SkippedFile{Path: "late/g0.go", Reason: provider.SkipFileLimit}, review.SkippedFile{Path: "late/g1.go", Reason: provider.SkipFileLimit})
+	res := noFindingsResult(cov)
+	res.Coverage.Finalize()
+	res.Notes = llmrun.PartialNotes(&res.Coverage, tokens.Budget{})
+	if len(res.Notes) != 1 {
+		t.Fatalf("notes = %q", res.Notes)
+	}
+	for name, render := range profiles() {
+		got := render(res)
+		if !strings.Contains(got, "- "+mdutil.Inline(res.Notes[0])+"\n") {
+			t.Errorf("%s: the file-limit note is not in the text:\n%s", name, got)
 		}
 	}
 }

@@ -5,6 +5,32 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0]
+
+Eighth stable release. The code is the same as `2.5.0-rc.2`. The release
+candidates were accepted in use in record #55. The primary was a throwaway
+pull request in this repository, and the consumer a branch of a throwaway
+GitLab project, each read with its own provider's token. That acceptance also
+found the defects fixed in `2.5.0-rc.2`. The `2.5.0-rc.1` and `2.5.0-rc.2`
+sections of CHANGELOG.md list everything that went into 2.5.0 since 2.4.0.
+Nothing in the tools or in the configuration of 2.4.0 is removed or renamed,
+and nothing changes unless a call passes a repository URL in `related`: a
+2.4.0 setup keeps working as before.
+
+### Highlights
+
+- Consumer impact (`related` takes repository URLs): a repository, or a branch
+  of it, is fetched read-only at one pinned commit (repository context, stdio)
+  and searched for the names and routes the reviewed diff removes or changes.
+  The hits are fenced, budgeted context, and a finding in the repository is
+  listed in the overview with a link at that commit, never inline.
+- Honest results: a search without hits says "no use found at <commit>" and
+  that text search cannot see dynamic or generated uses; never "no impact".
+- The repository tools can read a related repository (`repo: R1` to `R4`).
+- `[[related.repos]]` in the repository config, used only when the operator
+  turns on `related.from_repo_config`.
+- Paths in findings and answers that the review never saw are marked.
+
 ## [2.5.0-rc.2]
 
 Second 2.5 release candidate (the npm dist-tag `next`; `latest` stays on 2.4.0).
@@ -1817,6 +1843,7 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[2.5.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.0
 [2.5.0-rc.2]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.0-rc.2
 [2.5.0-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.0-rc.1
 [2.4.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.4.0

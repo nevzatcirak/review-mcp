@@ -288,6 +288,11 @@ type Plan struct {
 	// lastVerdict is the issue compliance verdict the last review's
 	// overview recorded (X-42, spec V-2 §2.4); nil for none.
 	lastVerdict *Compliance
+	// seen are the files the prompts showed the model so far (V-13b §6
+	// item 1): the primary diff as read, the files of the placed
+	// repository-context hits, and the head commit's files the repository
+	// tools showed it. markUnseen adds the rest.
+	seen llmrun.Seen
 
 	// The PR's threads and the token's user, each read at most once per
 	// run (listThreads, currentUser).
@@ -438,6 +443,11 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// settings: the run continues on the merged copy of the configuration,
 	// and the options the call left unset take their defaults from it.
 	rc := repocfg.ForRun(ctx, log, cfg, p, ref, pr)
+	if len(args.Related) > 0 {
+		// The call's own related wins over the declarations: the operator's
+		// switch changes nothing, so it gets no note (V-13b §6 item 3).
+		rc.CallRelated()
+	}
 	cfg = rc.Config
 	deps.Config = cfg
 	args = args.WithConfigDefaults(cfg)
@@ -475,6 +485,10 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		maxTotal: config.EffectiveMaxTotalFindings(cfg.Review, maxFindings), cfg: cfg, args: args, repo: rc,
 		toolUse: toolsDefault(cfg.Context.Repo)}
 	supplied := args.Findings != nil
+	// Every file of the pull request's diff, as read, counts as seen: an
+	// incremental run narrows the diff below, but the model may name a file
+	// it reviewed before.
+	pl.seen.AddDiff(d)
 
 	// The related pull requests (X-41, spec V-13a §1.2): resolved through
 	// the run's resolver and read now, after the primary pull request and
@@ -964,6 +978,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		}
 		res.Coverage.RepoContext, repoNotes = repoctx.Summarize([]repoctx.Outcome{o})
 		pl.RepoReport = repoctx.ReportOf([]repoctx.Outcome{o})
+		pl.seen.Add(o.Paths...)
 		log.Debug("review: repository context", "status", res.Coverage.RepoContext.Status,
 			"reason", res.Coverage.RepoContext.Reason, "symbols", o.Symbols, "references", o.References,
 			"files", o.Files, "omitted", o.Omitted)
@@ -1088,6 +1103,7 @@ func (pl *Plan) finish(ctx context.Context, deps Deps, args Args) (*Result, erro
 	// Steps 10 and 11: snippets and links, on the merged list against every
 	// file of the PR.
 	pl.attachSnippets(rev)
+	pl.markUnseen(rev)
 	pl.withCarried(rev)
 	res.Review = rev
 	log.Debug("review: done", "findings", len(rev.KeyIssuesToReview),

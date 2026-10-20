@@ -64,6 +64,30 @@ func TestDeclaredRelationsOff(t *testing.T) {
 	}
 }
 
+// TestDeclaredRelationsOffNote [canary 2 of WP-13f]: the operator note is
+// given only when the call passes no related argument, the case where the
+// declarations would have been used. With the call's related, related.repos
+// is still listed in repo_config.ignored and no note is given; the results
+// validate.
+func TestDeclaredRelationsOffNote(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		related []string
+		note    bool
+	}{{"without related", nil, true}, {"with related", []string{consumerURL}, false}} {
+		t.Run(c.name, func(t *testing.T) {
+			h, _ := declaredHarness(false, declaredConsumer)
+			res := runRelated(t, h, Args{Related: c.related})
+			if rc := res.RepoConfig; !slices.Equal(rc.Ignored, []string{"related.repos"}) || len(rc.Applied) != 0 {
+				t.Errorf("repo_config %+v", rc)
+			}
+			if got := slices.Contains(res.Notes, repocfg.NoteRelatedOff); got != c.note {
+				t.Errorf("the note given %v, want %v: %q", got, c.note, res.Notes)
+			}
+		})
+	}
+}
+
 // TestDeclaredRelationsOn: with related.from_repo_config and no related
 // argument, the declared repository is read like an argument's, on its
 // declared branch, searched below its declared paths, with source

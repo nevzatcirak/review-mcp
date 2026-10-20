@@ -121,6 +121,7 @@ func (pl *Plan) answer(ctx context.Context, deps Deps) (resp *llm.Response, call
 		"calls", len(u.Calls), "tokens", u.Tokens, "model_calls", lr.Calls, "restarted", lr.Restarted)
 	if lr.Fallback == "" {
 		related.MarkToolReads(tp.placed, tp.box.Seen)
+		pl.seen.Add(tp.box.SeenHead()...)
 		return &llm.Response{Content: lr.Answer.Text, Truncated: lr.Answer.Truncated, Usage: lr.Answer.Usage}, lr.Calls, nil
 	}
 	resp, err = deps.LLM.Complete(ctx, pl.Prompts.System, pl.Prompts.User)

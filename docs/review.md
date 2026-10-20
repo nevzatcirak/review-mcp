@@ -176,6 +176,36 @@ be verified against the diff, the finding is kept without an excerpt and
 says so: treat such a finding with extra care, the model may have the lines
 wrong.
 
+### Paths the review never saw
+
+The model may name a file in its text that it was never shown, for example a
+path made up from a neighbouring one (`web/src/api/header.ts` where the
+prompt showed `web/src/ui/header.ts`). review-mcp does not correct the text;
+it marks what it cannot confirm. Every inline code span in a finding's title
+or body whose whole content looks like a repository path is checked:
+
+- a path has at least one `/`, a last segment with an extension of 1 to 8
+  letters or digits, and only `A–Z a–z 0–9 / . _ -`; a `:line` or
+  `:line-line` suffix is ignored for the check;
+- a leading `R1:` to `R4:` checks the path against that related pull request
+  or repository only; without it the path is checked against everything the
+  run saw;
+- a span in a fenced code block is not checked.
+
+The run saw a file when it is a file of the reviewed pull request's diff, of
+the [repository context](repo-context.md) hits, shown or listed in a related
+pull request's section, of a related repository's kept hits, read or matched
+by a [repository tool](repo-context.md#repository-tools) in this run (any
+repository), the [guidelines](#project-guidelines-and-file-tree) file, or a
+file the file tree listed. A finding with paths it never saw gets one last
+line, ``Path not seen in this review: `p` `` (or ``Paths not seen in this
+review: `p`, `q` ``, at most 5 named, then "and N more"), and
+`key_issues_to_review[].unverified_paths` lists them, without the label and
+the line suffix. Treat the path as the model's guess and look the file up. A
+finding without such a span is unchanged, and has no `unverified_paths`.
+Findings carried forward by an [incremental review](#what-is-carried-forward)
+are not checked again.
+
 ### Coverage
 
 A review always ends with a coverage section, so you can see what the model
@@ -1675,7 +1705,10 @@ when the call passes no `related`, only with the operator key
 resolve to a configured provider (a declaration can never add a host). Every
 item read this way has `source: "repo_config"` in `coverage.related` and is
 named in the overview ("declared in the repository config"). A call's own
-`related` always wins.
+`related` always wins. With the operator key off, `related.repos` is listed in
+`repo_config.ignored`; the note that reading the declarations is turned off is
+given only when the call passes no `related`, the case where they would have
+been read.
 
 **Cost.** Every repository adds a fetch (shallow, partial clone, within
 `context.repo.max_repo_mb` and the fetch timeout) and a search before the
@@ -1734,7 +1767,8 @@ A related pull request that could not be read is never reported as one that
 does not exist: `not_found` can also mean the token may not see it. The
 overview's coverage section lists the related pull requests that were read,
 as links, with their status, and a searched repository as `searched {i}
-identifiers at {commit}: {m} matches` or `no use found at {commit}`; the notes give every other case (see
+identifiers at {commit}: {m} matches` (`1 identifier`, `1 match` for one) or
+`no use found at {commit}`; the notes give every other case (see
 [Troubleshooting](troubleshooting.md#related-pull-request-notes)).
 
 ### What leaves the related repository

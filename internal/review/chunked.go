@@ -149,6 +149,7 @@ func (pl *Plan) planParts(ctx context.Context, dIn diffpipe.Input, in PromptInpu
 			sc := &repoctx.Scope{Exclude: gitctxPaths(own), Marks: marks}
 			_, fit, o = placeRepo(ctx, rcs, pin, diffFiles(dIn.Files, prep.Included, prep.Clipped), sc, prep.Text, fit, budget)
 			repos = append(repos, o)
+			pl.seen.Add(o.Paths...)
 			log.Debug("review: repository context", "part", i+1, "status", o.Status, "reason", o.Reason,
 				"symbols", o.Symbols, "references", o.References, "files", o.Files, "omitted", o.Omitted)
 		}

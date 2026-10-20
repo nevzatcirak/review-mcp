@@ -152,3 +152,32 @@ func TestAskDeclaredRelations(t *testing.T) {
 		}
 	}
 }
+
+// TestAskDeclaredRelationsOffNote: with the operator switch off, the note
+// is given only when the call passes no related argument (WP-13f); with
+// the call's related, related.repos is still in repo_config.ignored and no
+// note is given.
+func TestAskDeclaredRelationsOffNote(t *testing.T) {
+	for _, withRelated := range []bool{false, true} {
+		h, tr, _ := toolHarness(0)
+		h.deps.LLM = h.llm
+		h.prov.repoFiles = map[string]string{".review-mcp.toml@" + h.prov.pr.BaseSHA: "[[related.repos]]\nurl = \"" + askConsumerURL + "\"\n"}
+		h.deps.Resolver = askRepoResolver{relResolver{primary: h.prov, rel: &relProvider{}}}
+		h.deps.Config.GitLab.BaseURL, h.deps.Config.Secrets.GitLabToken = "https://gitlab.example", config.NewSecret("gitlab-token")
+		h.deps.RepoContext = &askConsumer{toolRepo: tr}
+		args := h.args()
+		if withRelated {
+			args.Related = []string{relatedURL}
+		}
+		res, err := Run(context.Background(), h.deps, args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(res.RepoConfig.Ignored, []string{"related.repos"}) {
+			t.Errorf("related %v: repo_config %+v", withRelated, res.RepoConfig)
+		}
+		if got := slices.Contains(res.Notes, repocfg.NoteRelatedOff); got == withRelated {
+			t.Errorf("related %v: the note given %v: %q", withRelated, got, res.Notes)
+		}
+	}
+}

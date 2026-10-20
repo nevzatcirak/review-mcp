@@ -3,6 +3,7 @@ package review
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -96,7 +97,7 @@ func TestCarryForward(t *testing.T) {
 	carried := issues[1]
 	want := KeyIssue{RelevantFile: incPathSame, StartLine: 3, EndLine: 3, IssueHeader: onSame.header,
 		IssueContent: onSame.content, Link: h.prov.FileLineURL(provider.PRRef{}, nil, incPathSame, 3), CarriedFrom: shaOld}
-	if carried != want {
+	if !reflect.DeepEqual(carried, want) {
 		t.Errorf("run 2: carried\n%+v\nwant\n%+v", carried, want)
 	}
 	note := "1 finding of earlier reviews on unchanged files is carried forward; it was not reviewed again."

@@ -167,6 +167,11 @@ type KeyIssue struct {
 	// not change since; no model saw it in this run, and it is listed in
 	// the overview only. Empty for the findings of this run.
 	CarriedFrom string `json:"carried_from,omitempty"`
+	// UnverifiedPaths are the paths the finding's title or body names in a
+	// code span that the review never saw (V-13b §6 item 1, markUnseen),
+	// without a label or line suffix, in order; the body's last line names
+	// them too. Nil, and omitted, when there is none.
+	UnverifiedPaths []string `json:"unverified_paths,omitempty"`
 }
 
 // InlineStatus values: the counts of InlineSummary, per finding.
@@ -272,6 +277,9 @@ var keyIssueExtraSchema = map[string]map[string]any{
 		"as given in related; such a finding is listed in the overview only, never inline, and its link points into that pull request; absent otherwise"},
 	"carried_from": {"type": "string", "description": "for a finding of an earlier review carried forward by an incremental review " +
 		"because its file did not change since (listed in the overview only, not reviewed again): the full commit id of that review; absent otherwise"},
+	"unverified_paths": {"type": "array", "items": map[string]any{"type": "string"}, "description": "repository paths the finding's " +
+		"title or body names in a code span that the review never saw (not in the diff, the context or the files the tools read); " +
+		"issue_content's last line names them too; absent when there is none"},
 }
 
 // fields is the review descriptor table, in upstream order (X-4), with the

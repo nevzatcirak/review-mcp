@@ -33,8 +33,13 @@ type Result struct {
 	Question string `json:"question"`
 	// Answer is the model's trimmed answer; empty when no model call was
 	// made (Metadata.LLMCalls is 0).
-	Answer   string   `json:"answer"`
-	Coverage Coverage `json:"coverage"`
+	Answer string `json:"answer"`
+	// AnswerUnverifiedPaths are the paths the answer names in a code span
+	// that the run never saw (v2.5 spec V-13b §6 item 1), without a label
+	// or line suffix, in order; the answer's last line names them too. Nil,
+	// and omitted, when there is none.
+	AnswerUnverifiedPaths []string `json:"answer_unverified_paths,omitempty"`
+	Coverage              Coverage `json:"coverage"`
 	// Notes are user-facing sentences: truncation, clipped or trimmed
 	// files, nothing left to ask about.
 	Notes    []string `json:"notes"`

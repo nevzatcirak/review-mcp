@@ -56,6 +56,22 @@ func TestRelatedReposOff(t *testing.T) {
 	}
 }
 
+// TestRelatedReposCallRelated: a call that passes its own related argument
+// drops the operator note (WP-13f): the switch changes nothing for it.
+// related.repos stays in repo_config.ignored, and every other note stays.
+func TestRelatedReposCallRelated(t *testing.T) {
+	_, o := applyText(t, declaredRepos+"\n[review]\nrequire_tests = false\n")
+	notes := slices.DeleteFunc(slices.Clone(o.Notes), func(n string) bool { return n == NoteRelatedOff })
+	result := o.Result
+	o.CallRelated()
+	if slices.Contains(o.Notes, NoteRelatedOff) || !slices.Equal(o.Notes, notes) || len(notes) == 0 {
+		t.Fatalf("notes %q, want %q", o.Notes, notes)
+	}
+	if !reflect.DeepEqual(o.Result, result) || !slices.Equal(o.Result.Ignored, []string{"related.repos"}) {
+		t.Fatalf("result %+v, want %+v", o.Result, result)
+	}
+}
+
 func applyOn(t *testing.T, content string) *Outcome {
 	t.Helper()
 	base := operatorConfig()

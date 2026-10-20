@@ -166,7 +166,7 @@ func (c *Context) DropTree() bool {
 	if c.t.block == "" {
 		return false
 	}
-	c.t.block, c.t.shown, c.t.droppedForDiff = "", 0, true
+	c.t.block, c.t.shown, c.t.files, c.t.droppedForDiff = "", 0, nil, true
 	return true
 }
 
@@ -181,6 +181,23 @@ func (c *Context) CutGuidelines(over int) bool {
 	c.g.cutForDiff = true
 	c.g.render(c.g.tokens-max(over, 1), c.factor)
 	return true
+}
+
+// SeenFiles returns the files the blocks as they stand show the model (v2.5
+// spec V-13b §6 item 1): the guidelines file while its block is in the
+// prompt, and the files the file tree lists; nil for a nil Context.
+func (c *Context) SeenFiles() []string {
+	if c == nil {
+		return nil
+	}
+	var out []string
+	if c.g.block != "" && c.g.path != "" {
+		out = append(out, c.g.path)
+	}
+	if c.t.block != "" {
+		out = append(out, c.t.files...)
+	}
+	return out
 }
 
 // HasBlocks reports whether the prompt carries a block of the project

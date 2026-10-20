@@ -141,6 +141,11 @@ type Plan struct {
 	// of the consumer citations in the answer (linkConsumers).
 	placed []related.Section
 	cfg    *config.Config
+	// seen are the files the prompt showed the model so far (V-13b §6 item
+	// 1): the diff as read, the files of the placed repository-context
+	// hits, and the head commit's files the repository tools showed it.
+	// unseen adds the related block's.
+	seen llmrun.Seen
 
 	ref provider.PRRef
 	p   provider.Provider
@@ -229,8 +234,12 @@ func run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 		"prompt_tokens_reported", resp.Usage.PromptTokens, "completion_tokens_reported", resp.Usage.CompletionTokens)
 
 	// Step 8: the result, with what the run did with the repository tools
-	// (X-43), before the publish, whose comment carries the notes.
-	res.Answer = linkConsumers(answer, pl.placed)
+	// (X-43), before the publish, whose comment carries the notes. The paths
+	// the run never saw are found in the model's own text, before the
+	// consumer citations become links.
+	unseen := pl.unseen(answer)
+	res.Answer = llmrun.WithUnseen(linkConsumers(answer, pl.placed), unseen)
+	res.AnswerUnverifiedPaths = unseen
 	reportTools(res, pl.toolUse)
 
 	// Step 9: publish.
@@ -284,6 +293,11 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// The repository config (X-40): read once at the base revision, then the
 	// run continues on the merged copy of the configuration.
 	rc := repocfg.ForRun(ctx, log, cfg, p, ref, pr)
+	if len(args.Related) > 0 {
+		// The call's own related wins over the declarations: the operator's
+		// switch changes nothing, so it gets no note (V-13b §6 item 3).
+		rc.CallRelated()
+	}
 	// operator keeps the operator's configuration: a related repository is
 	// searched with its filter.
 	operator := cfg
@@ -399,6 +413,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		"fast_path", prep.FastPath, "prompt_tokens", promptTokens, "diff_tokens", prep.Tokens, "pinned", len(pinned))
 
 	pl := &Plan{Result: res, Budget: budget, ref: ref, p: p, log: log, cfg: cfg, toolUse: repotools.Default(cfg.Context.Repo)}
+	pl.seen.AddDiff(d)
 	if prep.Text == "" {
 		pl.Empty = true
 		related.Mark(rel, related.StatusNotPlaced, related.ReasonNothingToReview)
@@ -482,6 +497,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		}
 		res.Coverage.RepoContext, repoNotes = repoctx.Summarize([]repoctx.Outcome{o})
 		pl.RepoReport = repoctx.ReportOf([]repoctx.Outcome{o})
+		pl.seen.Add(o.Paths...)
 		log.Debug("ask: repository context", "status", res.Coverage.RepoContext.Status,
 			"reason", res.Coverage.RepoContext.Reason, "symbols", o.Symbols, "references", o.References,
 			"files", o.Files, "omitted", o.Omitted)
@@ -516,6 +532,18 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	reportRelated(res, rel, placed)
 	pl.placed = placed
 	return pl, nil
+}
+
+// unseen returns the paths the answer names in a code span that the run
+// never saw (V-13b §6 item 1, llmrun.Seen.Unseen): seen are the files of
+// pl.seen and those of the placed related sections, each under its label
+// (related.AddSeen, after the tools marked their reads). pr_ask sends no
+// guidelines and no file tree.
+func (pl *Plan) unseen(answer string) []string {
+	related.AddSeen(&pl.seen, pl.placed)
+	paths := pl.seen.Unseen(answer)
+	pl.log.Debug("ask: unseen paths", "paths", len(paths))
+	return paths
 }
 
 // reportRelated sets coverage.related ([] without the argument) and adds

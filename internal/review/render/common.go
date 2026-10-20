@@ -1,7 +1,6 @@
 package render
 
 import (
-	"fmt"
 	"html"
 	"net/url"
 	"strconv"
@@ -9,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nevzatcirak/review-mcp/internal/filter"
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	llmrender "github.com/nevzatcirak/review-mcp/internal/llmrun/render"
 	"github.com/nevzatcirak/review-mcp/internal/mdutil"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
@@ -249,9 +249,10 @@ func writeCoverage(b *strings.Builder, heading string, res *review.Result) {
 // writeRelated lists the related pull requests that were read (X-41, v2.3
 // spec V-13a §1.5 item 3), as links with their status, and the related
 // repositories that were searched (V-13b §2.4 item 4), as links with
-// "searched {i} identifiers at {commit 12}: {m} matches" or "no use found at
-// {commit 12}"; the others are in the notes. A repository read because the
-// repository config declares it is marked so (V-13b §3.2 item 3). The
+// "searched {i} identifiers at {commit 12}: {m} matches" (in words: "1
+// identifier", "1 match"; WP-13f) or "no use found at {commit 12}"; the
+// others are in the notes. A repository read because the repository config
+// declares it is marked so (V-13b §3.2 item 3). The
 // heading names repositories only when one is listed, so a list of pull
 // requests reads as in 2.4.
 // Nothing without one.
@@ -269,7 +270,8 @@ func writeRelated(b *strings.Builder, items []review.RelatedItem) {
 		case it.Kind != "" && it.Status == related.StatusNoUseFound && it.Commit != "":
 			status = "no use found at " + commit12(it.Commit)
 		case it.Kind != "" && it.Commit != "" && it.Identifiers != nil && *it.Identifiers > 0 && it.Matches != nil:
-			status = fmt.Sprintf("searched %d identifiers at %s: %d matches", *it.Identifiers, commit12(it.Commit), *it.Matches)
+			status = "searched " + llmrun.CountPhrase(*it.Identifiers, "identifier", "identifiers") + " at " + commit12(it.Commit) +
+				": " + llmrun.CountPhrase(*it.Matches, "match", "matches")
 		default:
 			continue
 		}

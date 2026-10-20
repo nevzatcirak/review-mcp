@@ -75,6 +75,10 @@ type Section struct {
 	// files of the hits shown).
 	Included, Listed int
 	Shown            map[string]bool
+	// Files are the paths a pull request's section shows with hunks or
+	// lists by path, in the order of the section (V-13b §6 item 1); nil for
+	// a repository, whose seen files are its item's (Item.SeenFiles).
+	Files []string
 	// Hits counts the hits of a repository shown in the section.
 	Hits int
 }
@@ -115,6 +119,7 @@ func sectionOf(it *Item, n, share int, mode diffpipe.Mode, cfg *config.Config, f
 		for _, p := range append(append([]string(nil), prep.Included...), prep.Clipped...) {
 			sec.Shown[p] = true
 		}
+		sec.Files = append(append(append(sec.Files, prep.Included...), prep.Clipped...), prep.DeletedListed...)
 		listed = append(append(append(listed, prep.Omitted.Added...), prep.Omitted.Modified...), prep.Omitted.Deleted...)
 	} else {
 		for _, f := range files {
@@ -135,6 +140,7 @@ func sectionOf(it *Item, n, share int, mode diffpipe.Mode, cfg *config.Config, f
 				break
 			}
 			b2.WriteString("\n- " + p)
+			sec.Files = append(sec.Files, p)
 		}
 	}
 	sec.Text = b2.String()
@@ -571,6 +577,21 @@ func ToolRepositories(placed []Section) []repotools.Repo {
 			Filter: it.SearchFilter(), Paths: it.Paths})
 	}
 	return out
+}
+
+// AddSeen records in seen, under each placed section's label, the files the
+// related block showed the model (V-13b §6 item 1): for a pull request the
+// files its section shows or lists, for a repository the files of its kept
+// hits and those a repository tool read or matched there (Item.SeenFiles,
+// so after MarkToolReads).
+func AddSeen(seen *llmrun.Seen, placed []Section) {
+	for i, s := range placed {
+		if s.Item.IsRepository() {
+			seen.AddRelated(Label(i), s.Item.SeenFiles()...)
+			continue
+		}
+		seen.AddRelated(Label(i), s.Files...)
+	}
 }
 
 // MarkToolReads records on the repository items of the placed sections the

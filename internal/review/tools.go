@@ -126,8 +126,10 @@ func (pl *Plan) converse(ctx context.Context, deps Deps, fit *fitted, a *partAns
 		"calls", len(u.Calls), "tokens", u.Tokens, "model_calls", lr.Calls, "restarted", lr.Restarted)
 	if lr.Fallback == "" {
 		// The answer came from the conversation: a file a tool showed the
-		// model in a related repository is one the run saw (V-13b §2.4).
+		// model in a related repository is one the run saw (V-13b §2.4),
+		// and so is one of the head commit (§6 item 1).
 		related.MarkToolReads(pl.relatedShown, tp.box.Seen)
+		pl.seen.Add(tp.box.SeenHead()...)
 		return &llm.Response{Content: lr.Answer.Text, Truncated: lr.Answer.Truncated, Usage: lr.Answer.Usage}, nil
 	}
 	resp, err := deps.LLM.Complete(ctx, fit.prompts.System, fit.prompts.User)

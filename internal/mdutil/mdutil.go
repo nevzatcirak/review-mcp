@@ -327,3 +327,38 @@ func spanCloser(line string, from, n int) (int, int) {
 	}
 	return -1, -1
 }
+
+// fenceOpen matches the opening line of a fenced code block: at most three
+// spaces, then a run of at least three backticks or tildes (CommonMark).
+var fenceOpen = regexp.MustCompile("^ {0,3}(`{3,}|~{3,})(.*)$")
+
+// CodeSpans returns the contents of the code spans of s, in order, outside
+// fenced code blocks: a span is found within one line, as the renderers
+// find it (EscapeKeepingCodeSpans), with CommonMark's space stripping. A
+// fence that is not closed runs to the end of s.
+func CodeSpans(s string) []string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	var out []string
+	fence := ""
+	for _, line := range strings.Split(s, "\n") {
+		if fence != "" {
+			// A closing fence: the same character, at least as long, and
+			// nothing after it but spaces.
+			t := strings.TrimLeft(line, " ")
+			if len(line)-len(t) <= 3 && strings.HasPrefix(t, fence) && strings.Trim(t, fence[:1]+" \t") == "" {
+				fence = ""
+			}
+			continue
+		}
+		if m := fenceOpen.FindStringSubmatch(line); m != nil && (m[1][0] == '~' || !strings.Contains(m[2], "`")) {
+			fence = m[1]
+			continue
+		}
+		escapeLineKeepingCodeSpans(line, func(s string) string { return s }, false, func(content string) string {
+			out = append(out, content)
+			return ""
+		})
+	}
+	return out
+}

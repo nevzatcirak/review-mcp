@@ -75,8 +75,10 @@ type tree struct {
 	// someUnreadable: at least one directory could not be listed.
 	someUnreadable bool
 	block          string
-	// shown is the number of directories the block lists.
+	// shown is the number of directories the block lists, and files the
+	// paths of the files it lists.
 	shown          int
+	files          []string
 	cut            bool
 	droppedForDiff bool
 }
@@ -190,7 +192,7 @@ func (t *tree) lines() (lines []string, groupStart []bool) {
 // block): the largest prefix of whole lines that fits, without a trailing
 // directory line whose entries were all cut.
 func (t *tree) render(maxTokens int, factor float64) {
-	t.block, t.shown, t.cut = "", 0, false
+	t.block, t.shown, t.cut, t.files = "", 0, false, nil
 	if t.status != "" || len(t.dirs) == 0 || maxTokens <= 0 {
 		return
 	}
@@ -213,6 +215,35 @@ func (t *tree) render(maxTokens int, factor float64) {
 			t.shown++
 		}
 	}
+	t.files = t.filesIn(n)
+}
+
+// filesIn returns the paths of the files that the first n lines of the
+// listing (lines) name: an entry that is not a directory, under the path
+// of its directory.
+func (t *tree) filesIn(n int) []string {
+	var out []string
+	i := 0
+	for _, d := range t.dirs {
+		i++ // the directory line
+		for _, e := range d.entries {
+			if i >= n {
+				return out
+			}
+			if !e.Dir {
+				p := e.Name
+				if d.path != "" {
+					p = d.path + "/" + e.Name
+				}
+				out = append(out, p)
+			}
+			i++
+		}
+		if d.truncated {
+			i++
+		}
+	}
+	return out
 }
 
 // treeBlockOf is the block of the first k lines.

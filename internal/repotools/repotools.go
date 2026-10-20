@@ -276,9 +276,11 @@ type Box struct {
 	exhausted bool
 
 	// repos are the related repositories the tools may read (WithRepos),
-	// and seen the files of each, by label, that a call showed the model.
+	// and seen the files of each, by label, that a call showed the model;
+	// head are those of the head commit.
 	repos []Repo
 	seen  map[string][]string
+	head  []string
 }
 
 // Open returns the Box of a session whose head is fetched, or ok false.
@@ -322,9 +324,25 @@ func (b *Box) Repos() []Repo { return append([]Repo(nil), b.repos...) }
 // Recommendation: keep.
 func (b *Box) Seen(label string) []string { return append([]string(nil), b.seen[label]...) }
 
-// see records that the file path of the related repository label was shown.
+// SeenHead returns the files of the head commit that a call showed the
+// model so far, in the order they were first shown, as Seen does for a
+// related repository: a path of the pull request's repository that the
+// model names in its text was seen there (V-13b §6 item 1).
+func (b *Box) SeenHead() []string { return append([]string(nil), b.head...) }
+
+// see records that the file path of the related repository label, or of
+// the head commit for "", was shown.
 func (b *Box) see(label, path string) {
-	if label == "" || path == "" || slices.Contains(b.seen[label], path) {
+	if path == "" {
+		return
+	}
+	if label == "" {
+		if !slices.Contains(b.head, path) {
+			b.head = append(b.head, path)
+		}
+		return
+	}
+	if slices.Contains(b.seen[label], path) {
 		return
 	}
 	if b.seen == nil {

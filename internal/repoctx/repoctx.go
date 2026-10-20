@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -427,8 +428,10 @@ type Block struct {
 	Text string
 	// Entries and Omitted count the uses shown and the ones left out.
 	Entries, Omitted int
-	// Files is the number of distinct files among the shown uses.
+	// Files is the number of distinct files among the shown uses, and Paths
+	// those files, in the order of the entries.
 	Files int
+	Paths []string
 }
 
 // Render renders the block for hits within maxTokens (tokens.Estimate of the
@@ -487,11 +490,12 @@ func render(hits []gitctx.Hit, maxTokens int, factor float64, marks map[string]s
 		best = Block{Text: blockText(header, entries[:lo]), Entries: lo}
 	}
 	best.Omitted = len(hits) - best.Entries
-	files := map[string]bool{}
 	for i := 0; i < best.Entries; i++ {
-		files[hits[i].Path] = true
+		if !slices.Contains(best.Paths, hits[i].Path) {
+			best.Paths = append(best.Paths, hits[i].Path)
+		}
 	}
-	best.Files = len(files)
+	best.Files = len(best.Paths)
 	return best
 }
 
@@ -557,9 +561,11 @@ type Outcome struct {
 	// never logged).
 	Names []string
 	// Block is the text to put in the prompt; "" when no use was placed.
-	// BlockTokens is its estimate.
+	// BlockTokens is its estimate, and Paths the files of its uses (the
+	// files of the hits the model saw, V-13b §6 item 1).
 	Block       string
 	BlockTokens int
+	Paths       []string
 }
 
 // Attach searches the uses of the symbols of files (the files whose content
@@ -600,6 +606,7 @@ func (s *Session) Attach(ctx context.Context, files []provider.FilePatch, sc *Sc
 	}
 	if placed.Block.Entries > 0 {
 		out.Block, out.References, out.Files, out.Omitted = placed.Block.Text, placed.Block.Entries, placed.Block.Files, placed.Block.Omitted
+		out.Paths = placed.Block.Paths
 		out.BlockTokens = tokens.Estimate(out.Block, b.Factor)
 	}
 	return out

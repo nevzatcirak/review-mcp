@@ -397,6 +397,29 @@ func (it *Item) Saw(path string) bool {
 	return slices.Contains(it.toolSeen, path)
 }
 
+// SeenFiles returns the files Saw reports, in order: those of the kept hits,
+// then those a repository tool showed the model; nil for an item that was
+// not fetched.
+func (it *Item) SeenFiles() []string {
+	if !it.Fetched {
+		return nil
+	}
+	var out []string
+	if it.Searched {
+		for _, h := range it.Hits {
+			if !slices.Contains(out, h.Path) {
+				out = append(out, h.Path)
+			}
+		}
+	}
+	for _, p := range it.toolSeen {
+		if !slices.Contains(out, p) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // MarkSeen records that a repository tool showed the model the files paths
 // of the fetched repository item (V-13b §3.1): Saw reports them from now on.
 func (it *Item) MarkSeen(paths ...string) {

@@ -107,3 +107,27 @@ func TestDeclaredRepositoryRendering(t *testing.T) {
 		}
 	}
 }
+
+// TestRepositoryCountsInWords: the coverage line of a searched repository
+// counts with the count helper (WP-13f): "1 identifier" and "1 match" for
+// one, the plural for many, in every view.
+func TestRepositoryCountsInWords(t *testing.T) {
+	cases := []struct {
+		identifiers, matches int
+		want                 string
+	}{
+		{1, 1, "`searched 1 identifier at 0fedcba98765: 1 match`"},
+		{1, 4, "`searched 1 identifier at 0fedcba98765: 4 matches`"},
+		{2, 1, "`searched 2 identifiers at 0fedcba98765: 1 match`"},
+		{3, 7, "`searched 3 identifiers at 0fedcba98765: 7 matches`"},
+	}
+	for _, c := range cases {
+		res := consumerResult()
+		res.Coverage.Related[1].Identifiers, res.Coverage.Related[1].Matches = intp(c.identifiers), intp(c.matches)
+		for name, out := range map[string]string{"client": Client(res), "gfm": Provider(res, capsGitea), "plain": Provider(res, capsBB)} {
+			if !strings.Contains(out, "(https://gitlab.example/grp/web-ui/-/tree/feature/x): "+c.want) {
+				t.Errorf("%s, %d identifiers and %d matches: the overview lacks %s:\n%s", name, c.identifiers, c.matches, c.want, out)
+			}
+		}
+	}
+}

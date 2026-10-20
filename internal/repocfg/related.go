@@ -3,6 +3,7 @@ package repocfg
 import (
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -40,7 +41,18 @@ const (
 
 // NoteRelatedOff is the note of a file that declares related repositories
 // while the operator has turned reading them off (§3.2 item 2, verbatim).
+// It is given only where the switch changes something: a call that passes
+// its own related argument drops it (CallRelated).
 const NoteRelatedOff = "The repository config names related repositories, but reading them is turned off by the operator (related.from_repo_config)."
+
+// CallRelated records that the call passes its own related argument (V-13b
+// spec §6 item 3, WP-13f). The call wins over the declarations whatever the
+// operator switch, so the switch changes nothing for this run and
+// NoteRelatedOff is dropped; related.repos stays in repo_config.ignored as
+// it was.
+func (o *Outcome) CallRelated() {
+	o.Notes = slices.DeleteFunc(o.Notes, func(n string) bool { return n == NoteRelatedOff })
+}
 
 // Declared is one related repository the repository config declares: its
 // URL as written, the branch it names ("" for none) and the path prefixes

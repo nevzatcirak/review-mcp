@@ -293,6 +293,11 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// The repository config (X-40): read once at the base revision, then the
 	// run continues on the merged copy of the configuration.
 	rc := repocfg.ForRun(ctx, log, cfg, p, ref, pr)
+	if len(args.Related) > 0 {
+		// The call's own related wins over the declarations: the operator's
+		// switch changes nothing, so it gets no note (V-13b §6 item 3).
+		rc.CallRelated()
+	}
 	// operator keeps the operator's configuration: a related repository is
 	// searched with its filter.
 	operator := cfg

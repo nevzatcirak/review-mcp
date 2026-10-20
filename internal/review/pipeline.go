@@ -443,6 +443,11 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// settings: the run continues on the merged copy of the configuration,
 	// and the options the call left unset take their defaults from it.
 	rc := repocfg.ForRun(ctx, log, cfg, p, ref, pr)
+	if len(args.Related) > 0 {
+		// The call's own related wins over the declarations: the operator's
+		// switch changes nothing, so it gets no note (V-13b §6 item 3).
+		rc.CallRelated()
+	}
 	cfg = rc.Config
 	deps.Config = cfg
 	args = args.WithConfigDefaults(cfg)

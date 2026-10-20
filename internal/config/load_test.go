@@ -32,7 +32,7 @@ func TestDefaultsAppliedWhenNothingSet(t *testing.T) {
 		{"diff.large_patch_policy", cfg.Diff.LargePatchPolicy, "clip"},
 		{"diff.max_description_tokens", cfg.Diff.MaxDescriptionTokens, 500},
 		{"diff.max_commits_tokens", cfg.Diff.MaxCommitsTokens, 500},
-		{"diff.max_files_full_content", cfg.Diff.MaxFilesFullContent, 50},
+		{"diff.max_files_full_content", cfg.Diff.MaxFilesFullContent, 300},
 		{"diff.max_file_bytes", cfg.Diff.MaxFileBytes, 1048576},
 		{"diff.max_diff_bytes", cfg.Diff.MaxDiffBytes, 20971520},
 		{"diff.ignore_generated_frameworks", cfg.Diff.IgnoreGeneratedFrameworks, []string{}},

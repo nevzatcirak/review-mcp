@@ -139,6 +139,9 @@ dist-tag `latest`; release candidates of the next version under `next`. See the
      The merged review shows at most `REVIEW_MCP_REVIEW_MAX_TOTAL_FINDINGS`
      findings (default 10, up to 50; when you set it, at least
      `review.max_findings`).
+   - **Pull requests with many files:** the `REVIEW_MCP_DIFF_*` limits, among
+     them `REVIEW_MCP_DIFF_MAX_FILES_FULL_CONTENT` (default 300), are listed in
+     [Diff limits](docs/setup.md#diff-limits).
    - **Long calls (stdio):** a `pr_review`, `pr_ask`, `pr_describe` or `pr_improve` call that is still
      running after `REVIEW_MCP_LLM_WAIT_SECONDS` (default 45) answers with a
      `job_id`; ask the client to fetch the result and it calls `job_result`.

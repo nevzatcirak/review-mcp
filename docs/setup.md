@@ -852,7 +852,8 @@ into and who has approved it with `pr_info` ([Pull request status](pr-info.md)).
 **Optional: repository context.** To show the model where the symbols a pull
 request changes are used elsewhere in the project, set
 `REVIEW_MCP_CONTEXT_REPO_ENABLED=true` (stdio only; needs `git` 2.31 or later;
-the settings are in [Repository context](repo-context.md#enabling-it)). Check
+the settings are in [Repository context](repo-context.md#enabling-it)). Reads
+never fetch on any supported git: they go through a view with no promisor. Check
 `server_info` for `enabled, git <version>` and the coverage section of a review
 for the `Repository context` line.
 

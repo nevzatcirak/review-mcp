@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Planned as `2.5.1`. A pull request with many files is no longer cut at 50
 files by default, and a result that lost files to the file limit says which
-key to raise.
+key to raise. Repository context reads never fetch and behave the same on
+every supported git.
 
 ### Changed
 
@@ -21,6 +22,18 @@ key to raise.
   number of files. A result that lost files only to that key carries this note
   and not the generic provider note. The `diff.*` keys are documented in
   [Setup](docs/setup.md#diff-limits).
+
+### Fixed
+
+- Repository context on git 2.39 to 2.44: reading a file that is not in the
+  cache (a blob over 1 MiB) failed instead of being reported as not fetched,
+  and a search that met such a file failed as a whole. Every read now goes
+  through a view with no promisor, so each supported git reports the file as
+  not fetched and the search skips it (X-45).
+- Repository context on git without `GIT_NO_LAZY_FETCH` (before 2.45, except
+  security backports): a read of a file not in the cache started a lazy
+  fetch, which only `protocol.allow=never` stopped. Through the view, no read
+  can start one.
 
 ## [2.5.0]
 

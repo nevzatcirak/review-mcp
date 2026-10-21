@@ -614,13 +614,17 @@ func TestGrepAfterEnsureNeverFetches(t *testing.T) {
 }
 
 // TestOfflineBlocksLazyFetch [canary]: an offline command that reads a blob
-// the partial clone lacks fails at once, locally; the same command with the
-// network allowed fetches the blob from the server. This is what the
-// protocol settings and GIT_NO_LAZY_FETCH are for.
+// the partial clone lacks from the checkout itself (no read view) fails at
+// once, locally; the same command with the network allowed fetches the blob
+// from the server. This is what the protocol settings and GIT_NO_LAZY_FETCH
+// are for, as layers under the read view.
 func TestOfflineBlocksLazyFetch(t *testing.T) {
 	resetSchemes()
 	huge := "Helper " + strings.Repeat("x", 1<<20+1024) + "\n"
 	s := newGitServerFiles(t, provider.KindGitea, map[string]string{"huge.txt": huge, "use.go": "Helper()\n"})
+	// git 2.31's http-backend serves the lazy fetch of the control (a want
+	// by object id over protocol v0) only with this.
+	gitOut(t, "", s.gitPath, "--git-dir="+s.bare, "config", "uploadpack.allowAnySHA1InWant", "true")
 	r, _ := realRunner(t, Options{})
 	co, err := r.Ensure(context.Background(), giteaRepo(s.base), PR{Number: 7, HeadSHA: s.head})
 	if err != nil {
@@ -653,13 +657,16 @@ func TestOfflineBlocksLazyFetch(t *testing.T) {
 // TestNoLazyFetchEnvironmentAlone [canary]: with a transport that the
 // protocol settings would allow (protocol.file.allow=always added after
 // them), GIT_NO_LAZY_FETCH=1 alone still stops the fetch of a missing blob;
-// without "offline" the same command fetches it.
+// without "offline" the same command fetches it. It reads the checkout
+// itself (no read view), so it tests this one layer. git 2.45.0 added the
+// variable; 2.44.0 does not know it (some 2.39 to 2.44.x security releases
+// and distribution packages carry a backport, which this gate leaves out).
 func TestNoLazyFetchEnvironmentAlone(t *testing.T) {
 	r, co := localCheckout(t, map[string]string{"big.txt": "Helper " + strings.Repeat("x", 3000) + "\n"}, "1k")
 	p := gitProbe(r.opts.GitPath)
 	var major, minor int
-	if _, err := fmt.Sscanf(p.version, "%d.%d", &major, &minor); err != nil || major < 2 || major == 2 && minor < 44 {
-		t.Skipf("git %s: this test is run only on a git that honours GIT_NO_LAZY_FETCH; on older git the protocol settings alone stop the fetch (TestOfflineBlocksLazyFetch)", p.version)
+	if _, err := fmt.Sscanf(p.version, "%d.%d", &major, &minor); err != nil || major < 2 || major == 2 && minor < 45 {
+		t.Skipf("git %s: this test is run only on git 2.45 or later, which honours GIT_NO_LAZY_FETCH; on older git the read view and the protocol settings stop the fetch (TestReadsNeverFetch, TestOfflineBlocksLazyFetch)", p.version)
 	}
 	root, _ := r.CacheDir()
 	g := &gitRun{path: p.path, gitDir: co.GitDir, dir: filepath.Dir(co.GitDir), home: homeDir(root)}

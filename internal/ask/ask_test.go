@@ -46,6 +46,8 @@ type fakeProvider struct {
 	postErr error
 	// diffNotes are the provider's Diff.Notes.
 	diffNotes []string
+	// skipped are files the provider reports as skipped.
+	skipped []provider.SkippedFile
 
 	// repoFiles are the files GetFileAt serves, keyed "<path>@<rev>", and
 	// reads the calls it got in the same form.
@@ -76,7 +78,7 @@ func (f *fakeProvider) GetPullRequest(context.Context, provider.PRRef) (*provide
 
 func (f *fakeProvider) GetDiff(_ context.Context, _ provider.PRRef, _ *provider.PullRequest, opts provider.DiffOptions) (*provider.Diff, error) {
 	f.calls++
-	d := &provider.Diff{Notes: f.diffNotes}
+	d := &provider.Diff{Notes: f.diffNotes, Skipped: slices.Clone(f.skipped)}
 	for _, fp := range f.files {
 		if opts.Include != nil && !opts.Include(fp.Path) {
 			d.Skipped = append(d.Skipped, provider.SkippedFile{Path: fp.Path, Reason: provider.SkipFiltered})
@@ -769,6 +771,22 @@ func TestRunDiffMaxTokensAppliesToAsk(t *testing.T) {
 	c := res.Coverage
 	if len(c.Omitted.Added)+len(c.Omitted.Modified)+len(c.Omitted.Deleted) == 0 || res.Metadata.FastPath {
 		t.Errorf("a cap of %d omitted nothing: %+v", capTokens, c)
+	}
+}
+
+// TestFileLimitNote (WP-14 A.2): files the provider skipped as file_limit
+// give the note that names diff.max_files_full_content, and not the generic
+// provider note.
+func TestFileLimitNote(t *testing.T) {
+	h := newHarness("It is bounded.")
+	h.prov.skipped = []provider.SkippedFile{{Path: "late/g0.go", Reason: provider.SkipFileLimit}}
+	res, err := Run(context.Background(), h.deps, h.args())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "1 file skipped because of diff.max_files_full_content; raise it to review them."
+	if !slices.Contains(res.Notes, want) || slices.Contains(res.Notes, llmrun.NoteProviderSkips) || !res.Coverage.Partial {
+		t.Errorf("partial %v, notes = %q, want %q", res.Coverage.Partial, res.Notes, want)
 	}
 }
 

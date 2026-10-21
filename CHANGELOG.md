@@ -5,6 +5,23 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Planned as `2.5.1`. A pull request with many files is no longer cut at 50
+files by default, and a result that lost files to the file limit says which
+key to raise.
+
+### Changed
+
+- `diff.max_files_full_content` defaults to 300 (was 50).
+
+### Added
+
+- A note naming `diff.max_files_full_content` when it skipped files, with the
+  number of files. A result that lost files only to that key carries this note
+  and not the generic provider note. The `diff.*` keys are documented in
+  [Setup](docs/setup.md#diff-limits).
+
 ## [2.5.0]
 
 Eighth stable release. The code is the same as `2.5.0-rc.2`. The release

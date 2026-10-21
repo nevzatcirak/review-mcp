@@ -204,7 +204,7 @@ implementation must do or must not do).
 #### DQ-19 — Bitbucket Server diff acquisition
 - **Decision:** Port upstream's approach: list changes, download base and head contents via the raw endpoint, generate a hunk-only unified diff locally with 3 context lines (difflib-compatible output).
 - **Rationale:** It is what upstream's downstream logic is tuned against; correctness over bandwidth for v1.
-- **Consequences:** `diff.max_files_full_content` (default 50) and `diff.max_file_bytes` apply. On Bitbucket Server, files beyond either cap **cannot** be diffed at all; they are listed in the coverage footer as not processed (never silently dropped). The native diff endpoint is a post-acceptance optimization candidate.
+- **Consequences:** `diff.max_files_full_content` (default 300; 50 before 2.5.1, see WP-14) and `diff.max_file_bytes` apply. On Bitbucket Server, files beyond either cap **cannot** be diffed at all; they are listed in the coverage footer as not processed (never silently dropped). The native diff endpoint is a post-acceptance optimization candidate.
 
 #### DQ-20 — Minimum Bitbucket DC version
 - **Decision:** Supported: Data Center ≥ 7.0. Base-SHA strategy by feature detection: call the merge-base endpoint; if unavailable (404), use the ancestor walk (first source-commit parent present in destination history). The naive first-parent strategy is not ported. A version probe runs only to return an honest "unsupported server version (< 7.0)" error.
@@ -1008,7 +1008,7 @@ Secrets are environment-only (in `serve` mode, credentials come from request hea
 | `diff.large_patch_policy` | `REVIEW_MCP_DIFF_LARGE_PATCH_POLICY` | `clip` | `clip` \| `skip` |
 | `diff.max_description_tokens` | `REVIEW_MCP_DIFF_MAX_DESCRIPTION_TOKENS` | 500 | |
 | `diff.max_commits_tokens` | `REVIEW_MCP_DIFF_MAX_COMMITS_TOKENS` | 500 | |
-| `diff.max_files_full_content` | `REVIEW_MCP_DIFF_MAX_FILES_FULL_CONTENT` | 50 | Both providers (DQ-19) |
+| `diff.max_files_full_content` | `REVIEW_MCP_DIFF_MAX_FILES_FULL_CONTENT` | 300 (50 before 2.5.1, see WP-14) | Both providers (DQ-19) |
 | `diff.max_file_bytes` | `REVIEW_MCP_DIFF_MAX_FILE_BYTES` | 1048576 | Proposed; tune at live acceptance |
 | `diff.max_diff_bytes` | `REVIEW_MCP_DIFF_MAX_DIFF_BYTES` | 20971520 | Proposed; tune at live acceptance (DQ-17) |
 | `diff.max_tokens` | `REVIEW_MCP_DIFF_MAX_TOKENS` | — | Optional, ≥ 1000 when set (X-17) |

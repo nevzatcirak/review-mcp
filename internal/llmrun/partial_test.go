@@ -2,6 +2,7 @@ package llmrun
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -226,6 +227,77 @@ func TestPartialNotes(t *testing.T) {
 	}
 	if strings.Contains(NoteLargerWindow, "diff.max_tokens") || !strings.Contains(NoteRaiseLimit, "diff.max_tokens") {
 		t.Error("only the cap hint may name diff.max_tokens")
+	}
+}
+
+// fileLimitNote is NoteFileLimitFormat for n files.
+func fileLimitNote(n int) string {
+	return fmt.Sprintf(NoteFileLimitFormat, CountPhrase(n, "file", "files"))
+}
+
+// skips are skipped files of one reason, named f0, f1, ...
+func skips(reason string, n int) []SkippedFile {
+	var out []SkippedFile
+	for i := range n {
+		out = append(out, SkippedFile{Path: fmt.Sprintf("f%d.go", i), Reason: reason})
+	}
+	return out
+}
+
+// TestFileLimitNote (WP-14 A.2) [canary]: a result that lost files only to
+// diff.max_files_full_content carries the note that names the key, with the
+// number of files, and not the generic provider note.
+func TestFileLimitNote(t *testing.T) {
+	c := Coverage{Included: []string{"a.go"}, Skipped: skips(provider.SkipFileLimit, 68)}
+	got := PartialNotes(&c, tokens.Budget{})
+	want := []string{"68 files skipped because of diff.max_files_full_content; raise it to review them."}
+	if !slices.Equal(got, want) {
+		t.Errorf("notes = %q, want %q", got, want)
+	}
+	c.Skipped = skips(provider.SkipFileLimit, 1)
+	if got, want := PartialNotes(&c, tokens.Budget{}), []string{"1 file skipped because of diff.max_files_full_content; raise it to review them."}; !slices.Equal(got, want) {
+		t.Errorf("one file: notes = %q, want %q", got, want)
+	}
+}
+
+// TestFileLimitNoteWithOtherSkips (WP-14 A.2) [canary]: file_limit skips
+// together with a skip that loses a file for another reason give both notes,
+// the file-limit note first; only the other skips count for the generic one.
+func TestFileLimitNoteWithOtherSkips(t *testing.T) {
+	skipped := append(skips(provider.SkipFileLimit, 3), SkippedFile{Path: "x.go", Reason: provider.SkipFetchFailed})
+	c := Coverage{Included: []string{"a.go"}, Skipped: skipped}
+	got := PartialNotes(&c, tokens.Budget{})
+	if want := []string{fileLimitNote(3), NoteProviderSkips}; !slices.Equal(got, want) {
+		t.Errorf("notes = %q, want %q", got, want)
+	}
+	// A skip that loses no reviewable file does not bring the generic note.
+	c.Skipped = append(skips(provider.SkipFileLimit, 2), SkippedFile{Path: "img.png", Reason: provider.SkipBinary})
+	if got, want := PartialNotes(&c, tokens.Budget{}), []string{fileLimitNote(2)}; !slices.Equal(got, want) {
+		t.Errorf("with a binary skip: notes = %q, want %q", got, want)
+	}
+}
+
+// TestFileLimitNoteOrder (WP-14 A.2): budget hint, then the file-limit note,
+// then the generic provider note; the chunked variant names review.max_chunks
+// in the budget hint.
+func TestFileLimitNoteOrder(t *testing.T) {
+	skipped := append(skips(provider.SkipFileLimit, 4), SkippedFile{Path: "x.go", Reason: provider.SkipSizeLimit})
+	c := Coverage{Omitted: OmittedFiles{Modified: []string{"a.go"}}, Skipped: skipped}
+	capped := tokens.Budget{ContextWindow: 20000, Factor: 0.3, MaxDiffTokens: 2000}
+	for _, tc := range []struct {
+		name    string
+		reached bool
+		hint    string
+	}{{"parts left out", true, NoteRaiseChunksLimit}, {"one call", false, NoteRaiseLimit}} {
+		got := ChunkedPartialNotes(&c, capped, tc.reached)
+		if want := []string{tc.hint, fileLimitNote(4), NoteProviderSkips}; !slices.Equal(got, want) {
+			t.Errorf("%s: notes = %q, want %q", tc.name, got, want)
+		}
+	}
+	// Only the file limit and the budget: no generic note.
+	c.Skipped = skips(provider.SkipFileLimit, 4)
+	if got, want := ChunkedPartialNotes(&c, capped, true), []string{NoteRaiseChunksLimit, fileLimitNote(4)}; !slices.Equal(got, want) {
+		t.Errorf("notes = %q, want %q", got, want)
 	}
 }
 

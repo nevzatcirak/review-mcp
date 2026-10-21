@@ -373,7 +373,7 @@ func Defaults() *Config {
 			LargePatchPolicy:          "clip",
 			MaxDescriptionTokens:      500,
 			MaxCommitsTokens:          500,
-			MaxFilesFullContent:       50,
+			MaxFilesFullContent:       300,
 			MaxFileBytes:              1048576,
 			MaxDiffBytes:              20971520,
 			IgnoreGeneratedFrameworks: []string{},

@@ -1,10 +1,12 @@
 package llmrun
 
 import (
+	"fmt"
 	"slices"
 	"strconv"
 
 	"github.com/nevzatcirak/review-mcp/internal/diffpipe"
+	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 )
 
@@ -25,9 +27,13 @@ const (
 	// that applied, so diff.max_tokens would not help and is not named.
 	NoteLargerWindow = "To review every file, use a model with a larger context window."
 	// NoteProviderSkips: some files were lost for a reason the diff budget
-	// does not change (too large for the provider, over its file limit,
-	// unreadable).
+	// does not change (too large for the provider, unreadable). Files lost to
+	// diff.max_files_full_content have NoteFileLimitFormat instead.
 	NoteProviderSkips = "Some changed files were skipped or could not be read from the provider (see Coverage); a larger diff budget does not change that."
+	// NoteFileLimitFormat: files were skipped as file_limit, so the key that
+	// controls it is named (WP-14); the argument is a CountPhrase of the
+	// skipped files.
+	NoteFileLimitFormat = "%s skipped because of diff.max_files_full_content; raise it to review them."
 	// NoteRaiseChunksLimit and NoteRaiseChunksWindow are NoteRaiseLimit and
 	// NoteLargerWindow of a chunked review that used every part it may
 	// (review.max_chunks) and still left files out (X-19).
@@ -38,8 +44,10 @@ const (
 // PartialNotes returns the notes of a partial result (X-18), none for a
 // complete one. The budget hint appears when at least one file was lost to
 // the diff budget (clipped or omitted) and names diff.max_tokens only when
-// that cap was the limit that applied (Budget.Limit). A file the provider
-// skipped or could not read gets its own note, since no budget setting helps.
+// that cap was the limit that applied (Budget.Limit). Files skipped as
+// file_limit get NoteFileLimitFormat, which names the key. A file the provider
+// skipped or could not read for another reason gets NoteProviderSkips, since
+// no budget setting helps.
 func PartialNotes(c *Coverage, b tokens.Budget) []string {
 	return ChunkedPartialNotes(c, b, false)
 }
@@ -71,13 +79,28 @@ func ChunkedPartialNotes(c *Coverage, b tokens.Budget, chunksReached bool) []str
 			notes = append(notes, NoteLargerWindow)
 		}
 	}
+	if n := countSkips(c.Skipped, provider.SkipFileLimit); n > 0 {
+		notes = append(notes, fmt.Sprintf(NoteFileLimitFormat, CountPhrase(n, "file", "files")))
+	}
 	for _, s := range c.Skipped {
-		if skipLosesReviewableFile(s.Reason) && s.Reason != diffpipe.SkipTooLarge && s.Reason != SkipModelCallFailed {
+		if skipLosesReviewableFile(s.Reason) && s.Reason != provider.SkipFileLimit &&
+			s.Reason != diffpipe.SkipTooLarge && s.Reason != SkipModelCallFailed {
 			notes = append(notes, NoteProviderSkips)
 			break
 		}
 	}
 	return notes
+}
+
+// countSkips returns how many skipped files have the given reason.
+func countSkips(skipped []SkippedFile, reason string) int {
+	n := 0
+	for _, s := range skipped {
+		if s.Reason == reason {
+			n++
+		}
+	}
+	return n
 }
 
 // CountPhrase returns "1 <one>" or "n <many>".

@@ -92,3 +92,81 @@ func TestFilteredAndBinaryFilesDoNotMakeAPartialRun(t *testing.T) {
 		t.Errorf("filtered and binary files made the run partial: %+v", c)
 	}
 }
+
+// fileLimitSkips are n files the provider skipped as file_limit.
+func fileLimitSkips(n int) []provider.SkippedFile {
+	var out []provider.SkippedFile
+	for i := range n {
+		out = append(out, provider.SkippedFile{Path: fmt.Sprintf("late/g%02d.go", i), Reason: provider.SkipFileLimit})
+	}
+	return out
+}
+
+// checkFileLimitNote checks the note of n files lost to diff.max_files_full_content
+// (WP-14 A.2) and the check that the generic provider note stays out.
+func checkFileLimitNote(t *testing.T, label string, res *Result, n int) {
+	t.Helper()
+	want := fmt.Sprintf(llmrun.NoteFileLimitFormat, llmrun.CountPhrase(n, "file", "files"))
+	if !slices.Contains(res.Notes, want) || slices.Contains(res.Notes, llmrun.NoteProviderSkips) {
+		t.Errorf("%s: notes = %q, want %q and no generic provider note", label, res.Notes, want)
+	}
+	if !res.Coverage.Partial {
+		t.Errorf("%s: coverage is not partial", label)
+	}
+}
+
+// TestFileLimitNoteReview (WP-14 A.2): a review that lost files to
+// diff.max_files_full_content names the key; so do a focused run, a merged
+// publish of supplied findings, and a review that skipped every file.
+func TestFileLimitNoteReview(t *testing.T) {
+	h := newHarness(goodAnswer)
+	h.prov.skipped = fileLimitSkips(68)
+	checkFileLimitNote(t, "review", runOK(t, h, Args{PRURL: testPRURL}), 68)
+
+	h = newHarness(goodAnswer)
+	h.prov.skipped = fileLimitSkips(2)
+	checkFileLimitNote(t, "focused", runOK(t, h, Args{PRURL: testPRURL, Focus: "security"}), 2)
+
+	h = newSuppliedHarness(t)
+	h.prov.skipped = fileLimitSkips(1)
+	findings := []SuppliedFinding{supplied("src/app.go", 11, 11, "Possible Bug", "Line 11 is wrong.")}
+	res := runOK(t, h, Args{PRURL: testPRURL, Publish: true, Findings: findings})
+	checkFileLimitNote(t, "merged publish", res, 1)
+
+	// Nothing reviewable is left: no model call, the note is still given.
+	h = newSuppliedHarness(t)
+	h.prov.files = nil
+	h.prov.skipped = fileLimitSkips(5)
+	pl, err := Prepare(context.Background(), h.deps, Args{PRURL: testPRURL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pl.Empty {
+		t.Fatal("the run is not empty")
+	}
+	checkFileLimitNote(t, "all files skipped", pl.Result, 5)
+}
+
+// TestChunkedFileLimitNote (WP-14 A.2): a review in parts that used every
+// part it may and still left files out, with files also lost to the file
+// limit, has the budget hint and the file-limit note, in that order.
+func TestChunkedFileLimitNote(t *testing.T) {
+	h, _ := chunkHarness(t, nil)
+	h.prov.files = bigFiles(30)
+	h.prov.skipped = fileLimitSkips(7)
+	h.deps.Config.Review.MaxChunks = 2
+	res := runChunked(t, h, Args{})
+	if len(res.Coverage.Omitted.Modified) == 0 {
+		t.Fatalf("no file left out: %+v", res.Coverage)
+	}
+	want := []string{llmrun.NoteRaiseChunksLimit, fmt.Sprintf(llmrun.NoteFileLimitFormat, "7 files")}
+	var got []string
+	for _, n := range res.Notes {
+		if n == want[0] || strings.Contains(n, "diff.max_files_full_content") || n == llmrun.NoteProviderSkips {
+			got = append(got, n)
+		}
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("notes = %q, want %q", got, want)
+	}
+}

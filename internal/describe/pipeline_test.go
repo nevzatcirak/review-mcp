@@ -777,6 +777,40 @@ func TestProviderDiffNotes(t *testing.T) {
 	}
 }
 
+// TestFileLimitNote (WP-14 A.2): files the provider skipped as file_limit
+// give the note that names diff.max_files_full_content, and not the generic
+// provider note.
+func TestFileLimitNote(t *testing.T) {
+	h := newHarness(map[int][]string{0: {oneCallAnswer}})
+	for i := range 2 {
+		h.prov.skipped = append(h.prov.skipped, provider.SkippedFile{Path: fmt.Sprintf("late/g%d.go", i), Reason: provider.SkipFileLimit})
+	}
+	res := h.run(t, Args{})
+	want := "2 files skipped because of diff.max_files_full_content; raise it to review them."
+	if !slices.Contains(res.Notes, want) || slices.Contains(res.Notes, llmrun.NoteProviderSkips) || !res.Coverage.Partial {
+		t.Errorf("partial %v, notes = %q, want %q", res.Coverage.Partial, res.Notes, want)
+	}
+}
+
+// TestFileLimitNoteInParts (WP-14 A.2): pr_describe in three parts, with files
+// also lost to the file limit, names diff.max_files_full_content with the
+// right count; every part was used, so there is no budget hint and no
+// generic provider note.
+func TestFileLimitNoteInParts(t *testing.T) {
+	h := threePartHarness(t)
+	for i := range 4 {
+		h.prov.skipped = append(h.prov.skipped, provider.SkippedFile{Path: fmt.Sprintf("late/g%d.go", i), Reason: provider.SkipFileLimit})
+	}
+	res := h.run(t, Args{})
+	if c := res.Coverage; c.ModelCalls != 3 || !c.Partial || c.ReviewedFiles != 6 {
+		t.Fatalf("coverage = %+v", c)
+	}
+	want := "4 files skipped because of diff.max_files_full_content; raise it to review them."
+	if !slices.Contains(res.Notes, want) || slices.Contains(res.Notes, llmrun.NoteProviderSkips) {
+		t.Errorf("notes = %q, want %q and no generic provider note", res.Notes, want)
+	}
+}
+
 // nextLLM is a fake model client with a fallback chain: CompleteNext serves
 // next once.
 type nextLLM struct {

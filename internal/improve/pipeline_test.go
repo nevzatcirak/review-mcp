@@ -45,7 +45,9 @@ type fakeProvider struct {
 	threads    []provider.Thread
 	threadsErr error
 	diffNotes  []string
-	calls      []string
+	// skipped are files the provider reports as skipped.
+	skipped []provider.SkippedFile
+	calls   []string
 	// revs are the repository's files (path to content) at a revision (a
 	// SHA), which GetFileAt and ListDir serve (X-32); a revision not in it
 	// is unknown, so every path is not_found. reads records each call as
@@ -117,7 +119,7 @@ func (f *fakeProvider) GetPullRequest(context.Context, provider.PRRef) (*provide
 
 func (f *fakeProvider) GetDiff(_ context.Context, _ provider.PRRef, _ *provider.PullRequest, opts provider.DiffOptions) (*provider.Diff, error) {
 	f.calls = append(f.calls, "diff")
-	d := &provider.Diff{Notes: f.diffNotes}
+	d := &provider.Diff{Notes: f.diffNotes, Skipped: slices.Clone(f.skipped)}
 	for _, fp := range f.files {
 		if opts.Include != nil && !opts.Include(fp.Path) {
 			d.Skipped = append(d.Skipped, provider.SkippedFile{Path: fp.Path, Reason: provider.SkipFiltered})
@@ -1183,6 +1185,40 @@ func TestProviderDiffNotes(t *testing.T) {
 	res := h.run(t, Args{})
 	if !slices.Contains(res.Notes, "GitHub lists at most 3000 files of a pull request: 2 more changed files were not listed, so they are not reviewed (file_limit).") {
 		t.Errorf("notes = %q", res.Notes)
+	}
+}
+
+// TestFileLimitNote (WP-14 A.2): files the provider skipped as file_limit
+// give the note that names diff.max_files_full_content, and not the generic
+// provider note.
+func TestFileLimitNote(t *testing.T) {
+	h := newHarness(oneCallAnswers())
+	for i := range 3 {
+		h.prov.skipped = append(h.prov.skipped, provider.SkippedFile{Path: fmt.Sprintf("late/g%d.go", i), Reason: provider.SkipFileLimit})
+	}
+	res := h.run(t, Args{})
+	want := "3 files skipped because of diff.max_files_full_content; raise it to review them."
+	if !slices.Contains(res.Notes, want) || slices.Contains(res.Notes, llmrun.NoteProviderSkips) || !res.Coverage.Partial {
+		t.Errorf("partial %v, notes = %q, want %q", res.Coverage.Partial, res.Notes, want)
+	}
+}
+
+// TestFileLimitNoteInParts (WP-14 A.2): pr_improve in three parts, with files
+// also lost to the file limit, names diff.max_files_full_content with the
+// right count; every part was used, so there is no budget hint and no
+// generic provider note.
+func TestFileLimitNoteInParts(t *testing.T) {
+	h := threePartHarness(t)
+	for i := range 4 {
+		h.prov.skipped = append(h.prov.skipped, provider.SkippedFile{Path: fmt.Sprintf("late/g%d.go", i), Reason: provider.SkipFileLimit})
+	}
+	res := h.run(t, Args{})
+	if c := res.Coverage; c.ModelCalls != 3 || !c.Partial || c.ReviewedFiles != 6 {
+		t.Fatalf("coverage = %+v", c)
+	}
+	want := "4 files skipped because of diff.max_files_full_content; raise it to review them."
+	if !slices.Contains(res.Notes, want) || slices.Contains(res.Notes, llmrun.NoteProviderSkips) {
+		t.Errorf("notes = %q, want %q and no generic provider note", res.Notes, want)
 	}
 }
 

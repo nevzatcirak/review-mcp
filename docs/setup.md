@@ -402,6 +402,33 @@ A local model can take minutes on a large prompt. Two settings help:
 
 `llm.timeout_seconds` (default 300) bounds one request to the model.
 
+### Diff limits
+
+The `diff.*` keys decide how much of a pull request is read from the provider
+and how much of it goes to the model. Each key has an environment variable of
+the form `REVIEW_MCP_DIFF_<NAME>`, and a `[diff]` table key in the TOML file.
+
+| Key | Environment variable | Default | Range | Meaning |
+|---|---|---|---|---|
+| `diff.max_files_full_content` | `REVIEW_MCP_DIFF_MAX_FILES_FULL_CONTENT` | 300 (50 before 2.5.1) | at least 1 | How many changed files get their base and head contents fetched. Every file within the limit costs two content requests to the provider. Gitea, GitHub and GitLab: files beyond the limit are reviewed from their patch, their contents are not fetched (less context, and findings may not anchor to a line). Bitbucket Server: files beyond the limit are **skipped** (`file_limit`), because the patch is built from the contents. The result then names this key in its notes, with the number of files. |
+| `diff.max_file_bytes` | `REVIEW_MCP_DIFF_MAX_FILE_BYTES` | 1048576 (1 MiB) | at least 1024 | The largest file content (each side) that is fetched. A larger file is skipped as `size_limit` on Bitbucket Server; on Gitea, GitHub and GitLab it keeps its patch and its contents are not fetched. Also bounds the project guidelines file. |
+| `diff.max_diff_bytes` | `REVIEW_MCP_DIFF_MAX_DIFF_BYTES` | 20971520 (20 MiB) | at least `diff.max_file_bytes` | The largest answer read when a provider returns the whole diff of a pull request in one response (Gitea). A larger diff fails the call with the error `too_large`, which names this key. |
+| `diff.large_patch_policy` | `REVIEW_MCP_DIFF_LARGE_PATCH_POLICY` | `clip` | `clip` or `skip` | What to do with a file that does not fit the diff budget on its own: `clip` cuts it to fit and marks it, `skip` leaves it out (`too_large`). See [`diff.large_patch_policy`](troubleshooting.md#difflarge_patch_policy). |
+| `diff.max_tokens` | `REVIEW_MCP_DIFF_MAX_TOKENS` | unset | at least 1000 | Caps the diff of one model call below what the context window allows. A pull request that no longer fits one call is reviewed in parts (`review.max_chunks`). See [Local models and slow endpoints](#local-models-and-slow-endpoints). |
+| `diff.extra_lines_before` | `REVIEW_MCP_DIFF_EXTRA_LINES_BEFORE` | 5 | 0 to 10 | Unchanged lines added before each hunk, from the fetched contents, when the whole diff fits the budget. |
+| `diff.extra_lines_after` | `REVIEW_MCP_DIFF_EXTRA_LINES_AFTER` | 1 | 0 to 10 | The same, after each hunk. |
+| `diff.skip_extend_extensions` | `REVIEW_MCP_DIFF_SKIP_EXTEND_EXTENSIONS` | `.md,.txt` | each entry starts with `.` | Files whose path ends with one of these extensions get no extra context lines. |
+| `diff.max_description_tokens` | `REVIEW_MCP_DIFF_MAX_DESCRIPTION_TOKENS` | 500 | at least 1 | The pull request description is cut to this many tokens in the prompt. |
+| `diff.max_commits_tokens` | `REVIEW_MCP_DIFF_MAX_COMMITS_TOKENS` | 500 | at least 1 | The commit messages of `pr_describe` are cut to this many tokens. |
+| `diff.ignore_generated_frameworks` | `REVIEW_MCP_DIFF_IGNORE_GENERATED_FRAMEWORKS` | empty | names from the built-in table | Frameworks whose generated files are filtered out (`generated:<framework>`). An unknown name fails startup. |
+
+A pull request with many files: raise `diff.max_files_full_content` when the
+result says that files were skipped because of it. The files beyond the limit
+cost nothing on Gitea, GitHub and GitLab, so the limit matters most on
+Bitbucket Server. Raising it adds two content requests per file, and the
+review still honours `diff.max_tokens`, the context window and
+`review.max_chunks` ([Large pull requests](review.md#large-pull-requests)).
+
 ### Rate limits
 
 A gateway often allows only a few requests per minute for one key, and

@@ -40,6 +40,57 @@ jobs:
       - name: Test internal/gitctx
         run: go test -count=1 -v ./internal/gitctx/...
 
+  # The packages that run real git, with older gits (WP-15 §2 item 7): the
+  # supported minimum 2.31.0, 2.43.0 (no GIT_NO_LAZY_FETCH, dies after a
+  # refused lazy fetch) and 2.44.1 (honours the variable, still dies). Each
+  # is built from the kernel.org tarball, pinned by SHA-256, on ubuntu:22.04
+  # (git 2.31 does not build against curl 8), and cached by that hash.
+  git-versions:
+    runs-on: ubuntu-latest
+    container: ubuntu:22.04@sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - git: 2.31.0
+            sha256: e8f162cbdb3283e13cd7388d864ed23485f1b046a19e969f12ed2685fb789a40
+          - git: 2.43.0
+            sha256: 5446603e73d911781d259e565750dcd277a42836c8e392cac91cf137aa9b76ec
+          - git: 2.44.1
+            sha256: 7b60a624c0f7009a16b856250621aafdcdd85eb8d44bb020617b6525b87261e4
+    steps:
+      - name: Install the build tools
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential ca-certificates curl git libcurl4-openssl-dev libexpat1-dev libssl-dev xz-utils zlib1g-dev
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+      - name: Cache git ${{ matrix.git }}
+        id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /opt/git-${{ matrix.git }}
+          key: git-${{ matrix.git }}-${{ matrix.sha256 }}-ubuntu22.04
+      - name: Build git ${{ matrix.git }}
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -fsSLO "https://mirrors.edge.kernel.org/pub/software/scm/git/git-${{ matrix.git }}.tar.xz"
+          echo "${{ matrix.sha256 }}  git-${{ matrix.git }}.tar.xz" | sha256sum -c
+          tar xf "git-${{ matrix.git }}.tar.xz"
+          make -C "git-${{ matrix.git }}" -j"$(nproc)" prefix="/opt/git-${{ matrix.git }}" \
+            NO_GETTEXT=1 NO_TCLTK=1 NO_PERL=1 NO_PYTHON=1 install >/dev/null
+      - name: Use git ${{ matrix.git }}
+        run: |
+          echo "/opt/git-${{ matrix.git }}/bin" >> "$GITHUB_PATH"
+      - name: Test with git ${{ matrix.git }}
+        run: |
+          git --version | grep -Fx "git version ${{ matrix.git }}"
+          go test -race -count=1 ./internal/gitctx/ ./internal/repotools/ ./internal/repoctx/ ./internal/related/
+
   licenses:
     runs-on: ubuntu-latest
     steps:

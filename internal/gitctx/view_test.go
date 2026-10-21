@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -230,5 +231,61 @@ func TestReadViewSHA256(t *testing.T) {
 	}
 	if !viewOK(filepath.Join(root, ".view-sha256"), "sha256") {
 		t.Error("the read did not go through the sha256 view")
+	}
+}
+
+// TestReadViewLocalGit (WP-15 §2 item 8): a read through the view with the
+// local git and no http-backend, so that it runs on Windows too (where the
+// http-backend tests skip themselves): of a partial clone over file://, a
+// present blob is read and a missing one is blob_missing, and no object is
+// added to the checkout.
+func TestReadViewLocalGit(t *testing.T) {
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is not installed")
+	}
+	if _, ok := parseGitVersion(gitOut(t, "", gitPath, "--version")); !ok {
+		t.Skip("git " + MinGitVersion + " or later is required")
+	}
+	isolateHome(t)
+	tmp := t.TempDir()
+	src := filepath.Join(tmp, "src")
+	gitOut(t, tmp, gitPath, "init", "-q", src)
+	writeFiles(t, src, map[string]string{"small.txt": "s\n", "big.txt": strings.Repeat("x", 3000) + "\n"})
+	gitOut(t, src, gitPath, "add", "-A")
+	gitOut(t, src, gitPath, "commit", "-q", "-m", "first")
+	gitOut(t, src, gitPath, "config", "uploadpack.allowFilter", "true")
+	sha := strings.TrimSpace(gitOut(t, src, gitPath, "rev-parse", "HEAD"))
+
+	r := New(Options{CacheDir: filepath.Join(tmp, "cache"), GitPath: gitPath})
+	root, err := r.openRoot(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := filepath.Join(root, "host.example", "_", "ns", "repo")
+	if err := os.MkdirAll(entry, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	gitDir := filepath.Join(entry, gitDirName)
+	srcURL := "file://" + filepath.ToSlash(src)
+	if !strings.HasPrefix(srcURL, "file:///") {
+		srcURL = "file:///" + filepath.ToSlash(src) // C:/... on Windows
+	}
+	gitOut(t, tmp, gitPath, "clone", "-q", "--bare", "--filter=blob:limit=1k", srcURL, gitDir)
+	co := Checkout{GitDir: gitDir, HeadSHA: sha, Ref: "refs/review-mcp/pr/1"}
+	objects := objectFiles(t, gitDir)
+
+	ctx := context.Background()
+	if got, err := r.FileAt(ctx, co, sha, "small.txt", 1<<20); err != nil || strings.TrimRight(string(got), "\r\n") != "s" {
+		t.Errorf("FileAt(small.txt) = %q, %v", got, err)
+	}
+	if _, err := r.FileAt(ctx, co, sha, "big.txt", 1<<20); ReasonOf(err) != ReasonBlobMissing {
+		t.Errorf("FileAt(big.txt) = %v (reason %q), want blob_missing", err, ReasonOf(err))
+	}
+	if !viewOK(filepath.Join(root, ".view-sha1"), "sha1") {
+		t.Error("the reads did not leave a valid view")
+	}
+	if got := objectFiles(t, gitDir); !slices.Equal(got, objects) {
+		t.Errorf("the checkout's objects changed: %d files, was %d", len(got), len(objects))
 	}
 }

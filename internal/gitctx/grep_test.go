@@ -429,13 +429,20 @@ func TestGrepRunsOffline(t *testing.T) {
 		if v, ok := envValue(c.Env, "GIT_NO_LAZY_FETCH"); !ok || v != "1" {
 			t.Errorf("git %s: GIT_NO_LAZY_FETCH = %q (set %v), want 1", sub, v, ok)
 		}
+		// Through the read view (X-45): never the checkout as the repository.
+		if view := viewArgs(t, r, co); !strings.Contains(args, " "+strings.Join(view, " ")+" ") || strings.Contains(args, "--git-dir="+co.GitDir) {
+			t.Errorf("git %s does not read through the view: %s", sub, args)
+		}
+		if v, _ := envValue(c.Env, "GIT_OBJECT_DIRECTORY"); v != filepath.Join(co.GitDir, "objects") {
+			t.Errorf("git %s: GIT_OBJECT_DIRECTORY = %q, want the checkout's objects", sub, v)
+		}
 		for _, kv := range c.Env {
 			name, v, _ := strings.Cut(kv, "=")
 			if strings.HasPrefix(name, "GIT_CONFIG_COUNT") || strings.HasPrefix(name, "GIT_CONFIG_KEY") || strings.HasPrefix(name, "GIT_CONFIG_VALUE") ||
 				strings.Contains(kv, testToken) || strings.EqualFold(name, "HTTPS_PROXY") && v == "" {
 				t.Errorf("git %s: environment carries %s", sub, name)
 			}
-			if name != "GIT_NO_LAZY_FETCH" && !allowedEnv.MatchString(name) {
+			if !offlineEnv[name] && !allowedEnv.MatchString(name) {
 				t.Errorf("git %s got %s, which is not on the allowlist", sub, name)
 			}
 		}

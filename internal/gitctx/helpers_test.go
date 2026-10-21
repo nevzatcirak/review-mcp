@@ -104,7 +104,7 @@ func (c fakeCall) subcommand() string {
 	for i := 0; i < len(c.Args); i++ {
 		a := c.Args[i]
 		switch {
-		case a == "-c":
+		case a == "-c", a == "--shallow-file":
 			i++
 		case strings.HasPrefix(a, "--git-dir="):
 		default:

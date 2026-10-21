@@ -230,7 +230,8 @@ func TestRunnerChangedPathsArgv(t *testing.T) {
 		t.Fatalf("%d git diff calls, want 1", len(diffs))
 	}
 	c := diffs[0]
-	want := append(safetyArgsFor(nil, runtime.GOOS, true), "--git-dir="+co.GitDir,
+	want := append(safetyArgsFor(nil, runtime.GOOS, true), viewArgs(t, r, co)...)
+	want = append(want,
 		"diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv",
 		"--end-of-options", fakeSHA, fakeSHA2, "--")
 	if !slices.Equal(c.Args, want) {
@@ -249,13 +250,16 @@ func TestRunnerChangedPathsArgv(t *testing.T) {
 	if v, ok := envValue(c.Env, "GIT_NO_LAZY_FETCH"); !ok || v != "1" {
 		t.Errorf("GIT_NO_LAZY_FETCH = %q (set %v), want 1", v, ok)
 	}
+	if v, _ := envValue(c.Env, "GIT_OBJECT_DIRECTORY"); v != filepath.Join(co.GitDir, "objects") {
+		t.Errorf("GIT_OBJECT_DIRECTORY = %q, want the checkout's objects", v)
+	}
 	root, _ := r.CacheDir()
 	if h, _ := envValue(c.Env, "HOME"); h != homeDir(root) {
 		t.Errorf("HOME = %q, want the cache's empty home", h)
 	}
 	for _, kv := range c.Env {
 		name, _, _ := strings.Cut(kv, "=")
-		if name != "GIT_NO_LAZY_FETCH" && !allowedEnv.MatchString(name) {
+		if !offlineEnv[name] && !allowedEnv.MatchString(name) {
 			t.Errorf("git diff got %s, which is not on the allowlist", name)
 		}
 	}
@@ -277,7 +281,8 @@ func TestRunnerListPathsArgv(t *testing.T) {
 		t.Fatalf("%d git ls-tree calls, want 1", len(calls))
 	}
 	c := calls[0]
-	want := append(safetyArgsFor(nil, runtime.GOOS, true), "--git-dir="+co.GitDir,
+	want := append(safetyArgsFor(nil, runtime.GOOS, true), viewArgs(t, r, co)...)
+	want = append(want,
 		"ls-tree", "-r", "-z", "--name-only", "--end-of-options", fakeSHA2)
 	if !slices.Equal(c.Args, want) {
 		t.Errorf("git ls-tree argv =\n  %q\nwant\n  %q", c.Args, want)
@@ -291,7 +296,7 @@ func TestRunnerListPathsArgv(t *testing.T) {
 	}
 	for _, kv := range c.Env {
 		name, _, _ := strings.Cut(kv, "=")
-		if name != "GIT_NO_LAZY_FETCH" && !allowedEnv.MatchString(name) {
+		if !offlineEnv[name] && !allowedEnv.MatchString(name) {
 			t.Errorf("git ls-tree got %s, which is not on the allowlist", name)
 		}
 	}

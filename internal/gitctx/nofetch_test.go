@@ -16,14 +16,17 @@ import (
 	"testing"
 )
 
-// The rule "a read never fetches" (WP-15 §1.2) on every supported git. git
-// 2.44 added GIT_NO_LAZY_FETCH (backported to some 2.39-2.43 security
-// releases and distribution packages); an older git ignores it and starts a
-// lazy fetch from the promisor remote, which only protocol.allow=never then
-// stops. This test does not care which guard holds: the promisor remote of
-// the checkout is a fixture that counts every connection and could serve
-// the missing blobs, and every offline read must leave it untouched and add
-// no object.
+// The rule "a read never fetches" (WP-15 §1.2) on every supported git, and
+// the outcome of each read (§2 item 5). git 2.45 added GIT_NO_LAZY_FETCH
+// (backported to some 2.39-2.44 security releases and distribution
+// packages); an older git ignores it and, reading the checkout itself,
+// starts a lazy fetch from the promisor remote that only
+// protocol.allow=never then stops, and git 2.39 to 2.44.x die after it
+// instead of reporting the blob missing. The read view (X-45) has no
+// promisor. The promisor remote of the checkout is a fixture that counts
+// every connection and could serve the missing blobs: every offline read
+// must leave it untouched, add no object, and report the missing blobs as
+// git 2.45 does.
 
 // noFetchFiles: one present file, one file over the filter, and enough
 // missing files with long names that their exclude pathspecs pass
@@ -177,32 +180,47 @@ func TestReadsNeverFetch(t *testing.T) {
 			objects := objectFiles(t, gitDir)
 			ctx := context.Background()
 
+			// Each read and its outcome (§2 item 5): the missing blob is
+			// blob_missing, and a search finds the present file and counts
+			// the missing ones, never failing as a whole.
+			searched := func(err error, hits []Hit, skipped int) string {
+				switch {
+				case err != nil:
+					return fmt.Sprintf("failed: %v (reason %q)", err, ReasonOf(err))
+				case !slices.Contains(pathsOf(hits), "small.go"):
+					return fmt.Sprintf("no hit in small.go: %q", pathsOf(hits))
+				case skipped == 0:
+					return "no skipped blob counted"
+				}
+				return ""
+			}
 			reads := []struct {
 				name string
-				read func() error
+				read func() string
 			}{
-				{"FileAt", func() error {
-					_, err := r.FileAt(ctx, co, sha, "big.txt", 1<<20)
-					return err
+				{"FileAt", func() string {
+					if _, err := r.FileAt(ctx, co, sha, "big.txt", 1<<20); ReasonOf(err) != ReasonBlobMissing {
+						return fmt.Sprintf("got %v (reason %q), want blob_missing", err, ReasonOf(err))
+					}
+					return ""
 				}},
-				{"SearchText", func() error {
-					_, err := r.SearchText(ctx, co, TextQuery{Text: "Needle", ContextLines: 1})
-					return err
+				{"SearchText", func() string {
+					res, err := r.SearchText(ctx, co, TextQuery{Text: "Needle", ContextLines: 1})
+					return searched(err, res.Hits, res.SkippedBlobs)
 				}},
-				{"SearchTerms", func() error {
-					_, err := r.SearchTerms(ctx, co, TermQuery{Terms: []Term{{Text: "Needle", Word: true}}, ContextLines: 1})
-					return err
+				{"SearchTerms", func() string {
+					res, err := r.SearchTerms(ctx, co, TermQuery{Terms: []Term{{Text: "Needle", Word: true}}, ContextLines: 1})
+					return searched(err, res.Hits, res.SkippedBlobs)
 				}},
-				{"Grep", func() error {
-					_, err := r.Grep(ctx, co, Query{Symbols: syms("Needle")})
-					return err
+				{"Grep", func() string {
+					res, err := r.Grep(ctx, co, Query{Symbols: syms("Needle")})
+					return searched(err, res.Hits, res.SkippedBlobs)
 				}},
 			}
 			for _, rd := range reads {
-				err := rd.read()
-				// The outcome is logged for the version matrix; whether it is
-				// classified right is not this test's question.
-				t.Logf("%s: reason %q", rd.name, ReasonOf(err))
+				if bad := rd.read(); bad != "" {
+					t.Errorf("%s: %s", rd.name, bad)
+				}
 				if n := fx.connections() - seen; n != 0 {
 					t.Errorf("%s: %d connection(s) to the %s promisor remote", rd.name, n, kind)
 				}

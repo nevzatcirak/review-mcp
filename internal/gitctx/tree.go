@@ -15,8 +15,9 @@ import (
 // touches, at its base revision, when an earlier fetch happened to bring
 // that commit in. They are the offline plumbing of Grep and nothing more:
 // git cat-file and git ls-tree against a commit (a tree-ish) of the bare
-// cache, never a working tree, with no credential, every protocol
-// forbidden and GIT_NO_LAZY_FETCH=1. Nothing from the repository is run or
+// cache, never a working tree, through the read view with no promisor
+// (X-45), with no credential, every protocol forbidden and
+// GIT_NO_LAZY_FETCH=1. Nothing from the repository is run or
 // loaded as configuration (R-1): no checkout, no hook (core.hooksPath is
 // the null device), no filter or textconv (cat-file prints the stored
 // object as it is).

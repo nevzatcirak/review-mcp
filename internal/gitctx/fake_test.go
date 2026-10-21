@@ -179,6 +179,22 @@ func TestSafetySettings(t *testing.T) {
 }
 
 // allowedEnv is the allowlist of the child environment.
+// offlineEnv are the variables an offline read adds to the allowlisted
+// environment: GIT_NO_LAZY_FETCH=1 and the checkout's objects for the read
+// view.
+var offlineEnv = map[string]bool{"GIT_NO_LAZY_FETCH": true, "GIT_OBJECT_DIRECTORY": true}
+
+// viewArgs are the global options of an offline read of co: the read view
+// as the repository and co's shallow file.
+func viewArgs(t *testing.T, r *Runner, co Checkout) []string {
+	t.Helper()
+	root, err := r.CacheDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return []string{"--git-dir=" + filepath.Join(root, viewPrefix+objectFormatOf(co.HeadSHA)), "--shallow-file", filepath.Join(co.GitDir, "shallow")}
+}
+
 var allowedEnv = regexp.MustCompile(`^(?i:PATH|HOME|XDG_CONFIG_HOME|USERPROFILE|SYSTEMROOT|LANG|GIT_CONFIG_NOSYSTEM|GIT_TERMINAL_PROMPT|GIT_ASKPASS|SSH_ASKPASS|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+|HTTP_PROXY|HTTPS_PROXY|NO_PROXY|ALL_PROXY)$`)
 
 // TestParentEnvironmentNotPassed [canary]: a variable of the parent never

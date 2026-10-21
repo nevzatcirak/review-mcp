@@ -130,10 +130,11 @@ var (
 // returned (defence in depth: the pull request's files are already in the
 // prompt, and the pathspec list is clipped to keep the command line short).
 //
-// Every git process runs offline: the allowlisted environment of Ensure
-// with no credential, protocol.allow=never with no https or http allow, and
-// GIT_NO_LAZY_FETCH=1 (decision 8 on PR #13). A blob the partial clone does
-// not hold therefore fails locally and at once; such files are found before
+// Every git process runs offline: through the read view with no promisor
+// (X-45), from the allowlisted environment of Ensure with no credential,
+// protocol.allow=never with no https or http allow, and GIT_NO_LAZY_FETCH=1
+// (decision 8 on PR #13). A blob the partial clone does not hold is
+// therefore reported missing locally and at once; such files are found before
 // the search (rev-list --missing=print), left out of it, and counted in
 // Result.SkippedBlobs. It is never an error.
 //
@@ -249,7 +250,8 @@ func (r *Runner) Grep(ctx context.Context, c Checkout, q Query) (Result, error) 
 
 // openCheckout checks that c is a repository of this runner's cache (a
 // "git" directory of an entry under the cache root, reached without a
-// symbolic link) and returns the runner of its offline reads. The entry is
+// symbolic link) and returns the runner of its offline reads, which go
+// through the cache's read view of c's object format. The entry is
 // marked as used for the LRU sweep (best effort). Every failure is an
 // *Error: unsupported, git_unavailable or cache_unusable.
 func (r *Runner) openCheckout(c Checkout) (*gitRun, error) {
@@ -272,9 +274,13 @@ func (r *Runner) openCheckout(c Checkout) (*gitRun, error) {
 	if fi, err := os.Lstat(c.GitDir); err != nil || !fi.IsDir() {
 		return nil, fail(ReasonCache)
 	}
+	view, err := ensureView(root, objectFormatOf(c.HeadSHA))
+	if err != nil {
+		return nil, err
+	}
 	// Tell the LRU sweep this entry is in use; best effort.
 	_ = touch(filepath.Join(entry, markerName))
-	return &gitRun{path: probe.path, gitDir: c.GitDir, dir: entry, home: homeDir(root)}, nil
+	return &gitRun{path: probe.path, gitDir: c.GitDir, dir: entry, home: homeDir(root), view: view}, nil
 }
 
 // usableSymbol reports whether a name can be passed to git as one pattern:

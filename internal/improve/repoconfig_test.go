@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
+	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 )
 
 // TestRepoConfigChangesTheRun: keys of the file reach pr_improve: the
@@ -53,5 +54,20 @@ func TestRepoConfigAbsentMakesNoNote(t *testing.T) {
 	}
 	if pl.Result.RepoConfig.Status != "absent" || slices.ContainsFunc(pl.Result.Notes, func(n string) bool { return strings.Contains(n, ".review-mcp.toml") }) {
 		t.Errorf("repo_config %+v notes %q", pl.Result.RepoConfig, pl.Result.Notes)
+	}
+}
+
+// TestRepoConfigRelatedOffGivesNoNote (WP-16 item 4): pr_improve never reads
+// related repositories, so a file that declares them gets no operator note
+// while related.repos stays in repo_config.ignored.
+func TestRepoConfigRelatedOffGivesNoNote(t *testing.T) {
+	h := newHarness(nil)
+	h.prov.revs["base0"][".review-mcp.toml"] = "[[related.repos]]\nurl = \"https://git.example/team/web-ui\"\n"
+	pl, err := Prepare(context.Background(), h.deps, Args{PRURL: testPRURL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(pl.Result.Notes, repocfg.NoteRelatedOff) || !slices.Equal(pl.Result.RepoConfig.Ignored, []string{"related.repos"}) {
+		t.Errorf("notes %q, repo_config %+v", pl.Result.Notes, pl.Result.RepoConfig)
 	}
 }

@@ -71,13 +71,20 @@ func TestDeclaredRelationsOff(t *testing.T) {
 // validate.
 func TestDeclaredRelationsOffNote(t *testing.T) {
 	for _, c := range []struct {
-		name    string
-		related []string
-		note    bool
-	}{{"without related", nil, true}, {"with related", []string{consumerURL}, false}} {
+		name string
+		args Args
+		note bool
+	}{
+		{"without related", Args{}, true},
+		{"with related", Args{Related: []string{consumerURL}}, false},
+		// WP-16 item 4: a focused run and a merged publish never read the
+		// declarations, so the switch changes nothing for them.
+		{"focused", Args{Focus: FocusSecurity}, false},
+		{"merged publish", Args{Publish: true, Findings: []SuppliedFinding{supplied("src/app.go", 11, 11, "H", "C")}}, false},
+	} {
 		t.Run(c.name, func(t *testing.T) {
 			h, _ := declaredHarness(false, declaredConsumer)
-			res := runRelated(t, h, Args{Related: c.related})
+			res := runRelated(t, h, c.args)
 			if rc := res.RepoConfig; !slices.Equal(rc.Ignored, []string{"related.repos"}) || len(rc.Applied) != 0 {
 				t.Errorf("repo_config %+v", rc)
 			}

@@ -8,7 +8,10 @@ type Item struct {
 	Discontinued bool   `json:"discontinued"`
 }
 
-// Price returns the price of an item in cents.
+// Price returns the price of an item in cents, or 0 when it cannot be sold.
 func Price(it Item) int {
+	if it.PriceCents < 0 {
+		return 0
+	}
 	return it.PriceCents
 }

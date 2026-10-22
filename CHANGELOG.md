@@ -5,6 +5,18 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.1]
+
+Patch release. The code is the same as `2.5.1-rc.1`. A pull request with many
+files is no longer cut at 50 files by default (`diff.max_files_full_content`
+is now 300), a result that lost files to that limit names the key, and the
+`diff.*` keys are documented. Repository context reads go through a view with
+no promisor (X-45), so every supported git reports a file that is not in the
+cache as not fetched and never starts a lazy fetch; this was checked live on
+git 2.43.0, where 2.5.0 failed the same read. The `2.5.1-rc.1` section lists
+the changes. Nothing in the tools or the configuration of 2.5.0 is removed or
+renamed.
+
 ## [2.5.1-rc.1]
 
 Release candidate of the 2.5.1 patch release (the npm dist-tag `next`; `latest`
@@ -1874,6 +1886,7 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[2.5.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.1
 [2.5.1-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.1-rc.1
 [2.5.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.0
 [2.5.0-rc.2]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.0-rc.2

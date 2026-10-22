@@ -424,7 +424,7 @@ func TestCITimeout(t *testing.T) {
 	o.setPRURL(prURLOf(g, 8))
 	var out, errb bytes.Buffer
 	start := time.Now()
-	code := ciExecute(context.Background(), o, cfg, logging.New(&errb, logLevel(cfg, nil)), &out, &errb)
+	code := ciExecute(context.Background(), o, cfg, logging.New(&errb, logLevel(cfg, nil)), newCIVars(nil).get, &out, &errb)
 	if code != 1 || out.Len() != 0 {
 		t.Fatalf("exit %d stdout %q", code, out.String())
 	}
@@ -495,5 +495,35 @@ func TestE2ECILeak(t *testing.T) {
 				t.Errorf("a posted comment leaks %q", s)
 			}
 		}
+	}
+}
+
+// TestCINeverReadsCITokens [canary]: the pipeline's own tokens
+// (GITHUB_TOKEN, CI_JOB_TOKEN) are never read, in any command or path; the
+// provider token comes only from REVIEW_MCP_* (V-4 §1.2 item 5). The
+// mapping is the pipeline's, explicit.
+func TestCINeverReadsCITokens(t *testing.T) {
+	g, l := newFakeGitea(t), newFakeLLM(t, 200, reviewAnswer)
+	summary := writeFile(t, "summary.md", "")
+	vars := with(actionsVars(t, "pull_request"), "GITEA_ACTIONS", "true", "GITHUB_SERVER_URL", g.giteaBase(),
+		"GITHUB_STEP_SUMMARY", summary, "RUNNER_TEMP", t.TempDir())
+	for _, args := range [][]string{
+		{"review", "--publish", "--fail-on", "any"},
+		{"review", "--pr-url", prURLOf(g, 8)},
+		{"describe"},
+		{"improve", "--json"},
+		{"review", "--timeout", "1s"},
+	} {
+		r := ciCall(t, reviewDiagEnv(g, l), vars, args...)
+		for _, k := range r.variables {
+			if k == "GITHUB_TOKEN" || k == "CI_JOB_TOKEN" || !slices.Contains(ciAllowedVariables, k) {
+				t.Errorf("%v: read the environment variable %s", args, k)
+			}
+		}
+		assertCIClean(t, r)
+	}
+	data, err := os.ReadFile(summary) //nolint:gosec // G304: a file under t.TempDir()
+	if err != nil || strings.Contains(string(data), ciGitHubToken) || strings.Contains(string(data), ciJobToken) {
+		t.Errorf("the step summary: %v", err)
 	}
 }

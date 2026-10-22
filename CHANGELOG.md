@@ -5,6 +5,33 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Planned as `2.5.2`: small fixes from the 2.5 acceptances.
+
+### Fixed
+
+- Counts in text a user or a model reads are in words: "1 file was not
+  searched: it was not fetched." in a repository search (was "1 files were
+  ...") and likewise "1 match", "1 entry", "the file has 1 line", "1 round",
+  "1 change requested", "1 required approval", "1 thread shown", "1 body
+  truncated", "only 1 commit message" and "1 more changed file".
+- A killed build of the read view no longer leaves its temporary directory
+  in the cache for good: `.view-*.tmp*` directories older than one hour are
+  removed.
+- A `pr_ask` citation with several lines (`R<n>:path:L-M`, `R<n>:path:L,M`)
+  is one link to the first line; in 2.5.1 a stray ",6" was left behind.
+- The note that reading related repositories is turned off by the operator
+  is given only by a run that would have read them: `pr_review` and
+  `pr_ask` without their own `related`, not focused and not a merged
+  publish. `pr_describe` and `pr_improve` never give it.
+
+### Documentation
+
+- `bitbucket_server.insecure_skip_verify` is documented in
+  [Setup](docs/setup.md), with the CA certificate keys of the other
+  providers.
+
 ## [2.5.1]
 
 Patch release. The code is the same as `2.5.1-rc.1`. A pull request with many

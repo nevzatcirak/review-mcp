@@ -5,9 +5,10 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.5.1-rc.1]
 
-Planned as `2.5.1`. A pull request with many files is no longer cut at 50
+Release candidate of the 2.5.1 patch release (the npm dist-tag `next`; `latest`
+stays on 2.5.0). A pull request with many files is no longer cut at 50
 files by default, and a result that lost files to the file limit says which
 key to raise. Repository context reads never fetch and behave the same on
 every supported git.
@@ -1873,6 +1874,7 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[2.5.1-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.1-rc.1
 [2.5.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.0
 [2.5.0-rc.2]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.0-rc.2
 [2.5.0-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.0-rc.1

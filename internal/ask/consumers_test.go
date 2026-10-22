@@ -103,3 +103,20 @@ func TestLinkConsumersWithoutRepository(t *testing.T) {
 		t.Errorf("answer changed: %q", got)
 	}
 }
+
+// TestAskConsumerCitationsWithSeveralLines: `L-M` and `L,M[,K...]` are one
+// citation: one link to line L, the whole location as the link text, and
+// nothing of it left outside the link; an unseen file keeps its whole text.
+func TestAskConsumerCitationsWithSeveralLines(t *testing.T) {
+	answer := "A R2:src/client/profile.ts:2-5, B `R2:src/client/profile.ts:1,6`; C R2:src/client/profile.ts:3,7,9. " +
+		"D R2:src/other.ts:4-8 and E R2:src/other.ts:1,6, F R2:src/client/profile.ts:2."
+	_, res := consumerHarness(t, answer)
+	base := "https://gitlab.example/grp/web-ui/blob/" + askConsumerCommit + "/src/client/profile.ts#L"
+	want := "A [`grp/web-ui src/client/profile.ts:2-5`](" + base + "2), B [`grp/web-ui src/client/profile.ts:1,6`](" + base + "1); " +
+		"C [`grp/web-ui src/client/profile.ts:3,7,9`](" + base + "3). " +
+		"D `src/other.ts:4-8` (location not verified) and E `src/other.ts:1,6` (location not verified), " +
+		"F [`grp/web-ui src/client/profile.ts:2`](" + base + "2)."
+	if res.Answer != want {
+		t.Errorf("answer\n%s\nwant\n%s", res.Answer, want)
+	}
+}

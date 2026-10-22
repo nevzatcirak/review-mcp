@@ -339,7 +339,7 @@ func TestRenderEmptyAndNotes(t *testing.T) {
 	}, false)
 	r.Truncated.ThreadsOmitted = 3
 	md = RenderPRCommentsMarkdown(r)
-	for _, want := range []string{"3 older thread(s) omitted", "1 comment body(ies) cut at 4000", "1 resolved thread(s) hidden", "1 resolved hidden", "3 threads omitted", "1 bodies truncated"} {
+	for _, want := range []string{"3 older thread(s) omitted", "1 comment body(ies) cut at 4000", "1 resolved thread(s) hidden", "1 resolved hidden", "3 threads omitted", "1 body truncated"} {
 		if !strings.Contains(md, want) {
 			t.Errorf("markdown lacks %q:\n%s", want, md)
 		}
@@ -657,5 +657,24 @@ func TestPRCommentsResolutionNote(t *testing.T) {
 				t.Errorf("note appears %d times in the markdown, want %d:\n%s", got, len(tc.want), md)
 			}
 		})
+	}
+}
+
+// TestCommentsHeaderCountsInWords: the heading line counts in words for one
+// and for two.
+func TestCommentsHeaderCountsInWords(t *testing.T) {
+	for _, tc := range []struct {
+		n    int
+		want string
+	}{
+		{1, "1 thread shown · 0 resolved hidden · 1 thread omitted · 1 body truncated\n"},
+		{2, "2 threads shown · 0 resolved hidden · 2 threads omitted · 2 bodies truncated\n"},
+	} {
+		r := PRCommentsResult{Threads: make([]ThreadOut, tc.n)}
+		r.Truncated.ThreadsOmitted = tc.n
+		r.Truncated.BodiesTruncated = tc.n
+		if md := RenderPRCommentsMarkdown(r); !strings.Contains(md, " · "+tc.want) {
+			t.Errorf("%d: heading lacks %q:\n%s", tc.n, tc.want, md)
+		}
 	}
 }

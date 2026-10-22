@@ -144,7 +144,7 @@ func TestToolsOnRealRepository(t *testing.T) {
 	if msgs[0].Content != ResultNotFetched || msgs[1].Content != ResultTooLarge || msgs[3].Content != ResultNotAllowed {
 		t.Errorf("fixed results: %q", msgs)
 	}
-	if !strings.Contains(msgs[2].Content, "0 matches") || !strings.Contains(msgs[2].Content, "1 files were not searched: they were not fetched.") {
+	if !strings.Contains(msgs[2].Content, "0 matches") || !strings.Contains(msgs[2].Content, "1 file was not searched: it was not fetched.") {
 		t.Errorf("search of a missing blob: %q", msgs[2].Content)
 	}
 	if requests != fetched {

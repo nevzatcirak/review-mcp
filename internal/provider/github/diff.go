@@ -21,6 +21,9 @@ import (
 // files not listed.
 const NoteFilesNotListedFormat = "GitHub lists at most 3000 files of a pull request: %d more changed files were not listed, so they are not reviewed (file_limit)."
 
+// NoteOneFileNotListed is the same note when exactly one file was not listed.
+const NoteOneFileNotListed = "GitHub lists at most 3000 files of a pull request: 1 more changed file was not listed, so it is not reviewed (file_limit)."
+
 // apiFile is one entry of GET /pulls/{n}/files.
 type apiFile struct {
 	Filename         string  `json:"filename"`
@@ -153,7 +156,11 @@ func (p *Provider) GetDiff(ctx context.Context, ref provider.PRRef, pr *provider
 	out := &provider.Diff{BaseStrategy: pr.BaseStrategy}
 	if missing := pr.ChangedFiles - len(files); missing > 0 {
 		out.Incomplete = true
-		out.Notes = append(out.Notes, fmt.Sprintf(NoteFilesNotListedFormat, missing))
+		note := NoteOneFileNotListed
+		if missing != 1 {
+			note = fmt.Sprintf(NoteFilesNotListedFormat, missing)
+		}
+		out.Notes = append(out.Notes, note)
 		p.logger.Debug("github file list is cut short", "listed", len(files), "changed_files", pr.ChangedFiles,
 			"listing_limit", maxListedFiles)
 	}

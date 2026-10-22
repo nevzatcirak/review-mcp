@@ -368,7 +368,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	if commitsErr != nil {
 		res.Notes = append(res.Notes, NoteCommitsUnavailable)
 	} else if pr.CommitCount > len(commits) {
-		res.Notes = append(res.Notes, fmt.Sprintf(NoteCommitsPartialFormat, pr.CommitCount, len(commits)))
+		res.Notes = append(res.Notes, fmt.Sprintf(NoteCommitsPartialFormat, pr.CommitCount, llmrun.CountPhrase(len(commits), "commit message", "commit messages")))
 	}
 	res.Notes = append(res.Notes, ic.Notes...)
 	log.Debug("describe: diff prepared", "url", logging.RedactURL(ref.URL), "files", len(d.Files),

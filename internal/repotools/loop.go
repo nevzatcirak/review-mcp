@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nevzatcirak/review-mcp/internal/llm"
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 )
 
@@ -96,7 +97,7 @@ func instruction(rounds int, purpose, final string, repos []Repo) string {
 		"- Use them only when the diff and the repository context are not enough to " + purpose + ", " +
 		"for example to check what a function that the diff calls does or returns.\n" +
 		reposLine(repos) +
-		"- You have at most " + strconv.Itoa(rounds) + " rounds of tool calls, with at most " +
+		"- You have at most " + llmrun.CountPhrase(rounds, "round", "rounds") + " of tool calls, with at most " +
 		strconv.Itoa(MaxCallsPerRound) + " calls in each round.\n" +
 		"- " + final
 }

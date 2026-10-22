@@ -233,7 +233,7 @@ func TestRenderPRInfoMarkdown(t *testing.T) {
 	// Target branch first (after the heading), then the approval line, then
 	// the reviewers.
 	if lines[0] != "### Pull request status" || lines[2] != "`feature/x` → `main`" ||
-		lines[4] != "1 of 2 required approvals; 1 changes requested; 1 pending" {
+		lines[4] != "1 of 2 required approvals; 1 change requested; 1 pending" {
 		t.Errorf("head of markdown:\n%s", md)
 	}
 	for _, want := range []string{"Mergeable: yes", "- `bob` (Bob \\*\\*B\\*\\*): approved, 2026-01-02T03:04:05Z",
@@ -253,7 +253,7 @@ func TestRenderPRInfoMarkdown(t *testing.T) {
 	f.status.MergeBlockers = []string{provider.BlockerConflict}
 	res, _ = PRInfoTool(context.Background(), infoResolver{f}, testPRURL, nil)
 	md = RenderPRInfoMarkdown(res)
-	if !strings.Contains(md, "1 approval(s), required number not readable; 1 changes requested") ||
+	if !strings.Contains(md, "1 approval(s), required number not readable; 1 change requested") ||
 		!strings.Contains(md, "Mergeable: no (merge conflict)") || res.RequiredApprovalsNote != "not readable with this token" {
 		t.Errorf("markdown:\n%s", md)
 	}
@@ -353,6 +353,25 @@ func TestPRInfoToolCIHostileName(t *testing.T) {
 	for _, live := range []string{" <img", "x](https://example.com/evil)", " **b**", "\n# h"} {
 		if strings.Contains(md, live) {
 			t.Errorf("%q is live in\n%s", live, md)
+		}
+	}
+}
+
+// TestApprovalLineCountsInWords: "1 required approval", "1 change requested"
+// for one; the plural for two.
+func TestApprovalLineCountsInWords(t *testing.T) {
+	one, two := 1, 2
+	for _, tc := range []struct {
+		req  *int
+		n    int
+		want string
+	}{
+		{&one, 1, "0 of 1 required approval; 1 change requested"},
+		{&two, 2, "0 of 2 required approvals; 2 changes requested"},
+	} {
+		r := &PRInfoResult{RequiredApprovals: tc.req, Approvals: &ApprovalCounts{ChangesRequested: tc.n}}
+		if got := approvalLine(r); got != tc.want {
+			t.Errorf("approvalLine = %q, want %q", got, tc.want)
 		}
 	}
 }

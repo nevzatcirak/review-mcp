@@ -37,9 +37,18 @@ type fakeHost struct {
 
 	mu     sync.Mutex
 	posted []string
+	// patched records the bodies of PATCH .../pulls/7 (a description
+	// update).
+	patched []string
 }
 
 func (f *fakeHost) requests() int64 { return f.hits.Load() }
+
+func (f *fakeHost) patches() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.patched...)
+}
 
 func (f *fakeHost) posts() []string {
 	f.mu.Lock()
@@ -166,6 +175,11 @@ func newFakeGitea(t *testing.T) *fakeHost {
 				giteaReviewComment(202, "src/app.go", 10, 105, ""),
 				giteaReviewComment(301, "src/done.go", 3, 110, "bob"),
 			})
+		case r.Method == "PATCH" && p == api+"/pulls/7":
+			f.mu.Lock()
+			f.patched = append(f.patched, string(body))
+			f.mu.Unlock()
+			writeJSONResp(w, map[string]any{"number": 7})
 		case r.Method == "POST" && p == api+"/issues/7/comments":
 			if f.failPost.Load() {
 				http.Error(w, "boom", http.StatusInternalServerError)

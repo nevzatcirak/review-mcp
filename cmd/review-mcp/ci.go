@@ -43,7 +43,10 @@ prints the result as markdown (or, with --json, the tool's structured result)
 on stdout. Nothing is posted without --publish. The code under review is
 never built or run.
 
---pr-url URL              the pull request; required in this version
+--pr-url URL              the pull request; without it, the pull request of
+                          the pipeline (GitHub Actions or Gitea Actions on a
+                          pull_request or pull_request_target event, a
+                          GitLab CI merge request pipeline)
 --publish                 post the result as the tool does (review: the
                           overview and inline comments; describe: the
                           description region; improve: the suggestions)
@@ -91,11 +94,14 @@ type ciEnv func(key string) string
 
 // ciOptions is a parsed and checked "ci" command line.
 type ciOptions struct {
-	cmd     string
-	prURL   string
-	publish bool
-	asJSON  bool
-	timeout time.Duration
+	cmd   string
+	prURL string
+	// detected is the CI the pull request was detected from; "" when
+	// --pr-url gave it.
+	detected string
+	publish  bool
+	asJSON   bool
+	timeout  time.Duration
 
 	// The tool arguments of the command; only the fields its tool has are
 	// set.
@@ -128,7 +134,7 @@ func (s *stringList) Set(v string) error {
 // configuration is loaded, so nothing is loaded or sent; then the command
 // runs and exits 0 or 1.
 func runCI(args []string, stdout, stderr io.Writer, load configLoader, env ciEnv) int {
-	opts, err := parseCI(args, stderr)
+	opts, err := parseCI(args, stderr, env)
 	if err != nil {
 		var ue *usageError
 		if errors.As(err, &ue) {
@@ -149,10 +155,11 @@ func runCI(args []string, stdout, stderr io.Writer, load configLoader, env ciEnv
 // parseCI parses and checks the command line. Every check needs no
 // configuration and no network: the flags, the tool arguments (the tool's
 // own Validate, so the CLI refuses what the tool refuses with the same
-// sentence) and the issue context file. flag.ErrHelp and the flag
+// sentence), the issue context file and the pull request (--pr-url, or
+// detected from the pipeline). flag.ErrHelp and the flag
 // package's own errors have already been printed with the usage; the other
 // errors are *usageError.
-func parseCI(args []string, stderr io.Writer) (*ciOptions, error) {
+func parseCI(args []string, stderr io.Writer, env ciEnv) (*ciOptions, error) {
 	if len(args) == 0 {
 		ciUsage(stderr)
 		return nil, errors.New("no command")
@@ -242,8 +249,14 @@ func parseCI(args []string, stderr io.Writer) (*ciOptions, error) {
 	if err != nil {
 		return nil, usageErrorf("%s: %s", name, tools.UserMessage(err))
 	}
+	// --pr-url wins over detection; without it, the pipeline's own
+	// variables name the pull request.
 	if o.prURL == "" {
-		return nil, usageErrorf(ciNoPullRequestShape, "none")
+		u, ci := detectPullRequest(env)
+		if u == "" {
+			return nil, usageErrorf(ciNoPullRequestShape, ci)
+		}
+		o.prURL, o.detected = u, ci
 	}
 	o.setPRURL(o.prURL)
 	return o, nil
@@ -357,7 +370,7 @@ func ciExecute(ctx context.Context, o *ciOptions, cfg *config.Config, logger *sl
 	ctx, cancel := context.WithTimeout(ctx, o.timeout)
 	defer cancel()
 	// The URL is logged only redacted, as the tools log it.
-	logger.Info(prefix+"pull request", "url", logging.RedactURL(o.prURL), "publish", o.publish)
+	logger.Info(prefix+"pull request", "url", logging.RedactURL(o.prURL), "detected", o.detected, "publish", o.publish)
 
 	resolver := wiring.NewResolver(cfg, logger)
 	defer resolver.CloseIdleConnections()

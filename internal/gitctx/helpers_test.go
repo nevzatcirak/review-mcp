@@ -104,7 +104,7 @@ func (c fakeCall) subcommand() string {
 	for i := 0; i < len(c.Args); i++ {
 		a := c.Args[i]
 		switch {
-		case a == "-c":
+		case a == "-c", a == "--shallow-file":
 			i++
 		case strings.HasPrefix(a, "--git-dir="):
 		default:
@@ -251,6 +251,9 @@ func gitOut(t *testing.T, dir, gitPath string, args ...string) string {
 		"PATH=" + os.Getenv("PATH"), "HOME=" + os.TempDir(), "LANG=C", "GIT_CONFIG_NOSYSTEM=1",
 		"GIT_AUTHOR_NAME=Test", "GIT_AUTHOR_EMAIL=test@example.com",
 		"GIT_COMMITTER_NAME=Test", "GIT_COMMITTER_EMAIL=test@example.com",
+	}
+	if runtime.GOOS == "windows" {
+		cmd.Env = append(cmd.Env, "SYSTEMROOT="+os.Getenv("SYSTEMROOT"))
 	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {

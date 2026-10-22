@@ -17,6 +17,7 @@ import (
 //
 //	<cache_dir>/CACHEDIR.TAG                         review-mcp's cache tag
 //	<cache_dir>/.home/                               empty HOME of every git child (0700)
+//	<cache_dir>/.view-sha1/, .view-sha256/           the read views of offline reads (view.go)
 //	<cache_dir>/<host>/<base>/<namespace dir>/<repo>/ one entry per repository
 //	    last-used                                    touched on every use
 //	    .lock                                        O_CREATE|O_EXCL lock file
@@ -31,7 +32,8 @@ import (
 // lie inside another one's directory.
 //
 // Only directories at exactly that depth that hold a regular last-used file
-// are entries; names starting with "." (the home directory) are never hosts.
+// are entries; names starting with "." (the home directory, the views) are
+// never hosts.
 // Entries of the pre-release three-level layout (<host>/<namespace>/<repo>,
 // WP-11a before its review) are not recognised, listed or swept: remove them
 // by hand. Removing an entry removes its git directory, its marker and
@@ -321,7 +323,7 @@ func scan(root string) []Entry {
 	}
 	now := time.Now()
 	for _, host := range dirs(root) {
-		if strings.HasPrefix(host, ".") { // .home, never a host
+		if strings.HasPrefix(host, ".") { // .home and the views, never a host
 			continue
 		}
 		for _, base := range dirs(filepath.Join(root, host)) {

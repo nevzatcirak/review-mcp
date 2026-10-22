@@ -74,6 +74,10 @@ func run() int {
 		if strings.HasPrefix(args[i], "--git-dir=") {
 			continue
 		}
+		if args[i] == "--shallow-file" {
+			i++
+			continue
+		}
 		sub, rest = args[i], args[i+1:]
 		break
 	}

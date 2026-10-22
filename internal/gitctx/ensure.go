@@ -446,10 +446,20 @@ type gitRun struct {
 	path, gitDir, dir string
 	// home is the cache's empty home directory.
 	home string
+	// view is the read view (view.go) the offline commands run through;
+	// openCheckout always sets it. Without one (Ensure, which runs no
+	// offline command, and the tests of the older guards) an offline
+	// command runs against the checkout itself.
+	view string
 }
 
 func (g *gitRun) run(ctx context.Context, c gitCmd) result {
-	c.args = append([]string{"--git-dir=" + g.gitDir}, c.args...)
+	pre := []string{"--git-dir=" + g.gitDir}
+	if c.offline && g.view != "" {
+		pre = []string{"--git-dir=" + g.view, "--shallow-file", filepath.Join(g.gitDir, "shallow")}
+		c.objectDir = filepath.Join(g.gitDir, "objects")
+	}
+	c.args = append(pre, c.args...)
 	c.dir, c.home = g.dir, g.home
 	return run(ctx, g.path, c)
 }

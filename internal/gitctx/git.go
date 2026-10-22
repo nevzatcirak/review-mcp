@@ -41,12 +41,16 @@ type gitCmd struct {
 	// net is the network policy of the command (fetch); nil for local
 	// commands.
 	net *netPolicy
-	// offline marks a read of the cache (grep, cat-file, rev-list, ls-tree):
-	// no protocol may be used at all (protocol.allow=never with no https or
-	// http allow), and GIT_NO_LAZY_FETCH=1, so a blob the partial clone
-	// lacks fails locally and at once instead of being fetched. It never
-	// carries credentials (config is empty).
+	// offline marks a read of the cache (grep, cat-file, rev-list, ls-tree,
+	// diff): it runs through the read view (view.go), which has no promisor,
+	// so a blob the partial clone lacks is reported missing and no lazy
+	// fetch can start. Two further layers stay: no protocol may be used at
+	// all (protocol.allow=never with no https or http allow), and
+	// GIT_NO_LAZY_FETCH=1. It never carries credentials (config is empty).
 	offline bool
+	// objectDir, when set, is passed as GIT_OBJECT_DIRECTORY: the objects
+	// of the checkout an offline read runs on through the read view.
+	objectDir string
 	// stdin is fed to git's standard input; nil means none.
 	stdin []byte
 	// maxStdout caps the output read; 0 means maxStdout. When the cap is
@@ -253,6 +257,9 @@ func run(ctx context.Context, gitPath string, c gitCmd) result {
 	cmd.Env = childEnv(c.home, append(append([][2]string(nil), testExtraConfig...), c.config...), runtime.GOOS)
 	if c.offline {
 		cmd.Env = append(cmd.Env, "GIT_NO_LAZY_FETCH=1")
+	}
+	if c.objectDir != "" {
+		cmd.Env = append(cmd.Env, "GIT_OBJECT_DIRECTORY="+c.objectDir)
 	}
 	cmd.Dir = c.dir
 	if c.stdin != nil {

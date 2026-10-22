@@ -135,7 +135,7 @@ func TestSearchTermsRunsOffline(t *testing.T) {
 				strings.HasPrefix(name, "GIT_CONFIG_VALUE") || strings.Contains(kv, testToken) {
 				t.Errorf("git %s: environment carries %s", sub, name)
 			}
-			if name != "GIT_NO_LAZY_FETCH" && !allowedEnv.MatchString(name) {
+			if !offlineEnv[name] && !allowedEnv.MatchString(name) {
 				t.Errorf("git %s got %s, which is not on the allowlist", sub, name)
 			}
 		}

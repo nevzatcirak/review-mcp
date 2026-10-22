@@ -397,8 +397,13 @@ context.repo.enabled: repository context is not available in serve mode (cached 
   the version is checked once per process). With a missing or older git, the
   review runs without context and says
   `repository context skipped: git 2.31 or later is required`.
-- Searches also set `GIT_NO_LAZY_FETCH` where git supports it; on older git,
-  `protocol.allow=never` alone blocks lazy fetches, which is tested.
+- Every read of the cache (search, file read, listing, comparison) goes
+  through a read view: a repository with no promisor, which uses the cache's
+  objects. So no supported git can start a lazy fetch, and a file whose blob
+  is not in the cache is reported as not fetched on every git version.
+  `protocol.allow=never` and `GIT_NO_LAZY_FETCH` stay as further guards. git
+  2.31 is still the minimum, and reads behave the same on every version from
+  2.31 on; CI runs the git tests with 2.31.0, 2.43.0 and 2.44.1 as well.
 - The provider must serve the pull request ref over HTTP(S): Gitea
   `refs/pull/<n>/head`, Bitbucket Server `refs/pull-requests/<n>/from`,
   GitHub `refs/pull/<n>/head`, GitLab `refs/merge-requests/<n>/head`. The
@@ -437,7 +442,8 @@ context.repo.enabled: repository context is not available in serve mode (cached 
   on, `ca_cert` becomes `http.sslCAInfo` and `insecure_skip_verify` becomes
   `http.sslVerify=false`.
 - **Searches are offline:** no credential, every protocol forbidden, no lazy
-  fetch. A file whose blob is not in the cache is skipped, never fetched.
+  fetch (reads go through a view with no promisor). A file whose blob is not
+  in the cache is skipped, never fetched.
 - **git's own error text is never passed on**; failures are mapped to the fixed
   reasons below.
 

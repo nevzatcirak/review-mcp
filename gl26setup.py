@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """V-4 acceptance Q4: a GitLab merge request pipeline on the throwaway project.
 
-Usage: gl26setup.py vars | setup | status MR_IID | close MR_IID | unvars
+Usage: gl26setup.py vars | setup | push2 | status MR_IID | close MR_IID | unvars
 
 vars    copies four values from YOUR environment into masked project CI/CD
         variables (never printed): REVIEW_MCP_GITLAB_TOKEN,
@@ -10,6 +10,8 @@ setup   creates branch accept-v26-base (a small Go file) and accept-v26-gl
         (a change plus .gitlab-ci.yml) and a merge request between them.
 status  prints the latest pipeline and job states of the MR and how many
         notes review-mcp posted.
+push2   one more commit on accept-v26-gl: the pin moves to RMCP_GL_PIN
+        (default 2.6.0-rc.2) and Average guards an empty list.
 close   closes the MR.  unvars deletes the four CI/CD variables.
 The token is read from REVIEW_MCP_GITLAB_TOKEN and only sent as a header.
 """
@@ -130,6 +132,18 @@ elif cmd == "setup":
                                                            "title": "Add the average order amount",
                                                            "description": "Acceptance fixture for review-mcp 2.6.0-rc.1; it will be closed without merging."})
     print("MR:", mr["web_url"], "iid", mr["iid"])
+elif cmd == "push2":
+    import base64
+    pin = os.environ.get("RMCP_GL_PIN", "2.6.0-rc.2")
+    br = "accept-v26-gl"
+    ci = api("GET", f"/repository/files/{urllib.parse.quote('.gitlab-ci.yml', safe='')}?ref={br}")
+    ci = base64.b64decode(ci["content"]).decode()
+    new_ci = ci.replace("review-mcp@2.6.0-rc.1", "review-mcp@" + pin).replace("2.6.0-rc.1 (V-4", pin + " (V-4")
+    guard = CHANGE.replace("\tsum := 0", "\tif len(orders) == 0 {\n\t\treturn 0\n\t}\n\tsum := 0")
+    api("POST", "/repository/commits", {"branch": br, "commit_message": "Guard the average of no orders",
+        "actions": [{"action": "update", "file_path": ".gitlab-ci.yml", "content": new_ci},
+                    {"action": "update", "file_path": "ci-v26/average.go", "content": guard}]})
+    print("committed to", br, "pin", pin)
 elif cmd == "status":
     iid = sys.argv[2]
     pls = api("GET", f"/merge_requests/{iid}/pipelines")

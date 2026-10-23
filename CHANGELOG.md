@@ -5,9 +5,10 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.5.2]
 
-Planned as `2.5.2`: small fixes from the 2.5 acceptances.
+Patch release: small fixes from the 2.5 acceptances. Nothing in the tools or
+the configuration of 2.5.1 is removed or renamed.
 
 ### Fixed
 
@@ -1913,6 +1914,7 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[2.5.2]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.2
 [2.5.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.1
 [2.5.1-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.1-rc.1
 [2.5.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.0

@@ -5,6 +5,34 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0]
+
+Ninth stable release. The code is the same as `2.6.0-rc.2`. The release
+candidates were accepted in use in record #64: a throwaway pull request in
+this repository with GitHub Actions, a merge request pipeline of a throwaway
+GitLab project, and a shell run with `--pr-url`. That acceptance also found the
+job token's identity problem fixed in `2.6.0-rc.2`. The `2.6.0-rc.1` and
+`2.6.0-rc.2` sections of CHANGELOG.md list everything that went into 2.6.0
+since 2.5.2. Nothing in the tools or in the configuration of 2.5.2 is removed
+or renamed: a 2.5.2 setup keeps working as before.
+
+### Highlights
+
+- CI mode: `review-mcp ci review|describe|improve` reviews, describes or
+  suggests changes for the pull request of a pipeline, with nobody calling a
+  tool. Its flags, exit codes and output are a stable interface. See
+  [CI mode](docs/ci.md).
+- The pull request comes from `--pr-url`, or from GitHub Actions, Gitea
+  Actions or GitLab CI merge request pipelines, and is checked against the
+  configured hosts like a tool argument. Nothing is posted without
+  `--publish`; no CI token is read, only `REVIEW_MCP_*`.
+- Exit codes 0, 1, 2 and 3; `--fail-on security|any|issue-not-compliant` and
+  `--fail-on-partial` let a team make the review a gate.
+- On GitHub Actions the job's own `GITHUB_TOKEN` works with no extra setting:
+  the overview is edited in place, reviews are incremental and the discussion
+  is read. `github.self_login` names review-mcp's own login for other tokens
+  that cannot read their user; `serve` refuses it.
+
 ## [2.6.0-rc.2]
 
 Second 2.6 release candidate (the npm dist-tag `next`; `latest` stays on 2.5.2).
@@ -1972,6 +2000,7 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[2.6.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.6.0
 [2.6.0-rc.2]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.6.0-rc.2
 [2.6.0-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.6.0-rc.1
 [2.5.2]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.2

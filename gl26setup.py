@@ -95,16 +95,40 @@ elif cmd == "unvars":
         print("deleted", k)
 elif cmd == "setup":
     default = api("GET", "")["default_branch"]
-    api("POST", f"/repository/branches?branch=accept-v26-base&ref={urllib.parse.quote(default)}")
-    api("POST", "/repository/commits", {"branch": "accept-v26-base", "commit_message": "Add the order store",
-                                        "actions": [{"action": "create", "file_path": "ci-v26/store.go", "content": STORE}]})
-    api("POST", "/repository/branches?branch=accept-v26-gl&ref=accept-v26-base")
-    api("POST", "/repository/commits", {"branch": "accept-v26-gl", "commit_message": "Add the average order amount",
-                                        "actions": [{"action": "create", "file_path": "ci-v26/average.go", "content": CHANGE},
-                                                    {"action": "create", "file_path": ".gitlab-ci.yml", "content": CI}]})
-    mr = api("POST", "/merge_requests", {"source_branch": "accept-v26-gl", "target_branch": "accept-v26-base",
-                                         "title": "Add the average order amount",
-                                         "description": "Acceptance fixture for review-mcp 2.6.0-rc.1; it will be closed without merging."})
+
+    def branch(name, ref):
+        if api("GET", f"/repository/branches/{name}", ok404=True) is None:
+            api("POST", f"/repository/branches?branch={name}&ref={urllib.parse.quote(ref)}")
+            print("created branch", name, "from", ref)
+        else:
+            print("branch", name, "exists")
+
+    def put(br, msg, files):
+        actions = []
+        for path, content in files:
+            q = urllib.parse.quote(path, safe="")
+            have = api("GET", f"/repository/files/{q}?ref={urllib.parse.quote(br)}", ok404=True)
+            if have is not None:
+                import base64
+                if base64.b64decode(have.get("content", "")).decode("utf-8", "replace") == content:
+                    continue
+                actions.append({"action": "update", "file_path": path, "content": content})
+            else:
+                actions.append({"action": "create", "file_path": path, "content": content})
+        if actions:
+            api("POST", "/repository/commits", {"branch": br, "commit_message": msg, "actions": actions})
+            print("committed to", br, [a["action"] + " " + a["file_path"] for a in actions])
+        else:
+            print(br, "already has the files")
+
+    branch("accept-v26-base", default)
+    put("accept-v26-base", "Add the order store", [("ci-v26/store.go", STORE)])
+    branch("accept-v26-gl", "accept-v26-base")
+    put("accept-v26-gl", "Add the average order amount", [("ci-v26/average.go", CHANGE), (".gitlab-ci.yml", CI)])
+    mrs = api("GET", "/merge_requests?state=opened&source_branch=accept-v26-gl&target_branch=accept-v26-base")
+    mr = mrs[0] if mrs else api("POST", "/merge_requests", {"source_branch": "accept-v26-gl", "target_branch": "accept-v26-base",
+                                                           "title": "Add the average order amount",
+                                                           "description": "Acceptance fixture for review-mcp 2.6.0-rc.1; it will be closed without merging."})
     print("MR:", mr["web_url"], "iid", mr["iid"])
 elif cmd == "status":
     iid = sys.argv[2]

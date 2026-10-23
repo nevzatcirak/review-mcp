@@ -5,17 +5,19 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.6.0-rc.2]
 
-Planned as `2.6.0-rc.2`.
+Second 2.6 release candidate (the npm dist-tag `next`; `latest` stays on 2.5.2).
+CI mode with the job's own `GITHUB_TOKEN` now edits its overview, reviews
+incrementally and reads the discussion, as with a personal access token.
 
 ### Added
 
 - `github.self_login` (`REVIEW_MCP_GITHUB_SELF_LOGIN`, default unset): the
   login review-mcp treats as its own on GitHub, for its overview, its held
   and carried records, its comments in the discussion and the author check
-  before an edit. When it is set, `GET /user` is not called. For a token that
-  cannot read its user, such as another GitHub App's (`<app-slug>[bot]`).
+  before an edit. When it is set, `GET /user` is not called. Set it for a token
+  that cannot read its user, such as another GitHub App's (`<app-slug>[bot]`).
   `serve` refuses it at startup (`github.self_login cannot be used with
   serve: each request brings its own token`).
 
@@ -1970,6 +1972,7 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[2.6.0-rc.2]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.6.0-rc.2
 [2.6.0-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.6.0-rc.1
 [2.5.2]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.2
 [2.5.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.1

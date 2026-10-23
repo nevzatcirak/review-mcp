@@ -36,8 +36,8 @@ type configLoader func() (*config.Config, *config.Report, error)
 
 // runWith dispatches on the first argument and returns the process exit code.
 // stdin, stdout and load are injectable for tests. stdout carries the MCP
-// protocol in stdio mode and is otherwise written only for the "version"
-// and "diag" subcommands; all diagnostics go to stderr.
+// protocol in stdio mode and is otherwise written only for the "version",
+// "diag" and "ci" subcommands; all diagnostics go to stderr.
 func runWith(args []string, stdin io.Reader, stdout, stderr io.Writer, load configLoader) int {
 	cmd := "stdio"
 	rest := args
@@ -64,6 +64,8 @@ func runWith(args []string, stdin io.Reader, stdout, stderr io.Writer, load conf
 		return 0
 	case "diag":
 		return runDiag(rest, stdout, stderr, load)
+	case "ci":
+		return runCI(rest, stdout, stderr, load, os.Getenv)
 	case "serve":
 		// Serve mode loads its own configuration (mode serve, --listen);
 		// load is the stdio loader and is not used here.
@@ -106,6 +108,9 @@ commands:
   diag cache [--prune]
             list the repository-context cache; --prune deletes idle and
             least-recently-used repositories
+  ci <review|describe|improve> --pr-url <PR_URL> [--publish] [flags]
+            run one review, description or set of suggestions in a CI
+            pipeline (see "review-mcp ci" for the flags and exit codes)
   serve [--listen host:port]
             run the MCP server over streamable HTTP; credentials come from
             the headers of each request

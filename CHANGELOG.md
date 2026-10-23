@@ -5,6 +5,37 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Planned as `2.6.0-rc.1` (the npm dist-tag `next`; `latest` stays on 2.5.x).
+CI mode (X-46): a pipeline step reviews, describes or suggests changes for the
+pull request that triggered it, with nobody calling a tool. Nothing in the
+tools or the configuration of 2.5.2 is removed or renamed.
+
+### Added
+
+- `review-mcp ci review|describe|improve`: runs `pr_review`, `pr_describe` or
+  `pr_improve` once from a pipeline, prints the result as markdown (or the
+  structured result with `--json`) and posts it only with `--publish`. Its
+  flags, exit codes and output are a stable interface. See
+  [CI mode](docs/ci.md).
+- The pull request comes from `--pr-url`, or from the pipeline: GitHub
+  Actions and Gitea Actions on a `pull_request` or `pull_request_target`
+  event, and GitLab CI merge request pipelines. The URL is checked against the
+  configured hosts like a tool argument. No CI token (`GITHUB_TOKEN`,
+  `CI_JOB_TOKEN`) is read; the pipeline maps its secret to `REVIEW_MCP_*`.
+- Exit codes: 0 done, 1 the run failed, 2 usage (nothing loaded or sent), 3
+  `--fail-on security|any|issue-not-compliant` or `--fail-on-partial` met,
+  after the result was printed and posted.
+- `--issue-context-file` (the `issue_context` argument as a JSON file) and
+  `--timeout` (default 30m).
+- On GitHub and Gitea Actions the markdown is also appended to the step
+  summary (`GITHUB_STEP_SUMMARY`). The repository context cache defaults to
+  `$RUNNER_TEMP/review-mcp-repos` when `context.repo.cache_dir` is unset.
+- [CI mode](docs/ci.md) documents the command, the tokens with their minimal
+  rights, examples for GitHub Actions, Gitea Actions, GitLab CI and any other
+  CI, and the risks of reviewing pull requests from forks.
+
 ## [2.5.2]
 
 Patch release: small fixes from the 2.5 acceptances. Nothing in the tools or

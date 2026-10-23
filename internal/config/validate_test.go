@@ -503,6 +503,11 @@ func TestGitHubConfig(t *testing.T) {
 		{"api_url_scheme", map[string]string{"REVIEW_MCP_GITHUB_API_URL": "ftp://api.github.example.com"}, "github.api_url: scheme must be http or https"},
 		{"base_url_fragment", map[string]string{"REVIEW_MCP_GITHUB_BASE_URL": "https://github.example.com/#x"}, "github.base_url: URL must not contain a fragment"},
 		{"ca_cert_missing", map[string]string{"REVIEW_MCP_GITHUB_CA_CERT": "/certs/none.pem"}, "github.ca_cert: cannot read CA certificate file"},
+		{"self_login_without_base_url", map[string]string{"REVIEW_MCP_GITHUB_BASE_URL": "", "REVIEW_MCP_GITHUB_TOKEN": "", "REVIEW_MCP_GITHUB_SELF_LOGIN": "review-bot"},
+			"github.self_login is set but github.base_url is not (REVIEW_MCP_GITHUB_BASE_URL)"},
+		{"self_login_space", map[string]string{"REVIEW_MCP_GITHUB_SELF_LOGIN": "review bot"}, "github.self_login: must be 1 to 100 characters of A-Z, a-z, 0-9, \"-\", \"[\" and \"]\""},
+		{"self_login_too_long", map[string]string{"REVIEW_MCP_GITHUB_SELF_LOGIN": strings.Repeat("a", 101)}, "github.self_login: must be 1 to 100 characters of A-Z, a-z, 0-9, \"-\", \"[\" and \"]\""},
+		{"self_login_slash", map[string]string{"REVIEW_MCP_GITHUB_SELF_LOGIN": "octo/bot"}, "github.self_login: must be 1 to 100 characters of A-Z, a-z, 0-9, \"-\", \"[\" and \"]\""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, _, err := Load(MemSource{Env: gh(tc.env)})
@@ -512,6 +517,18 @@ func TestGitHubConfig(t *testing.T) {
 			assertNoSecrets(t, tc.name, err.Error())
 		})
 	}
+	t.Run("self_login", func(t *testing.T) {
+		cfg, rep := mustLoad(t, MemSource{Env: gh(nil)})
+		if cfg.GitHub.SelfLogin != "" || cfg.Summary(rep).Values["github.self_login"].Source != OriginDefault {
+			t.Errorf("default self_login = %q", cfg.GitHub.SelfLogin)
+		}
+		for _, v := range []string{"github-actions[bot]", "a", strings.Repeat("Z9-", 33) + "x"} {
+			cfg, rep = mustLoad(t, MemSource{Env: gh(map[string]string{"REVIEW_MCP_GITHUB_SELF_LOGIN": " " + v + " "})})
+			if cfg.GitHub.SelfLogin != v || cfg.Summary(rep).Values["github.self_login"].Source != OriginEnv {
+				t.Errorf("self_login = %q, want %q", cfg.GitHub.SelfLogin, v)
+			}
+		}
+	})
 	t.Run("token_without_provider_warns", func(t *testing.T) {
 		_, rep := mustLoad(t, MemSource{Env: envWith(map[string]string{"REVIEW_MCP_GITHUB_TOKEN": fakeGitHub})})
 		if len(rep.Warnings) != 1 || rep.Warnings[0] != "REVIEW_MCP_GITHUB_TOKEN is set but github is not enabled (github.base_url is unset); the token is ignored" {

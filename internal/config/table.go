@@ -64,6 +64,8 @@ var table = []entry{
 	{"github.api_url", "REVIEW_MCP_GITHUB_API_URL", func(c *Config) any { return &c.GitHub.APIURL }},
 	{"github.ca_cert", "REVIEW_MCP_GITHUB_CA_CERT", func(c *Config) any { return &c.GitHub.CACert }},
 	{"github.insecure_skip_verify", "REVIEW_MCP_GITHUB_INSECURE_SKIP_VERIFY", func(c *Config) any { return &c.GitHub.InsecureSkipVerify }},
+	// github.self_login: v2.6 spec V-4 §4 item 1.
+	{"github.self_login", "REVIEW_MCP_GITHUB_SELF_LOGIN", func(c *Config) any { return &c.GitHub.SelfLogin }},
 
 	// gitlab.* rows: v2 spec 2C §1 item 1 (X-34).
 	{"gitlab.base_url", "REVIEW_MCP_GITLAB_BASE_URL", func(c *Config) any { return &c.GitLab.BaseURL }},

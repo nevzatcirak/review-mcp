@@ -396,6 +396,7 @@ func (l *loader) validateProviders() {
 	b.BaseURL = strings.TrimSpace(b.BaseURL)
 	h.BaseURL = strings.TrimSpace(h.BaseURL)
 	h.APIURL = strings.TrimSpace(h.APIURL)
+	h.SelfLogin = strings.TrimSpace(h.SelfLogin)
 	gl.BaseURL = strings.TrimSpace(gl.BaseURL)
 
 	giteaOn := g.BaseURL != ""
@@ -451,6 +452,14 @@ func (l *loader) validateProviders() {
 			l.problem("github.api_url is set but github.base_url is not (%s)", keyToEnv["github.base_url"])
 		}
 		l.checkURL("github.api_url", &h.APIURL)
+	}
+	if h.SelfLogin != "" {
+		if !ghOn {
+			l.problem("github.self_login is set but github.base_url is not (%s)", keyToEnv["github.base_url"])
+		}
+		if !ValidGitHubLogin(h.SelfLogin) {
+			l.problem("github.self_login: must be 1 to %d characters of A-Z, a-z, 0-9, \"-\", \"[\" and \"]\"", maxGitHubLogin)
+		}
 	}
 
 	if glOn {
@@ -639,4 +648,24 @@ func RegexProblem(r string) string {
 		return "pattern does not compile as RE2 (" + regexpReason(err) + ")"
 	}
 	return ""
+}
+
+// maxGitHubLogin is the longest github.self_login accepted.
+const maxGitHubLogin = 100
+
+// ValidGitHubLogin reports whether s is an acceptable github.self_login: 1
+// to 100 characters of A-Z, a-z, 0-9, "-", "[" and "]" (the brackets are
+// for a bot login such as "github-actions[bot]").
+func ValidGitHubLogin(s string) bool {
+	if s == "" || len(s) > maxGitHubLogin {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '[', r == ']':
+		default:
+			return false
+		}
+	}
+	return true
 }

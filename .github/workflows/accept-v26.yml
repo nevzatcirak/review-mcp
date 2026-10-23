@@ -1,0 +1,67 @@
+# Acceptance fixture for review-mcp 2.6.0-rc.1 (V-4 CI mode). Lives only on the
+# throwaway branch accept-v26; never on main.
+name: accept-v26
+on:
+  pull_request:
+    branches: [accept-v26-base]
+  push:
+    branches: [accept-v26]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+env:
+  REVIEW_MCP_GITHUB_BASE_URL: ${{ github.server_url }}
+  REVIEW_MCP_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  REVIEW_MCP_LLM_BASE_URL: ${{ secrets.ACCEPT_LLM_BASE_URL }}
+  REVIEW_MCP_LLM_MODEL: ${{ secrets.ACCEPT_LLM_MODEL }}
+  REVIEW_MCP_LLM_API_KEY: ${{ secrets.ACCEPT_LLM_API_KEY }}
+  REVIEW_MCP_LLM_REQUESTS_PER_MINUTE: "10"
+  RM: npx -y @nevzatcirak/review-mcp@2.6.0-rc.1
+
+jobs:
+  q1-q2-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Q1/Q2 review, detected PR, publish, incremental
+        run: $RM ci review --publish --incremental
+
+  q3-fail-on:
+    if: github.event_name == 'pull_request'
+    needs: q1-q2-review
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Q3 --fail-on any exits 3 when there is a finding
+        run: |
+          set +e
+          $RM ci review --fail-on any
+          code=$?
+          echo "exit code: $code"
+          test "$code" -eq 3
+
+  q5-no-pr:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Q5 a push has no pull request, exit 2
+        run: |
+          set +e
+          $RM ci review 2>err.txt
+          code=$?
+          cat err.txt
+          echo "exit code: $code"
+          test "$code" -eq 2 && grep -q "no pull request: pass --pr-url (detected: GitHub Actions)" err.txt

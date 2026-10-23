@@ -970,7 +970,7 @@ implementation must do or must not do).
   - The CI job `git-versions` runs 2.31.0, 2.43.0 and 2.44.1.
   - `TestReadViewLocalGit` reads through the view on Windows.
 - **Consequences:**
-  - The cache gains `.view-sha1/` and `.view-sha256/`. Names that start with "." are never entries, so the sweeps leave them alone.
+  - The cache gains `.view-sha1/` and `.view-sha256/`. Names that start with "." are never entries, so the sweeps leave them alone. `ensureView` removes the `.view-*.tmp*` directories that a killed build left behind once they are older than one hour (WP-16 item 2); a younger one is left to the process that may be building it.
   - git 2.31 stays the minimum, with no behaviour difference across versions.
 
 #### X-46 — CI mode (added v2.6 rc.1, V-4; WP-17a, WP-17b)

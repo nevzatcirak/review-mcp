@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Planned as `2.6.0-rc.1` (the npm dist-tag `next`; `latest` stays on 2.5.x).
 CI mode (X-46): a pipeline step reviews, describes or suggests changes for the
 pull request that triggered it, with nobody calling a tool. Nothing in the
-tools or the configuration of 2.5.1 is removed or renamed.
+tools or the configuration of 2.5.2 is removed or renamed.
 
 ### Added
 
@@ -35,6 +35,34 @@ tools or the configuration of 2.5.1 is removed or renamed.
 - [CI mode](docs/ci.md) documents the command, the tokens with their minimal
   rights, examples for GitHub Actions, Gitea Actions, GitLab CI and any other
   CI, and the risks of reviewing pull requests from forks.
+
+## [2.5.2]
+
+Patch release: small fixes from the 2.5 acceptances. Nothing in the tools or
+the configuration of 2.5.1 is removed or renamed.
+
+### Fixed
+
+- Counts in text a user or a model reads are in words: "1 file was not
+  searched: it was not fetched." in a repository search (was "1 files were
+  ...") and likewise "1 match", "1 entry", "the file has 1 line", "1 round",
+  "1 change requested", "1 required approval", "1 thread shown", "1 body
+  truncated", "only 1 commit message" and "1 more changed file".
+- A killed build of the read view no longer leaves its temporary directory
+  in the cache for good: `.view-*.tmp*` directories older than one hour are
+  removed.
+- A `pr_ask` citation with several lines (`R<n>:path:L-M`, `R<n>:path:L,M`)
+  is one link to the first line; in 2.5.1 a stray ",6" was left behind.
+- The note that reading related repositories is turned off by the operator
+  is given only by a run that would have read them: `pr_review` and
+  `pr_ask` without their own `related`, not focused and not a merged
+  publish. `pr_describe` and `pr_improve` never give it.
+
+### Documentation
+
+- `bitbucket_server.insecure_skip_verify` is documented in
+  [Setup](docs/setup.md), with the CA certificate keys of the other
+  providers.
 
 ## [2.5.1]
 
@@ -1917,6 +1945,7 @@ First release candidate. It is validated by the V1 acceptance run before v1.0.0.
 - Documentation: a setup guide, a serve-mode guide, and guides for review and
   ask.
 
+[2.5.2]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.2
 [2.5.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.1
 [2.5.1-rc.1]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.1-rc.1
 [2.5.0]: https://github.com/nevzatcirak/review-mcp/releases/tag/v2.5.0

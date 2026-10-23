@@ -3,6 +3,7 @@ package ask
 import (
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/nevzatcirak/review-mcp/internal/mdutil"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
@@ -21,8 +22,10 @@ const RelatedRepositoryInstruction = "Related repositories (header line \"R<n> â
 	"is affected."
 
 // citeRE matches a consumer citation, `R<n>:path:line`, with or without the
-// code span around it. The path has no space, backtick or colon.
-var citeRE = regexp.MustCompile("`?\\bR([1-9]):([^\\s`:]+):([0-9]{1,9})`?")
+// code span around it. The path has no space, backtick or colon. The line
+// part is one line (`L`), a range (`L-M`) or a list (`L,M[,K...]`); the whole
+// of it belongs to the citation, and the link goes to its first line.
+var citeRE = regexp.MustCompile("`?\\bR([1-9]):([^\\s`:]+):([0-9]{1,9}(?:[-,][0-9]{1,9})*)`?")
 
 // linkConsumers turns each citation of a consumer location in answer into a
 // link to the file at the related repository's pinned commit, built by that
@@ -35,6 +38,10 @@ var citeRE = regexp.MustCompile("`?\\bR([1-9]):([^\\s`:]+):([0-9]{1,9})`?")
 // locations with links" but not who builds them. The model cannot know a
 // URL, so it cites R<n>:path:line and the server links it, with the same
 // seen-file rule as pr_review's findings. Recommendation: keep.
+//
+// DESIGN-QUESTION (WP-16 item 3): the link text of a citation with several
+// lines is the location exactly as the model wrote it ("path:1,6", "path:3-9")
+// after the repository name, as for a single line. Recommendation: keep.
 func linkConsumers(answer string, placed []related.Section) string {
 	if !hasRepository(placed) {
 		return answer
@@ -42,7 +49,9 @@ func linkConsumers(answer string, placed []related.Section) string {
 	return citeRE.ReplaceAllStringFunc(answer, func(m string) string {
 		sm := citeRE.FindStringSubmatch(m)
 		n, _ := strconv.Atoi(sm[1])
-		line, err := strconv.Atoi(sm[3])
+		first, _, _ := strings.Cut(sm[3], "-")
+		first, _, _ = strings.Cut(first, ",")
+		line, err := strconv.Atoi(first)
 		if n < 1 || n > len(placed) || err != nil || line < 1 || !placed[n-1].Item.IsRepository() {
 			return m
 		}

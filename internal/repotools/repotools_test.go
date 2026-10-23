@@ -274,7 +274,7 @@ func TestListDir(t *testing.T) {
 		t.Fatalf("root: %q %+v", got, c)
 	}
 	got, _ = one(t, b, call("2", ListDir, `{"path":"src/"}`))
-	if got != Header+"list_dir src: 1 entries\n```\na.go\n```" {
+	if got != Header+"list_dir src: 1 entry\n```\na.go\n```" {
 		t.Fatalf("src: %q", got)
 	}
 	got, _ = one(t, b, call("3", ListDir, `{"path":"big"}`))

@@ -276,6 +276,9 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// The repository config (X-40): read once at the base revision, then the
 	// run continues on the merged copy of the configuration.
 	rc := repocfg.ForRun(ctx, log, cfg, p, ref, pr)
+	// This tool never reads related repositories, so the operator's switch
+	// changes nothing for it and gets no note (WP-16 item 4).
+	rc.NoRelatedNote()
 	cfg = rc.Config
 	factor := cfg.LLM.TokenEstimateFactor
 	language := cfg.Output.Language
@@ -368,7 +371,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	if commitsErr != nil {
 		res.Notes = append(res.Notes, NoteCommitsUnavailable)
 	} else if pr.CommitCount > len(commits) {
-		res.Notes = append(res.Notes, fmt.Sprintf(NoteCommitsPartialFormat, pr.CommitCount, len(commits)))
+		res.Notes = append(res.Notes, fmt.Sprintf(NoteCommitsPartialFormat, pr.CommitCount, llmrun.CountPhrase(len(commits), "commit message", "commit messages")))
 	}
 	res.Notes = append(res.Notes, ic.Notes...)
 	log.Debug("describe: diff prepared", "url", logging.RedactURL(ref.URL), "files", len(d.Files),

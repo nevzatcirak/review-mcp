@@ -348,6 +348,22 @@ context path, and the GitHub and GitLab ones have no default). A provider withou
 enabled. More about base URLs, CA certificates and the context path is in
 [Troubleshooting](troubleshooting.md#base-url-notes).
 
+A server with a private CA needs its PEM bundle, which is used in addition to
+the system roots. Each provider has the same two keys:
+
+| Key | Variable | Default | Meaning |
+|---|---|---|---|
+| `gitea.ca_cert` | `REVIEW_MCP_GITEA_CA_CERT` | none | A PEM bundle for a private CA. |
+| `gitea.insecure_skip_verify` | `REVIEW_MCP_GITEA_INSECURE_SKIP_VERIFY` | `false` | Turns TLS verification off; review-mcp warns at startup. Prefer `ca_cert`. |
+| `bitbucket_server.ca_cert` | `REVIEW_MCP_BITBUCKET_SERVER_CA_CERT` | none | A PEM bundle for a private CA. |
+| `bitbucket_server.insecure_skip_verify` | `REVIEW_MCP_BITBUCKET_SERVER_INSECURE_SKIP_VERIFY` | `false` | Turns TLS verification off; review-mcp warns at startup. Prefer `ca_cert`. |
+| `github.ca_cert`, `github.insecure_skip_verify` | `REVIEW_MCP_GITHUB_CA_CERT`, `REVIEW_MCP_GITHUB_INSECURE_SKIP_VERIFY` | none, `false` | As above; see [GitHub](github.md). |
+| `gitlab.ca_cert`, `gitlab.insecure_skip_verify` | `REVIEW_MCP_GITLAB_CA_CERT`, `REVIEW_MCP_GITLAB_INSECURE_SKIP_VERIFY` | none, `false` | As above; see [GitLab](gitlab.md). |
+
+`insecure_skip_verify` is for confirming on a throwaway setup that TLS is the
+problem. Do not leave it on: every certificate is accepted, so a
+man-in-the-middle is not noticed.
+
 ## 3. Choose the LLM endpoint
 
 review-mcp works with any OpenAI-compatible chat-completions endpoint. It has

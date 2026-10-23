@@ -1037,6 +1037,7 @@ Secrets are environment-only (in `serve` mode, credentials come from request hea
 | `github.api_url` | `REVIEW_MCP_GITHUB_API_URL` | derived | X-28; `https://api.github.com` for exactly `https://github.com`, else `{base_url}/api/v3`; refused without `github.base_url` |
 | `github.ca_cert` | `REVIEW_MCP_GITHUB_CA_CERT` | — | X-28 |
 | `github.insecure_skip_verify` | `REVIEW_MCP_GITHUB_INSECURE_SKIP_VERIFY` | false | Startup warning when true |
+| `github.self_login` | `REVIEW_MCP_GITHUB_SELF_LOGIN` | — | v2.6 V-4 §4 (WP-17c): the login treated as review-mcp's own; `GET /user` is then not called; 1 to 100 characters of `A–Z a–z 0–9 - [ ]`; refused without `github.base_url`; `ci` on GitHub Actions defaults it to `github-actions[bot]` for an installation token |
 | `gitlab.base_url` | `REVIEW_MCP_GITLAB_BASE_URL` | — | Enables GitLab; the web base, may include a context path, **no default** (X-2, X-34); the API base is always `{base_url}/api/v4` |
 | `gitlab.ca_cert` | `REVIEW_MCP_GITLAB_CA_CERT` | — | X-34 |
 | `gitlab.insecure_skip_verify` | `REVIEW_MCP_GITLAB_INSECURE_SKIP_VERIFY` | false | Startup warning when true |

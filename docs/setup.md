@@ -257,7 +257,7 @@ Endpoints the GitHub provider calls (under the API base; `{r}` is
 | `GET {r}/contents/{path}?ref={base_sha}` and `GET {r}/contents/{dir}?ref={base_sha}` | the guidelines file and the listing of the touched directories at the base revision (`pr_review`, `pr_improve`) | Contents read | `internal/provider/github/reads.go` (`GetFileAt`, `ListDir`) |
 | `GET {r}/issues/{n}/comments`, `GET {r}/pulls/{n}/comments`, `GET {r}/pulls/{n}/reviews` | `pr_comments`, reply lookup, `pr_info` | Pull requests read | `internal/provider/github/comments.go`, `status.go` |
 | `GET {r}/issues/comments/{id}`, `GET {r}/pulls/comments/{id}`, `GET {r}/pulls/{n}/reviews/{id}` | find the comment a reply or an edit refers to; read a comment and check its author before editing it | Pull requests read | `internal/provider/github/comments.go` (`locate`) |
-| `GET /user` | the token's own user | any token | `internal/provider/github/github.go` (`CurrentUser`) |
+| `GET /user` | the token's own user; not called when `github.self_login` is set | any token except a GitHub App's (the job's `GITHUB_TOKEN` included) | `internal/provider/github/github.go` (`CurrentUser`) |
 | `POST {r}/pulls/{n}/reviews` | inline comments of `publish=true` and of `pr_comment_create` with `file` and `line`, as one review with event `COMMENT` on the head commit and no body | Pull requests write | `internal/provider/github/inline.go` (`PostInlineComments`) |
 | `POST {r}/pulls/{n}/comments` | one inline comment alone, only after GitHub refused the whole review with a 422 | Pull requests write | `internal/provider/github/inline.go` |
 | `GET {r}/pulls/{n}/reviews/{id}/comments` | the ids and links of the posted comments; the markers of the token user's own reviews for `pr_info` | Pull requests read | `internal/provider/github/inline.go`, `status.go` |
@@ -358,6 +358,7 @@ the system roots. Each provider has the same two keys:
 | `bitbucket_server.ca_cert` | `REVIEW_MCP_BITBUCKET_SERVER_CA_CERT` | none | A PEM bundle for a private CA. |
 | `bitbucket_server.insecure_skip_verify` | `REVIEW_MCP_BITBUCKET_SERVER_INSECURE_SKIP_VERIFY` | `false` | Turns TLS verification off; review-mcp warns at startup. Prefer `ca_cert`. |
 | `github.ca_cert`, `github.insecure_skip_verify` | `REVIEW_MCP_GITHUB_CA_CERT`, `REVIEW_MCP_GITHUB_INSECURE_SKIP_VERIFY` | none, `false` | As above; see [GitHub](github.md). |
+| `github.self_login` | `REVIEW_MCP_GITHUB_SELF_LOGIN` | none | The login review-mcp treats as its own on GitHub, instead of reading `GET /user`. Only for a token that cannot read its user, such as a GitHub App's (`<app-slug>[bot]`); see [GitHub](github.md#configuration). |
 | `gitlab.ca_cert`, `gitlab.insecure_skip_verify` | `REVIEW_MCP_GITLAB_CA_CERT`, `REVIEW_MCP_GITLAB_INSECURE_SKIP_VERIFY` | none, `false` | As above; see [GitLab](gitlab.md). |
 
 `insecure_skip_verify` is for confirming on a throwaway setup that TLS is the

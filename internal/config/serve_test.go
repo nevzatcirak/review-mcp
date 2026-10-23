@@ -384,6 +384,31 @@ func TestIsLoopbackHost(t *testing.T) {
 	}
 }
 
+// TestServeRefusesSelfLogin: [canary] (WP-17c DQ-3): github.self_login is
+// a startup error in serve mode, from the environment and from a file;
+// serve without it and stdio with it load.
+func TestServeRefusesSelfLogin(t *testing.T) {
+	gh := map[string]string{"REVIEW_MCP_GITHUB_BASE_URL": "https://github.example.com"}
+	ps := serveProblems(t, serveEnv(map[string]string{"REVIEW_MCP_GITHUB_BASE_URL": "https://github.example.com",
+		"REVIEW_MCP_GITHUB_SELF_LOGIN": "review-bot"}), nil)
+	if !hasProblem(ps, ServeSelfLoginSentence) {
+		t.Errorf("self_login in serve mode not refused: %v", ps)
+	}
+	file := "[github]\nbase_url = \"https://github.example.com\"\nself_login = \"review-bot\"\n"
+	ps = serveProblems(t, serveEnv(map[string]string{"REVIEW_MCP_CONFIG": "/c.toml"}), map[string]string{"/c.toml": file})
+	if !hasProblem(ps, ServeSelfLoginSentence) {
+		t.Errorf("self_login from a file in serve mode not refused: %v", ps)
+	}
+	if ps := serveProblems(t, serveEnv(gh), nil); ps != nil {
+		t.Errorf("serve without self_login: %v", ps)
+	}
+	stdio := envWith(map[string]string{"REVIEW_MCP_GITHUB_BASE_URL": "https://github.example.com",
+		"REVIEW_MCP_GITHUB_TOKEN": fakeGitHub, "REVIEW_MCP_GITHUB_SELF_LOGIN": "review-bot"})
+	if _, _, err := Load(memSrc(stdio, nil)); err != nil {
+		t.Errorf("stdio refused self_login: %v", err)
+	}
+}
+
 // TestServeRefusesRepoContext: [canary] (RC-1, v1.1 spec §3.0 item 4):
 // repository context is a startup error in serve mode, with a fixed
 // sentence, from the environment and from a file; stdio accepts it.

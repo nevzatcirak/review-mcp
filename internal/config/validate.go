@@ -413,6 +413,9 @@ func (l *loader) validateProviders() {
 		l.refuseServeEnvToken(c.Secrets.BitbucketServerToken, envBitbucketServerToken)
 		l.refuseServeEnvToken(c.Secrets.GitHubToken, envGitHubToken)
 		l.refuseServeEnvToken(c.Secrets.GitLabToken, envGitLabToken)
+		if h.SelfLogin != "" {
+			l.problem("%s", ServeSelfLoginSentence)
+		}
 	}
 
 	if giteaOn {

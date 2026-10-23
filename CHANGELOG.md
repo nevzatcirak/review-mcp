@@ -16,6 +16,8 @@ Planned as `2.6.0-rc.2`.
   and carried records, its comments in the discussion and the author check
   before an edit. When it is set, `GET /user` is not called. For a token that
   cannot read its user, such as another GitHub App's (`<app-slug>[bot]`).
+  `serve` refuses it at startup (`github.self_login cannot be used with
+  serve: each request brings its own token`).
 
 ### Fixed
 

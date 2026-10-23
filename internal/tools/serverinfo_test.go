@@ -71,7 +71,7 @@ func TestServerInfoValid(t *testing.T) {
 	if r.Config.Secrets["llm.api_key"] != "set" || r.Config.Secrets["github.token"] != "set" || r.Config.Secrets["gitlab.token"] != "set" {
 		t.Errorf("secrets = %v, want a set llm key, github token and gitlab token", r.Config.Secrets)
 	}
-	for _, k := range []string{"github.base_url", "github.api_url", "github.ca_cert", "github.insecure_skip_verify",
+	for _, k := range []string{"github.base_url", "github.api_url", "github.ca_cert", "github.insecure_skip_verify", "github.self_login",
 		"gitlab.base_url", "gitlab.ca_cert", "gitlab.insecure_skip_verify"} {
 		if _, ok := r.Config.Values[k]; !ok {
 			t.Errorf("config values lack %s", k)

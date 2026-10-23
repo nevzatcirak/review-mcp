@@ -57,6 +57,17 @@ func TestReviewIncremental(t *testing.T) {
 	contract.RunReviewIncremental(t, ctFixture{})
 }
 
+// TestSelfLogin: with github.self_login naming the token's user (in
+// another letter case) and GET /user refused, as for a workflow's job
+// token, pr_review still finds and edits its own overview, reviews
+// incrementally, and tells its own findings in the discussion from anyone
+// else's; GET /user is never sent (V-4 §4).
+func TestSelfLogin(t *testing.T) {
+	f := ctFixture{selfLogin: "Review-Bot"}
+	t.Run("incremental", func(t *testing.T) { contract.RunReviewIncremental(t, f) })
+	t.Run("duplicates", func(t *testing.T) { contract.RunReviewDuplicates(t, f) })
+}
+
 const (
 	// ctAPI is the API prefix the provider derives for a GHES web base.
 	ctAPI  = "/api/v3"
@@ -74,7 +85,10 @@ const (
 	ctPageSize = 2
 )
 
-type ctFixture struct{}
+// ctFixture serves the contract fake. selfLogin, when set, is
+// github.self_login, and the fake then refuses GET /user as GitHub does for
+// a workflow's job token (V-4 §4).
+type ctFixture struct{ selfLogin string }
 
 func (ctFixture) Kind() provider.Kind { return provider.KindGitHub }
 
@@ -86,17 +100,34 @@ func (ctFixture) Traits() contract.Traits {
 	}
 }
 
-func (ctFixture) Serve(t *testing.T, pr contract.Spec) (provider.Provider, provider.PRRef) {
+func (f ctFixture) Serve(t *testing.T, pr contract.Spec) (provider.Provider, provider.PRRef) {
 	t.Helper()
-	p, ref, _ := serveCt(t, pr)
+	p, ref, _ := serveCtAs(t, pr, f.selfLogin)
 	return p, ref
 }
 
 // serveCt serves pr through a new fake and also returns the fake.
 func serveCt(t *testing.T, pr contract.Spec) (provider.Provider, provider.PRRef, *ctGitHub) {
 	t.Helper()
+	return serveCtAs(t, pr, "")
+}
+
+// serveCtAs is serveCt with github.self_login set to selfLogin; when it is
+// set, the fake refuses GET /user and the test fails if it was asked.
+func serveCtAs(t *testing.T, pr contract.Spec, selfLogin string) (provider.Provider, provider.PRRef, *ctGitHub) {
+	t.Helper()
 	g := newCtGitHub(t, pr)
 	cfg := config.Defaults()
+	if selfLogin != "" {
+		cfg.GitHub.SelfLogin, g.refuseUser = selfLogin, true
+		t.Cleanup(func() {
+			g.mu.Lock()
+			defer g.mu.Unlock()
+			if g.userReads != 0 {
+				t.Errorf("GET /user was sent %d times with github.self_login set", g.userReads)
+			}
+		})
+	}
 	// The web base is the fake's origin; the API base is derived from it
 	// as for GitHub Enterprise Server ({base}/api/v3).
 	cfg.GitHub.BaseURL = contract.StartServer(t, pr, g)
@@ -183,6 +214,10 @@ type ctGitHub struct {
 	ownBodies map[int64][]string
 	// writes records every request other than a GET, as "METHOD path".
 	writes []string
+	// refuseUser makes GET /user answer 403, as it does for a workflow's
+	// job token; userReads counts those requests.
+	refuseUser bool
+	userReads  int
 }
 
 type ctInline struct {
@@ -428,6 +463,9 @@ func (g *ctGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case path == ctAPI+"/user" && g.refuseUser:
+		g.userReads++
+		contract.WriteError(w, http.StatusForbidden)
 	case path == ctAPI+"/user":
 		ctJSON(w, http.StatusOK, ctUser(g.pr.TokenUser))
 	case path == ctPull:

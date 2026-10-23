@@ -834,6 +834,8 @@ thread is listed. Check the pull request page for what is resolved.
 | `REVIEW_MCP_GITHUB_TOKEN is required because github.base_url is set` | Stdio: set the token. |
 | `REVIEW_MCP_GITHUB_TOKEN is set but github is not enabled (github.base_url is unset); the token is ignored` | Warning: set `REVIEW_MCP_GITHUB_BASE_URL`, or unset the token. |
 | `github.api_url is set but github.base_url is not (REVIEW_MCP_GITHUB_BASE_URL)` | `github.api_url` only adjusts an enabled provider; set the base URL as well. |
+| `github.self_login is set but github.base_url is not (REVIEW_MCP_GITHUB_BASE_URL)` | `github.self_login` only adjusts an enabled provider; set the base URL as well, or unset the login. |
+| `github.self_login: must be 1 to 100 characters of A-Z, a-z, 0-9, "-", "[" and "]"` | Set the login exactly as GitHub shows it, such as `octo-app[bot]`; no spaces, no `@`. |
 | `TLS verification disabled for github` | Warning: `REVIEW_MCP_GITHUB_INSECURE_SKIP_VERIFY` is set. Prefer `REVIEW_MCP_GITHUB_CA_CERT`. |
 
 A GitHub URL that reports `url_not_configured` although it looks right: check

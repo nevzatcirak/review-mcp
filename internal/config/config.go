@@ -89,12 +89,15 @@ type BitbucketServer struct {
 // Server); it is enabled iff BaseURL is set. BaseURL is the web base that
 // pull request URLs start with; no host is assumed (X-2). APIURL is
 // optional: when it is unset the API base is derived from BaseURL
-// (EffectiveAPIURL).
+// (EffectiveAPIURL). SelfLogin is optional: when it is set, it is the login
+// the provider treats as its own and GET /user is not called (v2.6 spec
+// V-4 §4).
 type GitHub struct {
 	BaseURL            string `toml:"base_url" json:"base_url"`
 	APIURL             string `toml:"api_url" json:"api_url"`
 	CACert             string `toml:"ca_cert" json:"ca_cert"`
 	InsecureSkipVerify bool   `toml:"insecure_skip_verify" json:"insecure_skip_verify"`
+	SelfLogin          string `toml:"self_login" json:"self_login"`
 }
 
 // gitHubDotCom is the one web base whose API lives on another host.

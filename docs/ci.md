@@ -173,13 +173,34 @@ as for the tools; the full tables are in
 | Gitea | A token in a secret mapped to `REVIEW_MCP_GITEA_TOKEN` | `write:repository`, `write:issue`, `read:user`. |
 | Bitbucket Server | An HTTP access token from the CI's secret store as `REVIEW_MCP_BITBUCKET_SERVER_TOKEN` | Repository write. |
 
-> **Unconfirmed: the job's `GITHUB_TOKEN`.** review-mcp finds its own earlier
-> overview by the token's user (`GET /user`). The job token is an app token,
-> and that call may be refused for it. If it is, each run posts a new overview
-> with the note that the earlier one could not be looked up, and
-> `--incremental` reviews in full. The acceptance run (Q1, Q2) verifies this.
-> Until then, a fine-grained personal access token or a bot account's token
-> in a secret works the same way.
+### The job's `GITHUB_TOKEN` and review-mcp's own login
+
+review-mcp tells its own comments from everyone else's by its login: to find
+and edit its earlier overview, to review `--incremental` from it, and to read
+the discussion without its own findings. It usually asks GitHub for the
+token's user (`GET /user`), but GitHub refuses that call for the job's
+`GITHUB_TOKEN` (confirmed with 2.6.0-rc.1: each run then posted a new
+overview, reviewed in full and could not read the discussion).
+
+From 2.6.0-rc.2 on, the job token works with no extra setting: on GitHub
+Actions, when the GitHub token is an installation token (the job token is
+one) and `github.self_login` is unset, `ci` uses `github-actions[bot]`, the
+author of every comment made with the job token, and logs "using the GitHub
+Actions bot identity". With 2.6.0-rc.1, a personal access token was needed.
+
+| Token in `REVIEW_MCP_GITHUB_TOKEN` | What to set |
+|---|---|
+| The job's `GITHUB_TOKEN` | nothing |
+| A personal access token (a person's or a bot account's) | nothing; review-mcp reads its user with `GET /user` |
+| Another GitHub App's installation token | `REVIEW_MCP_GITHUB_SELF_LOGIN: <app-slug>[bot]` |
+
+Trust: every workflow of the repository that posts with the job token posts
+as `github-actions[bot]`, so review-mcp treats an overview from any of them as
+its own. Those workflows already have write access to the repository; a fork's
+pull request cannot post as that bot.
+
+The default is applied only by `ci` on GitHub Actions, never on Gitea Actions
+or GitLab CI and never by the MCP server (`stdio`, `serve`).
 
 `describe --publish` writes to the pull request itself, not only to its
 comments; the rights are in

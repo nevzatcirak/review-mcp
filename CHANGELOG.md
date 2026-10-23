@@ -5,6 +5,31 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Planned as `2.6.0-rc.2`.
+
+### Added
+
+- `github.self_login` (`REVIEW_MCP_GITHUB_SELF_LOGIN`, default unset): the
+  login review-mcp treats as its own on GitHub, for its overview, its held
+  and carried records, its comments in the discussion and the author check
+  before an edit. When it is set, `GET /user` is not called. For a token that
+  cannot read its user, such as another GitHub App's (`<app-slug>[bot]`).
+  `serve` refuses it at startup (`github.self_login cannot be used with
+  serve: each request brings its own token`).
+
+### Fixed
+
+- CI mode with the job's `GITHUB_TOKEN`: GitHub refuses `GET /user` for it,
+  so each run of 2.6.0-rc.1 posted a new overview, reviewed in full and could
+  not read the discussion. On GitHub Actions, with an installation token and
+  `github.self_login` unset, `ci` now uses `github-actions[bot]`, the author
+  of the job token's comments, and logs "using the GitHub Actions bot
+  identity". A personal access token needs no setting and keeps
+  `GET /user`. The MCP server (`stdio`, `serve`) never applies this default.
+  See [CI mode](docs/ci.md#the-jobs-github_token-and-review-mcps-own-login).
+
 ## [2.6.0-rc.1]
 
 First 2.6 release candidate (the npm dist-tag `next`; `latest` stays on 2.5.2).

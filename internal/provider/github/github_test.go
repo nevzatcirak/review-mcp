@@ -140,6 +140,37 @@ func TestAPIBase(t *testing.T) {
 	})
 }
 
+// TestCurrentUserSelfLogin: github.self_login is returned as the user, by
+// login only, without GET /user; unset, GET /user is read as before, and a
+// refused GET /user fails (V-4 §4).
+func TestCurrentUserSelfLogin(t *testing.T) {
+	f := newFake(t, "/api/v3")
+	f.handle(http.MethodGet, "/user", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"message":"Resource not accessible by integration"}`, http.StatusForbidden)
+	})
+	cfg := f.config("")
+	cfg.GitHub.SelfLogin = "github-actions[bot]"
+	p, _ := f.provider(cfg, time.Now())
+	u, err := p.CurrentUser(t.Context())
+	if err != nil || u != (provider.User{Name: "github-actions[bot]"}) {
+		t.Errorf("CurrentUser = %+v, %v", u, err)
+	}
+	if got := f.requests(); len(got) != 0 {
+		t.Errorf("requests = %q, want none", got)
+	}
+	if !provider.IsUser(u, "41898282", "github-actions[bot]") || provider.IsUser(u, "101", "alice") {
+		t.Error("the configured login does not identify its own comments only")
+	}
+
+	p, _ = f.provider(f.config(""), time.Now())
+	if _, err := p.CurrentUser(t.Context()); !errors.Is(err, provider.ErrAuth) {
+		t.Errorf("unset: err = %v, want auth", err)
+	}
+	if got := f.requests(); !slices.Equal(got, []string{"/api/v3/user"}) {
+		t.Errorf("unset: requests = %q", got)
+	}
+}
+
 func TestRequestHeaders(t *testing.T) {
 	f := newFake(t, "/api/v3")
 	var got http.Header

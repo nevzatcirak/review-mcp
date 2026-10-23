@@ -28,6 +28,7 @@ may see are collected in [Troubleshooting](troubleshooting.md#github).
 | (secret) | `REVIEW_MCP_GITHUB_TOKEN` | none | A personal access token. Required when `github.base_url` is set (stdio). Secrets are never in the TOML file. |
 | `github.ca_cert` | `REVIEW_MCP_GITHUB_CA_CERT` | none | A PEM bundle for a private CA, used in addition to the system roots. |
 | `github.insecure_skip_verify` | `REVIEW_MCP_GITHUB_INSECURE_SKIP_VERIFY` | `false` | Turns TLS verification off; review-mcp warns at startup. Prefer `ca_cert`. |
+| `github.self_login` | `REVIEW_MCP_GITHUB_SELF_LOGIN` | none | The login review-mcp treats as its own: the author of its overview, its held and carried records and its comments in the discussion, and the author check before an edit. When it is set, `GET /user` is not called. Leave it unset for a personal access token. Set it for a token that cannot read `GET /user`, such as another GitHub App's token (`<app-slug>[bot]`); `ci` on GitHub Actions sets `github-actions[bot]` for the job token by itself (see [CI mode](ci.md#the-jobs-github_token-and-review-mcps-own-login)). 1 to 100 characters of `A-Z a-z 0-9 - [ ]`; setting it without `github.base_url` is a configuration error. |
 
 In `serve` mode the token comes from the request header
 `X-Review-MCP-GitHub-Token`, and `REVIEW_MCP_GITHUB_TOKEN` must be unset (see

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -58,6 +59,9 @@ func TestServeRefusesInvalidConfigWithoutListening(t *testing.T) {
 			"serve mode takes provider tokens from request headers; unset REVIEW_MCP_BITBUCKET_SERVER_TOKEN"},
 		{"repository context (RC-1)", serveTestEnv(map[string]string{"REVIEW_MCP_CONTEXT_REPO_ENABLED": "true"}), nil,
 			config.ServeRepoContextSentence},
+		{"github.self_login (WP-17c)", serveTestEnv(map[string]string{
+			"REVIEW_MCP_GITHUB_BASE_URL": "https://github.example.com", "REVIEW_MCP_GITHUB_SELF_LOGIN": "review-bot",
+		}), nil, config.ServeSelfLoginSentence},
 		{"insecure bind by flag", serveTestEnv(nil), []string{"--listen", "0.0.0.0:8787"}, "is not a loopback address"},
 		{"insecure bind by env", serveTestEnv(map[string]string{"REVIEW_MCP_SERVE_LISTEN": "0.0.0.0:8787"}), nil, "is not a loopback address"},
 		{"server key source without access token", serveTestEnv(map[string]string{
@@ -152,6 +156,19 @@ func TestServeStartsAndStopsCleanly(t *testing.T) {
 	}
 	if strings.Count(out, "review-mcp serving") != 1 || !strings.Contains(out, "server stopped") {
 		t.Errorf("stderr:\n%s", out)
+	}
+}
+
+// TestServeGitHubWithoutSelfLogin: serve with GitHub enabled and
+// github.self_login unset passes validation as before and goes on to
+// listen (WP-17c DQ-3).
+func TestServeGitHubWithoutSelfLogin(t *testing.T) {
+	var stderr lockedBuffer
+	refused := func(string, string) (net.Listener, error) { return nil, errors.New("listen refused by the test") }
+	env := serveTestEnv(map[string]string{"REVIEW_MCP_GITHUB_BASE_URL": "https://github.example.com"})
+	code := runServe(context.Background(), nil, &stderr, serveLoaderFor(env), refused)
+	if code != 1 || !strings.Contains(stderr.String(), "cannot listen") || strings.Contains(stderr.String(), "self_login") {
+		t.Errorf("exit %d, stderr:\n%s", code, stderr.String())
 	}
 }
 

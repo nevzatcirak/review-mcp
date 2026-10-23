@@ -185,6 +185,7 @@ func (Factory) New(cfg *config.Config, logger *slog.Logger) (provider.Provider, 
 		webURL:   strings.TrimRight(cfg.GitHub.BaseURL, "/"),
 		maxFiles: cfg.Diff.MaxFilesFullContent,
 		maxFile:  int64(cfg.Diff.MaxFileBytes),
+		self:     cfg.GitHub.SelfLogin,
 		now:      time.Now,
 		sleep:    sleepCtx,
 	}
@@ -216,6 +217,9 @@ type Provider struct {
 	webURL   string
 	maxFiles int
 	maxFile  int64
+	// self is github.self_login: when it is set, CurrentUser returns it
+	// without calling GET /user (v2.6 spec V-4 §4).
+	self string
 
 	// now and sleep are the clock of the rate-limit handling; tests replace
 	// them.
@@ -394,8 +398,14 @@ func (p *Provider) GetCommitMessages(ctx context.Context, ref provider.PRRef) ([
 	return out, nil
 }
 
-// CurrentUser implements provider.Provider: GET /user.
+// CurrentUser implements provider.Provider: GET /user, or github.self_login
+// without a request when it is set (a job token cannot read GET /user, V-4
+// §4). The configured login has no ID, so provider.IsUser compares it with
+// an author's login, ignoring letter case.
 func (p *Provider) CurrentUser(ctx context.Context) (provider.User, error) {
+	if p.self != "" {
+		return provider.User{Name: p.self}, nil
+	}
 	var u apiUser
 	if err := p.getJSON(ctx, "/user", &u); err != nil {
 		return provider.User{}, err

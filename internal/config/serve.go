@@ -119,6 +119,11 @@ func (l *loader) refuseServeEnvToken(s Secret, env string) {
 const ServeRepoContextSentence = "context.repo.enabled: repository context is not available in serve mode " +
 	"(cached code fetched with one user's token must not reach another user); unset REVIEW_MCP_CONTEXT_REPO_ENABLED"
 
+// ServeSelfLoginSentence is the fixed sentence of the serve-mode refusal of
+// github.self_login (v2.6 V-4 §4, WP-17c DQ-3): every request brings its
+// own token, so one fixed login would be the wrong identity for the others.
+const ServeSelfLoginSentence = "github.self_login cannot be used with serve: each request brings its own token"
+
 // validateServe applies the serve-mode rules of P6 spec §1.2. The provider
 // token rules live in validateProviders.
 func (l *loader) validateServe() {

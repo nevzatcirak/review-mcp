@@ -84,6 +84,7 @@ or an environment variable. The `--listen` flag overrides `serve.listen`.
 Validation rules in serve mode:
 
 - `REVIEW_MCP_GITEA_TOKEN`, `REVIEW_MCP_BITBUCKET_SERVER_TOKEN`, `REVIEW_MCP_GITHUB_TOKEN` and `REVIEW_MCP_GITLAB_TOKEN` must be unset.
+- `github.self_login` must be unset (`github.self_login cannot be used with serve: each request brings its own token`): one fixed login would be the wrong identity for every other caller's token. Run `stdio` or `ci` for a single bot.
 - With `llm_key_source = header`, `REVIEW_MCP_LLM_API_KEY` must be unset, and so
   must every `REVIEW_MCP_LLM_FALLBACK_<N>_API_KEY` ([Fallback
   models](setup.md#fallback-models)): a server-side fallback key would let every

@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/mdutil"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
@@ -511,12 +512,12 @@ func approvalLine(r *PRInfoResult) string {
 	}
 	var s string
 	if r.RequiredApprovals != nil {
-		s = strconv.Itoa(r.Approvals.Approved) + " of " + strconv.Itoa(*r.RequiredApprovals) + " required approvals" + why
+		s = strconv.Itoa(r.Approvals.Approved) + " of " + llmrun.CountPhrase(*r.RequiredApprovals, "required approval", "required approvals") + why
 	} else {
 		s = strconv.Itoa(r.Approvals.Approved) + " approval(s), required number not readable" + why
 	}
 	if n := r.Approvals.ChangesRequested; n > 0 {
-		s += "; " + strconv.Itoa(n) + " changes requested"
+		s += "; " + llmrun.CountPhrase(n, "change requested", "changes requested")
 	}
 	if n := r.Approvals.Pending; n > 0 {
 		s += "; " + strconv.Itoa(n) + " pending"

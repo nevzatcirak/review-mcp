@@ -3,12 +3,14 @@ package gitctx
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 )
@@ -287,5 +289,59 @@ func TestReadViewLocalGit(t *testing.T) {
 	}
 	if got := objectFiles(t, gitDir); !slices.Equal(got, objects) {
 		t.Errorf("the checkout's objects changed: %d files, was %d", len(got), len(objects))
+	}
+}
+
+// TestStaleViewTempDirs: ensureView removes a temporary view directory older
+// than an hour, keeps a younger one (another process may be building it), and
+// removes a link named like one as a link, never its target.
+func TestStaleViewTempDirs(t *testing.T) {
+	root := t.TempDir()
+	mk := func(name string, age time.Duration) string {
+		p := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Join(p, "objects"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		at := time.Now().Add(-age)
+		if err := os.Chtimes(p, at, at); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	old := mk(".view-sha1.tmp111", 2*time.Hour)
+	old256 := mk(".view-sha256.tmp222", 90*time.Minute)
+	young := mk(".view-sha1.tmp333", 5*time.Minute)
+	other := mk("a-repo-dir.tmp444", 2*time.Hour)
+
+	outside := t.TempDir()
+	keep := filepath.Join(outside, "keep")
+	if err := os.WriteFile(keep, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, ".view-sha1.tmp555")
+	linked := os.Symlink(outside, link) == nil
+
+	if _, err := ensureView(root, "sha1"); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{old, old256} {
+		if _, err := os.Lstat(p); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("%s: an old temporary view directory was kept (%v)", filepath.Base(p), err)
+		}
+	}
+	for _, p := range []string{young, other} {
+		if _, err := os.Lstat(p); err != nil {
+			t.Errorf("%s: removed although it is young or not a view directory: %v", filepath.Base(p), err)
+		}
+	}
+	if linked {
+		if _, err := os.Lstat(link); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("the link was kept (%v)", err)
+		}
+		if b, err := os.ReadFile(keep); err != nil || string(b) != "x" { //nolint:gosec // G304: a file the test made under t.TempDir()
+			t.Errorf("the link's target was touched: %q, %v", b, err)
+		}
+	} else {
+		t.Log("no symbolic links here")
 	}
 }

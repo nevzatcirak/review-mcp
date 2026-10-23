@@ -12,6 +12,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/ask"
 	"github.com/nevzatcirak/review-mcp/internal/credentials"
 	"github.com/nevzatcirak/review-mcp/internal/llm"
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/mdutil"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
@@ -226,10 +227,10 @@ func RenderPRCommentsMarkdown(r PRCommentsResult) string {
 	var b strings.Builder
 	tr := r.Truncated
 	b.WriteString("# Comments on " + codeSpan(r.PR.Kind+" "+r.PR.URL) + " · " +
-		strconv.Itoa(len(r.Threads)) + " threads shown · " +
+		llmrun.CountPhrase(len(r.Threads), "thread shown", "threads shown") + " · " +
 		strconv.Itoa(tr.ResolvedHidden) + " resolved hidden · " +
-		strconv.Itoa(tr.ThreadsOmitted) + " threads omitted · " +
-		strconv.Itoa(tr.BodiesTruncated) + " bodies truncated\n\n")
+		llmrun.CountPhrase(tr.ThreadsOmitted, "thread omitted", "threads omitted") + " · " +
+		llmrun.CountPhrase(tr.BodiesTruncated, "body truncated", "bodies truncated") + "\n\n")
 	b.WriteString(UntrustedNotice + "\n")
 	if len(r.Threads) == 0 {
 		b.WriteString("\nNo comment threads.\n")

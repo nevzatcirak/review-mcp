@@ -700,7 +700,7 @@ func TestCommitMessages(t *testing.T) {
 // TestCommitCountNote: the note appears once, and only when the provider
 // reports more commits than it returned messages for.
 func TestCommitCountNote(t *testing.T) {
-	want := fmt.Sprintf(NoteCommitsPartialFormat, 5, 2)
+	want := fmt.Sprintf(NoteCommitsPartialFormat, 5, "2 commit messages")
 	for _, tc := range []struct {
 		count int
 		note  bool
@@ -721,12 +721,20 @@ func TestCommitCountNote(t *testing.T) {
 			t.Errorf("count %d: note count %d, notes %v", tc.count, n, res.Notes)
 		}
 	}
+	// One message read: the note says "1 commit message".
+	h1 := newHarness(map[int][]string{0: {oneCallAnswer}})
+	h1.prov.pr.CommitCount = 3
+	h1.prov.commits = h1.prov.commits[:1]
+	res1 := h1.run(t, Args{})
+	if w := fmt.Sprintf(NoteCommitsPartialFormat, 3, "1 commit message"); !slices.Contains(res1.Notes, w) {
+		t.Errorf("notes %v lack %q", res1.Notes, w)
+	}
 	// A failed read gets only its own note.
 	h := newHarness(map[int][]string{0: {oneCallAnswer}})
 	h.prov.pr.CommitCount = 5
 	h.prov.commitErr = &provider.Error{Class: provider.ClassAuth, Status: 403}
 	res := h.run(t, Args{})
-	if slices.Contains(res.Notes, fmt.Sprintf(NoteCommitsPartialFormat, 5, 0)) || !slices.Contains(res.Notes, NoteCommitsUnavailable) {
+	if slices.Contains(res.Notes, fmt.Sprintf(NoteCommitsPartialFormat, 5, "0 commit messages")) || !slices.Contains(res.Notes, NoteCommitsUnavailable) {
 		t.Errorf("notes %v", res.Notes)
 	}
 }

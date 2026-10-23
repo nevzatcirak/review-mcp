@@ -197,7 +197,9 @@ repository tools with their `repo` argument. It needs `context.repo.enabled`
 answer is made without it. Ask, for example, "Which code in the related
 repository uses the renamed field?".
 
-The model is asked to cite a consumer location as `R<n>:path:line`. Each such
+The model is asked to cite a consumer location as `R<n>:path:line`; `:L-M` and
+`:L,M[,K...]` are cited and linked as well, as one link to the first line with
+the whole location as its text. Each such
 citation in the answer becomes a link to that file and line **at the pinned
 commit**, built by the repository's own provider, when the run saw the file (a
 hit in the prompt, or a file a tool read); a citation of a file the run never

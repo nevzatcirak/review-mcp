@@ -38,6 +38,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/filter"
 	"github.com/nevzatcirak/review-mcp/internal/gitctx"
 	"github.com/nevzatcirak/review-mcp/internal/llm"
+	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/mdutil"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/repoctx"
@@ -573,7 +574,7 @@ func (b *Box) readFile(ctx context.Context, args json.RawMessage) (string, strin
 		return StatusOK, fenced(src.header(), ReadFile+" "+cleanLine(path, MaxTargetRunes)+": the file is empty", nil, b.set.Factor)
 	}
 	if start > total {
-		return StatusNotAvailable, "not available: the file has " + strconv.Itoa(total) + " lines"
+		return StatusNotAvailable, "not available: the file has " + llmrun.CountPhrase(total, "line", "lines")
 	}
 	if end == 0 || end > total {
 		end = total
@@ -639,7 +640,7 @@ func (b *Box) listDir(ctx context.Context, args json.RawMessage) (string, string
 	if name == "" {
 		name = "the root"
 	}
-	head := ListDir + " " + name + ": " + strconv.Itoa(len(entries)) + " entries"
+	head := ListDir + " " + name + ": " + llmrun.CountPhrase(len(entries), "entry", "entries")
 	body := make([]string, 0, min(len(entries), MaxDirEntries)+1)
 	for i, e := range entries {
 		if i == MaxDirEntries {
@@ -700,7 +701,7 @@ func (b *Box) search(ctx context.Context, args json.RawMessage) (string, string)
 		where = cleanLine(dir, MaxTargetRunes)
 	}
 	head := Search + " " + strconv.Quote(cleanLine(text, MaxSearchText)) + " in " + where + ": " +
-		strconv.Itoa(len(res.Hits)) + " matches"
+		llmrun.CountPhrase(len(res.Hits), "match", "matches")
 	var body []string
 	for i, h := range res.Hits {
 		if i > 0 {
@@ -716,9 +717,18 @@ func (b *Box) search(ctx context.Context, args json.RawMessage) (string, string)
 		body = append(body, "", "More matches were not shown; search a narrower text or directory.")
 	}
 	if res.SkippedBlobs > 0 {
-		body = append(body, "", strconv.Itoa(res.SkippedBlobs)+" files were not searched: they were not fetched.")
+		body = append(body, "", skippedBlobsNote(res.SkippedBlobs))
 	}
 	return StatusOK, fenced(src.header(), head, body, b.set.Factor)
+}
+
+// skippedBlobsNote is the search note for files the search could not fetch.
+func skippedBlobsNote(n int) string {
+	it := "they were"
+	if n == 1 {
+		it = "it was"
+	}
+	return llmrun.CountPhrase(n, "file was", "files were") + " not searched: " + it + " not fetched."
 }
 
 // Header is the fixed sentence above every fenced result.

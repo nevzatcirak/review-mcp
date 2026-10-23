@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"time"
 )
 
 // The read view (X-45, WP-15). Every offline read runs with
@@ -39,6 +40,10 @@ import (
 // --shallow-file; the real-git tests on the CI versions pin it.
 const viewPrefix = ".view-"
 
+// staleViewAge is how old a temporary view directory must be before ensureView
+// removes it: a younger one may be a process still building its view.
+const staleViewAge = time.Hour
+
 // viewHead is the HEAD of a view: an unborn branch. git needs HEAD to accept
 // a directory as a repository; nothing is ever resolved through it.
 const viewHead = "ref: refs/heads/main\n"
@@ -62,11 +67,13 @@ func objectFormatOf(headSHA string) string {
 
 // ensureView returns the view of format under root, creating or rebuilding
 // it when it is missing or not exactly what writeView writes. Every failure
-// is cache_unusable.
+// is cache_unusable. It first removes the temporary directories that a
+// process killed while building a view left behind.
 func ensureView(root, format string) (string, error) {
 	if _, ok := viewConfig[format]; !ok {
 		return "", fail(ReasonCache)
 	}
+	sweepStaleViews(root, time.Now())
 	v := filepath.Join(root, viewPrefix+format)
 	if viewOK(v, format) {
 		return v, nil
@@ -95,6 +102,33 @@ func ensureView(root, format string) (string, error) {
 		return "", fail(ReasonCache)
 	}
 	return v, nil
+}
+
+// sweepStaleViews removes every <root>/.view-*.tmp* directory whose
+// modification time is older than staleViewAge, with the rules of removeView
+// (inside root only; nothing is followed). A younger directory is left to the
+// process that may be building it. Something at such a name that is not a
+// directory (a link, a file) is no build in progress and goes at once, as
+// itself. It is best effort: a failure leaves the entry for the next call.
+func sweepStaleViews(root string, now time.Time) {
+	ents, err := os.ReadDir(root)
+	if err != nil {
+		return
+	}
+	for _, e := range ents {
+		if ok, _ := filepath.Match(viewPrefix+"*.tmp*", e.Name()); !ok {
+			continue
+		}
+		p := filepath.Join(root, e.Name())
+		fi, err := os.Lstat(p)
+		if err != nil {
+			continue
+		}
+		if fi.IsDir() && now.Sub(fi.ModTime()) <= staleViewAge {
+			continue
+		}
+		_ = removeView(root, p)
+	}
 }
 
 // writeView writes the files of a view of format into the empty directory

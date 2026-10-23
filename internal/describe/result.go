@@ -49,7 +49,7 @@ const (
 	// NoteCommitsPartialFormat: the provider reports more commits than it
 	// returned messages for; the arguments are the commit count and the
 	// number of messages read. The token cap is not part of this note.
-	NoteCommitsPartialFormat = "The pull request has %d commits, but only %d commit messages could be read; the description used those."
+	NoteCommitsPartialFormat = "The pull request has %d commits, but only %s could be read; the description used those."
 )
 
 // AllowedTypes are the PR types of the schema (upstream's PRType values),

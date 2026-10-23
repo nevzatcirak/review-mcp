@@ -608,8 +608,17 @@ func TestDiffFileShapes(t *testing.T) {
 // are reported in a fixed note with their number, taken from the pull
 // request's changed_files.
 func TestDiffFileListingCap(t *testing.T) {
+	t.Run("2", func(t *testing.T) {
+		diffFileListingCap(t, 2, "GitHub lists at most 3000 files of a pull request: 2 more changed files were not listed, so they are not reviewed (file_limit).")
+	})
+	t.Run("1", func(t *testing.T) {
+		diffFileListingCap(t, 1, "GitHub lists at most 3000 files of a pull request: 1 more changed file was not listed, so it is not reviewed (file_limit).")
+	})
+}
+
+func diffFileListingCap(t *testing.T, extra int, want string) {
 	f := newFake(t, "/api/v3")
-	const listed, changed = maxListedFiles, maxListedFiles + 2
+	listed, changed := maxListedFiles, maxListedFiles+extra
 	h := func(w http.ResponseWriter, r *http.Request) {
 		start := 0
 		if c := r.URL.Query().Get("after"); c != "" {
@@ -639,7 +648,6 @@ func TestDiffFileListingCap(t *testing.T) {
 	if len(d.Files) != listed {
 		t.Errorf("%d files listed, want %d", len(d.Files), listed)
 	}
-	want := "GitHub lists at most 3000 files of a pull request: 2 more changed files were not listed, so they are not reviewed (file_limit)."
 	if !slices.Equal(d.Notes, []string{want}) || !d.Incomplete {
 		t.Errorf("notes = %q, incomplete %v, want %q and true", d.Notes, d.Incomplete, want)
 	}

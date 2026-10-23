@@ -580,7 +580,8 @@ pinned commit; no path, branch, identifier or hit is ever quoted.
 | <n> of the changed identifiers were not searched (limit <max>). | More identifiers than `related.max_identifiers`. Raise it (at most 50), or review a smaller change. |
 | Hits in <repo> were cut at <k> (limit). | The caps (5 hits per identifier, 30 per repository) kept <k> hits (`partial`). |
 | Hits in <repo> did not fit in full; <s> of <m> are shown. | The repository's share of `related.max_tokens` held only <s> of <m> hits (`partial`). The section then ends with "<k> more hits were found but do not fit here." so the missing hits are not read as "no use". Raise `related.max_tokens`, or name fewer related items. |
-| The repository config names related repositories, but reading them is turned off by the operator (related.from_repo_config). | The file declares `[[related.repos]]` and the call passes no `related`; set the operator key `related.from_repo_config` to true to read them, or remove the declarations. A call's own `related` is always allowed; with it the declarations are not used, so there is no note (`related.repos` is still listed in `repo_config.ignored`). |
+| The repository config names related repositories, but reading them is turned off by the operator (related.from_repo_config). | The file declares `[[related.repos]]`, and a `pr_review` or `pr_ask` that would have read them did not, because the operator switch is off. Set the operator key `related.from_repo_config` to true to read them, or remove the declarations. There is no note when the switch changes nothing: a call with its own `related`, a focused `pr_review`, a merged publish, `pr_describe` and `pr_improve`. `related.repos` is still listed in `repo_config.ignored` in every case. |
+| A consumer citation `R<n>:path:L-M` or `R<n>:path:L,M` is one link | The model cited several lines. The whole location is the link text and the link goes to the first line. With "(location not verified)" the run never saw that file; the text is kept whole. |
 
 Reasons of a related repository that could not be read (`failed`), besides
 `url_not_configured`, `url_malformed`, `credentials_missing` and `unreadable`
@@ -805,9 +806,9 @@ required checks show as `branch rules are not satisfied (for example required re
 
 | Note | Meaning and what to do |
 |---|---|
-| `GitHub lists at most 3000 files of a pull request: N more changed files were not listed, so they are not reviewed (file_limit).` | The pull request has more than 3000 changed files, which is GitHub's limit for the file list. N files are not reviewed and have no name in the result. Split the pull request or review them by hand. |
+| `GitHub lists at most 3000 files of a pull request: N more changed files were not listed, so they are not reviewed (file_limit).` (for one file: `... 1 more changed file was not listed, so it is not reviewed (file_limit).`) | The pull request has more than 3000 changed files, which is GitHub's limit for the file list. N files are not reviewed and have no name in the result. Split the pull request or review them by hand. |
 | `GitHub lists at most 250 commits of a pull request; the commits past them are not available.` | Only the first 250 commits are listed. `pr_info` shows this note; `pr_describe` has its own, below. |
-| `The pull request has N commits, but only M commit messages could be read; the description used those.` | `pr_describe` on a pull request whose commit count is larger than the number of messages the provider returned (on GitHub, past 250). The description is still made, from the messages that were read. Read the rest of the history by hand if it matters. Gitea and Bitbucket Server never show it. |
+| `The pull request has N commits, but only M commit messages could be read; the description used those.` (M is "1 commit message" for one) | `pr_describe` on a pull request whose commit count is larger than the number of messages the provider returned (on GitHub, past 250). The description is still made, from the messages that were read. Read the rest of the history by hand if it matters. Gitea and Bitbucket Server never show it. |
 
 ### Resolved state
 
@@ -1025,6 +1026,12 @@ and in a published overview or answer.
 | The repository tool budget was used up after N calls. | A tool result did not fit the rest of `context.repo.max_tool_tokens` or the room beside the diff (`budget_exhausted`); N counts the calls that ran. The model then answered with what it had. Raise `context.repo.max_tool_tokens` (at most 40,000) or `llm.context_window`. |
 | The diff left no room for repository tools, so the review was made without them. | The tools' instruction and definitions do not fit beside the whole diff, or the diff was trimmed already (`no_room`). The diff always wins. Raise `llm.context_window` or narrow the diff. |
 | A model call failed while the model was reading the repository through tools, so the review was made without them. | A model call of the conversation failed in a way that ends the rounds (a second restart on the next model, or a context-length error), and the answer came single-pass (`conversation_failed`). Check the endpoint; see the [fallback notes](#rate-limit-and-fallback-notes). |
+
+Inside a search result the tool says how many files it could not search:
+
+| Sentence | Cause and what to do |
+|---|---|
+| 1 file was not searched: it was not fetched. / N files were not searched: they were not fetched. | The cache lacks those files' contents (over 1 MiB, never fetched), so text search could not look in them. The counts read "1 match", "1 entry" and "the file has 1 line" the same way. Read such a file through the provider if it matters. |
 
 Reasons without a note: `off` and `repo_context_off` (the tools are off; with
 rounds above 0 and repository context off `server_info` warns at startup),
@@ -1580,7 +1587,7 @@ checked in.
   `transport` error with the hint `TLS verification failed` usually means the
   CA is missing or the certificate does not cover the host name.
 - **`insecure_skip_verify`.** `REVIEW_MCP_GITEA_INSECURE_SKIP_VERIFY=true` (and
-  the Bitbucket Server, GitHub and GitLab equivalents) turns off certificate verification. Use it
+  `REVIEW_MCP_BITBUCKET_SERVER_INSECURE_SKIP_VERIFY`, and the GitHub and GitLab equivalents) turns off certificate verification. Use it
   only to confirm that TLS is the problem on a throwaway setup; prefer a CA
   certificate. review-mcp warns at startup when it is set.
 

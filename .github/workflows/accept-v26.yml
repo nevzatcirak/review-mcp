@@ -18,7 +18,7 @@ env:
   REVIEW_MCP_LLM_MODEL: ${{ secrets.ACCEPT_LLM_MODEL }}
   REVIEW_MCP_LLM_API_KEY: ${{ secrets.ACCEPT_LLM_API_KEY }}
   REVIEW_MCP_LLM_REQUESTS_PER_MINUTE: "10"
-  RM: npx -y @nevzatcirak/review-mcp@2.6.0-rc.1
+  RM: npx -y @nevzatcirak/review-mcp@2.6.0-rc.2
 
 jobs:
   q1-q2-review:

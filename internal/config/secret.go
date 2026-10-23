@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 )
 
 const (
@@ -28,6 +29,11 @@ func (s Secret) Reveal() string { return s.value }
 
 // IsSet reports whether a non-empty value is held.
 func (s Secret) IsSet() bool { return s.value != "" }
+
+// HasPrefix reports whether the secret starts with prefix, without
+// revealing it (CI mode tells a GitHub installation token, "ghs_", from a
+// personal access token by it).
+func (s Secret) HasPrefix(prefix string) bool { return strings.HasPrefix(s.value, prefix) }
 
 // String implements fmt.Stringer.
 func (s Secret) String() string {

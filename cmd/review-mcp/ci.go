@@ -116,6 +116,14 @@ const (
 	ciRepoCacheSubdir = "review-mcp-repos"
 )
 
+// The GitHub Actions bot (V-4 §4): the fixed author of the comments made
+// with a workflow's job token, which is an installation token ("ghs_") that
+// cannot read GET /user.
+const (
+	ciGitHubActionsBot      = "github-actions[bot]"
+	ciInstallationTokenHead = "ghs_"
+)
+
 // Fixed stderr lines: the --timeout deadline, and no pull request found.
 const (
 	ciTimeoutLine        = "the run did not finish within --timeout (class: timeout)"
@@ -186,6 +194,7 @@ func runCI(args []string, stdout, stderr io.Writer, load configLoader, env ciEnv
 		return code
 	}
 	ciRepoCacheDefault(cfg, env)
+	ciSelfLoginDefault(cfg, env, logger, "ci "+opts.cmd+": ")
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	return ciExecute(ctx, opts, cfg, logger, env, stdout, stderr)
@@ -391,6 +400,21 @@ func ciRepoCacheDefault(cfg *config.Config, env ciEnv) {
 	if dir := env(ciEnvRunnerTemp); dir != "" && filepath.IsAbs(dir) {
 		cfg.Context.Repo.CacheDir = filepath.Join(dir, ciRepoCacheSubdir)
 	}
+}
+
+// ciSelfLoginDefault names the GitHub Actions bot as review-mcp's own login
+// (github.self_login) on GitHub Actions, not Gitea Actions, when the key is
+// unset, GitHub is enabled and its token is an installation token such as
+// the job's GITHUB_TOKEN (V-4 §4; DQ-1 of WP-17c). A personal access token
+// keeps GET /user. Only the ci command calls it, never stdio or serve.
+func ciSelfLoginDefault(cfg *config.Config, env ciEnv, logger *slog.Logger, prefix string) {
+	if cfg.GitHub.SelfLogin != "" || cfg.GitHub.BaseURL == "" ||
+		!cfg.Secrets.GitHubToken.HasPrefix(ciInstallationTokenHead) ||
+		env("GITEA_ACTIONS") == "true" || env("GITHUB_ACTIONS") != "true" {
+		return
+	}
+	cfg.GitHub.SelfLogin = ciGitHubActionsBot
+	logger.Info(prefix+"using the GitHub Actions bot identity", "login", ciGitHubActionsBot)
 }
 
 // ciOutcome is what one run produced, for the output and the exit code.

@@ -279,7 +279,7 @@ image: build your own.
 
 ```sh
 docker build -t review-mcp:local \
-  --build-arg VERSION=1.0.0-rc.1 --build-arg COMMIT=$(git rev-parse HEAD) .
+  --build-arg VERSION=2.6.0 --build-arg COMMIT=$(git rev-parse HEAD) .
 ```
 
 The image is a static binary on `gcr.io/distroless/static-debian12:nonroot`

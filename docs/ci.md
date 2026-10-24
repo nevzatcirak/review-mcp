@@ -6,7 +6,7 @@ from a pipeline step, with nobody calling a tool. It runs the same code as
 you pass `--publish`, and exits with a status the pipeline can act on.
 
 ```sh
-npx -y @nevzatcirak/review-mcp@2.6.0-rc.1 ci review --publish --incremental
+npx -y @nevzatcirak/review-mcp@2.6.0 ci review --publish --incremental
 ```
 
 The command is a stable interface: its flags, exit codes and output change
@@ -208,7 +208,7 @@ comments; the rights are in
 
 ## Examples
 
-Each example pins the version (`@2.6.0-rc.1`, the release these docs ship
+Each example pins the version (`@2.6.0`, the release these docs ship
 with), so that `npx` never runs a cached older copy, and uses `--publish` and
 `--incremental`. Replace `llm.example.com` and the model name with your
 endpoint. Store the LLM key as a secret.
@@ -241,7 +241,7 @@ jobs:
           REVIEW_MCP_LLM_BASE_URL: https://llm.example.com/v1
           REVIEW_MCP_LLM_MODEL: your-model-name
           REVIEW_MCP_LLM_API_KEY: ${{ secrets.REVIEW_MCP_LLM_API_KEY }}
-        run: npx -y @nevzatcirak/review-mcp@2.6.0-rc.1 ci review --publish --incremental
+        run: npx -y @nevzatcirak/review-mcp@2.6.0 ci review --publish --incremental
 ```
 
 The pull request is detected from the event; the review is also in the job's
@@ -271,7 +271,7 @@ jobs:
           REVIEW_MCP_LLM_BASE_URL: https://llm.example.com/v1
           REVIEW_MCP_LLM_MODEL: your-model-name
           REVIEW_MCP_LLM_API_KEY: ${{ secrets.REVIEW_MCP_LLM_API_KEY }}
-        run: npx -y @nevzatcirak/review-mcp@2.6.0-rc.1 ci review --publish --incremental
+        run: npx -y @nevzatcirak/review-mcp@2.6.0 ci review --publish --incremental
 ```
 
 Gitea sets `GITEA_ACTIONS=true` and the `GITHUB_*` variables, so the pull
@@ -295,7 +295,7 @@ review:
     REVIEW_MCP_LLM_BASE_URL: https://llm.example.com/v1
     REVIEW_MCP_LLM_MODEL: your-model-name
   script:
-    - npx -y @nevzatcirak/review-mcp@2.6.0-rc.1 ci review --publish --incremental
+    - npx -y @nevzatcirak/review-mcp@2.6.0 ci review --publish --incremental
 ```
 
 `REVIEW_MCP_GITLAB_TOKEN` and `REVIEW_MCP_LLM_API_KEY` are masked CI/CD
@@ -315,7 +315,7 @@ export REVIEW_MCP_BITBUCKET_SERVER_TOKEN="$BITBUCKET_TOKEN"   # from the CI's se
 export REVIEW_MCP_LLM_BASE_URL=https://llm.example.com/v1
 export REVIEW_MCP_LLM_MODEL=your-model-name
 export REVIEW_MCP_LLM_API_KEY="$LLM_API_KEY"                  # from the CI's secret store
-npx -y @nevzatcirak/review-mcp@2.6.0-rc.1 ci review --publish --incremental \
+npx -y @nevzatcirak/review-mcp@2.6.0 ci review --publish --incremental \
   --pr-url "https://bitbucket.example.com/projects/PROJ/repos/demo/pull-requests/$PR_ID"
 ```
 

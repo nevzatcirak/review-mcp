@@ -313,20 +313,28 @@ type apiPR struct {
 	} `json:"author"`
 	// Version is the PR's optimistic-locking counter; UpdatePullRequest
 	// sends it back.
-	Version   *int  `json:"version"`
-	Draft     *bool `json:"draft"`
-	Reviewers []struct {
-		User               apiPerson `json:"user"`
-		Status             string    `json:"status"`
-		LastReviewedCommit string    `json:"lastReviewedCommit"`
-	} `json:"reviewers"`
-	FromRef apiRef `json:"fromRef"`
-	ToRef   apiRef `json:"toRef"`
-	Links   struct {
+	Version   *int             `json:"version"`
+	Draft     *bool            `json:"draft"`
+	Reviewers []apiParticipant `json:"reviewers"`
+	// Participants are the users who took part without being asked to
+	// review; a participant status PUT (decision.go) adds the token's user
+	// here when they are not a reviewer.
+	Participants []apiParticipant `json:"participants"`
+	FromRef      apiRef           `json:"fromRef"`
+	ToRef        apiRef           `json:"toRef"`
+	Links        struct {
 		Self []struct {
 			Href string `json:"href"`
 		} `json:"self"`
 	} `json:"links"`
+}
+
+// apiParticipant is an entry of reviewers[] or participants[] of a PR
+// payload.
+type apiParticipant struct {
+	User               apiPerson `json:"user"`
+	Status             string    `json:"status"`
+	LastReviewedCommit string    `json:"lastReviewedCommit"`
 }
 
 type apiCommit struct {

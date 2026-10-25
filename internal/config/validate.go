@@ -88,11 +88,37 @@ func (l *loader) validate() {
 	l.validateContextRepo()
 	l.validateRepoConfig()
 	l.validateRelated()
+	l.validateDecision()
 	if _, err := logging.ParseLevel(c.Log.Level); err != nil {
 		l.problem("log.level: %v", err)
 	}
 	if l.mode == ModeServe {
 		l.validateServe()
+	}
+}
+
+// validateDecision checks decision.allowed (v2.7 spec V-14 §2.1): each
+// item is one of the three decisions, without duplicates, and the list is
+// not empty while decision.enabled is true. An item is reported by its
+// index, not its value.
+func (l *loader) validateDecision() {
+	d := &l.cfg.Decision
+	if l.bad["decision.allowed"] {
+		return
+	}
+	seen := map[string]bool{}
+	for i, a := range d.Allowed {
+		switch {
+		case a != DecisionApprove && a != DecisionRequestChanges && a != DecisionClear:
+			l.problem("decision.allowed[%d]: must be %s, %s or %s", i, DecisionApprove, DecisionRequestChanges, DecisionClear)
+		case seen[a]:
+			l.problem("decision.allowed[%d]: repeats an earlier item", i)
+		}
+		seen[a] = true
+	}
+	if d.Enabled && len(d.Allowed) == 0 {
+		l.problem("decision.allowed: is empty while decision.enabled is true; name at least one of %s, %s and %s",
+			DecisionApprove, DecisionRequestChanges, DecisionClear)
 	}
 }
 

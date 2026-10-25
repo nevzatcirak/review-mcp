@@ -144,6 +144,10 @@ var table = []entry{
 	{"related.max_identifiers", "REVIEW_MCP_RELATED_MAX_IDENTIFIERS", func(c *Config) any { return &c.Related.MaxIdentifiers }},
 	{"related.from_repo_config", "REVIEW_MCP_RELATED_FROM_REPO_CONFIG", func(c *Config) any { return &c.Related.FromRepoConfig }},
 
+	// decision.* rows: v2.7 spec V-14 §2.1 (X-47).
+	{"decision.enabled", "REVIEW_MCP_DECISION_ENABLED", func(c *Config) any { return &c.Decision.Enabled }},
+	{"decision.allowed", "REVIEW_MCP_DECISION_ALLOWED", func(c *Config) any { return &c.Decision.Allowed }},
+
 	{"log.level", "REVIEW_MCP_LOG_LEVEL", func(c *Config) any { return &c.Log.Level }},
 
 	// serve.* rows: P6 spec §1.2. They are read in every mode but validated

@@ -124,6 +124,11 @@ const ServeRepoContextSentence = "context.repo.enabled: repository context is no
 // own token, so one fixed login would be the wrong identity for the others.
 const ServeSelfLoginSentence = "github.self_login cannot be used with serve: each request brings its own token"
 
+// ServeDecisionSentence is the fixed sentence of the serve-mode refusal of
+// decision.enabled (v2.7 spec V-14 §2.1): review decisions are a stdio
+// feature in their first release (design note X-47 item 2).
+const ServeDecisionSentence = "decision.enabled: review decisions are not available in serve mode; unset REVIEW_MCP_DECISION_ENABLED"
+
 // validateServe applies the serve-mode rules of P6 spec §1.2. The provider
 // token rules live in validateProviders.
 func (l *loader) validateServe() {
@@ -132,6 +137,9 @@ func (l *loader) validateServe() {
 
 	if l.cfg.Context.Repo.Enabled {
 		l.problem("%s", ServeRepoContextSentence)
+	}
+	if l.cfg.Decision.Enabled {
+		l.problem("%s", ServeDecisionSentence)
 	}
 
 	// Listen address and the non-loopback rule.

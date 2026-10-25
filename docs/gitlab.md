@@ -445,8 +445,8 @@ again and adds:
   A `404` on `/reviewers` (an instance without the endpoint) falls back to the
   merge request's own `reviewers` list, all `pending`; any other failure is
   `reviewers: null` with the note `The reviews could not be read, so the reviewers are not listed.`
-  Approvals carry no body and review-mcp never approves, so there is no review
-  of its own to leave out; its comments are counted under `review_mcp_activity`
+  Approvals carry no body and review-mcp's own reviews are never approvals, so
+  there is no review of its own to leave out; its comments are counted under `review_mcp_activity`
   as on every provider.
 - **Required approvals.** `approvals_required` of `GET .../approvals`. The value
   `0` is reported as `0` with the note `no approval rule applies to this merge request`;
@@ -604,8 +604,11 @@ merged-results and merge-train pipelines. They are recorded as not verified.
 ## What is not supported
 
 - **GraphQL.** Anything that needs it is not available.
-- **Resolving or unresolving a discussion**, and approving a merge request.
-  review-mcp never approves; it only comments.
+- **Resolving or unresolving a discussion.**
+- **Requesting changes on a merge request.** GitLab's REST API has no request
+  for it. Approving a merge request, and removing your own approval, are
+  supported by [`pr_review_decision`](decision.md), which is off by default.
+  review-mcp's reviews and comments never approve.
 - **Batched reviews** (draft notes with a bulk publish): backlog.
 - **Multi-line anchors** (`line_range`): backlog. A range is anchored on its
   first line.

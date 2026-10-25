@@ -461,8 +461,12 @@ text](review.md#code-in-the-models-text)).
 
 - **GraphQL.** Thread resolution, and anything else that needs it, is not
   available.
-- **Resolving or unresolving a thread**, and submitting an approval or a change
-  request. review-mcp never approves; it only comments.
+- **Resolving or unresolving a thread.**
+- **Removing your own approval or change request.** GitHub has no request for
+  it; dismissing a review is a maintainer action on someone else's review.
+  Approving and requesting changes are supported by
+  [`pr_review_decision`](decision.md), which is off by default. review-mcp's
+  reviews and comments never approve.
 - **GitHub Apps, OAuth flows and installation tokens.** A personal access token
   is the only credential.
 - **Webhooks and a bot mode.** review-mcp acts only when a tool is called.

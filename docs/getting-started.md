@@ -152,7 +152,9 @@ uses of the changed symbols from the rest of the repository to the prompt; see
 
 ## Tools
 
-Ten tools in stdio mode, nine in `serve` mode (no `job_result`).
+Ten tools in stdio mode, nine in `serve` mode (no `job_result`). The eleventh,
+`pr_review_decision`, exists only in stdio mode with `decision.enabled`; see
+[Review decision](decision.md).
 
 | Tool | What it does |
 |---|---|

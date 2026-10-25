@@ -139,13 +139,18 @@ func rateLimitConfigured(cfg *config.Config) bool {
 
 // instructionsFor is serverInstructions with rateLimitGuidance after "in
 // parallel if you can" when a client-side rate limit is configured; without
-// one the text does not change.
+// one the text does not change. With decision.enabled, decisionGuidance
+// follows as its own paragraph (v2.7 spec V-14 §2.5).
 func instructionsFor(cfg *config.Config) string {
-	if !rateLimitConfigured(cfg) {
-		return serverInstructions
+	s := serverInstructions
+	if rateLimitConfigured(cfg) {
+		s = strings.Replace(s, "in parallel if you can; merge the findings",
+			"in parallel if you can. "+rateLimitGuidance+" Merge the findings", 1)
 	}
-	return strings.Replace(serverInstructions, "in parallel if you can; merge the findings",
-		"in parallel if you can. "+rateLimitGuidance+" Merge the findings", 1)
+	if cfg != nil && cfg.Decision.Enabled {
+		s += "\n\n" + decisionGuidance
+	}
+	return s
 }
 
 // New builds an MCP server with every tool and the prompt registered. The transport is
@@ -167,6 +172,9 @@ func New(deps Deps) *mcp.Server {
 	registerPRAsk(s, deps)
 	registerPRDescribe(s, deps)
 	registerPRImprove(s, deps)
+	if decisionEnabled(deps) {
+		registerPRReviewDecision(s, deps)
+	}
 	if deps.background() {
 		registerJobResult(s, deps)
 	}

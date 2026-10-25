@@ -272,7 +272,7 @@ func RenderPRReviewDecisionText(r PRReviewDecisionResult) string {
 	case d == provider.DecisionRequestChanges:
 		line = "Changes requested at " + at + " on " + providerDisplayName(provider.Kind(r.PR.Kind)) + "."
 	default:
-		line = "Approval cleared at " + at + " on " + providerDisplayName(provider.Kind(r.PR.Kind)) + "."
+		line = "Decision cleared at " + at + " on " + providerDisplayName(provider.Kind(r.PR.Kind)) + "."
 	}
 	var b strings.Builder
 	b.WriteString(line + "\n")

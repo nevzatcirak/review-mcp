@@ -385,7 +385,7 @@ func TestRenderPRReviewDecisionText(t *testing.T) {
 	}{
 		{"approve", false, "Approved at a1a1a1a on Bitbucket Server.\n"},
 		{"request_changes", false, "Changes requested at a1a1a1a on Bitbucket Server.\n"},
-		{"clear", false, "Approval cleared at a1a1a1a on Bitbucket Server.\n"},
+		{"clear", false, "Decision cleared at a1a1a1a on Bitbucket Server.\n"},
 		{"approve", true, "Already approved at a1a1a1a; nothing was changed.\n"},
 		{"request_changes", true, "Changes already requested at a1a1a1a; nothing was changed.\n"},
 		{"clear", true, "Nothing to clear at a1a1a1a; nothing was changed.\n"},

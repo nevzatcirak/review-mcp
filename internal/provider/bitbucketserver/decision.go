@@ -12,8 +12,10 @@ import (
 
 // decisionCaps: the participant status of the token's user takes all three
 // decisions and is checked against lastReviewedCommit by the server; the
-// body is a general comment after it.
-var decisionCaps = provider.DecisionCaps{Approve: true, RequestChanges: true, Clear: true, AtomicHead: true}
+// body is a general comment after it. UNAPPROVED resets NEEDS_WORK as well
+// as APPROVED, so clear also removes a change request.
+var decisionCaps = provider.DecisionCaps{Approve: true, RequestChanges: true, Clear: true, AtomicHead: true,
+	ClearResetsChangeRequest: true}
 
 // participantStatus maps a decision to the participant status it sets.
 var participantStatus = map[provider.Decision]string{

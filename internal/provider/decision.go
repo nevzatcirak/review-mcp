@@ -81,6 +81,10 @@ type DecisionCaps struct {
 	BodyInReview bool
 	// RequestChangesNeedsBody: request_changes is refused without a body.
 	RequestChangesNeedsBody bool
+	// ClearResetsChangeRequest: clear also removes the user's change
+	// request (Bitbucket Server UNAPPROVED resets NEEDS_WORK too). Added in
+	// the WP-18b review (spec §2.7).
+	ClearResetsChangeRequest bool
 }
 
 // Allows reports whether c allows d; it is false for an unknown value.

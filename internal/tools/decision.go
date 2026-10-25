@@ -204,7 +204,7 @@ func PRReviewDecision(ctx context.Context, cfg *config.Config, resolver PRResolv
 	st := p.GetReviewStatus(ctx, ref, pr, provider.ReviewStatusOptions{Me: &me, IsOwn: review.IsMarkedBody})
 	if st == nil || st.Reviewers == nil {
 		res.Notes = append(res.Notes, NoteDecisionStatusUnreadable)
-	} else if decisionHolds(st.Reviewers, me, d) {
+	} else if decisionHolds(st.Reviewers, me, d, caps.Decisions) {
 		res.Unchanged = true
 		return res, nil
 	}
@@ -237,10 +237,12 @@ func PRReviewDecision(ctx context.Context, cfg *config.Config, resolver PRResolv
 // decisionHolds reports whether the user's own entry among reviewers
 // already has the state d asks for at this head (step 8): approved and
 // not stale for approve, changes_requested and not stale for
-// request_changes, and no approved entry at all for clear (a stale
-// approval is still an approval to clear).
-func decisionHolds(reviewers []provider.Reviewer, me provider.User, d provider.Decision) bool {
-	approved := false
+// request_changes, and for clear no approved entry at all (a stale
+// approval is still an approval to clear) and, where clear also resets a
+// change request (caps.ClearResetsChangeRequest), no changes_requested
+// entry either (spec §2.7).
+func decisionHolds(reviewers []provider.Reviewer, me provider.User, d provider.Decision, caps provider.DecisionCaps) bool {
+	toClear := false
 	for _, r := range reviewers {
 		if !provider.IsUser(me, r.User.ID, r.User.Name) {
 			continue
@@ -249,11 +251,12 @@ func decisionHolds(reviewers []provider.Reviewer, me provider.User, d provider.D
 		case d == provider.DecisionApprove && r.State == provider.ReviewApproved && !r.Stale,
 			d == provider.DecisionRequestChanges && r.State == provider.ReviewChangesRequested && !r.Stale:
 			return true
-		case r.State == provider.ReviewApproved:
-			approved = true
+		case r.State == provider.ReviewApproved,
+			r.State == provider.ReviewChangesRequested && caps.ClearResetsChangeRequest:
+			toClear = true
 		}
 	}
-	return d == provider.DecisionClear && !approved
+	return d == provider.DecisionClear && !toClear
 }
 
 // RenderPRReviewDecisionText renders the text content of
@@ -267,7 +270,7 @@ func RenderPRReviewDecisionText(r PRReviewDecisionResult) string {
 	case r.Unchanged && d == provider.DecisionRequestChanges:
 		line = "Changes already requested at " + at + "; nothing was changed."
 	case r.Unchanged:
-		line = "No approval to clear at " + at + "; nothing was changed."
+		line = "Nothing to clear at " + at + "; nothing was changed."
 	case d == provider.DecisionApprove:
 		line = "Approved at " + at + " on " + providerDisplayName(provider.Kind(r.PR.Provider)) + "."
 	case d == provider.DecisionRequestChanges:

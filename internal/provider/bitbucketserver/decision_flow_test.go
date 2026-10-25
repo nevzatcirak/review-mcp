@@ -71,3 +71,29 @@ func TestDecisionParticipantFlow(t *testing.T) {
 		t.Errorf("%d participant updates, status %q; want 2 and UNAPPROVED", fake.puts, fake.status)
 	}
 }
+
+// TestDecisionChangeRequestClearFlow (v2.7 spec V-14 §2.7 commit 4): on
+// Bitbucket Server UNAPPROVED resets NEEDS_WORK too
+// (ClearResetsChangeRequest), so clear after the user's own change request
+// writes UNAPPROVED instead of answering unchanged; a second clear then has
+// nothing to clear.
+func TestDecisionChangeRequestClearFlow(t *testing.T) {
+	spec := decisionSpec()
+	var fake *ctBBS
+	p, ref := serveCtBBS(t, spec, func(b *ctBBS) { fake = b })
+	r := flowResolver{p: p, ref: ref}
+	if res := flowDecide(t, r, "request_changes", spec.HeadSHA); res.Unchanged || res.State != "NEEDS_WORK" {
+		t.Fatalf("request_changes: %+v", res)
+	}
+	if res := flowDecide(t, r, "clear", spec.HeadSHA); res.Unchanged || res.State != "UNAPPROVED" {
+		t.Errorf("clear after the user's change request: %+v, want UNAPPROVED written", res)
+	}
+	if res := flowDecide(t, r, "clear", spec.HeadSHA); !res.Unchanged {
+		t.Errorf("a second clear wrote: %+v", res)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.puts != 2 || fake.status != "UNAPPROVED" {
+		t.Errorf("%d participant updates, status %q; want 2 and UNAPPROVED", fake.puts, fake.status)
+	}
+}

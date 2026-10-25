@@ -227,7 +227,10 @@ func TestDecisionRefusalsWriteNothing(t *testing.T) {
 
 // TestDecisionUnchanged: the user's own entry already in the requested
 // state at this head writes nothing and says unchanged; a stale entry, or
-// another user's, is not the user's state at this head and writes.
+// another user's, is not the user's state at this head and writes. On
+// Bitbucket Server clear also resets a change request
+// (ClearResetsChangeRequest, spec §2.7), so a change request there is
+// something to clear; on GitLab, without the flag, it is not.
 func TestDecisionUnchanged(t *testing.T) {
 	own := func(s provider.ReviewState, stale bool) []provider.Reviewer {
 		return []provider.Reviewer{{User: provider.User{ID: "101", Name: "alice"}, State: provider.ReviewApproved},
@@ -238,22 +241,30 @@ func TestDecisionUnchanged(t *testing.T) {
 		decision  string
 		reviewers []provider.Reviewer
 		unchanged bool
+		gitlab    bool
 	}{
-		{"approve_already_approved", "approve", own(provider.ReviewApproved, false), true},
-		{"approve_stale_approval", "approve", own(provider.ReviewApproved, true), false},
-		{"approve_other_user_approved", "approve", own(provider.ReviewPending, false), false},
-		{"request_changes_already", "request_changes", own(provider.ReviewChangesRequested, false), true},
-		{"request_changes_stale", "request_changes", own(provider.ReviewChangesRequested, true), false},
-		{"request_changes_over_approval", "request_changes", own(provider.ReviewApproved, false), false},
-		{"clear_without_approval", "clear", own(provider.ReviewChangesRequested, false), true},
-		{"clear_with_no_entry", "clear", own(provider.ReviewPending, false)[:1], true},
-		{"clear_approval", "clear", own(provider.ReviewApproved, false), false},
-		{"clear_stale_approval", "clear", own(provider.ReviewApproved, true), false},
+		{"approve_already_approved", "approve", own(provider.ReviewApproved, false), true, false},
+		{"approve_stale_approval", "approve", own(provider.ReviewApproved, true), false, false},
+		{"approve_other_user_approved", "approve", own(provider.ReviewPending, false), false, false},
+		{"request_changes_already", "request_changes", own(provider.ReviewChangesRequested, false), true, false},
+		{"request_changes_stale", "request_changes", own(provider.ReviewChangesRequested, true), false, false},
+		{"request_changes_over_approval", "request_changes", own(provider.ReviewApproved, false), false, false},
+		{"clear_change_request_on_bitbucket", "clear", own(provider.ReviewChangesRequested, false), false, false},
+		{"clear_stale_change_request_on_bitbucket", "clear", own(provider.ReviewChangesRequested, true), false, false},
+		{"clear_change_request_on_gitlab", "clear", own(provider.ReviewChangesRequested, false), true, true},
+		{"clear_approval_on_gitlab", "clear", own(provider.ReviewApproved, false), false, true},
+		{"clear_with_no_entry", "clear", own(provider.ReviewPending, false)[:1], true, false},
+		{"clear_approval", "clear", own(provider.ReviewApproved, false), false, false},
+		{"clear_stale_approval", "clear", own(provider.ReviewApproved, true), false, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			f := newDecisionFake(bbsCaps)
+			caps, kind := bbsCaps, provider.KindBitbucketServer
+			if c.gitlab {
+				caps, kind = gitlabCaps, provider.KindGitLab
+			}
+			f := newDecisionFake(caps)
 			f.status.Reviewers = c.reviewers
-			res, err := decide(t, decisionCfg(), f, provider.KindBitbucketServer, PRReviewDecisionArgs{Decision: c.decision, HeadSHA: decHead})
+			res, err := decide(t, decisionCfg(), f, kind, PRReviewDecisionArgs{Decision: c.decision, HeadSHA: decHead})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -377,7 +388,7 @@ func TestRenderPRReviewDecisionText(t *testing.T) {
 		{"clear", false, "Approval cleared at a1a1a1a on Bitbucket Server.\n"},
 		{"approve", true, "Already approved at a1a1a1a; nothing was changed.\n"},
 		{"request_changes", true, "Changes already requested at a1a1a1a; nothing was changed.\n"},
-		{"clear", true, "No approval to clear at a1a1a1a; nothing was changed.\n"},
+		{"clear", true, "Nothing to clear at a1a1a1a; nothing was changed.\n"},
 	} {
 		r.Decision, r.Unchanged = c.decision, c.unchanged
 		if got := RenderPRReviewDecisionText(r); got != c.want {

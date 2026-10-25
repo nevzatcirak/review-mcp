@@ -248,11 +248,13 @@ func (*Provider) Kind() provider.Kind { return provider.KindBitbucketServer }
 
 // Capabilities implements provider.Provider. Bitbucket Server has no issue
 // tracker: Issues is false and the provider does not implement
-// provider.IssueReader.
+// provider.IssueReader. The participant status takes every decision
+// (decision.go).
 func (*Provider) Capabilities() provider.Capabilities {
 	return provider.Capabilities{
 		GFM: false, MarkdownTables: true, Labels: false, InlineComments: true,
 		InlineThreadResolution: true, GeneralThreadResolution: true, DescriptionEdit: true,
+		Decisions: decisionCaps,
 	}
 }
 
@@ -304,6 +306,7 @@ type apiPR struct {
 	State       string `json:"state"`
 	Author      struct {
 		User struct {
+			ID          int64  `json:"id"`
 			Name        string `json:"name"`
 			DisplayName string `json:"displayName"`
 		} `json:"user"`
@@ -360,6 +363,10 @@ func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*pro
 	if len(in.Links.Self) > 0 {
 		webURL = in.Links.Self[0].Href
 	}
+	authorID := ""
+	if in.Author.User.ID > 0 {
+		authorID = strconv.FormatInt(in.Author.User.ID, 10)
+	}
 	version := ""
 	if in.Version != nil {
 		version = strconv.Itoa(*in.Version)
@@ -369,6 +376,7 @@ func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*pro
 		Title:        in.Title,
 		Description:  in.Description,
 		Author:       author,
+		AuthorID:     authorID,
 		SourceBranch: in.FromRef.DisplayID,
 		TargetBranch: in.ToRef.DisplayID,
 		HeadSHA:      in.FromRef.LatestCommit,

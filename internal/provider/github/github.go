@@ -325,6 +325,7 @@ func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*pro
 	pr := &provider.PullRequest{
 		Title:          in.Title,
 		Author:         in.User.Login,
+		AuthorID:       userID(&in.User),
 		SourceBranch:   in.Head.Ref,
 		TargetBranch:   in.Base.Ref,
 		HeadSHA:        in.Head.SHA,

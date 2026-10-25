@@ -61,6 +61,7 @@ const (
 	ctBuilds    = "/rest/api/latest/projects/PROJ/repos/demo/commits/" // + {sha}/builds
 	ctLegacy    = "/rest/build-status/1.0/commits/"                    // + {sha}
 	ctProps     = "/rest/api/1.0/application-properties"
+	ctUsers     = "/rest/api/1.0/users"
 	ctTargetSHA = "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3" // head of the target branch
 	ctOlderSHA  = "d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4" // an older PR commit, for stale verdicts
 	ctFirstID   = 1000                                       // ids of comments created by requests
@@ -82,8 +83,19 @@ func (ctFixture) Traits() contract.Traits {
 
 func (ctFixture) Serve(t *testing.T, pr contract.Spec) (provider.Provider, provider.PRRef) {
 	t.Helper()
+	return serveCtBBS(t, pr, nil)
+}
+
+// serveCtBBS serves pr through a new fake that tweak, when set, adjusts
+// first.
+func serveCtBBS(t *testing.T, pr contract.Spec, tweak func(*ctBBS)) (provider.Provider, provider.PRRef) {
+	t.Helper()
+	b := newCtBBS(t, pr)
+	if tweak != nil {
+		tweak(b)
+	}
 	cfg := config.Defaults()
-	cfg.BitbucketServer.BaseURL = contract.StartServer(t, pr, newCtBBS(t, pr)) + ctPrefix
+	cfg.BitbucketServer.BaseURL = contract.StartServer(t, pr, b) + ctPrefix
 	cfg.Secrets.BitbucketServerToken = config.NewSecret(pr.Env.Token)
 	cfg.Diff.MaxFilesFullContent = pr.Env.MaxFiles
 	cfg.Diff.MaxFileBytes = pr.Env.MaxFileBytes
@@ -117,6 +129,15 @@ type ctBBS struct {
 	nextID int64
 	// version is the PR's version, raised by every update.
 	version int
+	// status and lastReviewed are the token user's participant status and
+	// last reviewed commit, set by a decision; "" before one.
+	status, lastReviewed string
+	// users, when set, replaces the answer of GET /users; answerStatus,
+	// when set, is the status field of the participant a decision returns.
+	// puts counts the participant updates.
+	users        []any
+	answerStatus string
+	puts         int
 }
 
 func newCtBBS(t *testing.T, pr contract.Spec) *ctBBS {
@@ -210,13 +231,17 @@ func (b *ctBBS) prJSON() map[string]any {
 		reviewers = append(reviewers, map[string]any{"user": ctUser(r.User), "status": status,
 			"approved": status == "APPROVED", "lastReviewedCommit": last})
 	}
+	participants := []any{}
+	if b.status != "" {
+		participants = append(participants, b.participantJSON())
+	}
 	return map[string]any{
 		"title": b.pr.Title, "description": b.pr.Description, "state": "OPEN", "draft": b.pr.Draft,
 		"version":   b.version,
 		"author":    map[string]any{"user": ctUser(b.pr.Author)},
-		"reviewers": reviewers,
-		"fromRef":   map[string]any{"displayId": b.pr.SourceBranch, "latestCommit": b.pr.HeadSHA},
-		"toRef":     map[string]any{"displayId": b.pr.TargetBranch, "latestCommit": ctTargetSHA},
+		"reviewers": reviewers, "participants": participants,
+		"fromRef": map[string]any{"displayId": b.pr.SourceBranch, "latestCommit": b.pr.HeadSHA},
+		"toRef":   map[string]any{"displayId": b.pr.TargetBranch, "latestCommit": ctTargetSHA},
 		"links": map[string]any{"self": []any{map[string]any{
 			"href": "https://bitbucket.example.com/projects/PROJ/repos/demo/pull-requests/7"}}},
 	}
@@ -316,7 +341,15 @@ func (b *ctBBS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		b.serveBuilds(w, r, strings.TrimPrefix(path, ctLegacy))
 	case get && (path == ctRepo+"/browse" || strings.HasPrefix(path, ctRepo+"/browse/")):
 		b.serveBrowse(w, r, strings.TrimPrefix(strings.TrimPrefix(path, ctRepo+"/browse"), "/"))
+	case get && path == ctUsers:
+		b.serveUsers(w, r)
+	case r.Method == http.MethodPut && strings.HasPrefix(path, ctPull+"/participants/"):
+		b.putParticipant(w, r, strings.TrimPrefix(path, ctPull+"/participants/"))
 	case r.Method == http.MethodPost && path == ctPull+"/comments":
+		if s := b.pr.Env.Decision.CommentStatus; s != 0 {
+			contract.WriteError(w, s)
+			return
+		}
 		b.postComment(w, r)
 	case strings.HasPrefix(path, ctPull+"/comments/"):
 		b.serveComment(w, r, strings.TrimPrefix(path, ctPull+"/comments/"))
@@ -569,3 +602,94 @@ func (b *ctBBS) serveComment(w http.ResponseWriter, r *http.Request, id string) 
 		contract.WriteError(w, http.StatusMethodNotAllowed)
 	}
 }
+
+// ctSlug is the slug the fake gives a user. It differs from the user name
+// (Bitbucket derives slugs from names, and they differ for names with
+// characters a URL path cannot carry), so that a request built from the
+// name instead of the slug fails.
+func ctSlug(u contract.User) string { return strings.ReplaceAll(u.Login, "-", "_") + "-slug" }
+
+// serveUsers answers GET /users?filter=: the users whose name contains the
+// filter, ignoring case. A decoy whose name contains the token user's name
+// comes first, with another id and slug.
+func (b *ctBBS) serveUsers(w http.ResponseWriter, r *http.Request) {
+	if b.users != nil {
+		ctPaged(w, r, b.users)
+		return
+	}
+	f := strings.ToLower(r.URL.Query().Get("filter"))
+	decoy := contract.User{ID: 990, Login: b.pr.TokenUser.Login + "-two", DisplayName: "Decoy"}
+	var out []any
+	for _, u := range []contract.User{decoy, b.pr.TokenUser, b.pr.Author} {
+		if f != "" && strings.Contains(strings.ToLower(u.Login), f) {
+			m := ctUser(u)
+			m["slug"] = ctSlug(u)
+			out = append(out, m)
+		}
+	}
+	ctPaged(w, r, out)
+}
+
+// participantJSON is the token user's participant entry.
+func (b *ctBBS) participantJSON() map[string]any {
+	u := ctUser(b.pr.TokenUser)
+	u["slug"] = ctSlug(b.pr.TokenUser)
+	return map[string]any{"user": u, "role": "PARTICIPANT", "status": b.status, "approved": b.status == "APPROVED",
+		"lastReviewedCommit": b.lastReviewed}
+}
+
+// putParticipant is PUT /participants/{userSlug}, modelled on the
+// documented resource: only the token user's own slug may be changed, the
+// author cannot, the status must be one of the three, and a
+// lastReviewedCommit other than the latest commit is refused (409, the
+// out-of-date pull request). A request without lastReviewedCommit is
+// accepted unchecked, as the field is optional. Env.Decision overrides the
+// answer.
+func (b *ctBBS) putParticipant(w http.ResponseWriter, r *http.Request, slug string) {
+	var in struct {
+		Status             string `json:"status"`
+		LastReviewedCommit string `json:"lastReviewedCommit"`
+	}
+	if d := b.pr.Env.Decision; d.Status != 0 {
+		if d.MovedHead != "" {
+			b.pr.HeadSHA = d.MovedHead
+		}
+		contract.WriteError(w, d.Status)
+		return
+	}
+	switch {
+	case slug != ctSlug(b.pr.TokenUser):
+		contract.WriteError(w, http.StatusUnauthorized)
+		return
+	case b.pr.TokenUser.ID == b.pr.Author.ID:
+		contract.WriteError(w, http.StatusBadRequest)
+		return
+	case json.NewDecoder(r.Body).Decode(&in) != nil ||
+		(in.Status != "APPROVED" && in.Status != "NEEDS_WORK" && in.Status != "UNAPPROVED"):
+		contract.WriteError(w, http.StatusBadRequest)
+		return
+	case in.LastReviewedCommit != "" && in.LastReviewedCommit != b.pr.HeadSHA:
+		contract.WriteError(w, http.StatusConflict)
+		return
+	}
+	b.status, b.lastReviewed = in.Status, b.pr.HeadSHA
+	b.puts++
+	out := b.participantJSON()
+	if b.answerStatus != "" {
+		out["status"] = b.answerStatus
+	}
+	ctJSON(w, http.StatusOK, out)
+}
+
+// DecisionRequest implements contract.DecisionExpecter: PUT
+// .../participants/{userSlug} with the status and the head.
+func (ctFixture) DecisionRequest(spec contract.Spec, d provider.Decision, _ string) contract.WriteRequest {
+	return contract.WriteRequest{Method: http.MethodPut, Path: ctPrefix + ctPull + "/participants/" + ctSlug(spec.TokenUser),
+		Body: map[string]any{"status": ctStatus[d], "lastReviewedCommit": spec.HeadSHA}}
+}
+
+// DecisionState implements contract.DecisionExpecter.
+func (ctFixture) DecisionState(d provider.Decision) string { return ctStatus[d] }
+
+var ctStatus = map[provider.Decision]string{provider.DecisionApprove: "APPROVED",
+	provider.DecisionRequestChanges: "NEEDS_WORK", provider.DecisionClear: "UNAPPROVED"}

@@ -323,6 +323,14 @@ type apiUser struct {
 	Name     string `json:"name"`
 }
 
+// positiveID is id in decimal, or "" when the host sent none.
+func positiveID(id int64) string {
+	if id <= 0 {
+		return ""
+	}
+	return strconv.FormatInt(id, 10)
+}
+
 type apiDiffRefs struct {
 	BaseSHA  string `json:"base_sha"`
 	HeadSHA  string `json:"head_sha"`
@@ -444,6 +452,7 @@ func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*pro
 	pr := &provider.PullRequest{
 		Title:               in.Title,
 		Author:              in.Author.Username,
+		AuthorID:            positiveID(in.Author.ID),
 		SourceBranch:        in.SourceBranch,
 		TargetBranch:        in.TargetBranch,
 		HeadSHA:             in.DiffRefs.HeadSHA,

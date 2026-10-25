@@ -206,11 +206,13 @@ func (p *Provider) CloseIdleConnections() {
 // Kind implements provider.Provider.
 func (*Provider) Kind() provider.Kind { return provider.KindGitea }
 
-// Capabilities implements provider.Provider.
+// Capabilities implements provider.Provider. A review approves or requests
+// changes (decision.go).
 func (*Provider) Capabilities() provider.Capabilities {
 	return provider.Capabilities{
 		GFM: true, MarkdownTables: true, Labels: true, InlineComments: true,
 		InlineThreadResolution: true, DescriptionEdit: true, Issues: true,
+		Decisions: decisionCaps,
 	}
 }
 

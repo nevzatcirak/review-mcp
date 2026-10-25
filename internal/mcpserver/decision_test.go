@@ -194,6 +194,10 @@ func TestDecisionToolResultsValidate(t *testing.T) {
 	if w := g.writesSoFar(); !slices.Equal(w, []string{"POST /api/v1/repos/octo/demo/pulls/7/reviews"}) {
 		t.Fatalf("writes %q", w)
 	}
+	// pr names the pull request as pr_info does (spec §2.7 commit 5).
+	if pr, _ := out["pr"].(map[string]any); len(pr) != 2 || pr["kind"] != "gitea" || pr["url"] != prURL {
+		t.Errorf("pr = %v, want kind and url only", out["pr"])
+	}
 
 	out = callValid(t, cs, schemas, "pr_review_decision", args)
 	if out["unchanged"] != true || out["state"] != "" {

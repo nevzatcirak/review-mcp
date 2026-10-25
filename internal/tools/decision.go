@@ -121,19 +121,15 @@ func (a PRReviewDecisionArgs) Validate() error {
 	return nil
 }
 
-// DecisionPR identifies the pull request of a pr_review_decision result.
-type DecisionPR struct {
-	URL      string `json:"url" jsonschema:"pull request URL with credentials and query values removed"`
-	Provider string `json:"provider" jsonschema:"provider kind: gitea, bitbucket_server, github or gitlab"`
-}
-
 // PRReviewDecisionResult is the structured result of pr_review_decision.
 type PRReviewDecisionResult struct {
-	PR        DecisionPR `json:"pr"`
-	Decision  string     `json:"decision" jsonschema:"the decision: approve, request_changes or clear"`
-	HeadSHA   string     `json:"head_sha" jsonschema:"the commit the decision is for, in lower case"`
-	State     string     `json:"state" jsonschema:"the host's own word for the new state (APPROVED, NEEDS_WORK, UNAPPROVED on Bitbucket Server; APPROVED, CHANGES_REQUESTED on GitHub; APPROVED, REQUEST_CHANGES on Gitea; approved, unapproved on GitLab); empty when unchanged"`
-	Unchanged bool       `json:"unchanged" jsonschema:"true when the user's own state already was the requested one at this head, so nothing was written"`
+	// PR is the pull request as pr_info names it (pr.kind and pr.url; spec
+	// §2.7 commit 5, WP-18b DQ-8).
+	PR        PRInfo `json:"pr"`
+	Decision  string `json:"decision" jsonschema:"the decision: approve, request_changes or clear"`
+	HeadSHA   string `json:"head_sha" jsonschema:"the commit the decision is for, in lower case"`
+	State     string `json:"state" jsonschema:"the host's own word for the new state (APPROVED, NEEDS_WORK, UNAPPROVED on Bitbucket Server; APPROVED, CHANGES_REQUESTED on GitHub; APPROVED, REQUEST_CHANGES on Gitea; approved, unapproved on GitLab); empty when unchanged"`
+	Unchanged bool   `json:"unchanged" jsonschema:"true when the user's own state already was the requested one at this head, so nothing was written"`
 	// BodyPosted is provider.BodyPostedReview, BodyPostedComment,
 	// BodyNotPosted or "".
 	BodyPosted string   `json:"body_posted" jsonschema:"review (the body is the review's), comment (posted after the decision), not_posted (the decision succeeded, the comment failed), or empty without a body or when unchanged"`
@@ -197,7 +193,7 @@ func PRReviewDecision(ctx context.Context, cfg *config.Config, resolver PRResolv
 		return zero, &CommentError{decisionHeadMovedMessage(pr.HeadSHA, a.HeadSHA)}
 	}
 	res := PRReviewDecisionResult{
-		PR:       DecisionPR{URL: logging.RedactURL(ref.URL), Provider: string(ref.Kind)},
+		PR:       PRInfo{Kind: string(ref.Kind), URL: logging.RedactURL(ref.URL)},
 		Decision: a.Decision, HeadSHA: a.HeadSHA, Notes: []string{},
 	}
 	// 8. The user's current state.
@@ -272,11 +268,11 @@ func RenderPRReviewDecisionText(r PRReviewDecisionResult) string {
 	case r.Unchanged:
 		line = "Nothing to clear at " + at + "; nothing was changed."
 	case d == provider.DecisionApprove:
-		line = "Approved at " + at + " on " + providerDisplayName(provider.Kind(r.PR.Provider)) + "."
+		line = "Approved at " + at + " on " + providerDisplayName(provider.Kind(r.PR.Kind)) + "."
 	case d == provider.DecisionRequestChanges:
-		line = "Changes requested at " + at + " on " + providerDisplayName(provider.Kind(r.PR.Provider)) + "."
+		line = "Changes requested at " + at + " on " + providerDisplayName(provider.Kind(r.PR.Kind)) + "."
 	default:
-		line = "Approval cleared at " + at + " on " + providerDisplayName(provider.Kind(r.PR.Provider)) + "."
+		line = "Approval cleared at " + at + " on " + providerDisplayName(provider.Kind(r.PR.Kind)) + "."
 	}
 	var b strings.Builder
 	b.WriteString(line + "\n")

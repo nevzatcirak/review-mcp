@@ -95,7 +95,7 @@ func registerPRReviewDecision(s *mcp.Server, deps Deps) {
 		}
 		// Never the body, the URL's query, names or the token.
 		logger(deps).Debug("pr_review_decision", "decision", res.Decision, "unchanged", res.Unchanged,
-			"body_posted", res.BodyPosted, "provider", res.PR.Provider)
+			"body_posted", res.BodyPosted, "provider", res.PR.Kind)
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: tools.RenderPRReviewDecisionText(res)}},
 		}, res, nil

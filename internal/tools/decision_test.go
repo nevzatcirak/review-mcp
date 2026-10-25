@@ -306,7 +306,7 @@ func TestDecisionWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := PRReviewDecisionResult{
-		PR:       DecisionPR{URL: "https://bitbucket.example.com/projects/PRJ/repos/demo/pull-requests/7?token=REDACTED", Provider: "bitbucket_server"},
+		PR:       PRInfo{Kind: "bitbucket_server", URL: "https://bitbucket.example.com/projects/PRJ/repos/demo/pull-requests/7?token=REDACTED"},
 		Decision: "request_changes", HeadSHA: decHead, State: "NEEDS_WORK", BodyPosted: provider.BodyNotPosted,
 		Notes: []string{NoteDecisionBodyNotPosted},
 	}
@@ -377,7 +377,7 @@ func TestDecisionConflict(t *testing.T) {
 
 // TestRenderPRReviewDecisionText: one line per outcome, then the notes.
 func TestRenderPRReviewDecisionText(t *testing.T) {
-	r := PRReviewDecisionResult{PR: DecisionPR{Provider: "bitbucket_server"}, HeadSHA: decHead}
+	r := PRReviewDecisionResult{PR: PRInfo{Kind: "bitbucket_server"}, HeadSHA: decHead}
 	for _, c := range []struct {
 		decision  string
 		unchanged bool

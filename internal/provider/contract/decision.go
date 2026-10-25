@@ -168,7 +168,11 @@ func (s *suite) decision(t *testing.T) {
 			}
 		}
 		if caps.RequestChanges && caps.RequestChangesNeedsBody {
-			cases = append(cases, bad{"request_changes_without_body", provider.DecisionRequest{Decision: provider.DecisionRequestChanges, HeadSHA: head}})
+			cases = append(cases,
+				bad{"request_changes_without_body", provider.DecisionRequest{Decision: provider.DecisionRequestChanges, HeadSHA: head}},
+				// A blank body is no body (spec §1.2).
+				bad{"request_changes_with_a_blank_body", provider.DecisionRequest{Decision: provider.DecisionRequestChanges, HeadSHA: head, Body: "   "}},
+				bad{"request_changes_with_a_whitespace_body", provider.DecisionRequest{Decision: provider.DecisionRequestChanges, HeadSHA: head, Body: " \t\r\n "}})
 		}
 		n0, _ := log.count()
 		for _, c := range cases {
@@ -228,6 +232,19 @@ func (s *suite) decision(t *testing.T) {
 	})
 
 	t.Run("body", func(t *testing.T) {
+		t.Run("blank_body_is_no_body", func(t *testing.T) {
+			o := decide(t, samplePR(), first, " \n\t ")
+			if o.err != nil {
+				t.Fatalf("SetReviewDecision: %v", o.err)
+			}
+			if o.res.BodyPosted != "" {
+				t.Errorf("body_posted %q for a blank body, want none", o.res.BodyPosted)
+			}
+			if len(o.writes) != 1 {
+				t.Fatalf("%d write requests %s, want the decision request only", len(o.writes), describeWrites(o.writes))
+			}
+			checkWrite(t, "the decision request", o.writes[0], exp.DecisionRequest(spec, first, ""))
+		})
 		if caps.BodyInReview {
 			o := decide(t, samplePR(), first, decisionBody)
 			res, err, writes := o.res, o.err, o.writes

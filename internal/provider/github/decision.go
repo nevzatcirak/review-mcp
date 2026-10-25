@@ -24,11 +24,11 @@ var reviewEvent = map[provider.Decision]struct{ event, state string }{
 // SetReviewDecision implements provider.DecisionWriter with POST
 // /repos/{o}/{r}/pulls/{n}/reviews and the body {"commit_id": HeadSHA,
 // "event": APPROVE or REQUEST_CHANGES, "body": Body}, body left out when
-// empty. The event is never empty: a review without one stays PENDING. The
-// answer's state must be APPROVED or CHANGES_REQUESTED; any other state
-// (PENDING: the review was not submitted) is a protocol error. A 4xx
-// refusal is checked for a moved head with a re-read
-// (provider.DecisionRefused).
+// blank (provider.DecisionBody). The event is never empty: a review
+// without one stays PENDING. The answer's state must be APPROVED or
+// CHANGES_REQUESTED; any other state (PENDING: the review was not
+// submitted) is a protocol error. A 4xx refusal is checked for a moved
+// head with a re-read (provider.DecisionRefused).
 func (p *Provider) SetReviewDecision(ctx context.Context, ref provider.PRRef, pr *provider.PullRequest, req provider.DecisionRequest) (*provider.DecisionResult, error) {
 	if err := provider.ValidateDecision(decisionCaps, req); err != nil {
 		return nil, err
@@ -45,7 +45,7 @@ func (p *Provider) SetReviewDecision(ctx context.Context, ref provider.PRRef, pr
 		CommitID string `json:"commit_id"`
 		Event    string `json:"event"`
 		Body     string `json:"body,omitempty"`
-	}{CommitID: req.HeadSHA, Event: ev.event, Body: req.Body}
+	}{CommitID: req.HeadSHA, Event: ev.event, Body: provider.DecisionBody(req.Body)}
 	var out struct {
 		State string `json:"state"`
 	}

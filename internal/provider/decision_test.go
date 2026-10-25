@@ -58,6 +58,7 @@ func TestValidateDecision(t *testing.T) {
 		{"unknown", gh, DecisionRequest{Decision: "merge", HeadSHA: testHead}, "the decision is not supported"},
 		{"bad_head", gh, DecisionRequest{Decision: DecisionApprove, HeadSHA: "abc"}, "invalid head sha"},
 		{"no_body", gh, DecisionRequest{Decision: DecisionRequestChanges, HeadSHA: testHead}, "a body is required for request_changes"},
+		{"blank_body", gh, DecisionRequest{Decision: DecisionRequestChanges, HeadSHA: testHead, Body: " \t\n"}, "a body is required for request_changes"},
 		{"no_body_needed", DecisionCaps{RequestChanges: true}, DecisionRequest{Decision: DecisionRequestChanges, HeadSHA: testHead}, ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -101,6 +102,8 @@ func TestDecisionRefused(t *testing.T) {
 		{"404_moved", StatusError(404), moved, nil, true, ErrConflict},
 		{"409_moved", StatusError(409), moved, nil, true, ErrConflict},
 		{"422_unmoved", StatusError(422), testHead, nil, true, ErrProtocol},
+		{"400_moved_to_a_non_sha", StatusError(400), "not-a-sha", nil, true, ErrConflict},
+		{"400_moved_to_uppercase", StatusError(400), strings.ToUpper(moved), nil, true, ErrConflict},
 		{"400_reread_fails", StatusError(400), "", ErrUpstream, true, ErrProtocol},
 		{"401", StatusError(401), moved, nil, false, ErrAuth},
 		{"403", StatusError(403), moved, nil, false, ErrAuth},
@@ -125,8 +128,13 @@ func TestDecisionRefused(t *testing.T) {
 			}
 			var hm *HeadMovedError
 			wantMoved := errors.Is(c.wantErr, ErrConflict)
-			if moved := errors.As(err, &hm); moved != wantMoved || (moved && hm.Head != c.head) {
-				t.Errorf("error %#v: want a HeadMovedError with head %q: %v", err, c.head, wantMoved)
+			// The new head is kept only when it is a commit id.
+			wantHead := ""
+			if ValidHeadSHA(c.head) {
+				wantHead = c.head
+			}
+			if moved := errors.As(err, &hm); moved != wantMoved || (moved && hm.Head != wantHead) {
+				t.Errorf("error %#v: want a HeadMovedError with head %q: %v", err, wantHead, wantMoved)
 			}
 		})
 	}
@@ -161,6 +169,7 @@ func TestPostDecisionBody(t *testing.T) {
 		{"in_review", DecisionCaps{BodyInReview: true}, "x", nil, BodyPostedReview, 0},
 		{"comment", DecisionCaps{}, "x", nil, BodyPostedComment, 1},
 		{"comment_fails", DecisionCaps{}, "x", StatusError(500), BodyNotPosted, 1},
+		{"blank_body", DecisionCaps{}, " \r\n ", nil, "", 0},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f := &commentFake{err: c.err}
@@ -171,5 +180,13 @@ func TestPostDecisionBody(t *testing.T) {
 				t.Errorf("comments %q, want %d with the body", f.bodies, c.comments)
 			}
 		})
+	}
+}
+
+func TestDecisionBody(t *testing.T) {
+	for in, want := range map[string]string{"": "", "   ": "", "\t\r\n": "", " x ": " x ", "LGTM": "LGTM"} {
+		if got := DecisionBody(in); got != want {
+			t.Errorf("DecisionBody(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

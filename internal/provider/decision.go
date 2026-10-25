@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 )
 
 // Decision is a reviewer's decision on a pull request (X-47).
@@ -102,17 +103,28 @@ func (c DecisionCaps) Any() bool { return c.Approve || c.RequestChanges || c.Cle
 // request is sent. A decision caps does not allow, a HeadSHA that is not
 // 40 or 64 lowercase hex characters, and request_changes without a body
 // when caps.RequestChangesNeedsBody give a protocol error with a fixed
-// hint; the body is never part of it.
+// hint; the body is never part of it. A blank body (empty after
+// strings.TrimSpace) is no body, here and everywhere (DecisionBody).
 func ValidateDecision(caps DecisionCaps, req DecisionRequest) error {
 	switch {
 	case !caps.Allows(req.Decision):
 		return &Error{Class: ClassProtocol, Hint: "the decision is not supported"}
 	case !ValidHeadSHA(req.HeadSHA):
 		return &Error{Class: ClassProtocol, Hint: "invalid head sha"}
-	case req.Decision == DecisionRequestChanges && caps.RequestChangesNeedsBody && req.Body == "":
+	case req.Decision == DecisionRequestChanges && caps.RequestChangesNeedsBody && DecisionBody(req.Body) == "":
 		return &Error{Class: ClassProtocol, Hint: "a body is required for request_changes"}
 	}
 	return nil
+}
+
+// DecisionBody is body as a decision sends it: "" when it is blank (empty
+// after strings.TrimSpace), so that nothing blank is ever sent or posted,
+// and body unchanged otherwise.
+func DecisionBody(body string) string {
+	if strings.TrimSpace(body) == "" {
+		return ""
+	}
+	return body
 }
 
 // ValidHeadSHA reports whether s is a full commit id: 40 (SHA-1) or 64
@@ -135,8 +147,9 @@ const HintHeadMoved = "head moved"
 
 // HeadMovedError is the conflict of SetReviewDecision when the pull
 // request's head is no longer the request's HeadSHA. Head is the head the
-// re-read saw, or "" when the provider knows only that it moved (GitLab's
-// 409). errors.Is(err, ErrConflict) holds for it, and errors.As finds its
+// re-read saw when it is a commit id (ValidHeadSHA), or "" when the
+// provider knows only that it moved (GitLab's 409) or the host sent
+// something else: an arbitrary host string is never repeated (X-6). errors.Is(err, ErrConflict) holds for it, and errors.As finds its
 // *Error.
 //
 // DESIGN-QUESTION (WP-18a DQ-4): the spec's tool maps this conflict to a
@@ -162,8 +175,8 @@ func (e *HeadMovedError) Unwrap() error { return e.err() }
 // DecisionRefused is SetReviewDecision's error for err, the failure of the
 // decision request. On a 4xx answer other than 401, 403 and 429 it reads
 // the pull request again with reread: when the head is no longer head, the
-// error is a *HeadMovedError with the new head; otherwise, and when the
-// re-read fails, it is err. Response bodies are never read (X-6).
+// error is a *HeadMovedError with the new head (or "" when that is not a
+// commit id); otherwise, and when the re-read fails, it is err. Response bodies are never read (X-6).
 func DecisionRefused(ctx context.Context, err error, head string, reread func(context.Context) (*PullRequest, error)) error {
 	var pe *Error
 	if !errors.As(err, &pe) || pe.Status < 400 || pe.Status >= 500 ||
@@ -174,17 +187,22 @@ func DecisionRefused(ctx context.Context, err error, head string, reread func(co
 	if rerr != nil || pr == nil || pr.HeadSHA == head {
 		return err
 	}
-	return &HeadMovedError{Head: pr.HeadSHA, Status: pe.Status}
+	moved := &HeadMovedError{Status: pe.Status}
+	if ValidHeadSHA(pr.HeadSHA) {
+		moved.Head = pr.HeadSHA
+	}
+	return moved
 }
 
 // PostDecisionBody finishes a decision that succeeded: it returns
-// DecisionResult.BodyPosted for body. Without a body it is "". With
+// DecisionResult.BodyPosted for body. Without a body (a blank one
+// included, DecisionBody) it is "". With
 // BodyInReview the body was part of the decision request (BodyPostedReview).
 // Otherwise the body is posted with p.PostComment: BodyPostedComment, or
 // BodyNotPosted when the comment failed, which is not an error.
 func PostDecisionBody(ctx context.Context, p Provider, ref PRRef, caps DecisionCaps, body string) string {
 	switch {
-	case body == "":
+	case DecisionBody(body) == "":
 		return ""
 	case caps.BodyInReview:
 		return BodyPostedReview

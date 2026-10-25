@@ -31,10 +31,10 @@ var reviewEvent = map[provider.Decision]string{
 // SetReviewDecision implements provider.DecisionWriter with POST
 // /api/v1/repos/{o}/{r}/pulls/{n}/reviews and the body {"commit_id":
 // HeadSHA, "event": APPROVED or REQUEST_CHANGES, "body": Body}, body left
-// out when empty. The event is never empty: Gitea keeps a review without
-// one as a PENDING draft. The answer's state must be the event; any other
-// state is a protocol error. A 4xx refusal is checked for a moved head
-// with a re-read (provider.DecisionRefused).
+// out when blank (provider.DecisionBody). The event is never empty: Gitea
+// keeps a review without one as a PENDING draft. The answer's state must
+// be the event; any other state is a protocol error. A 4xx refusal is
+// checked for a moved head with a re-read (provider.DecisionRefused).
 func (p *Provider) SetReviewDecision(ctx context.Context, ref provider.PRRef, pr *provider.PullRequest, req provider.DecisionRequest) (*provider.DecisionResult, error) {
 	if err := provider.ValidateDecision(decisionCaps, req); err != nil {
 		return nil, err
@@ -51,7 +51,7 @@ func (p *Provider) SetReviewDecision(ctx context.Context, ref provider.PRRef, pr
 		CommitID string `json:"commit_id"`
 		Event    string `json:"event"`
 		Body     string `json:"body,omitempty"`
-	}{CommitID: req.HeadSHA, Event: event, Body: req.Body}
+	}{CommitID: req.HeadSHA, Event: event, Body: provider.DecisionBody(req.Body)}
 	var out apiPostedReview
 	if err := p.client.SendJSON(ctx, http.MethodPost, pp+"/reviews", in, &out); err != nil {
 		return nil, provider.DecisionRefused(ctx, err, req.HeadSHA, func(ctx context.Context) (*provider.PullRequest, error) {

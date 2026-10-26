@@ -5,7 +5,16 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.7.0-rc.1]
+
+First 2.7 release candidate (the npm dist-tag `next`; `latest` stays on 2.6.0).
+Review decisions (X-47): a new, opt-in tool records the user's own approval or
+change request on a pull request, deterministically and only at the commit that
+was reviewed. It is off by default and stdio only. Nothing in the tools or the
+configuration of 2.6.0 is removed or renamed.
+
+Not verified live yet. The acceptance (record to follow) needs two identities
+per provider, because a decision on your own pull request is refused by design.
 
 ### Added
 

@@ -218,6 +218,11 @@ type ctGitHub struct {
 	// job token; userReads counts those requests.
 	refuseUser bool
 	userReads  int
+	// decisions are the reviews the token's user submitted with a
+	// decision, listed after the Spec's; answerState, when set, is the
+	// state a decision's review is answered with.
+	decisions   []any
+	answerState string
 }
 
 type ctInline struct {
@@ -314,7 +319,7 @@ func (g *ctGitHub) reviewsJSON() []any {
 		}
 		out = append(out, m)
 	}
-	return out
+	return append(out, g.decisions...)
 }
 
 func (g *ctGitHub) prJSON() map[string]any {
@@ -730,6 +735,8 @@ func (g *ctGitHub) serveComments(w http.ResponseWriter, r *http.Request, path st
 			out = append(out, g.issueJSON(c))
 		}
 		g.ctPage(w, r, out, ctRepoByID+"/issues/7/comments")
+	case post && path == ctRepo+"/issues/7/comments" && g.pr.Env.Decision.CommentStatus != 0:
+		contract.WriteError(w, g.pr.Env.Decision.CommentStatus)
 	case post && path == ctRepo+"/issues/7/comments":
 		body, ok := ctBody(w, r)
 		if !ok {
@@ -909,8 +916,15 @@ func (g *ctGitHub) serveInline(w http.ResponseWriter, r *http.Request, path stri
 			Body     *string      `json:"body"`
 			Comments []ctPosition `json:"comments"`
 		}
-		if json.NewDecoder(r.Body).Decode(&in) != nil || in.CommitID != g.pr.HeadSHA || in.Event != "COMMENT" ||
-			in.Body != nil || len(in.Comments) == 0 {
+		if json.NewDecoder(r.Body).Decode(&in) != nil {
+			contract.WriteError(w, http.StatusBadRequest)
+			return true
+		}
+		if len(in.Comments) == 0 && in.Event != "COMMENT" {
+			g.decide(w, in.CommitID, in.Event, in.Body)
+			return true
+		}
+		if in.CommitID != g.pr.HeadSHA || in.Event != "COMMENT" || in.Body != nil || len(in.Comments) == 0 {
 			g.t.Errorf("unexpected review request: commit %q, event %q, body set %v, %d comments",
 				in.CommitID, in.Event, in.Body != nil, len(in.Comments))
 			contract.WriteError(w, http.StatusUnprocessableEntity)
@@ -964,4 +978,59 @@ func (g *ctGitHub) serveInline(w http.ResponseWriter, r *http.Request, path stri
 		return false
 	}
 	return true
+}
+
+// decide answers a review without comments, modelled on GitHub: an
+// empty event leaves a PENDING review, APPROVE and REQUEST_CHANGES submit
+// one (REQUEST_CHANGES needs a body), commit_id must name a commit of the
+// pull request, and the author cannot review their own pull request (422).
+// Env.Decision overrides the answer.
+func (g *ctGitHub) decide(w http.ResponseWriter, commitID, event string, body *string) {
+	if d := g.pr.Env.Decision; d.Status != 0 {
+		if d.MovedHead != "" {
+			g.pr.HeadSHA = d.MovedHead
+		}
+		contract.WriteError(w, d.Status)
+		return
+	}
+	text := ""
+	if body != nil {
+		text = *body
+	}
+	state := map[string]string{"": "PENDING", "APPROVE": "APPROVED", "REQUEST_CHANGES": "CHANGES_REQUESTED"}[event]
+	switch {
+	case state == "", commitID != g.pr.HeadSHA && commitID != ctOldCommit, g.pr.TokenUser.ID == g.pr.Author.ID,
+		event == "REQUEST_CHANGES" && strings.TrimSpace(text) == "":
+		contract.WriteError(w, http.StatusUnprocessableEntity)
+		return
+	}
+	if g.answerState != "" {
+		state = g.answerState
+	}
+	id := g.nextID
+	g.nextID++
+	rev := map[string]any{"id": id, "user": ctUser(g.pr.TokenUser), "body": text, "state": state, "commit_id": commitID,
+		"html_url": "https://github.example.com/octo/demo/pull/7#pullrequestreview-" + strconv.FormatInt(id, 10)}
+	if state != "PENDING" {
+		rev["submitted_at"] = time.Now().UTC().Format(time.RFC3339)
+		g.decisions = append(g.decisions, rev)
+	}
+	ctJSON(w, http.StatusOK, rev)
+}
+
+// DecisionRequest implements contract.DecisionExpecter: POST
+// .../pulls/{n}/reviews with commit_id, the event and the body (left out
+// when empty).
+func (ctFixture) DecisionRequest(spec contract.Spec, d provider.Decision, body string) contract.WriteRequest {
+	in := map[string]any{"commit_id": spec.HeadSHA, "event": map[provider.Decision]string{
+		provider.DecisionApprove: "APPROVE", provider.DecisionRequestChanges: "REQUEST_CHANGES"}[d]}
+	if body != "" {
+		in["body"] = body
+	}
+	return contract.WriteRequest{Method: http.MethodPost, Path: ctPull + "/reviews", Body: in}
+}
+
+// DecisionState implements contract.DecisionExpecter.
+func (ctFixture) DecisionState(d provider.Decision) string {
+	return map[provider.Decision]string{provider.DecisionApprove: "APPROVED", provider.DecisionRequestChanges: "CHANGES_REQUESTED"}[d]
 }

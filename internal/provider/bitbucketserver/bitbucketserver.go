@@ -248,11 +248,13 @@ func (*Provider) Kind() provider.Kind { return provider.KindBitbucketServer }
 
 // Capabilities implements provider.Provider. Bitbucket Server has no issue
 // tracker: Issues is false and the provider does not implement
-// provider.IssueReader.
+// provider.IssueReader. The participant status takes every decision
+// (decision.go).
 func (*Provider) Capabilities() provider.Capabilities {
 	return provider.Capabilities{
 		GFM: false, MarkdownTables: true, Labels: false, InlineComments: true,
 		InlineThreadResolution: true, GeneralThreadResolution: true, DescriptionEdit: true,
+		Decisions: decisionCaps,
 	}
 }
 
@@ -304,26 +306,35 @@ type apiPR struct {
 	State       string `json:"state"`
 	Author      struct {
 		User struct {
+			ID          int64  `json:"id"`
 			Name        string `json:"name"`
 			DisplayName string `json:"displayName"`
 		} `json:"user"`
 	} `json:"author"`
 	// Version is the PR's optimistic-locking counter; UpdatePullRequest
 	// sends it back.
-	Version   *int  `json:"version"`
-	Draft     *bool `json:"draft"`
-	Reviewers []struct {
-		User               apiPerson `json:"user"`
-		Status             string    `json:"status"`
-		LastReviewedCommit string    `json:"lastReviewedCommit"`
-	} `json:"reviewers"`
-	FromRef apiRef `json:"fromRef"`
-	ToRef   apiRef `json:"toRef"`
-	Links   struct {
+	Version   *int             `json:"version"`
+	Draft     *bool            `json:"draft"`
+	Reviewers []apiParticipant `json:"reviewers"`
+	// Participants are the users who took part without being asked to
+	// review; a participant status PUT (decision.go) adds the token's user
+	// here when they are not a reviewer.
+	Participants []apiParticipant `json:"participants"`
+	FromRef      apiRef           `json:"fromRef"`
+	ToRef        apiRef           `json:"toRef"`
+	Links        struct {
 		Self []struct {
 			Href string `json:"href"`
 		} `json:"self"`
 	} `json:"links"`
+}
+
+// apiParticipant is an entry of reviewers[] or participants[] of a PR
+// payload.
+type apiParticipant struct {
+	User               apiPerson `json:"user"`
+	Status             string    `json:"status"`
+	LastReviewedCommit string    `json:"lastReviewedCommit"`
 }
 
 type apiCommit struct {
@@ -360,6 +371,10 @@ func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*pro
 	if len(in.Links.Self) > 0 {
 		webURL = in.Links.Self[0].Href
 	}
+	authorID := ""
+	if in.Author.User.ID > 0 {
+		authorID = strconv.FormatInt(in.Author.User.ID, 10)
+	}
 	version := ""
 	if in.Version != nil {
 		version = strconv.Itoa(*in.Version)
@@ -369,6 +384,7 @@ func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*pro
 		Title:        in.Title,
 		Description:  in.Description,
 		Author:       author,
+		AuthorID:     authorID,
 		SourceBranch: in.FromRef.DisplayID,
 		TargetBranch: in.ToRef.DisplayID,
 		HeadSHA:      in.FromRef.LatestCommit,

@@ -56,6 +56,12 @@ The structured result has the same facts:
 | `notes` | fixed sentences about parts that could not be read, and the related pull request notes below |
 | `related` | the related pull requests of the call, in argument order; `[]` without the argument (see below) |
 
+## Decisions made with `pr_review_decision`
+
+A decision made with [`pr_review_decision`](decision.md) is the token user's own,
+so `pr_info` lists it as theirs, like a decision made in the web UI. It carries
+no review-mcp marker and is never counted as review-mcp's own activity.
+
 ## Related pull requests
 
 `related` takes up to four pull request or repository URLs, on any configured
@@ -136,16 +142,21 @@ Rules:
 | Fact | Source |
 |---|---|
 | title, author, state, `draft`, branches, head, merge base | `GET .../pull-requests/{id}` |
-| reviewers and their states, `lastReviewedCommit` | `reviewers[]` of the same payload (read again) |
+| reviewers and their states, `lastReviewedCommit` | `reviewers[]` and the decided `participants[]` of the same payload (read again) |
 | mergeable, blockers, required approvals | `GET .../pull-requests/{id}/merge` (open pull requests only) |
 
 Rules:
 
-- Only `reviewers[]` is listed. People who took part but are not reviewers
-  are not. `APPROVED` is `approved`, `NEEDS_WORK` is `changes_requested`,
-  `UNAPPROVED` (and any other status) is `pending`.
-- Every listed reviewer is `requested: true`: Bitbucket's reviewers are the
-  people asked to review.
+- `reviewers[]` is listed, and so are the participants who decided without
+  being asked: a participant who approved (`APPROVED`) or asked for changes
+  (`NEEDS_WORK`) but is not a requested reviewer is listed with
+  `requested: false`, and their approval is counted in `approvals`. (Setting
+  your status through `pr_review_decision` makes you such a participant.)
+  Participants who only commented are not listed. A user in both
+  lists is listed once, as a reviewer. `APPROVED` is `approved`, `NEEDS_WORK` is
+  `changes_requested`, `UNAPPROVED` (and any other status) is `pending`.
+- A reviewer from `reviewers[]` is `requested: true`: Bitbucket's reviewers are
+  the people asked to review.
 - `stale` is true when an approving or changes-requesting reviewer's
   `lastReviewedCommit` is present and is not the head commit. The payload has
   no review time, so `at` is omitted.
@@ -247,8 +258,9 @@ Rules:
   `detailed_merge_status` is `null` with the note "The merge status could not
   be read." The "unresolved discussions" blocker needs the project setting
   "All threads must be resolved".
-- review-mcp never approves, so it has no review of its own to leave out; its
-  comments are counted under `review_mcp_activity`.
+- review-mcp's own comments are never approvals, so it has no review of its own
+  to leave out; they are counted under `review_mcp_activity`. A decision made
+  with `pr_review_decision` is the user's own and is listed as a reviewer.
 
 See [GitLab](gitlab.md#pr_info).
 
@@ -315,8 +327,9 @@ look like a person looking at the change. So:
   line typed by someone else counts for nothing.
 - A plain review by the same account without a marker, such as an approval you
   gave with that token yourself, is a reviewer.
-- review-mcp never approves or requests changes, so its own activity can never
-  change `approvals`.
+- review-mcp's own activity (the overview, inline findings) is never an approval
+  or a change request, so it can never change `approvals`. A decision made with
+  `pr_review_decision` is the user's own and does.
 
 If the token's user cannot be read, nothing can be excluded: the result says
 so in `notes`, `review_mcp_activity` is `null`, and reviews by that user may

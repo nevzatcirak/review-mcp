@@ -247,10 +247,12 @@ func (*Provider) Kind() provider.Kind { return provider.KindGitHub }
 // both resolution flags stay false. Inline comments can carry a native
 // suggestion block that replaces the comment's whole range (start_line to
 // line, SuggestionStyleRange). The title and the description can be edited
-// (a partial PATCH, no version).
+// (a partial PATCH, no version). A review approves or requests changes
+// (decision.go).
 func (*Provider) Capabilities() provider.Capabilities {
 	return provider.Capabilities{GFM: true, MarkdownTables: true, Labels: true, InlineComments: true,
-		SuggestionBlocks: true, SuggestionStyle: provider.SuggestionStyleRange, DescriptionEdit: true, Issues: true}
+		SuggestionBlocks: true, SuggestionStyle: provider.SuggestionStyleRange, DescriptionEdit: true, Issues: true,
+		Decisions: decisionCaps}
 }
 
 // BaseStrategies returns the provider.PullRequest.BaseStrategy values this
@@ -325,6 +327,7 @@ func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*pro
 	pr := &provider.PullRequest{
 		Title:          in.Title,
 		Author:         in.User.Login,
+		AuthorID:       userID(&in.User),
 		SourceBranch:   in.Head.Ref,
 		TargetBranch:   in.Base.Ref,
 		HeadSHA:        in.Head.SHA,

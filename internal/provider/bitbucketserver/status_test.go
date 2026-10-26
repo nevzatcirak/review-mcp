@@ -51,9 +51,10 @@ func veto(summary string) map[string]any {
 	return map[string]any{"summaryMessage": summary, "detailedMessage": vetoSecret + " " + summary}
 }
 
-// TestReviewStatusReviewers: statuses map to states; every listed reviewer
-// is requested; a reviewed commit that is not the head makes a decided
-// state stale; a pending reviewer is never stale.
+// TestReviewStatusReviewers: statuses map to states; every reviewers[]
+// entry is requested, and a decided participant is listed after them, not
+// requested; a reviewed commit that is not the head makes a decided state
+// stale; a pending reviewer is never stale.
 func TestReviewStatusReviewers(t *testing.T) {
 	f := newFake(t, "/bitbucket")
 	f.statusFixture(map[string]any{
@@ -64,29 +65,39 @@ func TestReviewStatusReviewers(t *testing.T) {
 			breviewer("dan", "", "UNAPPROVED", "oldsha"),
 			breviewer("eve", "", "SOMETHING_NEW", ""),
 		},
-		// A participant that is not a reviewer is not listed.
-		"participants": []any{map[string]any{"user": map[string]any{"name": "pat"}, "role": "PARTICIPANT", "status": "APPROVED"}},
+		// A decided participant that is not a reviewer is listed, not
+		// requested (V-14 §2.7); an undecided one is not; a user in both
+		// lists keeps the reviewers[] entry.
+		"participants": []any{
+			map[string]any{"user": map[string]any{"name": "pat"}, "role": "PARTICIPANT", "status": "APPROVED"},
+			map[string]any{"user": map[string]any{"id": 77, "name": "rob"}, "role": "PARTICIPANT", "status": "NEEDS_WORK", "lastReviewedCommit": "oldsha"},
+			map[string]any{"user": map[string]any{"name": "quinn"}, "role": "PARTICIPANT", "status": "UNAPPROVED"},
+			map[string]any{"user": map[string]any{"id": 3, "name": "amy"}, "role": "PARTICIPANT", "status": "NEEDS_WORK"},
+		},
 	}, map[string]any{"canMerge": true, "conflicted": false, "vetoes": []any{}})
 	st := bbsStatus(t, f)
 
 	want := []struct {
-		login string
-		state provider.ReviewState
-		stale bool
+		login     string
+		state     provider.ReviewState
+		stale     bool
+		requested bool
 	}{
-		{"amy", provider.ReviewApproved, false},
-		{"ben", provider.ReviewApproved, true},
-		{"cat", provider.ReviewChangesRequested, false},
-		{"dan", provider.ReviewPending, false},
-		{"eve", provider.ReviewPending, false},
+		{"amy", provider.ReviewApproved, false, true},
+		{"ben", provider.ReviewApproved, true, true},
+		{"cat", provider.ReviewChangesRequested, false, true},
+		{"dan", provider.ReviewPending, false, true},
+		{"eve", provider.ReviewPending, false, true},
+		{"pat", provider.ReviewApproved, false, false},
+		{"rob", provider.ReviewChangesRequested, true, false},
 	}
 	if len(st.Reviewers) != len(want) {
 		t.Fatalf("reviewers = %+v", st.Reviewers)
 	}
 	for i, w := range want {
 		r := st.Reviewers[i]
-		if r.User.Name != w.login || r.State != w.state || r.Stale != w.stale || !r.Requested || !r.At.IsZero() {
-			t.Errorf("reviewer %d = %+v, want %+v (requested, no time)", i, r, w)
+		if r.User.Name != w.login || r.State != w.state || r.Stale != w.stale || r.Requested != w.requested || !r.At.IsZero() {
+			t.Errorf("reviewer %d = %+v, want %+v (no time)", i, r, w)
 		}
 	}
 	if st.Reviewers[0].DisplayName != "Amy A" {

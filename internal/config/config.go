@@ -29,6 +29,7 @@ type Config struct {
 	Context         Context         `toml:"context" json:"context"`
 	RepoConfig      RepoConfig      `toml:"repo_config" json:"repo_config"`
 	Related         Related         `toml:"related" json:"related"`
+	Decision        Decision        `toml:"decision" json:"decision"`
 	Log             Log             `toml:"log" json:"log"`
 	Serve           Serve           `toml:"serve" json:"serve"`
 	Secrets         Secrets         `toml:"-" json:"secrets"`
@@ -350,6 +351,37 @@ type RepoConfig struct {
 // DefaultRepoConfigPath is the default of repo_config.path.
 const DefaultRepoConfigPath = ".review-mcp.toml"
 
+// Decision configures pr_review_decision (X-47, v2.7 spec V-14 §2.1):
+// the token's user's own review decision. Both keys are operator keys: a
+// repository config cannot set them (they are not in the X-40 allow-list).
+type Decision struct {
+	// Enabled registers pr_review_decision; off by default. It is a startup
+	// error in serve mode (ServeDecisionSentence).
+	Enabled bool `toml:"enabled" json:"enabled"`
+	// Allowed are the decisions the tool may make: DecisionApprove,
+	// DecisionRequestChanges and DecisionClear, each at most once. An empty
+	// list while Enabled is a configuration problem.
+	Allowed []string `toml:"allowed" json:"allowed"`
+}
+
+// The decisions of decision.allowed. They are the values of
+// provider.Decision; config does not import provider.
+const (
+	DecisionApprove        = "approve"
+	DecisionRequestChanges = "request_changes"
+	DecisionClear          = "clear"
+)
+
+// Allows reports whether d is in Allowed.
+func (d Decision) Allows(decision string) bool {
+	for _, a := range d.Allowed {
+		if a == decision {
+			return true
+		}
+	}
+	return false
+}
+
 // Log configures logging (stderr only).
 type Log struct {
 	Level string `toml:"level" json:"level"`
@@ -423,6 +455,7 @@ func Defaults() *Config {
 		}},
 		RepoConfig: RepoConfig{Enabled: true, Path: DefaultRepoConfigPath},
 		Related:    Related{MaxTokens: 8000, ContractGlobs: []string{}, MaxIdentifiers: DefaultRelatedIdentifiers},
+		Decision:   Decision{Allowed: []string{DecisionApprove, DecisionRequestChanges, DecisionClear}},
 		Log:        Log{Level: "info"},
 		Serve: Serve{
 			Listen:             DefaultServeListen,

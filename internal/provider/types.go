@@ -68,6 +68,10 @@ type PullRequest struct {
 	// BaseGitHubMergeBase, BaseGitHubBaseSHA and BaseGitLabDiffRefs. GetDiff
 	// uses BaseSHA and BaseStrategy as given.
 	BaseStrategy string
+	// AuthorID is the numeric user id of the pull request's author in
+	// decimal, for IsUser(CurrentUser(), AuthorID, Author); "" when the host
+	// did not report it. It is filled by GetPullRequest.
+	AuthorID string
 	// StartSHA is the revision the host's own diff starts from when the
 	// host reports one next to BaseSHA (GitLab's diff_refs.start_sha, the
 	// target branch's head when the diff was computed); "" otherwise. It is
@@ -256,6 +260,10 @@ type Capabilities struct {
 	// Issues: the host has an issue tracker that the provider reads (the
 	// Provider implements IssueReader; the contract suite checks this).
 	Issues bool
+	// Decisions: the review decisions the host's API supports for the
+	// token's own user (X-47). The Provider implements DecisionWriter
+	// exactly when it allows at least one (the contract suite checks this).
+	Decisions DecisionCaps
 }
 
 // NativeSuggestionStyle returns the suggestion style an inline comment may

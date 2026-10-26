@@ -1,6 +1,8 @@
 package contract
 
 import (
+	"bytes"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -18,9 +20,11 @@ func WriteError(w http.ResponseWriter, status int) {
 	http.Error(w, "fake server error "+Sentinel, status)
 }
 
-// request is one request a fake server received.
+// request is one request a fake server received. Body is the request
+// body of a write (any method other than GET and HEAD), nil otherwise.
 type request struct {
 	Method, Path string
+	Body         []byte
 }
 
 // requestLog records the requests of one served Spec.
@@ -30,10 +34,33 @@ type requestLog struct {
 	reqs    []request
 }
 
+// add records r. The body of a write is read and put back, so that the
+// fixture's handler still reads it.
 func (l *requestLog) add(r *http.Request) {
+	rec := request{Method: r.Method, Path: r.URL.EscapedPath()}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Body != nil {
+		b, _ := io.ReadAll(r.Body)
+		_ = r.Body.Close()
+		r.Body = io.NopCloser(bytes.NewReader(b))
+		rec.Body = b
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.reqs = append(l.reqs, request{r.Method, r.URL.EscapedPath()})
+	l.reqs = append(l.reqs, rec)
+}
+
+// writesFrom returns the write requests (any method other than GET and
+// HEAD) received after the first n requests, in order.
+func (l *requestLog) writesFrom(n int) []request {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	var out []request
+	for _, r := range l.reqs[n:] {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 func (l *requestLog) markStarted() {

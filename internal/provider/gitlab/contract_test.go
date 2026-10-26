@@ -205,6 +205,8 @@ type ctGitLab struct {
 	deleted   []int64
 	// puts are the bodies of the PUTs of the merge request, as sent.
 	puts []map[string]json.RawMessage
+	// approved is the token user's approval, set by the decisions.
+	approved bool
 }
 
 func ctUser(u contract.User) map[string]any {
@@ -372,7 +374,7 @@ func (g *ctGitLab) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		contract.WriteError(w, http.StatusUnauthorized)
 		return
 	}
-	if g.serveInline(w, r, path) || g.serveComments(w, r, path) || g.serveStatus(w, r, path) {
+	if g.serveInline(w, r, path) || g.serveComments(w, r, path) || g.serveStatus(w, r, path) || g.serveDecision(w, r, path) {
 		return
 	}
 	if r.Method != http.MethodGet {

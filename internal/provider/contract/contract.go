@@ -119,6 +119,7 @@ func Run(t *testing.T, f Fixture) {
 		{"file_at", s.fileAt},
 		{"list_dir", s.listDir},
 		{"issues", s.issues},
+		{"decision", s.decision},
 		{"errors", s.errorCases},
 	}
 	for _, c := range cases {

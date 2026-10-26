@@ -31,6 +31,8 @@ It never:
   own checkout is never read either, so the examples below have no checkout
   step;
 - posts anything without `--publish`;
+- approves, requests changes or clears a decision. `ci` has no decision flag
+  (see [Review decision](decision.md));
 - reads `GITHUB_TOKEN`, `CI_JOB_TOKEN` or any other CI token on its own. Only
   the `REVIEW_MCP_*` variables are read; the pipeline maps a secret to one of
   them explicitly;
@@ -205,6 +207,16 @@ or GitLab CI and never by the MCP server (`stdio`, `serve`).
 `describe --publish` writes to the pull request itself, not only to its
 comments; the rights are in
 [Setup: What each token needs](setup.md#what-each-token-needs).
+
+## When a merge must be gated
+
+CI mode never records a decision. A decision is the user's own, and an approval
+that nobody decided defeats a required-review rule. To stop a merge on what the
+review found, use the exit code instead: run `ci review` with
+[`--fail-on`](#--fail-on) and make the pipeline job a **required status check**
+of the target branch. Exit code 3 fails the job, and the host then blocks the
+merge until the problem is fixed. The review's findings stay in the overview
+comment for a person to judge.
 
 ## Examples
 

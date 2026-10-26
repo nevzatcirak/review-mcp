@@ -160,6 +160,8 @@ func (g *ctGitLab) serveComments(w http.ResponseWriter, r *http.Request, path st
 			items = append(items, g.discJSON(d))
 		}
 		g.ctPage(w, r, items, ctMRByID+"/discussions", ctPageSize, "per_page=100&")
+	case path == ctMR+"/notes" && r.Method == http.MethodPost && g.pr.Env.Decision.CommentStatus != 0:
+		contract.WriteError(w, g.pr.Env.Decision.CommentStatus)
 	case path == ctMR+"/notes" && r.Method == http.MethodPost:
 		g.initDiscs()
 		body, ok := g.readBody(w, r)

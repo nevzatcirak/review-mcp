@@ -262,12 +262,14 @@ func (*Provider) Kind() provider.Kind { return provider.KindGitLab }
 // one line (inline.go), and a native suggestion block sits on that line
 // and says how many lines below it it replaces ("suggestion:-0+N",
 // SuggestionStyleOffset). A description (and title) can be edited
-// (update.go); the draft state of a merge request follows its title.
+// (update.go); the draft state of a merge request follows its title. The
+// token's user can approve and remove their approval (decision.go).
 func (*Provider) Capabilities() provider.Capabilities {
 	return provider.Capabilities{
 		GFM: true, MarkdownTables: true, Labels: true, InlineComments: true,
 		SuggestionBlocks: true, SuggestionStyle: provider.SuggestionStyleOffset, QuickActions: true,
 		InlineThreadResolution: true, GeneralThreadResolution: true, DescriptionEdit: true, Issues: true,
+		Decisions: decisionCaps,
 	}
 }
 
@@ -321,6 +323,14 @@ type apiUser struct {
 	ID       int64  `json:"id"`
 	Username string `json:"username"`
 	Name     string `json:"name"`
+}
+
+// positiveID is id in decimal, or "" when the host sent none.
+func positiveID(id int64) string {
+	if id <= 0 {
+		return ""
+	}
+	return strconv.FormatInt(id, 10)
 }
 
 type apiDiffRefs struct {
@@ -444,6 +454,7 @@ func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*pro
 	pr := &provider.PullRequest{
 		Title:               in.Title,
 		Author:              in.Author.Username,
+		AuthorID:            positiveID(in.Author.ID),
 		SourceBranch:        in.SourceBranch,
 		TargetBranch:        in.TargetBranch,
 		HeadSHA:             in.DiffRefs.HeadSHA,

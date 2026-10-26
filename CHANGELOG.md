@@ -5,6 +5,29 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `pr_review_decision`: records the token user's own review decision on a
+  pull request: `approve`, `request_changes` or `clear` (take your decision
+  back; not on every host). No LLM call, and no decision is ever derived from
+  findings. The reviewed `head_sha` is required; a moved head, a pull request
+  that is not open and the user's own pull request are refused before anything
+  is written, and an unchanged state writes nothing. Not available in `serve`
+  or in CI mode. See [Review decision](docs/decision.md).
+- `decision.enabled` (`REVIEW_MCP_DECISION_ENABLED`, default `false`)
+  registers the tool, and `decision.allowed` (`REVIEW_MCP_DECISION_ALLOWED`,
+  default all three decisions) limits which decisions it may make. Both are
+  operator keys: a repository config cannot set them, and `decision.enabled`
+  in `serve` is a startup error.
+
+### Changed
+
+- `pr_info` on Bitbucket Server lists the participants who approved or asked
+  for changes without being requested reviewers, with `requested: false`, and
+  counts their approvals.
+
 ## [2.6.0]
 
 Ninth stable release. The code is the same as `2.6.0-rc.2`. The release

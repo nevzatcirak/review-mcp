@@ -9,16 +9,23 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 )
 
-// prReviewers maps reviewers[] of the PR payload. Participants that are not
-// reviewers are not part of the payload's reviewers[] and are not listed. A
-// status other than the three known ones is treated as pending. Stale is
-// true when a decided reviewer's lastReviewedCommit is present and differs
-// from head.
+// prReviewers maps reviewers[] of the PR payload, then the decided
+// participants[] (v2.7 spec V-14 §2.7): a user who approved or asked for
+// changes without being a requested reviewer is listed with Requested
+// false, because the participant status PUT puts them there. An UNAPPROVED
+// participant (a commenter) is not listed. reviewers[] is listed as it is;
+// a participant already listed (by id, else by name in any case) is not
+// listed again, so when a payload names one user in both lists the
+// reviewers[] entry wins. A
+// reviewer status other than the three known ones is treated as pending.
+// Stale is true when a decided entry's lastReviewedCommit is present and
+// differs from head.
 func prReviewers(in *apiPR, head string) []provider.Reviewer {
-	out := make([]provider.Reviewer, 0, len(in.Reviewers))
-	for _, r := range in.Reviewers {
+	out := make([]provider.Reviewer, 0, len(in.Reviewers)+len(in.Participants))
+	seen := map[string]bool{}
+	add := func(r apiParticipant, requested bool) {
 		if r.User.Name == "" {
-			continue
+			return
 		}
 		u := provider.User{Name: r.User.Name}
 		if r.User.ID > 0 {
@@ -31,10 +38,24 @@ func prReviewers(in *apiPR, head string) []provider.Reviewer {
 		case "NEEDS_WORK":
 			state = provider.ReviewChangesRequested
 		}
+		key := "name:" + strings.ToLower(u.Name)
+		if u.ID != "" {
+			key = "id:" + u.ID
+		}
+		if !requested && (seen[key] || state == provider.ReviewPending) {
+			return
+		}
+		seen[key] = true
 		out = append(out, provider.Reviewer{
-			User: u, DisplayName: r.User.DisplayName, Requested: true, State: state,
+			User: u, DisplayName: r.User.DisplayName, Requested: requested, State: state,
 			Stale: state != provider.ReviewPending && r.LastReviewedCommit != "" && r.LastReviewedCommit != head,
 		})
+	}
+	for _, r := range in.Reviewers {
+		add(r, true)
+	}
+	for _, r := range in.Participants {
+		add(r, false)
 	}
 	return out
 }
@@ -50,9 +71,9 @@ type apiMergeStatus struct {
 
 // GetReviewStatus implements provider.Provider.
 //
-// Reviewers come from reviewers[] of the PR payload. Every listed reviewer
-// is a requested reviewer (Bitbucket Server's reviewers are asked to review),
-// so Requested is always true. Stale is true when a decided reviewer's
+// Reviewers come from reviewers[] of the PR payload, which are requested
+// reviewers (Requested true), and from its decided participants[]
+// (Requested false; see prReviewers). Stale is true when a decided reviewer's
 // lastReviewedCommit is present and differs from the head commit. The
 // payload has no review time, so At is zero. Review-mcp never casts a
 // Bitbucket review, so there is nothing to exclude and opts is not used.

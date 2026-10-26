@@ -89,8 +89,8 @@ works, and keep it in a secret manager or your shell profile, never in a file
 that is checked in.
 
 Use a read-only token to start. `pr_review`, `pr_ask`, `pr_describe` and
-`pr_improve` need write access only when you pass `publish=true`, and `pr_comment_reply` and
-`pr_comment_create` always write.
+`pr_improve` need write access only when you pass `publish=true`, and `pr_comment_reply`,
+`pr_comment_create` and `pr_review_decision` always write.
 
 ### What each token needs
 
@@ -98,6 +98,7 @@ Use a read-only token to start. `pr_review`, `pr_ask`, `pr_describe` and
 |---|---|
 | Read only: `pr_comments`, `pr_info`, `pr_review`, `pr_ask`, `pr_describe` and `pr_improve` with `publish=false` | the read scopes below |
 | Read and write: `publish=true`, `pr_comment_reply`, `pr_comment_create` | the read scopes plus the write scope |
+| `pr_review_decision` (off unless `decision.enabled`; see [Review decision](decision.md)) | the read scopes plus the write scope, and it is the token's own user who decides. Gitea: `write:repository` (the scope that already posts reviews). Bitbucket Server: Repository read is enough, because the participant status is your own. GitHub: fine-grained **Pull requests: Read and write** (already needed for comments); classic `repo` or `public_repo`. GitLab: `api`. See the endpoint rows below |
 | `pr_improve` with `publish=true` | the same as `pr_review` with `publish=true`: comment write for the overview (Gitea `write:issue`) and the write scope for the inline comments (Gitea `write:repository`); see [Suggesting code changes](improve.md#permissions) |
 | `pr_describe` with `publish=true` and `publish_mode=description` (also `update_title`) | the read scopes plus write access to the pull request itself, not only to its comments (see the `PATCH` and `PUT` rows below) |
 | CI results (`pr_info`, and `pr_review` unless `review.ci_status` is false), the guidelines file and the file tree (`pr_review`, `pr_improve`) | Gitea and Bitbucket Server: nothing beyond the read scopes (the commit status or build status, and file contents at the target branch). GitHub: **Commit statuses: Read** and **Checks: Read** for the CI results (fine-grained token; a classic token's `repo` scope covers them), **Contents: Read** for the guidelines and the tree. See the endpoint tables below |
@@ -139,6 +140,7 @@ Endpoints the Gitea provider calls (under `{base_url}/api/v1/repos/{owner}/{repo
 | `GET /raw/{path}?ref={base_sha}` and `GET /contents[/{dir}]?ref={base_sha}` | the guidelines file and the listing of the touched directories at the base revision (`pr_review`, `pr_improve`) | `read:repository` (verify at the 2F acceptance) | `internal/provider/gitea/reads.go` (`GetFileAt`, `ListDir`) |
 | `GET /pulls/{n}/reviews` and `GET /pulls/{n}/reviews/{id}/comments` | inline review comments (`pr_comments`, reply lookup); before posting inline comments, a check for a pending review of the token's user; after posting, the posted comments' links | `read:repository` | `internal/provider/gitea/comments.go` (`reviewComments`), `internal/provider/gitea/write.go` (`PostInlineComments`) |
 | `POST /pulls/{n}/reviews` | inline comments (`publish=true`, and `pr_comment_create` with `file` and `line`), posted as one review with event `COMMENT` on the head commit (one review per comment if that fails) | `write:repository` | `internal/provider/gitea/write.go` (`PostInlineComments`) |
+| `POST /pulls/{n}/reviews` with `commit_id`, `event` (`APPROVED` or `REQUEST_CHANGES`) and an optional `body` | `pr_review_decision`: approve or request changes as the token's user, with the body as the review's own. Gitea has no clear. A review without an event would stay a draft, so the event is never empty | `write:repository` | `internal/provider/gitea/decision.go` (`SetReviewDecision`) |
 | `DELETE /pulls/{n}/reviews/{id}` | delete a pending review of the token's user that a failed post left behind | `write:repository` | `internal/provider/gitea/write.go` (`deletePending`) |
 | `GET /issues/{n}/comments` | PR-level comments (`pr_comments`) | `read:issue` | `internal/provider/gitea/comments.go` (`ListThreads`) |
 | `GET /issues/comments/{id}` | find the comment a reply refers to (`pr_comment_reply`); re-read a comment and check its author before editing it | `read:issue` | `internal/provider/gitea/comments.go` (`ReplyToComment`), `internal/provider/gitea/write.go` (`EditComment`) |
@@ -170,6 +172,9 @@ no per-endpoint scopes.
 | Read only | Project read or Repository read | verify at V1 acceptance (item A3) |
 | Read and write | Repository write | verify at V1 acceptance (item A3) |
 
+`pr_review_decision` needs only Repository read: it changes the token user's
+own participant status, which Bitbucket lets any user with read access do.
+
 Endpoints the Bitbucket Server provider calls (under `{base_url}`, which
 includes your context path):
 
@@ -187,6 +192,8 @@ includes your context path):
 | `GET .../pull-requests/{id}/activities` | comment threads (`pr_comments`, reply lookup) | read | `internal/provider/bitbucketserver/comments.go` (`ListThreads`) |
 | `GET .../pull-requests/{id}` (again) and `GET .../pull-requests/{id}/merge` | `pr_info`: the reviewers with their status, and whether the pull request can be merged and why not (an open pull request only) | read | `internal/provider/bitbucketserver/status.go` (`GetReviewStatus`) |
 | `POST .../pull-requests/{id}/comments` | PR-level comment (`publish=true`, `pr_comment_create` without a file) | write | `internal/provider/bitbucketserver/bitbucketserver.go` (`PostComment`) |
+| `GET /rest/api/1.0/users?filter={name}` | `pr_review_decision`: the slug of the token's user (the entry whose `name` matches exactly), because the slug is not always the user name | read | `internal/provider/bitbucketserver/decision.go` (`userSlug`) |
+| `PUT .../pull-requests/{id}/participants/{userSlug}` with `status` (`APPROVED`, `NEEDS_WORK` or `UNAPPROVED`) and `lastReviewedCommit` | `pr_review_decision`: approve, request changes or clear as the token's user. The server checks `lastReviewedCommit` against the latest commit. `UNAPPROVED` also resets a change request. The body, if any, follows as a general comment (the `POST .../comments` row) | read: the status is the user's own, so Repository read is enough (verify at the v2.7 acceptance) | `internal/provider/bitbucketserver/decision.go` (`SetReviewDecision`) |
 | `POST .../pull-requests/{id}/comments` with `parent` | reply inside a thread (`pr_comment_reply`) | write | `internal/provider/bitbucketserver/comments.go` (`ReplyToComment`) |
 | `POST .../pull-requests/{id}/comments` with `anchor` | inline comment on a changed or context line, one request per comment (`publish=true`, and `pr_comment_create` with `file` and `line`) | read (to be confirmed at A3) | `internal/provider/bitbucketserver/write.go` (`PostInlineComments`) |
 | `GET .../pull-requests/{id}/comments/{commentId}` | a comment's version and author, read before editing it | read | `internal/provider/bitbucketserver/write.go` (`EditComment`) |
@@ -259,6 +266,7 @@ Endpoints the GitHub provider calls (under the API base; `{r}` is
 | `GET {r}/issues/comments/{id}`, `GET {r}/pulls/comments/{id}`, `GET {r}/pulls/{n}/reviews/{id}` | find the comment a reply or an edit refers to; read a comment and check its author before editing it | Pull requests read | `internal/provider/github/comments.go` (`locate`) |
 | `GET /user` | the token's own user; not called when `github.self_login` is set | any token except a GitHub App's (the job's `GITHUB_TOKEN` included) | `internal/provider/github/github.go` (`CurrentUser`) |
 | `POST {r}/pulls/{n}/reviews` | inline comments of `publish=true` and of `pr_comment_create` with `file` and `line`, as one review with event `COMMENT` on the head commit and no body | Pull requests write | `internal/provider/github/inline.go` (`PostInlineComments`) |
+| `POST {r}/pulls/{n}/reviews` with `commit_id`, `event` (`APPROVE` or `REQUEST_CHANGES`) and an optional `body` | `pr_review_decision`: approve or request changes as the token's user, with the body as the review's own (required for `REQUEST_CHANGES`). GitHub has no clear. The event is never empty, because a review without one stays pending | Pull requests write | `internal/provider/github/decision.go` (`SetReviewDecision`) |
 | `POST {r}/pulls/{n}/comments` | one inline comment alone, only after GitHub refused the whole review with a 422 | Pull requests write | `internal/provider/github/inline.go` |
 | `GET {r}/pulls/{n}/reviews/{id}/comments` | the ids and links of the posted comments; the markers of the token user's own reviews for `pr_info` | Pull requests read | `internal/provider/github/inline.go`, `status.go` |
 | `POST {r}/issues/{n}/comments` | a PR-level comment (`publish=true`, `pr_comment_create` without a file, and the quoting reply to a general comment) | Pull requests write | `internal/provider/github/comments.go` (`PostComment`) |
@@ -319,6 +327,8 @@ is `{p}/merge_requests/{iid}`):
 | `GET /user` | the token's own user (a bot for a project or group token) | read | `internal/provider/gitlab/gitlab.go` (`CurrentUser`) |
 | `GET {mr}/notes/{id}` | read a note and check its author before editing it | read | `internal/provider/gitlab/comments.go` (`EditComment`) |
 | `POST {mr}/notes` | a merge request comment (`publish=true`, `pr_comment_create` without a file) | write | `internal/provider/gitlab/comments.go` (`PostComment`) |
+| `POST {mr}/approve` with `sha` | `pr_review_decision`: approve as the token's user. GitLab answers 409 when `sha` is not the head. An auth error carries the hint that the user may not be an eligible approver or the project requires re-authentication to approve (`approval_password` is not supported). The body, if any, follows as a note | write (`api`) | `internal/provider/gitlab/decision.go` (`SetReviewDecision`) |
+| `POST {mr}/unapprove` | `pr_review_decision` with `clear`: remove the token user's own approval. It takes no body and no `sha` | write (`api`) | `internal/provider/gitlab/decision.go` (`SetReviewDecision`) |
 | `POST {mr}/discussions` | one inline discussion per finding or suggestion (`publish=true`, `pr_comment_create` with `file` and `line`) | write | `internal/provider/gitlab/inline.go` |
 | `POST {mr}/discussions/{id}/notes` | a reply inside a thread | write | `internal/provider/gitlab/comments.go` (`ReplyToComment`) |
 | `PUT {mr}/notes/{id}` | edit a note the token's user wrote (the overview of `pr_review` and `pr_improve`, the comment of `pr_describe`) | write | `internal/provider/gitlab/comments.go` (`EditComment`) |

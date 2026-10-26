@@ -206,11 +206,13 @@ func (p *Provider) CloseIdleConnections() {
 // Kind implements provider.Provider.
 func (*Provider) Kind() provider.Kind { return provider.KindGitea }
 
-// Capabilities implements provider.Provider.
+// Capabilities implements provider.Provider. A review approves or requests
+// changes (decision.go).
 func (*Provider) Capabilities() provider.Capabilities {
 	return provider.Capabilities{
 		GFM: true, MarkdownTables: true, Labels: true, InlineComments: true,
 		InlineThreadResolution: true, DescriptionEdit: true, Issues: true,
+		Decisions: decisionCaps,
 	}
 }
 
@@ -244,17 +246,15 @@ func prPath(ref provider.PRRef) (string, error) {
 }
 
 type apiPR struct {
-	Title     string `json:"title"`
-	Body      string `json:"body"`
-	State     string `json:"state"`
-	HTMLURL   string `json:"html_url"`
-	MergeBase string `json:"merge_base"`
-	Draft     *bool  `json:"draft"`
-	Merged    bool   `json:"merged"`
-	Mergeable *bool  `json:"mergeable"`
-	User      struct {
-		Login string `json:"login"`
-	} `json:"user"`
+	Title              string    `json:"title"`
+	Body               string    `json:"body"`
+	State              string    `json:"state"`
+	HTMLURL            string    `json:"html_url"`
+	MergeBase          string    `json:"merge_base"`
+	Draft              *bool     `json:"draft"`
+	Merged             bool      `json:"merged"`
+	Mergeable          *bool     `json:"mergeable"`
+	User               apiUser   `json:"user"`
 	RequestedReviewers []apiUser `json:"requested_reviewers"`
 	Head               struct {
 		Ref string `json:"ref"`
@@ -286,6 +286,7 @@ func (p *Provider) GetPullRequest(ctx context.Context, ref provider.PRRef) (*pro
 		Title:        in.Title,
 		Description:  in.Body,
 		Author:       in.User.Login,
+		AuthorID:     userID(&in.User),
 		SourceBranch: in.Head.Ref,
 		TargetBranch: in.Base.Ref,
 		HeadSHA:      in.Head.SHA,

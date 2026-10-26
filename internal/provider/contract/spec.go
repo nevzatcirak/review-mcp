@@ -212,8 +212,26 @@ type Env struct {
 	// endpoint (Bitbucket Server's legacy build status) serves the checks
 	// only there; any other fixture ignores it.
 	LegacyChecks bool
+	// Decision sets how the host answers a review decision (the decision
+	// case).
+	Decision DecisionEnv
 
 	log *requestLog
+}
+
+// DecisionEnv sets how a fixture's host answers a review decision and the
+// comment that may follow it. The zero value answers both as the host
+// does.
+type DecisionEnv struct {
+	// Status, when set, makes the host refuse every decision request with
+	// it, changing nothing else.
+	Status int
+	// MovedHead, when set with Status, is the pull request's head from the
+	// refusal on: someone pushed a commit just before the decision arrived.
+	MovedHead string
+	// CommentStatus, when set, makes the host refuse every new general
+	// comment with it.
+	CommentStatus int
 }
 
 // Failure makes the fake server fail every request: with HTTP Status and a

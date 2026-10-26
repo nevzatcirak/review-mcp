@@ -81,8 +81,19 @@ func (ctFixture) Traits() contract.Traits {
 
 func (ctFixture) Serve(t *testing.T, pr contract.Spec) (provider.Provider, provider.PRRef) {
 	t.Helper()
+	return serveCtGitea(t, pr, nil)
+}
+
+// serveCtGitea serves pr through a new fake that tweak, when set, adjusts
+// first.
+func serveCtGitea(t *testing.T, pr contract.Spec, tweak func(*ctGitea)) (provider.Provider, provider.PRRef) {
+	t.Helper()
+	g := newCtGitea(t, pr)
+	if tweak != nil {
+		tweak(g)
+	}
 	cfg := config.Defaults()
-	cfg.Gitea.BaseURL = contract.StartServer(t, pr, newCtGitea(t, pr))
+	cfg.Gitea.BaseURL = contract.StartServer(t, pr, g)
 	cfg.Gitea.WebURL = ctWeb
 	cfg.Secrets.GiteaToken = config.NewSecret(pr.Env.Token)
 	cfg.Diff.MaxFilesFullContent = pr.Env.MaxFiles
@@ -128,6 +139,9 @@ type ctGitea struct {
 	issue   []contract.Comment
 	reviews []*ctReview
 	nextID  int64
+	// answerState, when set, is the state a decision's review is answered
+	// with.
+	answerState string
 }
 
 func newCtGitea(t *testing.T, pr contract.Spec) *ctGitea {
@@ -508,6 +522,10 @@ func (g *ctGitea) serveIssueComments(w http.ResponseWriter, r *http.Request) {
 		}
 		ctPaged(w, r, out)
 	case http.MethodPost:
+		if s := g.pr.Env.Decision.CommentStatus; s != 0 {
+			contract.WriteError(w, s)
+			return
+		}
 		var in struct {
 			Body string `json:"body"`
 		}
@@ -577,15 +595,24 @@ func (g *ctGitea) serveReviews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Event    string `json:"event"`
-		CommitID string `json:"commit_id"`
+		Event    string  `json:"event"`
+		CommitID string  `json:"commit_id"`
+		Body     *string `json:"body"`
 		Comments []struct {
 			Path        string `json:"path"`
 			Body        string `json:"body"`
 			NewPosition int    `json:"new_position"`
 		} `json:"comments"`
 	}
-	if json.NewDecoder(r.Body).Decode(&in) != nil || in.Event != "COMMENT" || in.CommitID != g.pr.HeadSHA {
+	if json.NewDecoder(r.Body).Decode(&in) != nil {
+		contract.WriteError(w, http.StatusUnprocessableEntity)
+		return
+	}
+	if len(in.Comments) == 0 && in.Event != "COMMENT" {
+		g.decide(w, in.Event, in.Body)
+		return
+	}
+	if in.Event != "COMMENT" || in.CommitID != g.pr.HeadSHA {
 		g.t.Errorf("unexpected review request (event %q, commit %q)", in.Event, in.CommitID)
 		contract.WriteError(w, http.StatusUnprocessableEntity)
 		return
@@ -613,4 +640,57 @@ func ctAnchorable(files []contract.File, path string, line int) bool {
 		}
 	}
 	return false
+}
+
+// decide answers a review without comments, modelled on Gitea's
+// preparePullReviewType: APPROVED approves, REQUEST_CHANGES needs a body
+// that is not blank, neither is allowed to the author (422), and any other
+// event keeps a PENDING draft. The commit_id is not checked, as Gitea does
+// not. Env.Decision overrides the answer.
+func (g *ctGitea) decide(w http.ResponseWriter, event string, body *string) {
+	if d := g.pr.Env.Decision; d.Status != 0 {
+		if d.MovedHead != "" {
+			g.pr.HeadSHA = d.MovedHead
+		}
+		contract.WriteError(w, d.Status)
+		return
+	}
+	text := ""
+	if body != nil {
+		text = *body
+	}
+	state := "PENDING"
+	switch event {
+	case "APPROVED", "REQUEST_CHANGES":
+		if g.pr.TokenUser.ID == g.pr.Author.ID || (event == "REQUEST_CHANGES" && strings.TrimSpace(text) == "") {
+			contract.WriteError(w, http.StatusUnprocessableEntity)
+			return
+		}
+		state = event
+	}
+	if g.answerState != "" {
+		state = g.answerState
+	}
+	rv := &ctReview{id: g.nextID, user: g.pr.TokenUser, state: state, body: text, at: time.Now().UTC()}
+	g.nextID++
+	g.reviews = append(g.reviews, rv)
+	ctJSON(w, http.StatusOK, rv.json())
+}
+
+// DecisionRequest implements contract.DecisionExpecter: POST
+// .../pulls/{n}/reviews with commit_id, the event and the body (left out
+// when empty).
+func (ctFixture) DecisionRequest(spec contract.Spec, d provider.Decision, body string) contract.WriteRequest {
+	in := map[string]any{"commit_id": spec.HeadSHA, "event": ctDecisionState(d)}
+	if body != "" {
+		in["body"] = body
+	}
+	return contract.WriteRequest{Method: http.MethodPost, Path: ctPull + "/reviews", Body: in}
+}
+
+// DecisionState implements contract.DecisionExpecter.
+func (ctFixture) DecisionState(d provider.Decision) string { return ctDecisionState(d) }
+
+func ctDecisionState(d provider.Decision) string {
+	return map[provider.Decision]string{provider.DecisionApprove: "APPROVED", provider.DecisionRequestChanges: "REQUEST_CHANGES"}[d]
 }

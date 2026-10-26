@@ -28,6 +28,7 @@ func (c *Config) Clone() *Config {
 	cp.Ignore.Regex = slices.Clone(c.Ignore.Regex)
 	cp.Review.GuidelinesPaths = slices.Clone(c.Review.GuidelinesPaths)
 	cp.Related.ContractGlobs = slices.Clone(c.Related.ContractGlobs)
+	cp.Decision.Allowed = slices.Clone(c.Decision.Allowed)
 	cp.Serve.AllowedOrigins = slices.Clone(c.Serve.AllowedOrigins)
 	return &cp
 }

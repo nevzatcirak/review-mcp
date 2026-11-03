@@ -263,13 +263,15 @@ func (*Provider) Kind() provider.Kind { return provider.KindGitLab }
 // and says how many lines below it it replaces ("suggestion:-0+N",
 // SuggestionStyleOffset). A description (and title) can be edited
 // (update.go); the draft state of a merge request follows its title. The
-// token's user can approve and remove their approval (decision.go).
+// token's user can approve and remove their approval (decision.go). The
+// token user's open merge requests are listed as a reviewer, an assignee
+// and the author (lists.go).
 func (*Provider) Capabilities() provider.Capabilities {
 	return provider.Capabilities{
 		GFM: true, MarkdownTables: true, Labels: true, InlineComments: true,
 		SuggestionBlocks: true, SuggestionStyle: provider.SuggestionStyleOffset, QuickActions: true,
 		InlineThreadResolution: true, GeneralThreadResolution: true, DescriptionEdit: true, Issues: true,
-		Decisions: decisionCaps,
+		Decisions: decisionCaps, Lists: listCaps,
 	}
 }
 

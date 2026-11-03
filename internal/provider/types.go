@@ -264,6 +264,10 @@ type Capabilities struct {
 	// token's own user (X-47). The Provider implements DecisionWriter
 	// exactly when it allows at least one (the contract suite checks this).
 	Decisions DecisionCaps
+	// Lists: the roles in which the host lists the token user's own open
+	// pull requests (X-48). The Provider implements PRLister exactly when
+	// it allows at least one (the contract suite checks this).
+	Lists ListCaps
 }
 
 // NativeSuggestionStyle returns the suggestion style an inline comment may

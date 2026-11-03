@@ -32,6 +32,8 @@ func TestKindAndCapabilities(t *testing.T) {
 		// V-14 spec §1.3.
 		Decisions: provider.DecisionCaps{Approve: true, RequestChanges: true, Clear: true, AtomicHead: true,
 			ClearResetsChangeRequest: true},
+		// V-15 spec §1.1: no assignees.
+		Lists: provider.ListCaps{Reviewer: true, Author: true},
 	}
 	if p.Capabilities() != want {
 		t.Fatalf("capabilities = %+v", p.Capabilities())

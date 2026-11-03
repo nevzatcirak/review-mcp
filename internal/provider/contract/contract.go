@@ -74,6 +74,13 @@ type Traits struct {
 	// with a pull request, so a pull request's number reads as not_found
 	// there instead of not_an_issue.
 	SeparateIssueNumbers bool
+	// ListsNoTargetBranch is true for a host whose pull request list does
+	// not carry the target branch (GitHub's search, Gitea's issue search):
+	// ListedPR.TargetBranch must then be nil (X-48 §0 item 5).
+	ListsNoTargetBranch bool
+	// ListsMyStatus is true for a host whose reviewer list carries the
+	// token user's own reviewer status (Bitbucket Server).
+	ListsMyStatus bool
 }
 
 // Declarer is implemented by a Fixture that declares Traits.
@@ -120,6 +127,7 @@ func Run(t *testing.T, f Fixture) {
 		{"list_dir", s.listDir},
 		{"issues", s.issues},
 		{"decision", s.decision},
+		{"lists", s.lists},
 		{"errors", s.errorCases},
 	}
 	for _, c := range cases {

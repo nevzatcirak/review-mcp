@@ -33,6 +33,9 @@ const (
 	// ClassNotAnIssue refuses an issue read whose number names a pull
 	// request (X-42).
 	ClassNotAnIssue ErrorClass = "not_an_issue"
+	// ClassUnsupported refuses a request the provider's host cannot answer
+	// (a list role it does not have, X-48). Nothing has been sent.
+	ClassUnsupported ErrorClass = "unsupported"
 )
 
 // Class sentinels for errors.Is.
@@ -50,6 +53,7 @@ var (
 	ErrNotOwner           = &Error{Class: ClassNotOwner}
 	ErrConflict           = &Error{Class: ClassConflict}
 	ErrNotAnIssue         = &Error{Class: ClassNotAnIssue}
+	ErrUnsupported        = &Error{Class: ClassUnsupported}
 )
 
 // Error is a sanitized provider error. It never carries response bodies,
@@ -75,6 +79,7 @@ var sentences = map[ErrorClass]string{
 	ClassNotOwner:           "the comment was not written by the token's user, so it was not changed",
 	ClassConflict:           "the request conflicts with the current state on the server",
 	ClassNotAnIssue:         "the number names a pull request, not an issue",
+	ClassUnsupported:        "the provider does not support this request",
 }
 
 // Error returns the fixed sentence for the class, then " (HTTP n)" when

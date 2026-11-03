@@ -97,6 +97,8 @@ func (ctFixture) Traits() contract.Traits {
 		BaseStrategies:  github.BaseStrategies(),
 		CheckStrategies: github.CheckStrategies(),
 		InlineRanges:    true,
+		// The issue search does not carry the target branch.
+		ListsNoTargetBranch: true,
 	}
 }
 

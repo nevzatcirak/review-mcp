@@ -183,6 +183,7 @@ func (Factory) New(cfg *config.Config, logger *slog.Logger) (provider.Provider, 
 	p := &Provider{
 		logger:   logger,
 		webURL:   strings.TrimRight(cfg.GitHub.BaseURL, "/"),
+		apiURL:   strings.TrimRight(cfg.GitHub.EffectiveAPIURL(), "/"),
 		maxFiles: cfg.Diff.MaxFilesFullContent,
 		maxFile:  int64(cfg.Diff.MaxFileBytes),
 		self:     cfg.GitHub.SelfLogin,
@@ -212,9 +213,12 @@ func (Factory) New(cfg *config.Config, logger *slog.Logger) (provider.Provider, 
 
 // Provider is a request-scoped GitHub provider. It holds no revealed secret.
 type Provider struct {
-	client   *httpx.Client
-	logger   *slog.Logger
-	webURL   string
+	client *httpx.Client
+	logger *slog.Logger
+	webURL string
+	// apiURL is the API base without a trailing slash; a listed pull
+	// request's repository_url must lie below it (lists.go).
+	apiURL   string
 	maxFiles int
 	maxFile  int64
 	// self is github.self_login: when it is set, CurrentUser returns it
@@ -248,11 +252,12 @@ func (*Provider) Kind() provider.Kind { return provider.KindGitHub }
 // suggestion block that replaces the comment's whole range (start_line to
 // line, SuggestionStyleRange). The title and the description can be edited
 // (a partial PATCH, no version). A review approves or requests changes
-// (decision.go).
+// (decision.go). The issue search lists the token user's open pull
+// requests as a requested reviewer, an assignee and the author (lists.go).
 func (*Provider) Capabilities() provider.Capabilities {
 	return provider.Capabilities{GFM: true, MarkdownTables: true, Labels: true, InlineComments: true,
 		SuggestionBlocks: true, SuggestionStyle: provider.SuggestionStyleRange, DescriptionEdit: true, Issues: true,
-		Decisions: decisionCaps}
+		Decisions: decisionCaps, Lists: listCaps}
 }
 
 // BaseStrategies returns the provider.PullRequest.BaseStrategy values this

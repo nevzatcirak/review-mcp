@@ -127,8 +127,10 @@ func CustomFocusNameProblem(name string) string {
 // their stored form (line endings as "\n", surrounding white space
 // trimmed) and why they are not valid, or "". Valid instructions are 1 to
 // MaxCustomInstructionsBytes bytes of UTF-8 without control characters
-// other than the line feed and without bidirectional formatting or line
-// and paragraph separator characters. The reason never repeats the text.
+// other than the line feed and the tab (people indent lists in multi-line
+// TOML strings; prompt.CleanText keeps tabs too) and without bidirectional
+// formatting or line and paragraph separator characters. The reason never
+// repeats the text.
 func CleanFocusInstructions(s string) (string, string) {
 	s = strings.TrimSpace(strings.NewReplacer("\r\n", "\n").Replace(s))
 	switch {
@@ -140,8 +142,8 @@ func CleanFocusInstructions(s string) (string, string) {
 		return "", "instructions must be valid UTF-8"
 	}
 	for _, r := range s {
-		if r != '\n' && (unicode.IsControl(r) || IsBidiFormat(r) || r == '\u2028' || r == '\u2029') {
-			return "", "instructions must not contain control or bidirectional formatting characters other than line breaks"
+		if r != '\n' && r != '\t' && (unicode.IsControl(r) || IsBidiFormat(r) || r == '\u2028' || r == '\u2029') {
+			return "", "instructions must not contain control or bidirectional formatting characters other than line breaks and tabs"
 		}
 	}
 	return s, ""

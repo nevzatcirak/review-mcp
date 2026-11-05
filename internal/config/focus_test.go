@@ -74,8 +74,6 @@ func TestFocusProfilesProblems(t *testing.T) {
 			"review.custom_focuses[0]: instructions are longer than 1000 bytes"},
 		{"control", "[[review.custom_focuses]]\nname = \"area-qx4\"\ninstructions = \"SECRET-TEXT-QX4\\u0007\"\n",
 			"review.custom_focuses[0]: instructions must not contain control"},
-		{"tab", "[[review.custom_focuses]]\nname = \"area-qx4\"\ninstructions = \"SECRET-TEXT-QX4\\tx\"\n",
-			"review.custom_focuses[0]: instructions must not contain control"},
 		{"bidi", "[[review.custom_focuses]]\nname = \"area-qx4\"\ninstructions = \"SECRET-TEXT-QX4\\u202e\"\n",
 			"review.custom_focuses[0]: instructions must not contain control"},
 		{"duplicate", "[[review.custom_focuses]]\nname = \"area-qx4\"\ninstructions = \"SECRET-TEXT-QX4\"\n" +
@@ -196,5 +194,22 @@ func TestFocusProfileFieldsMatchStructs(t *testing.T) {
 		if len(tags) != len(focusProfileFields[section]) {
 			t.Errorf("%s: fields %v, known %v", section, tags, focusProfileFields[section])
 		}
+	}
+}
+
+// TestFocusInstructionsAcceptTabs (DQ-1 of the WP-23a review): a tab is
+// kept, so a list indented in a multi-line TOML string loads; other control
+// characters are still refused.
+func TestFocusInstructionsAcceptTabs(t *testing.T) {
+	file := "[[review.custom_focuses]]\nname = \"area-qx4\"\ninstructions = \"\"\"\nAreas:\n\t- request shapes\n\t- status codes\"\"\"\n"
+	cfg, _ := mustLoad(t, withFile(minimalEnv(), file))
+	if got := cfg.Review.CustomFocuses[0].Instructions; got != "Areas:\n\t- request shapes\n\t- status codes" {
+		t.Errorf("instructions %q", got)
+	}
+	if text, p := CleanFocusInstructions("a\tb"); p != "" || text != "a\tb" {
+		t.Errorf("tab: %q, %q", text, p)
+	}
+	if _, p := CleanFocusInstructions("a\vb"); p == "" {
+		t.Error("a vertical tab was accepted")
 	}
 }

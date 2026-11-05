@@ -5,6 +5,33 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Planned for `2.8.0-rc.1`. Pull request lists (X-48): two new read-only tools
+list the pull requests that ask you for a review and the ones you opened.
+Nothing in the tools or the configuration of 2.7.0-rc.1 is removed or renamed.
+
+### Added
+
+- `pr_list_review_requests`: lists the open pull requests that ask you (the
+  token's user) for a review on the configured providers, newest update first;
+  `include_assigned` adds those assigned to you (Bitbucket Server has no
+  assignees). `pr_list_authored` lists the open pull requests you opened. Both
+  take `provider` and `limit` (1 to 100, default 30). Each item has a built
+  `url` for `pr_review`, `pr_info` and `pr_ask`; a provider that fails is
+  reported with a fixed reason and never silently dropped. They read pull
+  request metadata only and work in `serve` (a provider without its token
+  header is `no_token`). See [Pull request lists](docs/pr-lists.md).
+- `review-mcp diag list review-requests|authored [--provider KIND] [--limit N]
+  [--include-assigned] [--json]`: the same lists without a client.
+
+### Changed
+
+- Gitea before 1.14 is refused for lists with `unsupported_version`, because
+  its issue search ignores the role filters and would list other people's
+  pull requests. A version that cannot be read lets the list go ahead.
+- The server has twelve tools in stdio mode and eleven in `serve` mode.
+
 ## [2.7.0-rc.1]
 
 First 2.7 release candidate (the npm dist-tag `next`; `latest` stays on 2.6.0).

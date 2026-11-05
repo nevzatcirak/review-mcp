@@ -711,6 +711,23 @@ one of these fixed messages (the value is never echoed):
 | pr_url must be the http or https URL of a pull request, without credentials | `pr_url` is missing, longer than 2048 bytes, not an absolute `http` or `https` URL with a host, or it carries credentials (`user:password@`). Pass the pull request's page URL. |
 | focuses must be a comma-separated list of security, architecture, performance, ux, tests and docs | `focuses` holds a value that is not one of the six (free text is not accepted here; use it with `pr_review`'s `focus`), or no value at all. Leave `focuses` out for the default: `review.focuses` of the [repository config](repo-config.md#focus-defaults), else `security,architecture,performance,tests`, with `docs` added when the pull request changes a documentation file. |
 
+## Pull request lists
+
+What to check when `pr_list_review_requests` or `pr_list_authored` (or
+`review-mcp diag list`) does not show what you expect. The behaviour is in
+[Pull request lists](pr-lists.md); the reasons are in
+[Why a provider failed](pr-lists.md#why-a-provider-failed).
+
+| Symptom | What to do |
+|---|---|
+| A provider is `failed` with `bad_response`. | The host answered, but not with what a list endpoint sends. On a supported version a 404 from the list endpoint means the base URL or its context path is wrong, or a proxy in front of the host swallows the path. Check the provider's base URL (`diag pr <PR_URL>` reaches the same host), including a context path such as `/gitlab` or `/bitbucket`, and that a reverse proxy passes `/api/v4`, `/rest/api/1.0`, `/api/v1` or `/search` through. A body that is too large or not the expected JSON gives the same reason. |
+| `rate_limited` on GitHub. | The list uses GitHub's search API, whose limit is separate from the core one: **30 requests a minute**. The list is sent once and not retried. Wait a minute and list again; several clients or `diag list` runs with the same token share the limit. |
+| A provider is `failed` with `unsupported_version`. | Gitea before 1.14 cannot list pull requests for one user (its issue search ignores the filters). Upgrade Gitea, or leave the Gitea list out with the `provider` argument. |
+| A provider is `failed` with `auth` or `forbidden`. | `auth` is a 401 (check the token and that it has not expired); `forbidden` is a 403 (check the token's scopes or permissions, and SAML single sign-on on GitHub). A GitHub installation token (`ghs_`) cannot read its user: set `github.self_login`. |
+| A provider is `failed` with `timeout` or `unavailable`. | The host did not answer in time, or answered with a 5xx. Try again; check that the host is up. |
+| A provider is `no_token`. | Serve mode: the request carries no token header for it. Set the header in the MCP client configuration; see [Serve mode](serve.md#pull-request-lists). |
+| An old pull request you were asked to review is missing. | The page holds the newest pull requests the host returns, and a note says when more exist. Raise `limit` (at most 100) or name a provider. On Gitea and Bitbucket Server the page holds the newest **created**, not the newest updated. On GitHub a request ends when you submit a review. |
+
 ## `pr_info` required_approvals notes
 
 For GitHub see [GitHub](#github) below: the notes differ and the two sources

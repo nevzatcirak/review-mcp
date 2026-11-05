@@ -58,6 +58,9 @@ type Outcome struct {
 	// order, kept only with related.from_repo_config. Nil when there are
 	// none or reading them is off.
 	Related []Declared
+	// redefined are the notes of the repository's custom focuses that
+	// replace an operator's focus of the same name, until Apply places them.
+	redefined []string
 }
 
 // Apply merges the allowed settings of f into a copy of base and reports what
@@ -96,6 +99,20 @@ func Apply(base *config.Config, f *File) *Outcome {
 		if !ok {
 			continue
 		}
+		if key == keyCustomFocuses || key == keyFocusRules {
+			var applied bool
+			var bad []string
+			if key == keyCustomFocuses {
+				applied, bad = applyCustomFocuses(o, v)
+			} else {
+				applied, bad = applyFocusRules(o, v)
+			}
+			if applied {
+				o.Result.Applied = append(o.Result.Applied, key)
+			}
+			invalid = append(invalid, bad...)
+			continue
+		}
 		if key == keyRelatedRepos {
 			applied, bad, isOff := applyRelated(o, v)
 			switch {
@@ -131,6 +148,8 @@ func Apply(base *config.Config, f *File) *Outcome {
 	for _, k := range invalid {
 		o.Notes = append(o.Notes, fmt.Sprintf("The value of %s in `%s` is not valid and was ignored.", k, f.path))
 	}
+	o.Notes = append(o.Notes, o.redefined...)
+	o.redefined = nil
 	for _, k := range cut {
 		o.Notes = append(o.Notes, fmt.Sprintf("The value of %s in `%s` is longer than 2,000 bytes and was cut.", k, f.path))
 	}
@@ -242,6 +261,12 @@ func applyKey(o *Outcome, key string, v any) keyResult {
 			return keyInvalid
 		}
 		c.Review.DocsStyle = s
+	case "review.docs_style_file":
+		s, ok := v.(string)
+		if !ok || len(s) > MaxDocsStyleFileBytes || config.GuidelinesPathProblem(s) != "" {
+			return keyInvalid
+		}
+		c.Review.DocsStyleFile = s
 	case "review.focuses":
 		l, ok := stringList(v)
 		if !ok || len(l) > MaxFocuses || slices.ContainsFunc(l, func(s string) bool { return !validFocusText(s) }) {

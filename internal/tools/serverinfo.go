@@ -269,6 +269,23 @@ func RenderServerInfoMarkdown(r ServerInfoResult) string {
 		}
 	}
 
+	// The focus profiles (X-51): names and counts, never the instructions.
+	if fp := r.Config.FocusProfiles; fp.CustomFocusCount > 0 || fp.FocusRuleCount > 0 {
+		b.WriteString("\n## Focus profiles\n\n")
+		b.WriteString("- Custom focuses: " + strconv.Itoa(fp.CustomFocusCount))
+		for i, n := range fp.CustomFocuses {
+			sep := ", "
+			if i == 0 {
+				sep = " ("
+			}
+			b.WriteString(sep + codeSpan(n))
+		}
+		if len(fp.CustomFocuses) > 0 {
+			b.WriteString(")")
+		}
+		b.WriteString("\n- Focus rules: " + strconv.Itoa(fp.FocusRuleCount) + "\n")
+	}
+
 	if r.Serve != nil {
 		b.WriteString("\n## Serve\n\n")
 		b.WriteString("- Transport: " + codeSpan(r.Serve.Transport) + "\n")

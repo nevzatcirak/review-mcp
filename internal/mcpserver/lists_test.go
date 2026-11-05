@@ -363,7 +363,7 @@ func TestListResultsValidate(t *testing.T) {
 		if !slices.Contains(r.Notes, tools.NoteGitHubReviewRequests) {
 			t.Errorf("notes = %q", r.Notes)
 		}
-		if !strings.Contains(md, "`gh title`") || !strings.Contains(md, "[web!3](") {
+		if !strings.Contains(md, "`gh title`") || !strings.Contains(md, "[PRJ/web!3](") || !strings.Contains(md, "[grp/sub/proj!4](") {
 			t.Errorf("markdown:\n%s", md)
 		}
 		// Each provider received its own token, and the built URLs are the

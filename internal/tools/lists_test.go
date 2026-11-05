@@ -513,7 +513,7 @@ func TestPRListMarkdownUntrustedText(t *testing.T) {
 	for _, l := range strings.Split(md, "\n") {
 		if strings.Contains(l, "demo!7") {
 			itemLines++
-			if !strings.Contains(l, "[demo!7](https://gitea.example.com/octo/demo/pulls/7)") {
+			if !strings.Contains(l, "[octo/demo!7](https://gitea.example.com/octo/demo/pulls/7)") {
 				t.Errorf("item line = %q", l)
 			}
 		}
@@ -541,6 +541,32 @@ func TestPRListLogsCountsOnly(t *testing.T) {
 	for _, s := range []string{"TITLE-MARKER", "AUTHOR-MARKER", "demo", "example.com"} {
 		if strings.Contains(out, s) {
 			t.Errorf("log contains %q:\n%s", s, out)
+		}
+	}
+}
+
+// TestPRListLinkTextNamesTheNamespace: the link text is namespace/repo!number,
+// so two repositories with the same name in different namespaces render
+// differently, and a GitLab nested group keeps its full path.
+func TestPRListLinkTextNamesTheNamespace(t *testing.T) {
+	a := listedPR(provider.KindGitea, "demo", 7, "first", listT0)
+	b := listedPR(provider.KindGitea, "demo", 7, "second", listT0.Add(-time.Minute))
+	b.Ref.Namespace = "other"
+	b.Ref.URL = "https://gitea.example.com/other/demo/pulls/7"
+	nested := listedPR(provider.KindGitLab, "project", 42, "nested", listT0.Add(-2*time.Minute))
+	nested.Ref.Namespace = "group/sub"
+	nested.Ref.URL = "https://gitlab.example.com/group/sub/project/-/merge_requests/42"
+	g := &listFake{kind: provider.KindGitea, caps: allRoles, answers: map[provider.ListRole]listAnswer{provider.ListAuthor: pageOf(a, b)}}
+	l := &listFake{kind: provider.KindGitLab, caps: allRoles, answers: map[provider.ListRole]listAnswer{provider.ListAuthor: pageOf(nested)}}
+	md := RenderPRListMarkdown(runList(t, newSource(nil, g, l), PRListArgs{Role: ListRoleAuthored}))
+
+	for _, want := range []string{
+		"[octo/demo!7](https://gitea.example.com/octo/demo/pulls/7)",
+		"[other/demo!7](https://gitea.example.com/other/demo/pulls/7)",
+		"[group/sub/project!42](https://gitlab.example.com/group/sub/project/-/merge_requests/42)",
+	} {
+		if !strings.Contains(md, want) {
+			t.Errorf("markdown lacks %q:\n%s", want, md)
 		}
 	}
 }

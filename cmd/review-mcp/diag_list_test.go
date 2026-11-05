@@ -64,7 +64,7 @@ func TestDiagListMarkdownAndJSON(t *testing.T) {
 		t.Fatalf("exit %d; stderr:\n%s", code, errs)
 	}
 	if !strings.HasPrefix(out, "## Your open pull requests\n") || !strings.Contains(out, listDiagTitle) ||
-		!strings.Contains(out, "[demo!7]("+f.srv.URL+"/gitea/octo/demo/pulls/7)") || !strings.Contains(out, "· draft") {
+		!strings.Contains(out, "[octo/demo!7]("+f.srv.URL+"/gitea/octo/demo/pulls/7)") || !strings.Contains(out, "· draft") {
 		t.Errorf("markdown:\n%s", out)
 	}
 

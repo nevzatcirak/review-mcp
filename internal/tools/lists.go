@@ -531,9 +531,12 @@ func RenderPRListMarkdown(res PRListResult) string {
 	return b.String()
 }
 
-// itemLink is the link of a pull request: repo!number, to its built URL.
+// itemLink is the link of a pull request: namespace/repo!number, to its built
+// URL. The namespace is part of the text so that two repositories with the
+// same name in different namespaces look different; a GitLab nested group
+// keeps its full path (group/sub/project!42).
 func itemLink(it ListedItem) string {
-	text := mdutil.Escape(it.Repo + "!" + strconv.FormatInt(it.Number, 10))
+	text := mdutil.Escape(it.Namespace + "/" + it.Repo + "!" + strconv.FormatInt(it.Number, 10))
 	dest := strings.NewReplacer("(", "%28", ")", "%29", "<", "%3C", ">", "%3E", " ", "%20").Replace(it.URL)
 	return "[" + text + "](" + dest + ")"
 }

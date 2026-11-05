@@ -188,7 +188,7 @@ func TestRepoContextOffIsUntouched(t *testing.T) {
 		t.Error("the block is in the prompt while disabled")
 	}
 	raw, _ := json.Marshal(pl.Result.Coverage)
-	if !strings.Contains(string(raw), `"repo_context":{"status":"off","reason":"","symbols":0,"references":0,"files":0}`) {
+	if !strings.Contains(string(raw), `"repo_context":{"status":"off","reason":"","symbols":0,"references":0,"references_in_changed_files":0,"files":0}`) {
 		t.Errorf("coverage JSON = %s", raw)
 	}
 

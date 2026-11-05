@@ -735,3 +735,45 @@ func TestCutLine(t *testing.T) {
 		t.Errorf("cutLine cut inside a character: %q", got)
 	}
 }
+
+// TestGrepChangedFileOutsideHunks (canary y): a file of Query.Hunks is
+// searched although Exclude names it. A use outside its ranges is a hit
+// marked InChangedFile, a use inside one is not, a changed file without
+// Hunks stays excluded, and the hits in unchanged files come first.
+func TestGrepChangedFileOutsideHunks(t *testing.T) {
+	r, c := localCheckout(t, map[string]string{
+		"svc/Order.java":   numbered(40, 8, "        return computeTotal(o);") + "    computeTotal(x);\n",
+		"svc/Billing.java": numbered(5, 3, "        computeTotal(o);"),
+		"svc/Gone.java":    "computeTotal(o);\n",
+	}, "")
+	q := Query{
+		Symbols: []Symbol{{Name: "computeTotal", Path: "svc/Order.java"}},
+		Exclude: []string{"svc/Order.java", "svc/Gone.java"},
+		Hunks:   map[string][]LineRange{"svc/Order.java": {{From: 25, To: 35}, {From: 41, To: 41}}},
+	}
+	res, err := r.Grep(context.Background(), c, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, h := range res.Hits {
+		got = append(got, fmt.Sprintf("%s:%d:%v", h.Path, h.Line, h.InChangedFile))
+	}
+	want := "svc/Billing.java:3:false,svc/Order.java:8:true"
+	if strings.Join(got, ",") != want {
+		t.Errorf("hits = %v, want %s (the use in an unchanged part of the changed file, labelled)", got, want)
+	}
+	if res.InChangedFiles != 1 || res.Files != 2 {
+		t.Errorf("in changed files = %d, files = %d; want 1 and 2", res.InChangedFiles, res.Files)
+	}
+}
+
+// TestInRanges: the ranges are inclusive.
+func TestInRanges(t *testing.T) {
+	rs := []LineRange{{From: 3, To: 5}, {From: 9, To: 9}}
+	for line, want := range map[int]bool{2: false, 3: true, 5: true, 6: false, 9: true, 10: false} {
+		if inRanges(rs, line) != want {
+			t.Errorf("inRanges(%d) = %v", line, !want)
+		}
+	}
+}

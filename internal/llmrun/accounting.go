@@ -182,7 +182,10 @@ type RepoContext struct {
 	Reason     string `json:"reason"`
 	Symbols    int    `json:"symbols"`
 	References int    `json:"references"`
-	Files      int    `json:"files"`
+	// ReferencesInChangedFiles are the References in a file whose diff the
+	// prompt carries, outside the lines it shows (WP-22); 0 when none.
+	ReferencesInChangedFiles int `json:"references_in_changed_files"`
+	Files                    int `json:"files"`
 	// Tools is what the run did with the repository tools (X-43): always
 	// set by pr_review; nil, and omitted, in the tools that do not use
 	// them.

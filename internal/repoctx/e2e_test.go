@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -140,5 +141,82 @@ func TestEndToEndRealGit(t *testing.T) {
 	rc, notes := Summarize([]Outcome{{Status: llmrun.RepoSkipped, Reason: s2.Ready(context.Background())}})
 	if rc.Status != llmrun.RepoSkipped || len(notes) != 1 || !strings.HasPrefix(notes[0], "repository context skipped: ") {
 		t.Errorf("summary = %+v %v", rc, notes)
+	}
+}
+
+// TestEndToEndOutsideDiff: on the system git, a use of the changed method
+// in an unchanged part of its own (changed) file is a hit with the label,
+// and a use inside the widened hunk (outside git's three context lines) is
+// not; the use in an unchanged file comes first.
+func TestEndToEndOutsideDiff(t *testing.T) {
+	gitPath, backend := realGit(t)
+	t.Setenv("HOME", t.TempDir())
+	tmp := t.TempDir()
+	src := filepath.Join(tmp, "src")
+	var base, head strings.Builder
+	for i := 1; i <= 35; i++ {
+		var b, h string
+		switch i {
+		case 1:
+			b = "package main"
+		case 4:
+			b = "func caller() int { return WidgetTotal() }"
+		case 20:
+			b = "func near() int { return WidgetTotal() }"
+		case 26:
+			b, h = "func WidgetTotal() int { return 1 }", "func WidgetTotal() int { return 2 }"
+		default:
+			b = "// line"
+		}
+		if h == "" {
+			h = b
+		}
+		base.WriteString(b + "\n")
+		head.WriteString(h + "\n")
+	}
+	files := map[string]string{"main.go": head.String(), "pkg/use.go": "package pkg\n\nvar _ = WidgetTotal\n"}
+	for name, content := range files {
+		p := filepath.Join(src, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gitIn(t, src, gitPath, "init", "-q")
+	gitIn(t, src, gitPath, "add", ".")
+	gitIn(t, src, gitPath, "commit", "-q", "-m", "head")
+	root := filepath.Join(tmp, "srv")
+	bare := filepath.Join(root, "owner", "repo.git")
+	gitIn(t, tmp, gitPath, "init", "-q", "--bare", bare)
+	gitIn(t, tmp, gitPath, "--git-dir="+bare, "config", "uploadpack.allowFilter", "true")
+	gitIn(t, src, gitPath, "push", "-q", bare, "HEAD:refs/pull/7/head")
+	sha := strings.TrimSpace(gitIn(t, src, gitPath, "rev-parse", "HEAD"))
+	h := &cgi.Handler{Path: backend, Env: []string{"GIT_PROJECT_ROOT=" + root, "GIT_HTTP_EXPORT_ALL=1"}, Stderr: io.Discard}
+	srv := httptest.NewServer(http.HandlerFunc(h.ServeHTTP))
+	t.Cleanup(srv.Close)
+
+	cfg := config.Defaults()
+	cfg.Context.Repo.Enabled = true
+	cfg.Context.Repo.CacheDir = filepath.Join(tmp, "cache")
+	cfg.Gitea.BaseURL = srv.URL
+	cfg.Secrets.GiteaToken = config.NewSecret("FAKE-token-do-not-leak")
+	ref := provider.PRRef{Kind: provider.KindGitea, Namespace: "owner", Repo: "repo", Number: 7}
+	b, hd := base.String(), head.String()
+	changed := []provider.FilePatch{{Path: "main.go", Type: provider.ChangeModified, BaseContent: &b, HeadContent: &hd,
+		Patch: "@@ -23,7 +23,7 @@\n // line\n // line\n // line\n-func WidgetTotal() int { return 1 }\n+func WidgetTotal() int { return 2 }\n // line\n // line\n // line\n"}}
+	s := Open(cfg, nil, ref, nil, sha, changed, nil, nil, nil)
+	found := s.Find(context.Background(), changed)
+	var got []string
+	for _, hit := range found.Hits {
+		got = append(got, hit.Path+":"+strconv.Itoa(hit.Line)+":"+strconv.FormatBool(hit.InChangedFile))
+	}
+	if found.Skipped != "" || strings.Join(got, ",") != "pkg/use.go:3:false,main.go:4:true" {
+		t.Fatalf("hits = %v (skipped %q); want pkg/use.go:3 and main.go:4 labelled, not main.go:20 (widened hunk) or main.go:26", got, found.Skipped)
+	}
+	block := Render(found.Hits, 2000, factor)
+	if !strings.Contains(block.Text, "[main.go:4] uses WidgetTotal ("+MarkOutsideDiff+")") || block.InChangedFiles != 1 {
+		t.Errorf("block (%d in changed files):\n%s", block.InChangedFiles, block.Text)
 	}
 }

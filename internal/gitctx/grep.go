@@ -57,8 +57,17 @@ type Query struct {
 	// Symbols are the names to search for, in rank order.
 	Symbols []Symbol
 	// Exclude are the pull request's own files (ChangedPaths): they are
-	// excluded from the search by pathspec and dropped from the hits again.
+	// excluded from the search by pathspec and dropped from the hits again,
+	// except the paths of Hunks.
 	Exclude []string
+	// Hunks are the changed files the prompt shows and, for each, the
+	// head-side line ranges it shows: each hunk widened by
+	// diff.extra_lines_before and diff.extra_lines_after. Such a file is
+	// searched even when Exclude names it; a hit inside one of its ranges
+	// is dropped (the model sees that line already), and a hit outside every
+	// range is kept with Hit.InChangedFile set. A file with no range is
+	// searched whole.
+	Hunks map[string][]LineRange
 	// Filter carries the ignore globs, the generated-file rules and the
 	// lockfile, minified and binary-extension rules (internal/filter). Its
 	// path rules become exclude pathspecs, and every hit is checked with
@@ -72,10 +81,16 @@ type Query struct {
 	ContextLines int
 }
 
+// LineRange is a range of 1-based lines, From to To inclusive.
+type LineRange struct{ From, To int }
+
 // Hit is one use of a symbol found by Grep.
 type Hit struct {
 	Symbol string
 	Path   string
+	// InChangedFile: Path is a file of Query.Hunks, and the use lies outside
+	// the lines the prompt shows of it.
+	InChangedFile bool
 	// Line is the 1-based line of the use.
 	Line int
 	// StartLine is the 1-based line of the first line of Snippet.
@@ -90,6 +105,8 @@ type Hit struct {
 type Result struct {
 	// Hits are the kept uses, symbol by symbol in the order of Query.Symbols.
 	Hits []Hit
+	// InChangedFiles is the number of Hits in a file of Query.Hunks.
+	InChangedFiles int
 	// Symbols is the number of symbols searched.
 	Symbols int
 	// SymbolsWithHits is the number of symbols that have at least one hit.
@@ -123,12 +140,14 @@ var (
 // The search is "git grep -n -z -w -F -I -e <symbol> <head-sha> -- <pathspecs>"
 // per symbol, against the head commit (a tree-ish) of the bare cache, never
 // a working tree. The symbol is the value of -e, so a name that begins with
-// "-" is not an option. The pathspecs exclude the pull request's own files,
-// the files that cannot be searched because their blob is missing, and the
-// path rules of q.Filter; a hit in the pull request's own files or in a
-// file q.Filter does not include is dropped again afterwards, whatever git
-// returned (defence in depth: the pull request's files are already in the
-// prompt, and the pathspec list is clipped to keep the command line short).
+// "-" is not an option. The pathspecs exclude the pull request's own files
+// (q.Exclude) except those of q.Hunks, the files that cannot be searched
+// because their blob is missing, and the path rules of q.Filter; a hit in an
+// excluded file or in a file q.Filter does not include is dropped again
+// afterwards, whatever git returned (defence in depth: those files are
+// already in the prompt, and the pathspec list is clipped to keep the
+// command line short). A hit in a file of q.Hunks is dropped when its line
+// is inside one of the file's ranges and marked InChangedFile otherwise.
 //
 // Every git process runs offline: through the read view with no promisor
 // (X-45), from the allowlisted environment of Ensure with no credential,
@@ -181,7 +200,11 @@ func (r *Runner) Grep(ctx context.Context, c Checkout, q Query) (Result, error) 
 
 	total, cancel := context.WithTimeout(ctx, grepTotalTimeout)
 	defer cancel()
-	s := &searcher{g: g, sha: sha, q: q, exclude: toSet(q.Exclude)}
+	exclude := toSet(q.Exclude)
+	for p := range q.Hunks {
+		delete(exclude, p)
+	}
+	s := &searcher{g: g, sha: sha, q: q, exclude: exclude}
 
 	missing, err := s.missingFiles(total)
 	if err != nil {
@@ -232,7 +255,10 @@ func (r *Runner) Grep(ctx context.Context, c Checkout, q Query) (Result, error) 
 	var picked []Hit
 	for i := range perSym {
 		for _, h := range perSym[i] {
-			picked = append(picked, Hit{Symbol: h.symbol, Path: h.path, Line: h.line, StartLine: h.line, Snippet: h.text})
+			picked = append(picked, Hit{Symbol: h.symbol, Path: h.path, InChangedFile: h.changed, Line: h.line, StartLine: h.line, Snippet: h.text})
+			if h.changed {
+				res.InChangedFiles++
+			}
 		}
 		if len(perSym[i]) > 0 {
 			res.SymbolsWithHits++
@@ -315,6 +341,8 @@ type rawHit struct {
 	path   string
 	line   int
 	text   string
+	// changed: path is a file of Query.Hunks.
+	changed bool
 }
 
 // keep is the post-filter: whatever git returned, a hit in the pull
@@ -403,7 +431,12 @@ func (s *searcher) pathspecs(missing []string) []string {
 		return true
 	}
 	literal := func(p string) string { return ":(top,exclude,literal)" + p }
-	own := append([]string(nil), s.q.Exclude...)
+	var own []string
+	for _, p := range s.q.Exclude {
+		if s.exclude[p] {
+			own = append(own, p)
+		}
+	}
 	sort.Strings(own)
 	for _, p := range own {
 		if p != "" && !add(literal(p)) {
@@ -476,15 +509,31 @@ func (s *searcher) search(ctx context.Context, symbol string, pathspecs []string
 		if !s.keep(path) {
 			continue
 		}
-		hits = append(hits, rawHit{symbol: symbol, path: path, line: n, text: cutLine(string(text))})
+		ranges, changed := s.q.Hunks[path]
+		if changed && inRanges(ranges, n) {
+			continue
+		}
+		hits = append(hits, rawHit{symbol: symbol, path: path, line: n, text: cutLine(string(text)), changed: changed})
 	}
 	return hits, res.truncated, nil
 }
 
+// inRanges reports whether line lies in one of ranges.
+func inRanges(ranges []LineRange, line int) bool {
+	for _, r := range ranges {
+		if line >= r.From && line <= r.To {
+			return true
+		}
+	}
+	return false
+}
+
 // chooseHits keeps at most max hits of one symbol: one hit per file first,
-// the files of the definition's language group before the others, then more
-// hits of the same files in the same order. Within a group files are in path
-// order and hits in line order, so the choice is deterministic.
+// the files that are not changed in the pull request before the changed ones
+// (rawHit.changed), and within each the files of the definition's language
+// group before the others, then more hits of the same files in the same
+// order. Within a group files are in path order and hits in line order, so
+// the choice is deterministic.
 func chooseHits(sym Symbol, raw []rawHit, max int) []rawHit {
 	if len(raw) == 0 || max <= 0 {
 		return nil
@@ -505,7 +554,11 @@ func chooseHits(sym Symbol, raw []rawHit, max int) []rawHit {
 		// documentation.
 		same = func(p string) bool { return !filter.IsDocumentation(p) }
 	}
+	changed := func(p string) bool { return byFile[p][0].changed }
 	sort.SliceStable(files, func(i, j int) bool {
+		if ci, cj := changed(files[i]), changed(files[j]); ci != cj {
+			return cj
+		}
 		if si, sj := same(files[i]), same(files[j]); si != sj {
 			return si
 		}

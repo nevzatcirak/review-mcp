@@ -40,6 +40,10 @@ part reviews (or that no part reviews), ends its first line with a mark in
 parentheses: "(changed in this pull request; reviewed in part J)" or
 "(changed in this pull request; not reviewed)". The uses are read from the
 head commit, so they show the new version of that file. The block's fixed intro sentence says that such entries are reviewed in another part or not at all.
+An entry in a file whose diff this prompt carries, on a line outside the
+hunks it shows (widened by diff.extra_lines_before/after), ends its first
+line with "(in a changed file, outside the diff)" (WP-22, X-22 amendment);
+the intro sentence says that such entries show code the diff does not show.
 
 Intentional deviation (X-31): upstream has no CI results. When review.ci_status
 is on and the head commit has checks, the pipeline supplies one block (.ci,

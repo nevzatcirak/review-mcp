@@ -97,7 +97,7 @@ func TestIssueContextGuidance(t *testing.T) {
 			}
 		}
 	}
-	p := multiPerspectiveText("https://your-gitea.example/octo/demo/pulls/7", []string{"security"}, false)
+	p := multiPerspectiveText("https://your-gitea.example/octo/demo/pulls/7", requestedPlan([]string{"security"}), false)
 	if strings.Contains(p, "issue_context") {
 		t.Error("the multi_perspective_review prompt mentions issue_context")
 	}

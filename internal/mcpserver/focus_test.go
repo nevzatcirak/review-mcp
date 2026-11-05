@@ -140,6 +140,11 @@ const wantMultiPerspective = `Review the pull request "https://your-gitea.exampl
    - {"pr_url":"https://your-gitea.example/octo/demo/pulls/7","focus":"architecture"}
    - {"pr_url":"https://your-gitea.example/octo/demo/pulls/7","focus":"performance"}
    - {"pr_url":"https://your-gitea.example/octo/demo/pulls/7","focus":"tests"}
+   Why these areas:
+   - security — default
+   - architecture — default
+   - performance — default
+   - tests — default
 2. Merge the findings of all runs into one list. Keep each finding's relevant_file, start_line, end_line, issue_header and issue_content as the run returned them, and set its focus to the run's focus. Drop duplicates: when two runs report the same problem at the same place, keep the clearer finding.
 3. Call pr_review once with pr_url "https://your-gitea.example/octo/demo/pulls/7", publish=true and the merged list as findings. When a security or performance run was made, pass its review.security_concerns as security_concerns or its review.performance_concerns as performance_concerns. This call makes no model call: it posts the overview comment (an earlier one is edited in place) and the findings on changed lines as inline comments, and does not repeat a finding already posted on the pull request.
 4. Tell the user what was published. If a run said its review is partial, say how many files were not reviewed and never state that those files have no issues.
@@ -193,7 +198,7 @@ func checkGuidance(t *testing.T, cs *mcp.ClientSession) {
 	}
 	text := res.Messages[0].Content.(*mcp.TextContent).Text
 	if !strings.Contains(text, `{"pr_url":"https://your-gitea.example/octo/demo/pulls/7","focus":"ux"}`+"\n"+
-		`   - {"pr_url":"https://your-gitea.example/octo/demo/pulls/7","focus":"tests"}`+"\n2.") || strings.Contains(text, "x=") {
+		`   - {"pr_url":"https://your-gitea.example/octo/demo/pulls/7","focus":"tests"}`+"\n   Why these areas:") || strings.Contains(text, "x=") {
 		t.Errorf("message = %s", text)
 	}
 	for name, args := range map[string]map[string]string{
@@ -257,7 +262,7 @@ func TestRateLimitGuidance(t *testing.T) {
 		}
 	}
 	const url = "https://your-gitea.example/octo/demo/pulls/7"
-	focuses := []string{"security", "architecture", "performance", "tests"}
+	focuses := planFocuses(promptContext{})
 	if got := multiPerspectiveText(url, focuses, false); got != wantMultiPerspective {
 		t.Errorf("prompt changed without a limit:\n%s", got)
 	}

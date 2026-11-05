@@ -104,8 +104,8 @@ func ResultSchema() map[string]any {
 		"ci":          CISchema(),
 		"repo_config": repocfg.Schema(),
 		"issue":       IssueSchema(),
-		"focus": str("the focus of a focused run (X-33): security, architecture, performance, ux, tests, docs or the " +
-			"cleaned free text; absent without one"),
+		"focus": str("the focus of a focused run (X-33): security, architecture, performance, ux, tests, docs, the name " +
+			"of a custom focus (X-51) or the cleaned free text; absent without one"),
 		"incremental": object("whether the whole pull request or only the files that changed since the last review were reviewed (X-36); always set by pr_review", map[string]any{
 			"mode": map[string]any{"type": "string", "enum": []any{IncrementalFull, IncrementalChanged, IncrementalUnchanged},
 				"description": "full: the whole pull request was reviewed; incremental: only the files that changed since the last review; unchanged: nothing changed since the last review, so nothing was reviewed, the model was not called and nothing was published"},

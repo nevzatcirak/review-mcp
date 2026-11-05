@@ -616,7 +616,7 @@ sent to the provider or to the model. They are checked in this order.
 
 | Sentence | Cause and what to do |
 |---|---|
-| focus must be one of security, architecture, performance, ux, tests or docs, or a description of 1 to 200 characters without line breaks or control characters | `focus` is blank after trimming, longer than 200 characters, or holds a line break, a control character or a bidirectional formatting character. Use a known value, or a one-line description. |
+| focus must be one of security, architecture, performance, ux, tests or docs, the name of a custom focus, or a description of 1 to 200 characters without line breaks or control characters | `focus` is blank after trimming, longer than 200 characters, or holds a line break, a control character or a bidirectional formatting character. Use a known value, or a one-line description. |
 | findings cannot be combined with focus; call pr_review with findings and publish=true, without focus | `findings` is the merged result of focused runs, not a focused run. Drop `focus`. |
 | a focused review does not publish; merge the findings and call pr_review with findings and publish=true | `focus` with `publish=true`. Run the focused reviews without `publish`, merge their findings, then publish once with `findings` ([Focused reviews](review.md#focused-reviews-and-the-merged-publish)). |
 | findings are only used to publish; call pr_review with findings and publish=true | `findings` (also an empty list) without `publish=true`. Add `publish=true`, or drop `findings` for a normal review. |
@@ -1491,7 +1491,7 @@ table also covers the configuration, argument and serve-mode errors.
 | the model's answer could not be parsed as code suggestions, also after one retry; try again, or check that llm.model follows the YAML output instructions | `improve_unparseable` | Retry, or use a model that follows YAML output instructions (`pr_improve`). A failed self-review call is not this error; it leaves the suggestions unscored ([`pr_improve`](#pr_improve)). |
 | output_language must be a locale code such as en-US or tr-TR | argument | Fix `output_language` (`pr_review`, `pr_ask`, `pr_describe`, `pr_improve`). |
 | max_findings must be an integer from 1 to 20 | argument | Fix `max_findings` (`pr_review`). |
-| focus must be one of security, architecture, performance, ux, tests or docs, or a description of 1 to 200 characters without line breaks or control characters | `invalid_argument` | Fix `focus` (`pr_review`). |
+| focus must be one of security, architecture, performance, ux, tests or docs, the name of a custom focus, or a description of 1 to 200 characters without line breaks or control characters | `invalid_argument` | Fix `focus` (`pr_review`). |
 | findings cannot be combined with focus; call pr_review with findings and publish=true, without focus | `invalid_argument` | Drop `focus` or `findings` (`pr_review`). |
 | a focused review does not publish; merge the findings and call pr_review with findings and publish=true | `invalid_argument` | Drop `publish`, or merge the findings and send them as `findings` ([Focus and findings refusals](#focus-and-findings-refusals)). |
 | findings are only used to publish; call pr_review with findings and publish=true | `invalid_argument` | Add `publish=true`, or drop `findings`. |

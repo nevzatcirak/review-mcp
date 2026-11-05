@@ -1050,7 +1050,7 @@ These are checked in this order, before any request:
 
 | Message | When |
 |---|---|
-| "focus must be one of security, architecture, performance, ux, tests or docs, or a description of 1 to 200 characters without line breaks or control characters" | `focus` is neither a known value nor usable free text |
+| "focus must be one of security, architecture, performance, ux, tests or docs, the name of a custom focus, or a description of 1 to 200 characters without line breaks or control characters" | `focus` is neither a known value nor usable free text |
 | "findings cannot be combined with focus; call pr_review with findings and publish=true, without focus" | `findings` and `focus` together |
 | "a focused review does not publish; merge the findings and call pr_review with findings and publish=true" | `focus` with `publish=true` |
 | "findings are only used to publish; call pr_review with findings and publish=true" | `findings` (also `[]`) without `publish=true` |

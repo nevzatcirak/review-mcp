@@ -450,6 +450,15 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		rc.NoRelatedNote()
 	}
 	cfg = rc.Config
+	// The focus is resolved again against the run's custom focuses (X-51,
+	// v2.9 spec V-19 §1.3): those of the operator, which Validated saw, and
+	// those of the repository config, read at the base revision, which may
+	// redefine them. A name that is defined nowhere stays free text, with a
+	// note.
+	customFocus, err := resolveRunFocus(&args, cfg, rc)
+	if err != nil {
+		return nil, err
+	}
 	deps.Config = cfg
 	args = args.WithConfigDefaults(cfg)
 	toggles := TogglesFrom(cfg.Review)
@@ -677,7 +686,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		MaxFindings:       maxFindings,
 		ExtraInstructions: extra,
 		RepoInstructions:  projctx.RepoGuidance(cfg.RepoConfig.Path, cfg.Review.RepoInstructions),
-		DocsStyle:         docsStyleBlock(args.Focus, cfg.Review.DocsStyle),
+		DocsStyle:         docsStyleBlock(args.Focus, customFocus, cfg.Review.DocsStyle),
 		Language:          language,
 		Title:             pr.Title,
 		Branch:            pr.SourceBranch,
@@ -687,6 +696,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		Guidelines:        proj.Guidelines(),
 		FileTree:          proj.Tree(),
 		Focus:             args.Focus,
+		CustomFocus:       customFocus,
 		Incremental:       inc.Mode == IncrementalChanged,
 		Date:              prompt.Date(deps.Clock),
 	}

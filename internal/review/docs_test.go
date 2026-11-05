@@ -21,8 +21,8 @@ func TestDocsFocusValue(t *testing.T) {
 		t.Errorf("FocusValues = %q, want docs after tests", FocusValues)
 	}
 	for _, in := range []string{"docs", "Docs", " DOCS "} {
-		if got, err := NormalizeFocus(in); err != nil || got != FocusDocs {
-			t.Errorf("NormalizeFocus(%q) = %q, %v", in, got, err)
+		if got, err := NormalizeFocus(in, nil); err != nil || got.Name != FocusDocs || got.Kind != FocusKindBuiltin {
+			t.Errorf("NormalizeFocus(%q) = %+v, %v", in, got, err)
 		}
 	}
 	h := newHarness(goodAnswer)

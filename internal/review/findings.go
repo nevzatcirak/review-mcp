@@ -127,7 +127,7 @@ func suppliedIssue(f SuppliedFinding, files map[string]bool) (KeyIssue, bool) {
 		StartLine:    f.StartLine,
 		EndLine:      f.EndLine,
 	}
-	focus, err := NormalizeFocus(f.Focus)
+	focus, err := NormalizeFocus(f.Focus, nil)
 	switch {
 	case err != nil,
 		!files[ki.RelevantFile],
@@ -136,7 +136,7 @@ func suppliedIssue(f SuppliedFinding, files map[string]bool) (KeyIssue, bool) {
 		ki.IssueContent == "" || utf8.RuneCountInString(ki.IssueContent) > MaxSuppliedContentRunes:
 		return KeyIssue{}, false
 	}
-	ki.Focus = focus
+	ki.Focus = focus.Name
 	return ki, true
 }
 

@@ -245,6 +245,11 @@ func plural(n int, one, many string) string {
 // listed (the caller only needs the custom focuses).
 func readPromptContext(ctx context.Context, deps Deps, req *mcp.GetPromptRequest, prURL string, list bool) promptContext {
 	var pc promptContext
+	// DESIGN-QUESTION (WP-23b DQ-2): with repo_config.enabled false nothing
+	// is read, so the operator's focus rules are not applied either (the
+	// prompt would need the pull request and its file list for them alone).
+	// Recommendation: keep; read for the operator's rules in a later
+	// version if operators ask.
 	if deps.LoadErr != nil || deps.Config == nil || deps.NewResolver == nil || !deps.Config.RepoConfig.Enabled {
 		// Nothing is read: the built-in default, without a failure.
 		return pc

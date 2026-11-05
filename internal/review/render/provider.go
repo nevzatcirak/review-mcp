@@ -128,6 +128,9 @@ func writeGFM(b *strings.Builder, res *review.Result, v *view) {
 		} else {
 			b.WriteString(emojiIssues + "&nbsp;<strong>" + textFocusAreas + "</strong><br><br>\n\n")
 			for n := range v.issues {
+				if startsFocusGroup(v.issues, n) {
+					b.WriteString("<strong>Focus:</strong> <code>" + html.EscapeString(v.issues[n].Focus) + "</code>\n\n")
+				}
 				b.WriteString(gfmIssue(n+1, &v.issues[n]) + "\n\n")
 			}
 		}
@@ -229,6 +232,9 @@ func writePlain(b *strings.Builder, res *review.Result, v *view, tables bool) {
 	}
 	b.WriteString("### " + emojiIssues + " " + textFocusAreas + "\n\n")
 	for n := range v.issues {
+		if startsFocusGroup(v.issues, n) {
+			b.WriteString("**Focus:** " + mdutil.CodeSpan(v.issues[n].Focus) + "\n\n")
+		}
 		writePlainIssue(b, n+1, &v.issues[n])
 	}
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 )
 
@@ -96,6 +97,15 @@ func TestResultSchemaAcceptedBySDK(t *testing.T) {
 	}
 	if c := results["docs_style"].Coverage.DocsStyle; c == nil || c.Source != "text" {
 		t.Fatalf("coverage.docs_style = %+v", c)
+	}
+
+	h = newHarness(goodAnswer)
+	h.deps.Config.Review.CustomFocuses = []config.CustomFocus{apiContract()}
+	if results["custom_focus"], err = Run(context.Background(), h.deps, Args{PRURL: testPRURL, Focus: "api-contract"}); err != nil {
+		t.Fatal(err)
+	}
+	if r := results["custom_focus"]; r.Focus != "api-contract" || r.FocusSource != "operator" {
+		t.Fatalf("focus %q, focus_source %q", r.Focus, r.FocusSource)
 	}
 
 	bad := *results["full"]

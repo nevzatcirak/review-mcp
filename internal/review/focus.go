@@ -53,6 +53,12 @@ var focusSentences = map[string]string{
 	FocusTests: "This review covers tests only: changed behaviour without a test, tests that do not check what " +
 		"they claim to, missing edge and failure cases, flaky constructs (sleeps, order or time dependence, shared " +
 		"state), and tests tied to implementation details instead of behaviour.",
+	// DESIGN-QUESTION (WP-23b DQ-3): this sentence (V-5 §3a item 1, verbatim)
+	// ends "...from the documentation style given below", but since X-51 the
+	// style is in the user message, not below this sentence. The fixed
+	// sentence of projctx.DocsStyleSentence tells the model where it is.
+	// Recommendation: reword to "given in the user message" with the next
+	// change to this sentence (it is pinned by a verbatim test).
 	FocusDocs: "This review covers documentation only: statements in changed documentation (README, guides, " +
 		"CHANGELOG, configuration and API references, doc comments in code) that contradict the code in this pull " +
 		"request or in the repository context; behaviour the code changes without the matching documentation " +
@@ -158,6 +164,34 @@ const (
 	FocusKindFreeText FocusKind = "free_text"
 )
 
+// The values of a result's focus_source (X-51): the first is a built-in
+// value, the next two are config.FocusSourceOperator and
+// config.FocusSourceRepoConfig, the last a free text.
+const (
+	FocusSourceBuiltin  = "builtin"
+	FocusSourceOperator = config.FocusSourceOperator
+	// FocusSourceRepoConfig: a custom focus of the repository config.
+	FocusSourceRepoConfig = config.FocusSourceRepoConfig
+	FocusSourceFreeText   = "free_text"
+)
+
+// FocusSourceValues are the values of focus_source, in the order the schema
+// lists them.
+var FocusSourceValues = []string{FocusSourceBuiltin, FocusSourceOperator, FocusSourceRepoConfig, FocusSourceFreeText}
+
+// Source is the focus_source of a resolved focus; "" for no focus.
+func (f Focus) Source() string {
+	switch f.Kind {
+	case FocusKindBuiltin:
+		return FocusSourceBuiltin
+	case FocusKindCustom:
+		return f.Custom.Source
+	case FocusKindFreeText:
+		return FocusSourceFreeText
+	}
+	return ""
+}
+
 // Focus is a resolved focus argument. The zero value is "no focus".
 type Focus struct {
 	Kind FocusKind
@@ -202,6 +236,16 @@ func NormalizeFocus(s string, customs []config.CustomFocus) (Focus, error) {
 		}
 	}
 	return Focus{Kind: FocusKindFreeText, Name: t}, nil
+}
+
+// focusSourceOf is the focus_source of an already resolved focus name
+// (resolving it again gives the same focus); "" for no focus.
+func focusSourceOf(name string, customs []config.CustomFocus) string {
+	f, err := NormalizeFocus(name, customs)
+	if err != nil {
+		return ""
+	}
+	return f.Source()
 }
 
 // noteUndefinedCustomFocus is the note of a focus that has the form of a
@@ -371,21 +415,21 @@ func (a Args) Validated(cfg *config.Config) (Args, error) {
 
 // resolveRunFocus resolves args.Focus against the custom focuses of the
 // run's merged configuration cfg (X-51 §1.3), sets args.Focus to the
-// resolved name and returns the custom focus's definition (nil for any
-// other kind). A free text that has the form of a custom name adds
+// resolved name and returns the resolved focus (its Custom is the
+// definition of a custom focus, nil for any other kind). A free text that has the form of a custom name adds
 // UndefinedCustomFocusNote to the repository config's notes, which come
 // first in a result.
-func resolveRunFocus(args *Args, cfg *config.Config, rc *repocfg.Outcome) (*config.CustomFocus, error) {
+func resolveRunFocus(args *Args, cfg *config.Config, rc *repocfg.Outcome) (Focus, error) {
 	if args.Focus == "" {
-		return nil, nil
+		return Focus{}, nil
 	}
 	f, err := NormalizeFocus(args.Focus, cfg.Review.CustomFocuses)
 	if err != nil {
-		return nil, err
+		return Focus{}, err
 	}
 	args.Focus = f.Name
 	if n := UndefinedCustomFocusNote(f); n != "" {
 		rc.Notes = append(rc.Notes, n)
 	}
-	return f.Custom, nil
+	return f, nil
 }

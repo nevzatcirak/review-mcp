@@ -107,6 +107,10 @@ func ResultSchema() map[string]any {
 		"issue":       IssueSchema(),
 		"focus": str("the focus of a focused run (X-33): security, architecture, performance, ux, tests, docs, the name " +
 			"of a custom focus (X-51) or the cleaned free text; absent without one"),
+		"focus_source": map[string]any{"type": "string", "enum": stringsAny(FocusSourceValues),
+			"description": "where the focus comes from (X-51): builtin (one of the six values), operator or repo_config " +
+				"(a custom focus defined in the operator's configuration or in the repository config) or free_text; " +
+				"absent without a focus"},
 		"incremental": object("whether the whole pull request or only the files that changed since the last review were reviewed (X-36); always set by pr_review", map[string]any{
 			"mode": map[string]any{"type": "string", "enum": []any{IncrementalFull, IncrementalChanged, IncrementalUnchanged},
 				"description": "full: the whole pull request was reviewed; incremental: only the files that changed since the last review; unchanged: nothing changed since the last review, so nothing was reviewed, the model was not called and nothing was published"},
@@ -258,6 +262,15 @@ func relatedReasons() []any {
 	}
 	for _, r := range related.GitReasons {
 		out = append(out, r)
+	}
+	return out
+}
+
+// stringsAny is list as the []any a JSON schema enum holds.
+func stringsAny(list []string) []any {
+	out := make([]any, len(list))
+	for i, v := range list {
+		out[i] = v
 	}
 	return out
 }

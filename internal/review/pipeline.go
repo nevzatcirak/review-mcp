@@ -458,7 +458,8 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// those of the repository config, read at the base revision, which may
 	// redefine them. A name that is defined nowhere stays free text, with a
 	// note.
-	customFocus, err := resolveRunFocus(&args, cfg, rc)
+	runFocus, err := resolveRunFocus(&args, cfg, rc)
+	customFocus := runFocus.Custom
 	if err != nil {
 		return nil, err
 	}
@@ -686,6 +687,12 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// The documentation style (X-51): read once, at the base revision, and
 	// only by a run whose focus uses it. A failed read falls back to
 	// review.docs_style with a note, never a failed review.
+	//
+	// DESIGN-QUESTION (WP-23b DQ-8): the style (up to 8 KiB) is part of the
+	// scaffolding and, unlike the guidelines, is not cut when the diff needs
+	// the room; a context window too small for it ends in the usual
+	// does-not-fit refusal. Recommendation: keep; cut it like the guidelines
+	// if windows that small are in use.
 	var style projctx.DocsStyleText
 	if focusUsesDocsStyle(args.Focus, customFocus) {
 		style = projctx.ReadDocsStyle(ctx, projctx.ProviderSource(p, ref, pr.BaseSHA), cfg.Review.DocsStyleFile,
@@ -844,6 +851,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			AlreadyDiscussed: disc.Included,
 		},
 		Focus:       args.Focus,
+		FocusSource: runFocus.Source(),
 		Incremental: inc,
 		RepoConfig:  rc.Result,
 		Issue:       issueResultOf(ic),

@@ -64,6 +64,17 @@ type DocsStyleText struct {
 // (review.docs_style), each with a fixed note. A file larger than
 // MaxDocsStyleFileBytes is cut at a line boundary. It never fails and never
 // logs or quotes the text. src may be nil, which reads nothing.
+//
+// DESIGN-QUESTION (WP-23b DQ-6): the spec reads the file "with the repository
+// config's read deadline", but repocfg.Read has none of its own: it uses the
+// run's context and the provider client's timeouts. The style file is read
+// the same way. Recommendation: keep.
+//
+// DESIGN-QUESTION (WP-23b DQ-7): a file that is read but holds no text
+// (nothing left after cleaning) is neither "missing" nor "unreadable"; it
+// falls back like them, with a note of its own. A file the provider refuses
+// as too large, or that holds a NUL byte, counts as unreadable.
+// Recommendation: keep.
 func ReadDocsStyle(ctx context.Context, src Source, file, text string, log *slog.Logger) DocsStyleText {
 	if file == "" || src == nil {
 		return docsStyleFromText(text)

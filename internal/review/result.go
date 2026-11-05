@@ -41,9 +41,14 @@ type Result struct {
 	CI *CI `json:"ci,omitempty"`
 	// Publish is set when publishing was requested.
 	Publish *PublishResult `json:"publish,omitempty"`
-	// Focus echoes the focus of a focused run (X-33): the known value, or
-	// the free text as cleaned (NormalizeFocus); omitted without one.
+	// Focus echoes the focus of a focused run (X-33): the known value, the
+	// name of a custom focus (X-51) or the free text as cleaned
+	// (NormalizeFocus); omitted without one.
 	Focus string `json:"focus,omitempty"`
+	// FocusSource says where Focus comes from: FocusSourceBuiltin,
+	// FocusSourceOperator, FocusSourceRepoConfig or FocusSourceFreeText;
+	// omitted, like Focus, without one (X-51, v2.9 spec V-19 §2.3).
+	FocusSource string `json:"focus_source,omitempty"`
 	// Incremental says whether the run reviewed the whole pull request or
 	// only the files that changed since the last review (X-36). Run always
 	// sets it; it is a pointer so that the shared JSON form of a result

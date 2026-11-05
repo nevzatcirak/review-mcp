@@ -39,6 +39,9 @@ func Client(res *review.Result) string {
 	}
 	b.WriteString("## PR Review\n\n")
 	b.WriteString(clientPRLine(&res.PR) + "\n")
+	if l := FocusLine(res); l != "" {
+		b.WriteString(l + "\n")
+	}
 	if l := CILine(res.CI); l != "" {
 		b.WriteString(l + "\n")
 	}
@@ -128,6 +131,9 @@ func writeClientIssues(b *strings.Builder, issues []review.KeyIssue, none string
 		i := &issues[n]
 		if n > 0 {
 			b.WriteString("\n")
+		}
+		if startsFocusGroup(issues, n) {
+			b.WriteString("**Focus:** " + mdutil.CodeSpan(i.Focus) + "\n\n")
 		}
 		prefix := strconv.Itoa(n+1) + ". "
 		indent := strings.Repeat(" ", len(prefix))

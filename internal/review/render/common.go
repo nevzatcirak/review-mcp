@@ -447,6 +447,41 @@ const (
 	ciListedFailing = 5
 )
 
+// focusSourceText names a result's focus_source in the focus line.
+var focusSourceText = map[string]string{
+	review.FocusSourceBuiltin:    "",
+	review.FocusSourceOperator:   " (defined by the operator)",
+	review.FocusSourceRepoConfig: " (repository config)",
+	review.FocusSourceFreeText:   " (free text)",
+}
+
+// DESIGN-QUESTION (WP-23b DQ-4): the spec asks for the overview line
+// "Focus: `api-contract` (repository config)" "for a published focused run",
+// but a focused run never publishes (X-33; Validated refuses focus with
+// publish), so the overview of a focused run does not exist. The line is
+// written in the client view of a focused run, the only text that shows its
+// focus. Recommendation: keep; the overview of a merged publish groups by
+// focus instead.
+//
+// FocusLine is the line that names the focus of a focused run and, for a
+// custom focus, where it was defined (X-51): "Focus: `api-contract`
+// (repository config)". It is plain markdown, and "" without a focus. The
+// focus is a code span, so that a free text cannot form markup.
+func FocusLine(res *review.Result) string {
+	if res == nil || res.Focus == "" {
+		return ""
+	}
+	return "Focus: " + mdutil.CodeSpan(res.Focus) + focusSourceText[res.FocusSource]
+}
+
+// startsFocusGroup reports whether finding n of a merged publish begins a
+// group of findings that share a focus (the findings are ordered by
+// review.groupByFocus): it has a focus the finding before it does not.
+func startsFocusGroup(issues []review.KeyIssue, n int) bool {
+	f := issues[n].Focus
+	return f != "" && (n == 0 || issues[n-1].Focus != f)
+}
+
 // CILine is the renderer-built CI line of the overview and of pr_info
 // (X-31): "CI: N failing, M pending, K passing", with the failing checks
 // named after it, or one of two fixed sentences. Neutral and skipped checks

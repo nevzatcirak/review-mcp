@@ -241,6 +241,9 @@ type Plan struct {
 	// proj is the project context (X-32), whose coverage a review in parts
 	// carries too.
 	proj *projctx.Context
+	// style is coverage.docs_style: set only by a run whose focus uses the
+	// documentation style (X-51).
+	style *llmrun.DocsStyle
 	// cfg is the run's merged configuration and args the call's arguments
 	// with the configuration's defaults filled in (X-40); repo is the
 	// repository config the merge came from.
@@ -680,13 +683,23 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 	issueBlock := ic.Render(cfg.Review.MaxIssueTokens, factor)
 
+	// The documentation style (X-51): read once, at the base revision, and
+	// only by a run whose focus uses it. A failed read falls back to
+	// review.docs_style with a note, never a failed review.
+	var style projctx.DocsStyleText
+	if focusUsesDocsStyle(args.Focus, customFocus) {
+		style = projctx.ReadDocsStyle(ctx, projctx.ProviderSource(p, ref, pr.BaseSHA), cfg.Review.DocsStyleFile,
+			cfg.Review.DocsStyle, log)
+		pl.style = &style.Coverage
+	}
+
 	// Step 3: description.
 	in := PromptInput{
 		Toggles:           toggles,
 		MaxFindings:       maxFindings,
 		ExtraInstructions: extra,
 		RepoInstructions:  projctx.RepoGuidance(cfg.RepoConfig.Path, cfg.Review.RepoInstructions),
-		DocsStyle:         docsStyleBlock(args.Focus, customFocus, cfg.Review.DocsStyle),
+		DocsStyle:         docsStyleBlock(args.Focus, customFocus, style.Text),
 		Language:          language,
 		Title:             pr.Title,
 		Branch:            pr.SourceBranch,
@@ -850,11 +863,13 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		res.Notes = append(res.Notes, NoteCILeftOut)
 	}
 	res.Notes = append(res.Notes, proj.Notes()...)
+	res.Notes = append(res.Notes, style.Notes...)
 	res.Notes = append(res.Notes, ic.Notes...)
 	if docsOnlyWithoutContext(args.Focus, cfg.Context.Repo.Enabled, d.Files) {
 		res.Notes = append(res.Notes, NoteDocsWithoutRepoContext)
 	}
 	res.Coverage.Guidelines, res.Coverage.FileTree = proj.Coverage()
+	res.Coverage.DocsStyle = pl.style
 	for _, f := range enabledFields(toggles) {
 		res.EnabledFields = append(res.EnabledFields, f.key)
 	}
@@ -906,6 +921,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			pl.Budget = budget
 			res.Coverage, res.Metadata.DiffTokens, res.Metadata.FastPath = buildCoverage(prep, flt), prep.Tokens, prep.FastPath
 			res.Coverage.Guidelines, res.Coverage.FileTree = proj.Coverage()
+			res.Coverage.DocsStyle = pl.style
 			if leavesFilesOut(prep) {
 				if ok, err = pl.planParts(ctx, dIn, in, maxChunks, rcs, 0); err != nil {
 					return nil, err

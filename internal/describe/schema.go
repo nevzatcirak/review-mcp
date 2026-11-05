@@ -81,6 +81,7 @@ func ResultSchema() map[string]any {
 			}, "status", "reason", "symbols", "references", "references_in_changed_files", "files"),
 			"guidelines": llmrun.GuidelinesSchema("project guidelines (X-32): pr_describe does not read them, so this is always absent"),
 			"file_tree":  llmrun.FileTreeSchema("file tree (X-32): pr_describe does not read it, so this is always absent"),
+			"docs_style": llmrun.DocsStyleSchema("documentation style (X-51): pr_describe has no focus, so this is always absent"),
 		}, "included", "clipped", "deleted_listed", "omitted", "skipped", "filtered", "partial", "reviewed_files",
 			"total_files", "not_reviewed_files", "model_calls", "failed_parts", "repo_context"),
 		"notes": strList("notes about failed parts, the summary call, dropped walkthrough entries or types, files not described, truncation, clipped or trimmed files and the re-ask"),

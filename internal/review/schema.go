@@ -76,6 +76,7 @@ func ResultSchema() map[string]any {
 			"related":    RelatedCoverageSchema(),
 			"guidelines": llmrun.GuidelinesSchema("the project guidelines read at the target branch (X-32); present except in a publish of supplied findings, which sends no prompt"),
 			"file_tree":  llmrun.FileTreeSchema("the listing of the directories the change touches, at the target branch (X-32); present except in a publish of supplied findings, which sends no prompt"),
+			"docs_style": llmrun.DocsStyleSchema("where the documentation style of the prompt came from (X-51); present only in a review whose focus uses it (docs, or a custom focus with docs_style)"),
 		}, "included", "clipped", "deleted_listed", "omitted", "skipped", "filtered", "partial", "reviewed_files",
 			"total_files", "not_reviewed_files", "model_calls", "failed_parts", "repo_context", "related"),
 		"notes": strList("notes about truncation, dropped findings, clipped or trimmed files and the re-ask"),

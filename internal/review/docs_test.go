@@ -32,9 +32,9 @@ func TestDocsFocusValue(t *testing.T) {
 	}
 }
 
-// TestDocsStyleOnlyForTheDocsFocus: review.docs_style reaches the prompt,
-// fenced under its fixed header, only in a review with focus docs and only
-// when it is set; there is no default style. [canary]
+// TestDocsStyleOnlyForTheDocsFocus: review.docs_style reaches the user
+// prompt (X-51), fenced under its fixed header, only in a review with focus
+// docs and only when it is set; there is no default style. [canary]
 func TestDocsStyleOnlyForTheDocsFocus(t *testing.T) {
 	for _, tc := range []struct {
 		name, focus, style string
@@ -51,7 +51,7 @@ func TestDocsStyleOnlyForTheDocsFocus(t *testing.T) {
 			h.deps.Config.Review.DocsStyle = tc.style
 			pl := prepareWith(t, h, Args{Focus: tc.focus})
 			all := pl.Prompts.System + pl.Prompts.User
-			if got := strings.Contains(all, projctx.DocsStyleHeader); got != tc.want {
+			if got := strings.Contains(pl.Prompts.User, projctx.DocsStyleHeader); got != tc.want {
 				t.Fatalf("style header present = %v, want %v", got, tc.want)
 			}
 			if !tc.want {
@@ -60,7 +60,7 @@ func TestDocsStyleOnlyForTheDocsFocus(t *testing.T) {
 				}
 				return
 			}
-			_, rest, _ := strings.Cut(pl.Prompts.System, projctx.DocsStyleHeader+"\n```\n")
+			_, rest, _ := strings.Cut(pl.Prompts.User, projctx.DocsStyleHeader+"\n```\n")
 			body, _, closed := strings.Cut(rest, "\n```")
 			if !closed || body != styleMarker {
 				t.Errorf("the style is not fenced under its header: %q", rest)
@@ -76,7 +76,7 @@ func TestDocsStyleFromTheRepositoryFile(t *testing.T) {
 	h.deps.Config.Review.DocsStyle = "OPERATOR-STYLE"
 	withRepoConfig(h, "[review]\ndocs_style = \""+styleMarker+"\"\n")
 	pl := prepareWith(t, h, Args{Focus: "docs"})
-	if !strings.Contains(pl.Prompts.System, styleMarker) || strings.Contains(pl.Prompts.System, "OPERATOR-STYLE") {
+	if !strings.Contains(pl.Prompts.User, styleMarker) || strings.Contains(pl.Prompts.User, "OPERATOR-STYLE") {
 		t.Error("the repository's style does not replace the operator's")
 	}
 	if !slices.Contains(pl.Result.RepoConfig.Applied, "review.docs_style") {

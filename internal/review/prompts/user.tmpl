@@ -72,6 +72,16 @@ and the diff; a known focus value and no focus render nothing here, so the
 prompt is byte-identical to the one without the feature (the known values'
 sentences are in the system prompt).
 
+Intentional deviation (X-51, v2.9 spec V-19 §2.2): upstream has no
+documentation style. For a focus that uses one (docs, or a custom focus with
+docs_style) and when a style is given (review.docs_style_file read at the
+base revision, else review.docs_style), the pipeline supplies .docs_style
+(the fixed header of projctx.DocsStyleHeader and the style inside an
+adaptive code fence). It follows the focus block and precedes the part line
+and the diff; the system prompt keeps one fixed sentence about it. Without
+one nothing is rendered here, so the prompt is byte-identical to the one
+without the feature.
+
 Intentional deviation (X-42, v2.2 spec V-2 §2.2): upstream's related-ticket
 block is removed above; issue compliance has its own. When the run has an
 issue (the issue_context argument or an issue the pull request names on its
@@ -144,6 +154,10 @@ PR Description:
 {{- if .focus_block }}
 
 {{ .focus_block }}
+{{- end }}
+{{- if .docs_style }}
+
+{{ .docs_style }}
 {{- end }}
 {{- if .part_header }}
 

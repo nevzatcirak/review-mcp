@@ -219,6 +219,7 @@ func (pl *Plan) partsCoverage(failed []bool) Coverage {
 		c.RepoContext = pl.repoCtx
 	}
 	c.Guidelines, c.FileTree = pl.proj.Coverage()
+	c.DocsStyle = pl.style
 	return c
 }
 

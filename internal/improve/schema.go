@@ -93,6 +93,7 @@ func ResultSchema() map[string]any {
 			}, "status", "reason", "symbols", "references", "references_in_changed_files", "files"),
 			"guidelines": llmrun.GuidelinesSchema("the project guidelines read at the target branch (X-32); always present for pr_improve"),
 			"file_tree":  llmrun.FileTreeSchema("the listing of the directories the change touches, at the target branch (X-32); always present for pr_improve"),
+			"docs_style": llmrun.DocsStyleSchema("documentation style (X-51): pr_improve has no focus, so this is always absent"),
 		}, "included", "clipped", "deleted_listed", "omitted", "skipped", "filtered", "partial", "reviewed_files",
 			"total_files", "not_reviewed_files", "model_calls", "failed_parts", "repo_context"),
 		"notes": strList("notes about failed parts, self-review failures and scores, dropped or unscored suggestions, duplicates, the total cap, the discussion, truncation, clipped or trimmed files and the re-ask"),

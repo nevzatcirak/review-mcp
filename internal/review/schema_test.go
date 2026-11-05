@@ -89,6 +89,15 @@ func TestResultSchemaAcceptedBySDK(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	h = newHarness(goodAnswer)
+	h.deps.Config.Review.DocsStyle = "Use the present tense."
+	if results["docs_style"], err = Run(context.Background(), h.deps, Args{PRURL: testPRURL, Focus: "docs"}); err != nil {
+		t.Fatal(err)
+	}
+	if c := results["docs_style"].Coverage.DocsStyle; c == nil || c.Source != "text" {
+		t.Fatalf("coverage.docs_style = %+v", c)
+	}
+
 	bad := *results["full"]
 	badReview := *bad.Review
 	nine := 9

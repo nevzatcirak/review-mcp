@@ -68,13 +68,20 @@ var focusSentences = map[string]string{
 const NoteDocsWithoutRepoContext = "Repository context is off, so documentation was checked against the code in " +
 	"this pull request only."
 
+// focusUsesDocsStyle reports whether a review with this (normalized) focus
+// gets the documentation style: the docs focus, and a custom focus that sets
+// docs_style (X-51). custom is the definition of a custom focus, nil for
+// any other.
+func focusUsesDocsStyle(focus string, custom *config.CustomFocus) bool {
+	return focus == FocusDocs || (custom != nil && custom.DocsStyle)
+}
+
 // docsStyleBlock is the documentation-style block of a review: the fenced
-// review.docs_style for focus docs and for a custom focus that sets
-// docs_style (X-51), "" for every other focus and when no style is set
-// (there is no default style). custom is the definition of a custom focus,
-// nil for any other.
+// style for a focus that uses it (focusUsesDocsStyle), "" for every other
+// focus and when no style is given (there is no default style). The block
+// goes to the user prompt (X-51).
 func docsStyleBlock(focus string, custom *config.CustomFocus, style string) string {
-	if focus != FocusDocs && (custom == nil || !custom.DocsStyle) {
+	if !focusUsesDocsStyle(focus, custom) {
 		return ""
 	}
 	return projctx.DocsStyle(style)

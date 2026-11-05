@@ -6,6 +6,7 @@ import (
 	"text/template"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/projctx"
 	"github.com/nevzatcirak/review-mcp/internal/prompt"
 	"github.com/nevzatcirak/review-mcp/internal/repotools"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
@@ -46,7 +47,9 @@ type PromptInput struct {
 	RepoInstructions string
 	// DocsStyle is the rendered documentation-style block (docsStyleBlock);
 	// empty omits it. Only a review with focus docs, or with a custom focus
-	// that sets docs_style, has one.
+	// that sets docs_style, has one. It is repository text: it goes to the
+	// user prompt (X-51), and the system prompt gets one fixed sentence
+	// about it (projctx.DocsStyleSentence).
 	DocsStyle string
 	// Language is the effective output language (the per-call argument,
 	// else output.language). Empty means en-US.
@@ -148,6 +151,7 @@ func (in *PromptInput) vars() map[string]any {
 		"extra_instructions":  prompt.WithOutputLanguage(in.ExtraInstructions, in.Language),
 		"repo_instructions":   in.RepoInstructions,
 		"docs_style":          in.DocsStyle,
+		"docs_style_note":     docsStyleNote(in.DocsStyle),
 		"schema":              SchemaText(in.Toggles, in.MaxFindings),
 		"example":             ExampleYAML(in.Toggles),
 		"date":                in.Date,
@@ -171,6 +175,15 @@ func (in *PromptInput) vars() map[string]any {
 		"part_header":         in.PartHeader,
 		"diff":                in.Diff,
 	}
+}
+
+// docsStyleNote is the system prompt's sentence about the documentation
+// style when the user prompt carries one, "" otherwise.
+func docsStyleNote(block string) string {
+	if block != "" {
+		return projctx.DocsStyleSentence
+	}
+	return ""
 }
 
 // relatedInstruction is RelatedInstruction with a related block, followed

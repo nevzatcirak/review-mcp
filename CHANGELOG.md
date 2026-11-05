@@ -52,7 +52,6 @@ Nothing in the tools or the configuration of 2.7.0-rc.1 is removed or renamed.
   (or a pinned version) instead of the bare package name, so that `npx` does
   not reuse an older cached copy. See
   [Troubleshooting](docs/troubleshooting.md#an-older-version-runs-although-a-newer-one-is-released).
-
 - Gitea before 1.14 is refused for lists with `unsupported_version`, because
   its issue search ignores the role filters and would list other people's
   pull requests. A version that cannot be read lets the list go ahead.

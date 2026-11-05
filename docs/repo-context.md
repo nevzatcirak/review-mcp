@@ -32,7 +32,9 @@ For each review (or answer), after the diff is fetched:
    accessor (`get`, `set` or `is` followed by an upper-case letter) of a field
    defined or declared in the same file comes last, and a getter and setter of
    one field count once against `max_symbols`; every name of a kept group is
-   still searched.
+   still searched. Because an accessor group counts once, the number of
+   symbols searched can exceed `max_symbols` by the number of kept accessor
+   groups.
 2. **Fetch.** The pull request head is fetched into a local cache (see
    [What is cached](#what-is-cached-and-where)), once per review, and its
    commit must equal the head commit the provider reported.
@@ -484,8 +486,8 @@ nothing is shown when repository context is off. The structured result has
 `coverage.repo_context`:
 
 ```json
-{"status": "used", "reason": "", "symbols": 5, "references": 7, "files": 3,
- "references_in_changed_files": 2}
+{"status": "used", "reason": "", "symbols": 5, "references": 7,
+ "references_in_changed_files": 2, "files": 3}
 ```
 
 - `status` is `off` (disabled; nothing was done), `used` (the repository was

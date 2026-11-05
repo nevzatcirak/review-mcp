@@ -324,15 +324,12 @@ func (s *Session) LookUpDocNames() { s.docNames = true }
 
 // Symbols returns the symbols of files, ranked and capped. It does no I/O.
 // With LookUpDocNames the names of the changed documentation come first,
-// then the symbols of the code; context.repo.max_symbols caps them together.
+// then the symbols of the code; context.repo.max_symbols caps them together
+// (gitctx.CapSymbols: the accessors of one field count once).
 func (s *Session) Symbols(files []provider.FilePatch) []gitctx.Symbol {
 	code := gitctx.ExtractSymbols(files, s.settings.MaxSymbols)
 	if !s.docNames {
 		return code
-	}
-	max := s.settings.MaxSymbols
-	if max <= 0 {
-		max = gitctx.DefaultMaxSymbols
 	}
 	out := docSymbols(files)
 	seen := map[string]bool{}
@@ -344,10 +341,7 @@ func (s *Session) Symbols(files []provider.FilePatch) []gitctx.Symbol {
 			out = append(out, sym)
 		}
 	}
-	if len(out) > max {
-		out = out[:max]
-	}
-	return out
+	return gitctx.CapSymbols(out, s.settings.MaxSymbols)
 }
 
 // ready fetches the head once. The error is a gitctx reason.

@@ -164,3 +164,125 @@ func TestExtractSymbolsCapCutsTestsFirst(t *testing.T) {
 		}
 	}
 }
+
+// accessorDiff is a Java pull request with fields and their accessors in one
+// file (listed first) and service methods in another, all new.
+func accessorDiff(pairs, methods int) []provider.FilePatch {
+	var model, service strings.Builder
+	model.WriteString("@@ -1,1 +1,1 @@\n")
+	for i := range pairs {
+		fmt.Fprintf(&model, "+    private String field%c;\n", 'A'+i)
+	}
+	for i := range pairs {
+		fmt.Fprintf(&model, "+    public String getField%c() { return field%c; }\n", 'A'+i, 'A'+i)
+		fmt.Fprintf(&model, "+    public void setField%c(String v) { field%c = v; }\n", 'A'+i, 'A'+i)
+	}
+	service.WriteString("@@ -1,1 +1,1 @@\n")
+	for i := range methods {
+		fmt.Fprintf(&service, "+    public void processOrder%c(Order o) {\n", 'A'+i)
+	}
+	return []provider.FilePatch{
+		{Path: "src/main/java/demo/Model.java", Type: provider.ChangeModified, Patch: model.String()},
+		{Path: "src/main/java/demo/Service.java", Type: provider.ChangeModified, Patch: service.String()},
+	}
+}
+
+// TestAccessorsRankBelowOtherSymbols (canary z): 12 accessor pairs and 10
+// service methods under a cap of 20 keep all 10 service methods, ahead of
+// the accessors; each getX/setX pair counts once, and both names of a kept
+// pair are searched.
+func TestAccessorsRankBelowOtherSymbols(t *testing.T) {
+	syms := ExtractSymbols(accessorDiff(12, 10), 20)
+	methods, units := 0, map[string]bool{}
+	for i, s := range syms {
+		if strings.HasPrefix(s.Name, "processOrder") {
+			methods++
+			if i >= 10 {
+				t.Errorf("service method %s at %d, want among the first 10", s.Name, i)
+			}
+			units[s.Name] = true
+			continue
+		}
+		if s.Field == "" {
+			t.Errorf("%s has no field, want an accessor", s.Name)
+		}
+		units[s.Path+"/"+s.Field] = true
+	}
+	if methods != 10 {
+		t.Errorf("service methods kept = %d of 10 under a cap of 20; symbols:\n%s", methods, dumpSymbols(syms))
+	}
+	if len(units) != 20 || len(syms) != 30 {
+		t.Errorf("%d units in %d symbols, want 20 units: 10 methods and 10 getter/setter pairs (30 names)", len(units), len(syms))
+	}
+	for _, s := range syms {
+		if s.Field != "" && s.Field != "field"+s.Name[len("getField"):] {
+			t.Errorf("%s: field %q", s.Name, s.Field)
+		}
+	}
+}
+
+// TestAccessorField: get, set and is followed by an upper-case letter; the
+// field must be defined or declared in the same file for the demotion.
+func TestAccessorField(t *testing.T) {
+	for name, want := range map[string]string{
+		"getName": "name", "setUserId": "userId", "isActive": "active", "getURL": "uRL",
+		"getter": "", "settle": "", "island": "", "get": "", "isA": "a", "get_name": "",
+	} {
+		got, ok := accessorField(name)
+		if got != want || ok != (want != "") {
+			t.Errorf("accessorField(%q) = %q, %v; want %q", name, got, ok, want)
+		}
+	}
+	files := []provider.FilePatch{
+		{Path: "A.java", Patch: "@@ -1,1 +1,1 @@\n+    private int count = 0;\n+    public int getCount() {\n+    public int getTotal() {\n"},
+		{Path: "B.kt", Patch: "@@ -1,1 +1,1 @@\n+    val label: String = \"\"\n+    fun getLabel(): String {\n+    fun getCount(): Int {\n"},
+	}
+	fields := map[string]string{}
+	for _, s := range ExtractSymbols(files, 100) {
+		fields[s.Name] = s.Field
+	}
+	if fields["getCount"] != "count" || fields["getTotal"] != "" || fields["getLabel"] != "label" {
+		t.Errorf("fields = %v; want getCount:count (A.java declares count), getTotal none, getLabel:label", fields)
+	}
+}
+
+// TestCapSymbolsGroups: a group counts where its first accessor stands, and
+// a later accessor of a kept group is kept past the cap.
+func TestCapSymbolsGroups(t *testing.T) {
+	syms := []Symbol{
+		{Name: "getAlpha", Path: "a", Field: "alpha"}, {Name: "Run1"}, {Name: "Run2"},
+		{Name: "setAlpha", Path: "a", Field: "alpha"}, {Name: "getBeta", Path: "a", Field: "beta"},
+		{Name: "setAlpha", Path: "b", Field: "alpha"},
+	}
+	var got []string
+	for _, s := range CapSymbols(syms, 3) {
+		got = append(got, s.Name)
+	}
+	if strings.Join(got, ",") != "getAlpha,Run1,Run2,setAlpha" {
+		t.Errorf("CapSymbols = %v", got)
+	}
+}
+
+// TestLoggerIsNotASymbol (canary z2): logger names and serialVersionUID are
+// never searched; a class named Logger is.
+func TestLoggerIsNotASymbol(t *testing.T) {
+	files := []provider.FilePatch{{Path: "src/Foo.java", Patch: "@@ -1,1 +1,1 @@\n" +
+		"+    private static final Logger LOGGER = LoggerFactory.getLogger(Foo.class);\n" +
+		"+    public static final String FORMAT = \"x\";\n" +
+		"+public class Logger {\n"}}
+	var got []string
+	for _, s := range ExtractSymbols(files, 100) {
+		got = append(got, s.Name)
+	}
+	if strings.Join(got, ",") != "FORMAT,Logger" {
+		t.Errorf("symbols = %v, want FORMAT and Logger without LOGGER", got)
+	}
+	for _, n := range []string{"LOGGER", "LOG", "logger", "log", "serialVersionUID"} {
+		if validSymbol(n) {
+			t.Errorf("validSymbol(%q) = true", n)
+		}
+	}
+	if !validSymbol("Logger") {
+		t.Error("validSymbol(Logger) = false; only the exact noise names are dropped")
+	}
+}

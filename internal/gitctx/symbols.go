@@ -2,8 +2,11 @@ package gitctx
 
 import (
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/nevzatcirak/review-mcp/internal/filter"
 	"github.com/nevzatcirak/review-mcp/internal/patch"
@@ -75,6 +78,12 @@ type Symbol struct {
 	// other symbol, whatever their Rank: a test is a caller, not a thing
 	// callers depend on.
 	Test bool
+	// Field is set for an accessor: a name of get, set or is followed by an
+	// upper-case letter whose remainder, with its first letter lower-cased,
+	// names a field defined or changed in the same file. Field is that
+	// remainder. An accessor ranks after every other symbol of its rank, and
+	// the accessors of one field count once against the cap (CapSymbols).
+	Field string
 }
 
 // IsTestPath reports whether path names a test file: by file name
@@ -121,8 +130,9 @@ func ChangedPaths(files []provider.FilePatch) []string {
 	return out
 }
 
-// ExtractSymbols returns up to max symbols (DefaultMaxSymbols when max <= 0)
-// from the patches of a pull request, most important first:
+// ExtractSymbols returns up to max symbols (DefaultMaxSymbols when max <= 0;
+// the accessors of one field count as one, see CapSymbols) from the patches
+// of a pull request, most important first:
 //
 //   - names from the hunk section headers (the function or class that
 //     contains the change);
@@ -133,9 +143,12 @@ func ChangedPaths(files []provider.FilePatch) []string {
 // Ranking: removed or renamed, changed signature, other changed (existing)
 // definitions, new definitions, then the symbols of test files (Symbol.Test,
 // in the same sub-order, a new test definition included); inside each the
-// order of the diff (files in the order given, hunks and lines in order). A
-// name is kept once, with its best rank. The cap applies after the whole
-// ordering, so test symbols are the first to be cut.
+// order of the diff (files in the order given, hunks and lines in order).
+// Within a rank, accessors of a field of their own file (Symbol.Field) come
+// after every other symbol, existing or new. A name is kept once, with its
+// best rank. The cap applies after the whole ordering (CapSymbols: the
+// accessors of one field count once), so test symbols are the first to be
+// cut.
 //
 // A "changed signature" is precise: the name is defined on at least one
 // removed line and at least one added line of the pull request, and the set
@@ -143,20 +156,36 @@ func ChangedPaths(files []provider.FilePatch) []string {
 // whitespace is collapsed and a trailing "{" is dropped. A definition moved
 // to another file, or re-indented, is not a changed signature.
 //
+// A field of a file is a name defined on a line of its patch (a hunk header,
+// an added or a removed line) or declared as a field on an added or removed
+// line ("private String name;", "val name: String").
+//
 // Names shorter than MinSymbolLen characters, keywords and a few ubiquitous
-// names (see noiseNames) are dropped. The function is pure.
+// names (see noiseNames and noiseExact) are dropped. The function is pure.
 func ExtractSymbols(files []provider.FilePatch, max int) []Symbol {
 	if max <= 0 {
 		max = DefaultMaxSymbols
 	}
 	aggs := map[string]*symAgg{}
 	var order []*symAgg
+	// fields are the names each file defines or declares as a field.
+	fields := map[string]map[string]bool{}
+	field := func(path, name string) {
+		if fields[path] == nil {
+			fields[path] = map[string]bool{}
+		}
+		fields[path][name] = true
+	}
 	note := func(name, path string, side byte, text string) {
+		field(path, name)
 		a, ok := aggs[name]
 		if !ok {
 			a = &symAgg{name: name, seq: len(order), removed: map[string]bool{}, added: map[string]bool{}}
 			aggs[name] = a
 			order = append(order, a)
+		}
+		if !slices.Contains(a.paths, path) {
+			a.paths = append(a.paths, path)
 		}
 		if a.anyPath == "" {
 			a.anyPath = path
@@ -197,13 +226,25 @@ func ExtractSymbols(files []provider.FilePatch, max int) []Symbol {
 				if name, ok := definitionName(text, lang, false); ok {
 					note(name, fp.Path, l.Op, normalizeDef(text))
 				}
+				if name, ok := fieldName(text, lang); ok {
+					field(fp.Path, name)
+				}
 			}
 		}
 	}
 
 	out := make([]Symbol, 0, len(order))
 	for _, a := range order {
-		out = append(out, a.symbol())
+		s := a.symbol()
+		if f, ok := accessorField(s.Name); ok {
+			for _, p := range a.paths {
+				if fields[p][f] {
+					s.Field = f
+					break
+				}
+			}
+		}
+		out = append(out, s)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Test != out[j].Test {
@@ -212,18 +253,67 @@ func ExtractSymbols(files []provider.FilePatch, max int) []Symbol {
 		if out[i].Rank != out[j].Rank {
 			return out[i].Rank < out[j].Rank
 		}
+		if ai, aj := out[i].Field != "", out[j].Field != ""; ai != aj {
+			return aj
+		}
 		return !out[i].New && out[j].New
 	})
-	if len(out) > max {
-		out = out[:max]
+	return CapSymbols(out, max)
+}
+
+// CapSymbols keeps the symbols of syms, in order, up to max units: a symbol
+// is one unit, and the accessors of one field of one file (the same Path and
+// Field) are one unit together, counted where the first of them stands.
+// Every accessor of a unit that is kept is kept, wherever it stands. max <=
+// 0 means DefaultMaxSymbols.
+func CapSymbols(syms []Symbol, max int) []Symbol {
+	if max <= 0 {
+		max = DefaultMaxSymbols
+	}
+	group := func(s Symbol) string { return s.Path + "\x00" + s.Field }
+	kept := map[string]bool{}
+	units := 0
+	out := make([]Symbol, 0, min(len(syms), max))
+	for _, s := range syms {
+		if s.Field != "" && kept[group(s)] {
+			out = append(out, s)
+			continue
+		}
+		if units == max {
+			continue
+		}
+		units++
+		if s.Field != "" {
+			kept[group(s)] = true
+		}
+		out = append(out, s)
 	}
 	return out
+}
+
+// accessorField returns the field an accessor name reads or writes: get, set
+// or is followed by an upper-case letter, and the rest with its first letter
+// lower-cased ("getUserName" is "userName").
+func accessorField(name string) (string, bool) {
+	for _, pre := range []string{"get", "set", "is"} {
+		rest, ok := strings.CutPrefix(name, pre)
+		if !ok || rest == "" {
+			continue
+		}
+		r, n := utf8.DecodeRuneInString(rest)
+		if !unicode.IsUpper(r) {
+			continue
+		}
+		return string(unicode.ToLower(r)) + rest[n:], true
+	}
+	return "", false
 }
 
 // symAgg collects everything seen about one name.
 type symAgg struct {
 	name        string
 	seq         int
+	paths       []string        // the files that define the name
 	removed     map[string]bool // normalised removed definition lines
 	added       map[string]bool
 	header      bool
@@ -362,6 +452,11 @@ var noiseNames = setOf(
 	"__exit__", "__len__", "__iter__", "__next__", "__getitem__", "__setitem__", "initialize",
 )
 
+// noiseExact are names whose uses say nothing either, compared with their
+// case: a logger, and Java's serial version. A class named Logger is still
+// searched.
+var noiseExact = setOf("LOGGER", "LOG", "logger", "log", "serialVersionUID")
+
 func setOf(words ...string) map[string]bool {
 	m := make(map[string]bool, len(words))
 	for _, w := range words {
@@ -386,7 +481,32 @@ func validSymbol(name string) bool {
 		return false
 	}
 	low := strings.ToLower(name)
-	return !keywords[low] && !noiseNames[low]
+	return !keywords[low] && !noiseNames[low] && !noiseExact[name]
+}
+
+// fieldRules find the name a field declaration declares: a typed one with
+// modifiers or a type ("private String name;", "int count = 0;") and a
+// val, var or let ("val name: String"). A local variable looks the same; it
+// only makes an accessor of that name rank lower.
+var fieldRules = []*regexp.Regexp{
+	regexp.MustCompile(`^` + mods + `([\w.<>\[\]?,]+)\s+(?:[\w.<>\[\]?,]+\s+)*?([A-Za-z_]\w*)\s*(?:=(?:[^=]|$)|;)`),
+	regexp.MustCompile(`^` + mods + `(?:val|var|let)\s+()([A-Za-z_]\w*)\s*[:=]`),
+}
+
+// fieldName returns the name a source line declares as a field, if any.
+func fieldName(line, lang string) (string, bool) {
+	line = strings.TrimSpace(line)
+	if line == "" || len(line) > maxDefLine || proseLanguages[lang] {
+		return "", false
+	}
+	for _, re := range fieldRules {
+		m := re.FindStringSubmatch(line)
+		if m == nil || statementWords[strings.ToLower(m[1])] || keywords[strings.ToLower(m[2])] {
+			continue
+		}
+		return m[2], true
+	}
+	return "", false
 }
 
 // definitionName returns the name a source line (or a hunk header section)

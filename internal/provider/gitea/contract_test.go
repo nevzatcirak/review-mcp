@@ -76,6 +76,8 @@ func (ctFixture) Traits() contract.Traits {
 		CheckStates: []provider.CheckState{provider.CheckSuccess, provider.CheckFailure, provider.CheckPending,
 			provider.CheckNeutral, provider.CheckError},
 		NoListingLimit: true,
+		// The issue search does not carry the target branch.
+		ListsNoTargetBranch: true,
 	}
 }
 

@@ -207,12 +207,13 @@ func (p *Provider) CloseIdleConnections() {
 func (*Provider) Kind() provider.Kind { return provider.KindGitea }
 
 // Capabilities implements provider.Provider. A review approves or requests
-// changes (decision.go).
+// changes (decision.go). The issue search lists the token user's open pull
+// requests as a requested reviewer, an assignee and the author (lists.go).
 func (*Provider) Capabilities() provider.Capabilities {
 	return provider.Capabilities{
 		GFM: true, MarkdownTables: true, Labels: true, InlineComments: true,
 		InlineThreadResolution: true, DescriptionEdit: true, Issues: true,
-		Decisions: decisionCaps,
+		Decisions: decisionCaps, Lists: listCaps,
 	}
 }
 

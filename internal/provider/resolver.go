@@ -3,6 +3,7 @@ package provider
 import (
 	"log/slog"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 
@@ -317,6 +318,75 @@ func (r *Resolver) match(rawURL string) (*candidate, string, *url.URL, error) {
 		}
 	}
 	return best, "/" + strings.Join(rest, "/"), u, nil
+}
+
+// kindOrder is the fixed order of Enabled and EnabledKinds.
+var kindOrder = []Kind{KindGitea, KindBitbucketServer, KindGitHub, KindGitLab}
+
+// EnabledKinds returns the kinds that are enabled in the configuration and
+// have a registered factory, in a fixed order (Gitea, Bitbucket Server,
+// GitHub, GitLab). It builds nothing and performs no network I/O.
+func (r *Resolver) EnabledKinds() []Kind {
+	if r == nil {
+		return nil
+	}
+	var out []Kind
+	for _, k := range kindOrder {
+		if r.candidateOf(k) != nil {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// Enabled builds one provider per enabled and registered kind, in the
+// order of EnabledKinds, for the tools that need no pull request URL (the
+// pull request lists, X-48). The providers are remembered for
+// CloseIdleConnections like those of Resolve. No network I/O happens here.
+// A provider that cannot be built is left out and counted in the debug
+// log; callers that must notice it compare with EnabledKinds.
+func (r *Resolver) Enabled() []Provider {
+	return r.EnabledOf(r.EnabledKinds()...)
+}
+
+// EnabledOf is Enabled for the given kinds only: a kind that is not enabled
+// or not registered is skipped, the others are built in the fixed kind
+// order whatever the order of kinds. Nothing is built for a kind that is
+// not named (the serve credential wrapper uses this to build nothing for a
+// kind without a token).
+func (r *Resolver) EnabledOf(kinds ...Kind) []Provider {
+	if r == nil {
+		return nil
+	}
+	var out []Provider
+	for _, k := range kindOrder {
+		if !slices.Contains(kinds, k) {
+			continue
+		}
+		c := r.candidateOf(k)
+		if c == nil {
+			continue
+		}
+		p, err := r.build(c)
+		if err != nil {
+			r.logger.Debug("provider could not be built", "kind", string(k))
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// candidateOf returns the first candidate of kind that has a factory, or
+// nil. Gitea may have two candidates (base URL and web URL); either builds
+// the same provider.
+func (r *Resolver) candidateOf(kind Kind) *candidate {
+	for i := range r.candidates {
+		if c := &r.candidates[i]; c.kind == kind && c.factory != nil {
+			return c
+		}
+	}
+	return nil
 }
 
 // build builds the request-scoped provider of c and remembers it for

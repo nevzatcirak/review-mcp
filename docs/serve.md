@@ -1,6 +1,6 @@
 # Serve mode
 
-`review-mcp serve` runs the same tools over HTTP (nine: everything stdio has except `job_result`, see [Long calls](#long-calls), and except [`pr_review_decision`](decision.md)), for a team that shares one
+`review-mcp serve` runs the same tools over HTTP (eleven: everything stdio has except `job_result`, see [Long calls](#long-calls), and except [`pr_review_decision`](decision.md)), for a team that shares one
 server instead of everyone running a local process. The default transport,
 stdio, is described in the [Setup guide](setup.md).
 
@@ -353,6 +353,16 @@ context.repo.enabled: repository context is not available in serve mode (cached 
 ```
 
 Use stdio mode (one user, one cache) if you want it.
+
+## Pull request lists
+
+[`pr_list_review_requests` and `pr_list_authored`](pr-lists.md) work in serve
+mode, each provider under the caller's own token. They read pull request
+metadata only and need no LLM key header. A provider whose token header the
+request lacks is not an error: it is reported with the status `no_token`,
+nothing is sent to it, and the other providers are listed as usual. Naming a
+provider without its header (`provider: "github"`) gives the same status, not a
+refusal. `server_info` shows which headers a request sends.
 
 ## Decisions are not available
 

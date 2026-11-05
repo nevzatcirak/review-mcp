@@ -249,12 +249,13 @@ func (*Provider) Kind() provider.Kind { return provider.KindBitbucketServer }
 // Capabilities implements provider.Provider. Bitbucket Server has no issue
 // tracker: Issues is false and the provider does not implement
 // provider.IssueReader. The participant status takes every decision
-// (decision.go).
+// (decision.go). The dashboard lists the token user's pull requests as a
+// reviewer and as the author; there are no assignees (lists.go).
 func (*Provider) Capabilities() provider.Capabilities {
 	return provider.Capabilities{
 		GFM: false, MarkdownTables: true, Labels: false, InlineComments: true,
 		InlineThreadResolution: true, GeneralThreadResolution: true, DescriptionEdit: true,
-		Decisions: decisionCaps,
+		Decisions: decisionCaps, Lists: listCaps,
 	}
 }
 
@@ -458,18 +459,32 @@ func (p *Provider) newComment(ref provider.PRRef, id int64) *provider.Comment {
 
 // prWebURL returns {base_url}/projects/{K}/repos/{s}/pull-requests/{id}
 // (/users/{u}/... for a personal repository) from escaped segments.
+// It is the one builder of pull request web URLs: the lists build theirs
+// with it too (prWebPath, X-48).
 func (p *Provider) prWebURL(ref provider.PRRef) string {
-	return p.repoWebURL(ref) + "/pull-requests/" + strconv.FormatInt(ref.Number, 10)
+	return p.baseURL + prWebPath(ref)
+}
+
+// prWebPath is the escaped web path of ref's pull request below the base
+// URL: /projects/{K}/repos/{s}/pull-requests/{id}, or /users/{u}/... for a
+// personal repository; ParsePRPath gives ref back from it.
+func prWebPath(ref provider.PRRef) string {
+	return repoWebPath(ref) + "/pull-requests/" + strconv.FormatInt(ref.Number, 10)
 }
 
 // repoWebURL is the repository's web URL: {base_url}/projects/{K}/repos/{s},
 // or /users/{user}/repos/{s} for a personal repository.
 func (p *Provider) repoWebURL(ref provider.PRRef) string {
+	return p.baseURL + repoWebPath(ref)
+}
+
+// repoWebPath is repoWebURL below the base URL.
+func repoWebPath(ref provider.PRRef) string {
 	owner := "/projects/" + url.PathEscape(ref.Namespace)
 	if user, ok := strings.CutPrefix(ref.Namespace, "~"); ok {
 		owner = "/users/" + url.PathEscape(user)
 	}
-	return p.baseURL + owner + "/repos/" + url.PathEscape(ref.Repo)
+	return owner + "/repos/" + url.PathEscape(ref.Repo)
 }
 
 // FileLineURL implements provider.Provider. It is pure.

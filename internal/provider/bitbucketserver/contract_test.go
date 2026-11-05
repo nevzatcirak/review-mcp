@@ -78,6 +78,7 @@ func (ctFixture) Traits() contract.Traits {
 		CheckStates:          []provider.CheckState{provider.CheckSuccess, provider.CheckFailure, provider.CheckPending, provider.CheckNeutral},
 		OmitsNoNewlineMarker: true,
 		NoListingLimit:       true,
+		ListsMyStatus:        true,
 	}
 }
 

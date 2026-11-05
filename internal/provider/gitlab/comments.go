@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/url"
 	"strconv"
 	"time"
 
@@ -233,10 +232,10 @@ func postedComment(web string, id int64) *provider.Comment {
 }
 
 // mrWebURL is {base}/{full_path}/-/merge_requests/{iid}, the web_url
-// fallback for a merge request that reports none.
+// fallback for a merge request that reports none. The lists build their
+// URLs with the same mrWebPath (X-48).
 func (p *Provider) mrWebURL(ref provider.PRRef) string {
-	return p.webURL + "/" + provider.EscapeNamespace(ref.Namespace) + "/" + url.PathEscape(ref.Repo) +
-		"/-/merge_requests/" + idStr(ref.Number)
+	return p.webURL + mrWebPath(ref)
 }
 
 // ReplyToComment implements provider.Provider. It finds the discussion that

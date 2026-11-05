@@ -15,7 +15,7 @@ import (
 var allClasses = []ErrorClass{
 	ClassURLNotConfigured, ClassURLMalformed, ClassAuth, ClassNotFound, ClassRateLimited,
 	ClassUpstream, ClassTooLarge, ClassUnsupportedVersion, ClassTransport, ClassProtocol,
-	ClassNotOwner, ClassConflict, ClassNotAnIssue,
+	ClassNotOwner, ClassConflict, ClassNotAnIssue, ClassUnsupported,
 }
 
 var sentinels = map[ErrorClass]*Error{
@@ -24,6 +24,7 @@ var sentinels = map[ErrorClass]*Error{
 	ClassTooLarge: ErrTooLarge, ClassUnsupportedVersion: ErrUnsupportedVersion,
 	ClassTransport: ErrTransport, ClassProtocol: ErrProtocol,
 	ClassNotOwner: ErrNotOwner, ClassConflict: ErrConflict, ClassNotAnIssue: ErrNotAnIssue,
+	ClassUnsupported: ErrUnsupported,
 }
 
 func TestErrorFormat(t *testing.T) {

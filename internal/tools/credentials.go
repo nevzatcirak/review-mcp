@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"slices"
+
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/related"
@@ -161,4 +163,79 @@ func missingCredential(cfg *config.Config, kind provider.Kind, needLLM bool) err
 		return errMissingLLM
 	}
 	return nil
+}
+
+// ListSource gives the pull request lists (X-48) the providers to query,
+// without a pull request URL. It is implemented by the credential wrapper
+// of serve mode and, through ListSourceOf, by *provider.Resolver.
+type ListSource interface {
+	// EnabledKinds are the enabled and registered provider kinds, in a
+	// fixed order. It builds nothing.
+	EnabledKinds() []provider.Kind
+	// ListProviders builds the providers of kinds, in the fixed kind
+	// order, and names the kinds it did not build because the call has no
+	// token for them (serve mode; always empty in stdio mode). A kind that
+	// is not enabled is ignored.
+	ListProviders(kinds []provider.Kind) (providers []provider.Provider, noToken []provider.Kind)
+}
+
+// enabledResolver is the part of *provider.Resolver a ListSource needs.
+type enabledResolver interface {
+	EnabledKinds() []provider.Kind
+	EnabledOf(kinds ...provider.Kind) []provider.Provider
+}
+
+// ListSourceOf returns the ListSource of r: the credential wrapper itself,
+// or a plain adapter of a resolver that enables its providers. It is nil
+// for a resolver that does either.
+func ListSourceOf(r PRResolver) ListSource {
+	switch v := r.(type) {
+	case ListSource:
+		return v
+	case enabledResolver:
+		return plainListSource{v}
+	}
+	return nil
+}
+
+// plainListSource is the ListSource of stdio mode: every call has the
+// startup tokens, so no kind is skipped.
+type plainListSource struct{ r enabledResolver }
+
+func (s plainListSource) EnabledKinds() []provider.Kind { return s.r.EnabledKinds() }
+
+func (s plainListSource) ListProviders(kinds []provider.Kind) ([]provider.Provider, []provider.Kind) {
+	return s.r.EnabledOf(kinds...), nil
+}
+
+// EnabledKinds returns the inner resolver's enabled kinds; none when the
+// inner resolver does not enable providers.
+func (r credentialResolver) EnabledKinds() []provider.Kind {
+	if in, ok := r.inner.(enabledResolver); ok {
+		return in.EnabledKinds()
+	}
+	return nil
+}
+
+// ListProviders builds, through the inner resolver, only the providers of
+// the kinds whose token this call carries. A kind without its token is
+// returned in noToken and nothing is built for it, so no request can leave
+// for it (the list equivalent of the credentials_missing of Resolve).
+func (r credentialResolver) ListProviders(kinds []provider.Kind) ([]provider.Provider, []provider.Kind) {
+	in, ok := r.inner.(enabledResolver)
+	if !ok {
+		return nil, nil
+	}
+	var withToken, noToken []provider.Kind
+	for _, k := range in.EnabledKinds() {
+		if !slices.Contains(kinds, k) {
+			continue
+		}
+		if missingCredential(r.cfg, k, false) != nil {
+			noToken = append(noToken, k)
+			continue
+		}
+		withToken = append(withToken, k)
+	}
+	return in.EnabledOf(withToken...), noToken
 }

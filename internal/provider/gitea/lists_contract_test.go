@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
@@ -16,7 +17,8 @@ import (
 // fake's origin, so a built URL must use the web base.
 const ctListWeb = "https://gitea.example.com"
 
-// ServeLists implements contract.ListFixture: a fake GET
+// ServeLists implements contract.ListFixture: a fake GET /api/v1/version
+// (1.21.11 unless a test sets another answer) and GET
 // /api/v1/repos/issues/search (E4, Gitea 1.14+). The fixture serves the
 // items in the spec's order (the host orders by creation, WP-19a DQ-5),
 // pull_request.draft (Gitea 1.22+) and X-Total-Count.
@@ -28,7 +30,7 @@ func (ctFixture) ServeLists(t *testing.T, ls contract.ListSpec) (provider.Provid
 
 func serveCtLists(t *testing.T, ls contract.ListSpec) (provider.Provider, *provider.Resolver, *ctIssueSearch) {
 	t.Helper()
-	h := &ctIssueSearch{t: t, ls: ls}
+	h := &ctIssueSearch{t: t, ls: ls, versionBody: `{"version":"1.21.11"}`}
 	cfg := config.Defaults()
 	cfg.Gitea.BaseURL = contract.StartListServer(t, ls, h)
 	cfg.Gitea.WebURL = ctListWeb
@@ -49,6 +51,20 @@ type ctIssueSearch struct {
 	clamp int
 	// noDraft serves pull_request without draft (Gitea before 1.22).
 	noDraft bool
+	// versionStatus, when set, is the status of GET /api/v1/version;
+	// versionBody is its body.
+	versionStatus int
+	versionBody   string
+
+	mu    sync.Mutex
+	paths []string
+}
+
+// requests returns the paths of the requests served so far, in order.
+func (h *ctIssueSearch) requests() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]string(nil), h.paths...)
 }
 
 var ctFilters = map[string]provider.ListRole{"review_requested": provider.ListReviewer,
@@ -56,6 +72,18 @@ var ctFilters = map[string]provider.ListRole{"review_requested": provider.ListRe
 
 func (h *ctIssueSearch) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.EscapedPath()
+	h.mu.Lock()
+	h.paths = append(h.paths, r.Method+" "+path)
+	h.mu.Unlock()
+	if r.Method == http.MethodGet && path == "/api/v1/version" {
+		if h.versionStatus != 0 {
+			contract.WriteError(w, h.versionStatus)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(h.versionBody))
+		return
+	}
 	if r.Header.Get("Authorization") != "token "+h.ls.Env.Token || r.Method != http.MethodGet || path != "/api/v1/repos/issues/search" {
 		h.t.Errorf("request %s %s: not a GET of the issue search with the token", r.Method, path)
 		contract.WriteError(w, http.StatusNotFound)

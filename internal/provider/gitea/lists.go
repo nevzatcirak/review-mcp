@@ -17,6 +17,16 @@ import (
 // requested reviewer, an assignee and the author (Gitea 1.14+).
 var listCaps = provider.ListCaps{Reviewer: true, Assignee: true, Author: true}
 
+// HintListMinVersion is the Hint of the unsupported_version error of a list
+// on a Gitea before 1.14, whose issue search ignores the role filters.
+const HintListMinVersion = "Gitea 1.14 or newer is required to list pull requests"
+
+// The first Gitea version whose issue search has the role filters (E4).
+const (
+	listMinMajor = 1
+	listMinMinor = 14
+)
+
 // searchFilters maps a list role to the issue search filter that selects
 // the signed-in user's pull requests in it.
 var searchFilters = map[provider.ListRole]string{
@@ -41,8 +51,10 @@ type apiSearchIssue struct {
 }
 
 // ListMyPullRequests implements provider.PRLister (X-48, E4): one GET of
-// /api/v1/repos/issues/search?type=pulls&state=open&{review_requested|
-// assigned|created}=true&page=1&limit={limit}. The filters apply to the
+// /api/v1/version (checkListVersion: a Gitea before 1.14 is refused, and
+// no search is sent), then one GET of /api/v1/repos/issues/search?
+// type=pulls&state=open&{review_requested|assigned|created}=true&page=1&
+// limit={limit}. The filters apply to the
 // signed-in user (the token's); no user name is sent. HasMore is an
 // X-Total-Count above the page's items (Gitea before 1.26 caps limit at
 // its MaxResponseItems, 50 by default, which this covers). The draft flag
@@ -59,6 +71,9 @@ type apiSearchIssue struct {
 // docs/pr-lists.md (WP-19c).
 func (p *Provider) ListMyPullRequests(ctx context.Context, q provider.ListQuery) (*provider.PRList, error) {
 	if err := provider.ValidateListQuery(listCaps, q); err != nil {
+		return nil, err
+	}
+	if err := p.checkListVersion(ctx); err != nil {
 		return nil, err
 	}
 	v := url.Values{}
@@ -106,6 +121,91 @@ func (p *Provider) ListMyPullRequests(ctx context.Context, q provider.ListQuery)
 	p.logger.Debug("gitea pull requests listed", "role", string(q.Role), "items", len(l.Items),
 		"dropped", l.Dropped, "has_more", l.HasMore)
 	return l, nil
+}
+
+// checkListVersion sends one GET /api/v1/version and refuses a list on a
+// Gitea before 1.14 (WP-19a DQ-10): its issue search ignores the role
+// filters and would list every open pull request the token can see. A
+// failed version request or a version that does not parse lets the list go
+// ahead: the check must not make a working list fail. The answer is not
+// kept across calls, and the version text is never logged.
+func (p *Provider) checkListVersion(ctx context.Context) error {
+	var out struct {
+		Version string `json:"version"`
+	}
+	if err := p.client.GetJSON(ctx, apiPrefix+"/version", &out); err != nil {
+		p.logger.Debug("gitea version unknown")
+		return nil
+	}
+	ok, known := listVersionSupported(out.Version)
+	if !known {
+		p.logger.Debug("gitea version unknown")
+		return nil
+	}
+	if !ok {
+		return &provider.Error{Class: provider.ClassUnsupportedVersion, Hint: HintListMinVersion}
+	}
+	return nil
+}
+
+// listVersionSupported reports whether the Gitea version v has the issue
+// search's role filters (1.14+); known is false when v does not parse.
+//   - A Forgejo version that carries "+gitea-A.B..." (7.0.1+gitea-1.21.11)
+//     is compared by A.B.
+//   - Otherwise "X.Y[.Z][-suffix][+meta]" is compared by X.Y, and a major of
+//     2 or more is new enough on its own (Forgejo numbering).
+func listVersionSupported(v string) (ok, known bool) {
+	if _, meta, found := strings.Cut(v, "+gitea-"); found {
+		if major, minor, ok := majorMinor(meta); ok && minor >= 0 {
+			return versionAtLeast(major, minor), true
+		}
+	}
+	major, minor, parsed := majorMinor(v)
+	switch {
+	case !parsed:
+		return false, false
+	case major >= 2:
+		return true, true
+	case minor < 0:
+		return false, false
+	}
+	return versionAtLeast(major, minor), true
+}
+
+func versionAtLeast(major, minor int) bool {
+	return major > listMinMajor || major == listMinMajor && minor >= listMinMinor
+}
+
+// majorMinor reads the leading "X" or "X.Y" of a version; minor is -1 when
+// there is no ".Y". What follows must be the end or one of ".-+".
+func majorMinor(v string) (major, minor int, ok bool) {
+	major, rest, ok := leadingInt(v)
+	if !ok {
+		return 0, 0, false
+	}
+	minor = -1
+	if strings.HasPrefix(rest, ".") {
+		if m, r, ok := leadingInt(rest[1:]); ok {
+			minor, rest = m, r
+		}
+	}
+	if rest != "" && !strings.ContainsRune(".-+", rune(rest[0])) {
+		return 0, 0, false
+	}
+	return major, minor, true
+}
+
+// leadingInt reads the leading decimal number of s (at most 6 digits).
+func leadingInt(s string) (n int, rest string, ok bool) {
+	end := 0
+	for end < len(s) && s[end] >= '0' && s[end] <= '9' {
+		end++
+	}
+	if end == 0 || end > 6 {
+		return 0, s, false
+	}
+	n, err := strconv.Atoi(s[:end])
+	return n, s[end:], err == nil
 }
 
 // listedRef builds the reference of a listed pull request from its

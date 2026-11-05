@@ -84,6 +84,23 @@ type Symbol struct {
 	// remainder. An accessor ranks after every other symbol of its rank, and
 	// the accessors of one field count once against the cap (CapSymbols).
 	Field string
+	// Paths are the changed files that define the name (a hunk header or a
+	// definition on a changed line), Path among them. A use on a line of one
+	// of them that defines the name is the definition itself, not a use
+	// (OwnDefinition).
+	Paths []string
+}
+
+// OwnDefinition reports whether line of path is a definition of s.Name in one
+// of s's own files (Path or Paths). Such a hit is the definition itself, for
+// example the class named by a hunk header, and is not a use. A definition of
+// the same name in another file (an override or implementation) is not one.
+func (s Symbol) OwnDefinition(path, line string) bool {
+	if path == "" || (path != s.Path && !slices.Contains(s.Paths, path)) {
+		return false
+	}
+	name, ok := definitionName(line, filter.Language(path), true)
+	return ok && name == s.Name
 }
 
 // IsTestPath reports whether path names a test file: by file name
@@ -322,7 +339,7 @@ type symAgg struct {
 }
 
 func (a *symAgg) symbol() Symbol {
-	s := Symbol{Name: a.name, Path: a.anyPath, Rank: RankChanged}
+	s := Symbol{Name: a.name, Path: a.anyPath, Rank: RankChanged, Paths: slices.Clone(a.paths)}
 	switch {
 	case len(a.removed) > 0 && len(a.added) == 0:
 		s.Rank = RankRemoved

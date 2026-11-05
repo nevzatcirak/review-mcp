@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -245,6 +246,7 @@ func (r *Runner) Grep(ctx context.Context, c Checkout, q Query) (Result, error) 
 		}
 		searched++
 		res.Truncated = res.Truncated || truncated
+		raw = slices.DeleteFunc(raw, func(h rawHit) bool { return sym.OwnDefinition(h.path, h.text) })
 		perSym = append(perSym, chooseHits(sym, raw, maxHits))
 	}
 	if searched == 0 && firstErr != nil {

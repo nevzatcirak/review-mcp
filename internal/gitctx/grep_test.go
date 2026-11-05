@@ -777,3 +777,74 @@ func TestInRanges(t *testing.T) {
 		}
 	}
 }
+
+// TestGrepDropsOwnDefinition: a hit in one of a symbol's own files (Path or
+// Paths) on a line that defines the same name is the definition, not a use,
+// and is dropped before the hits are chosen and counted. A definition of the
+// same name in another file (an override) stays.
+func TestGrepDropsOwnDefinition(t *testing.T) {
+	own := "package svc;\n\npublic class OrderService {\n" +
+		"    long invoice(Order o) { return computeTotal(o) + 1; }\n"
+	for i := 5; i <= 19; i++ {
+		own += fmt.Sprintf("    // note %d\n", i)
+	}
+	own += "    public long computeTotal(Order o) { return o.sum(); }\n"
+	for i := 21; i <= 30; i++ {
+		own += fmt.Sprintf("    // note %d\n", i)
+	}
+	override := "class Discount extends OrderService {\n    public long computeTotal(Order o) { return 0; }\n}\n"
+	r, c := localCheckout(t, map[string]string{
+		"svc/OrderService.java": own,
+		"svc/Discount.java":     override,
+		"svc/Billing.java":      "    long due(Order o) { return new OrderService().total(o); }\n",
+	}, "")
+	if name, ok := definitionName("    public long computeTotal(Order o) { return 0; }", "java", true); !ok || name != "computeTotal" {
+		t.Fatalf("the override line is not a definition: %q %v", name, ok)
+	}
+	q := Query{
+		Symbols: []Symbol{
+			{Name: "computeTotal", Path: "svc/OrderService.java"},
+			// Defined in another changed file too: its own files are both.
+			{Name: "OrderService", Path: "svc/Api.java", Paths: []string{"svc/Api.java", "svc/OrderService.java"}},
+		},
+		Hunks: map[string][]LineRange{"svc/OrderService.java": {{From: 25, To: 30}}},
+	}
+	res, err := r.Grep(context.Background(), c, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, h := range res.Hits {
+		got = append(got, fmt.Sprintf("%s:%s:%d:%v", h.Symbol, h.Path, h.Line, h.InChangedFile))
+	}
+	want := "computeTotal:svc/Discount.java:2:false,computeTotal:svc/OrderService.java:4:true,OrderService:svc/Billing.java:1:false,OrderService:svc/Discount.java:1:false"
+	if strings.Join(got, ",") != want {
+		t.Errorf("hits = %v,\nwant %s (OrderService.java:20 and :3 are the definitions themselves; the override in Discount.java and its extends clause stay)", got, want)
+	}
+	if res.References() != 4 || res.InChangedFiles != 1 || res.Files != 3 || res.SymbolsWithHits != 2 {
+		t.Errorf("references %d, in changed files %d, files %d, symbols with hits %d; want 4, 1, 3, 2 (counted after the drop)",
+			res.References(), res.InChangedFiles, res.Files, res.SymbolsWithHits)
+	}
+}
+
+// TestOwnDefinition: only a definition of the same name in one of the
+// symbol's own files.
+func TestOwnDefinition(t *testing.T) {
+	s := Symbol{Name: "computeTotal", Path: "a/A.java", Paths: []string{"a/A.java", "b/B.java"}}
+	def := "    public long computeTotal(Order o) {"
+	for _, tc := range []struct {
+		path, line string
+		want       bool
+	}{
+		{"a/A.java", def, true},
+		{"b/B.java", def, true},
+		{"c/C.java", def, false},
+		{"a/A.java", "    return computeTotal(o);", false},
+		{"a/A.java", "    public long computeTotalAll(Order o) {", false},
+		{"", def, false},
+	} {
+		if got := s.OwnDefinition(tc.path, tc.line); got != tc.want {
+			t.Errorf("OwnDefinition(%q, %q) = %v", tc.path, tc.line, got)
+		}
+	}
+}

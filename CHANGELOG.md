@@ -29,8 +29,9 @@ Nothing in the tools or the configuration of 2.7.0-rc.1 is removed or renamed.
   the model does not see (outside every hunk, widened by
   `diff.extra_lines_before` and `diff.extra_lines_after`) is kept and labelled
   `(in a changed file, outside the diff)`; a use inside the shown lines is
-  dropped, and a deleted file stays excluded. Uses in unchanged files come
-  first. The block's header sentence gains "Entries in a changed file outside
+  dropped, and a deleted file stays excluded. A line of the symbol's own file
+  that defines the same name is not a use and is dropped; a definition of the
+  same name in another file is kept. Uses in unchanged files come first. The block's header sentence gains "Entries in a changed file outside
   the diff show code the diff does not show." `coverage.repo_context` gains
   `references_in_changed_files`, and the coverage line adds ", N of them in
   changed files outside the diff" when N is above 0. See

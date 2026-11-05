@@ -42,8 +42,11 @@ For each review (or answer), after the diff is fetched:
    pull request that the prompt carries are searched too, but only the lines
    the model does not see count: a use inside the shown lines (every hunk,
    widened by `diff.extra_lines_before` and `diff.extra_lines_after`) is
-   dropped, and a use outside them is kept and labelled. At most
-   `context.repo.max_hits_per_symbol` uses are kept per symbol. Uses in files
+   dropped, and a use outside them is kept and labelled. A line of the
+   symbol's own file that defines the same name (for example the class named
+   by a hunk header) is the definition itself and is dropped; a definition of
+   the same name in another file, an override or implementation, is kept. At
+   most `context.repo.max_hits_per_symbol` uses are kept per symbol. Uses in files
    the pull request does not change come first; then come the uses in changed
    files. Each group prefers distinct files and files in the language of the
    definition, and each use has three lines of context on both sides.

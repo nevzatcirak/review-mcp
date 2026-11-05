@@ -25,16 +25,18 @@ Pick one. All three give you the same binary.
 ### npm
 
 ```sh
-npx -y @nevzatcirak/review-mcp version
+npx -y @nevzatcirak/review-mcp@latest version
 ```
 
 The package downloads nothing at install time and runs no install script: the
 binary for your platform comes from an optional dependency
 (`@nevzatcirak/review-mcp-<os>-<cpu>`). In an MCP client you use the same
-`npx -y @nevzatcirak/review-mcp` as the server command (see
-[step 4](#4-register-with-an-mcp-client)). Pin the exact version
-(`npx -y @nevzatcirak/review-mcp@2.6.0`) so that `npx` does not reuse an older
-cached copy; release candidates of the next version are under the `next` tag.
+`npx -y @nevzatcirak/review-mcp@latest` as the server command (see
+[step 4](#4-register-with-an-mcp-client)). Always name a version: `@latest`, or
+an exact one such as `npx -y @nevzatcirak/review-mcp@2.6.0`. Without one,
+`npx` may reuse an older cached copy (see
+[troubleshooting](troubleshooting.md#an-older-version-runs-although-a-newer-one-is-released));
+release candidates of the next version are under the `next` tag.
 
 ### Release archive
 
@@ -692,7 +694,7 @@ request. `diag diff` shows the exact diff text. See
 ## 4. Register with an MCP client
 
 Each client below starts review-mcp as a local process over stdio. The server
-command is `npx -y @nevzatcirak/review-mcp`; if you installed a binary, use its
+command is `npx -y @nevzatcirak/review-mcp@latest`; if you installed a binary, use its
 path (and the argument `stdio` is optional, since it is the default).
 
 The configuration needs the LLM and provider variables from steps 2 and 3. To
@@ -727,7 +729,7 @@ claude mcp add review-mcp \
   --env REVIEW_MCP_GITEA_BASE_URL=https://your-gitea.example \
   --env REVIEW_MCP_LLM_API_KEY="$REVIEW_MCP_LLM_API_KEY" \
   --env REVIEW_MCP_GITEA_TOKEN="$REVIEW_MCP_GITEA_TOKEN" \
-  -- npx -y @nevzatcirak/review-mcp
+  -- npx -y @nevzatcirak/review-mcp@latest
 ```
 
 The shell expands `"$REVIEW_MCP_LLM_API_KEY"` when you run the command, so the
@@ -740,7 +742,7 @@ of it, put the server in a project `.mcp.json`, where Claude Code expands
   "mcpServers": {
     "review-mcp": {
       "command": "npx",
-      "args": ["-y", "@nevzatcirak/review-mcp"],
+      "args": ["-y", "@nevzatcirak/review-mcp@latest"],
       "env": {
         "REVIEW_MCP_LLM_BASE_URL": "https://llm.example.com/v1",
         "REVIEW_MCP_LLM_MODEL": "your-model-name",
@@ -768,7 +770,7 @@ takes the command as an array and its variables under `environment`;
   "mcp": {
     "review-mcp": {
       "type": "local",
-      "command": ["npx", "-y", "@nevzatcirak/review-mcp"],
+      "command": ["npx", "-y", "@nevzatcirak/review-mcp@latest"],
       "enabled": true,
       "environment": {
         "REVIEW_MCP_LLM_BASE_URL": "https://llm.example.com/v1",
@@ -797,7 +799,7 @@ file.
   "mcpServers": {
     "review-mcp": {
       "command": "npx",
-      "args": ["-y", "@nevzatcirak/review-mcp"],
+      "args": ["-y", "@nevzatcirak/review-mcp@latest"],
       "env": {
         "REVIEW_MCP_LLM_BASE_URL": "https://llm.example.com/v1",
         "REVIEW_MCP_LLM_MODEL": "your-model-name",

@@ -229,7 +229,8 @@ did **not** see. Every changed file appears in exactly one group:
   `unchanged_since_review`: the file has the content it had at the last
   review, so it was not sent again. It does not make the review partial.
 - **Repository context**: a line, only when it is on, with
-  `N symbols, M references from K files` or `skipped: <reason>` (see
+  `N symbols, M references from K files` (with ", J of them in changed files
+  outside the diff" when J > 0) or `skipped: <reason>` (see
   [Repository context](#repository-context)).
 - **Repository tools**: a line right after it, only when
   `context.repo.max_tool_rounds` is above 0, with `N calls in M rounds` (and

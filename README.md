@@ -22,8 +22,9 @@ dist-tag `latest`; release candidates of the next version under `next`. See the
    ([Setup guide, steps 2 and 3](docs/setup.md#2-create-tokens)). A read-only
    token is enough for reviews and questions that are not published.
 2. Register the server with your client. With npm there is nothing to install.
-   Pin the exact version (for example `@nevzatcirak/review-mcp@2.6.0`) so that
-   `npx` does not reuse an older cached copy; update the pin to upgrade.
+   Always name a version: `@latest`, or an exact one (the examples pin
+   `@nevzatcirak/review-mcp@2.6.0`; update the pin to upgrade). Without one,
+   `npx` may reuse an older cached copy.
 
    **Claude Code**
 

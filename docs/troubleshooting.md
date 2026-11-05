@@ -1074,6 +1074,24 @@ Each round is a model call: a slow review with tools is usually the rate limit
 (`metadata.rate_limit_waits`) or a slow endpoint ([Rate limits](setup.md#rate-limits)).
 Set `context.repo.max_tool_rounds` lower, or to 0.
 
+## An older version runs although a newer one is released
+
+`npx -y @nevzatcirak/review-mcp` with no version reuses a copy that `npx`
+already cached, so a client can keep starting an old binary after a new one is
+released. Settings of the new version then look unknown. It shows as a warning
+in `server_info` (or as a configuration problem for a file key) that names the
+running version:
+
+```text
+unknown environment variable REVIEW_MCP_EXAMPLE (ignored; this is review-mcp 2.3.0, and the setting may belong to a newer version)
+```
+
+| Symptom | What to do |
+|---|---|
+| The warning names a version older than the one you installed or read about. | Name a version in the client configuration: `npx -y @nevzatcirak/review-mcp@latest` (or an exact one such as `@2.6.0`). Without one `npx` may reuse a cached copy. |
+| You are not sure which version runs. | Run `npx -y @nevzatcirak/review-mcp@latest version` for the newest, and compare it with the `version` that `server_info` reports. |
+| The version is right and the warning remains. | The name is misspelled, or the setting belongs to a version that is not released yet; check the name against the [Setup guide](setup.md). |
+
 ## Repository context was skipped
 
 The coverage section says `Repository context: skipped: <reason>` (and

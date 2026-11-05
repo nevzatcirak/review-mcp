@@ -22,30 +22,41 @@ For each review (or answer), after the diff is fetched:
    (`func`, `fun`, `fn`, `def`, `function`, `class`, `interface`, `type`,
    `struct`, `enum`, `trait`, method signatures, exported constants). Names
    shorter than 4 characters, keywords and ubiquitous names (`main`, `init`,
-   `setup`, `toString`, Python dunders) are dropped; prose and data files give
-   none. At most `context.repo.max_symbols` are kept, ranked: removed or
+   `setup`, `toString`, Python dunders) are dropped, and so are the logger
+   names `LOGGER`, `LOG`, `logger` and `log` and `serialVersionUID` (compared
+   with their case, so a class named `Logger` still counts); prose and data
+   files give none. At most `context.repo.max_symbols` are kept, ranked: removed or
    renamed definitions first (the change most likely to break callers), then
    changed signatures, then other changed definitions that already existed,
-   then new definitions, and last the symbols of test files.
+   then new definitions, and last the symbols of test files. Within a rank, an
+   accessor (`get`, `set` or `is` followed by an upper-case letter) of a field
+   defined or declared in the same file comes last, and a getter and setter of
+   one field count once against `max_symbols`; every name of a kept group is
+   still searched.
 2. **Fetch.** The pull request head is fetched into a local cache (see
    [What is cached](#what-is-cached-and-where)), once per review, and its
    commit must equal the head commit the provider reported.
 3. **Uses.** For each symbol, `git grep -w -F` searches the fetched commit.
-   The pull request's own files, ignored and generated files (the same rules
-   as the review) and binary files are left out. At most
-   `context.repo.max_hits_per_symbol` uses are kept per symbol, preferring
-   distinct files and files in the language of the definition, each with three
-   lines of context on both sides.
+   Ignored and generated files (the same rules as the review) and binary files
+   are left out, and so are files the pull request deletes. The files of the
+   pull request that the prompt carries are searched too, but only the lines
+   the model does not see count: a use inside the shown lines (every hunk,
+   widened by `diff.extra_lines_before` and `diff.extra_lines_after`) is
+   dropped, and a use outside them is kept and labelled. At most
+   `context.repo.max_hits_per_symbol` uses are kept per symbol. Uses in files
+   the pull request does not change come first; then come the uses in changed
+   files. Each group prefers distinct files and files in the language of the
+   definition, and each use has three lines of context on both sides.
 4. **The block.** The uses become one block of the prompt, after the
    discussion block and before the diff:
 
    ````text
-   Related code that uses symbols changed in this pull request (read-only context; it may be incomplete). Entries marked as changed in this pull request are reviewed in another part or not at all. Use this code to judge the effect of the change on callers and implementations. Do not report issues in it unless the pull request causes them.
+   Related code that uses symbols changed in this pull request (read-only context; it may be incomplete). Entries marked as changed in this pull request are reviewed in another part or not at all. Entries in a changed file outside the diff show code the diff does not show. Use this code to judge the effect of the change on callers and implementations. Do not report issues in it unless the pull request causes them.
    ```
    [pkg/client.go:42] uses Fetch
    <the line and its context>
 
-   [cmd/main.go:17] uses Fetch
+   [cmd/main.go:17] uses Fetch (in a changed file, outside the diff)
    <the line and its context>
    ```
    ````
@@ -107,9 +118,11 @@ left out. **The diff wins over the block.**
 
 Each part gets the symbols of **its own files** only and its own
 `context.repo.max_tokens` block; the head is fetched once for the whole review.
-A part does not search its own files, but it does search the other files of the
-pull request, because a caller in a file that another part reviews is exactly
-what a part cannot see. Such a use is read from the head commit (the new
+A part searches its own files by the rule of step 3 (only the lines outside
+the part's diff count), and it also searches the other files of the pull
+request, because a caller in a file that another part reviews is exactly what a
+part cannot see. For those the old rule holds: the whole file is searched. Such
+a use is read from the head commit (the new
 version of that file) and is marked on its first line:
 
 ```text
@@ -119,8 +132,15 @@ version of that file) and is marked on its first line:
 
 "Not reviewed" means no part carries the file: it was left out by the budget
 or `review.max_chunks`, was too large for a part, or the provider skipped it.
-In a review in one call every file of the pull request is excluded, as it is in
-the diff already.
+In a review in one call the files of the pull request follow the rule of step 3
+instead: the lines the diff shows are left out, the others are labelled
+`(in a changed file, outside the diff)`. A review in parts applies that rule to
+the part's own files and keeps the rule above for the files of other parts.
+
+**Raising `max_hits_per_symbol` does not help** when the uses of a symbol are
+inside the pull request: those lines are in the diff already and are not
+repeated. In a large change most callers are in the change itself, so a
+symbol with few uses outside it is normal.
 
 ## What is cached and where
 
@@ -453,6 +473,7 @@ The coverage section gains a line:
 
 ```text
 - Repository context: 5 symbols, 7 references from 3 files
+- Repository context: 5 symbols, 7 references from 3 files, 2 of them in changed files outside the diff
 - Repository context: skipped: `auth`
 ```
 
@@ -460,7 +481,8 @@ nothing is shown when repository context is off. The structured result has
 `coverage.repo_context`:
 
 ```json
-{"status": "used", "reason": "", "symbols": 5, "references": 7, "files": 3}
+{"status": "used", "reason": "", "symbols": 5, "references": 7, "files": 3,
+ "references_in_changed_files": 2}
 ```
 
 - `status` is `off` (disabled; nothing was done), `used` (the repository was
@@ -469,6 +491,9 @@ nothing is shown when repository context is off. The structured result has
   the uses in the prompt and their distinct files. For a review in parts they
   are summed over the parts. `used` with `0 symbols` means the diff defined
   nothing to look for.
+- `references_in_changed_files` is the number of those references that are in
+  a changed file, outside the diff (0 when none). The coverage line adds
+  ", N of them in changed files outside the diff" when it is above 0.
 - `reason` is always present and empty unless skipped. A review never fails
   because of repository context: a skip is a note and a reason.
 

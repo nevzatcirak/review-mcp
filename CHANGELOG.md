@@ -5,11 +5,18 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.8.0-rc.1]
 
-Planned for `2.8.0-rc.1`. Pull request lists (X-48): two new read-only tools
-list the pull requests that ask you for a review and the ones you opened.
-Nothing in the tools or the configuration of 2.7.0-rc.1 is removed or renamed.
+First 2.8 release candidate (the npm dist-tag `next`; `latest` stays on 2.6.0).
+Pull request lists (X-48): two new read-only tools list the pull requests that
+ask you for a review and the ones you opened. Repository context fixes from live
+use (an X-22 amendment): uses in changed files outside the diff are found, and
+accessors and logger names no longer crowd out other symbols. Nothing in the
+tools or the configuration of 2.7.0-rc.1 is removed or renamed.
+
+Not verified live yet. The acceptance (record to follow) lists review requests,
+assigned and authored pull requests on each provider, which needs a second
+identity to open them.
 
 ### Added
 
@@ -31,8 +38,9 @@ Nothing in the tools or the configuration of 2.7.0-rc.1 is removed or renamed.
   `(in a changed file, outside the diff)`; a use inside the shown lines is
   dropped, and a deleted file stays excluded. A line of the symbol's own file
   that defines the same name is not a use and is dropped; a definition of the
-  same name in another file is kept. Uses in unchanged files come first. The block's header sentence gains "Entries in a changed file outside
-  the diff show code the diff does not show." `coverage.repo_context` gains
+  same name in another file is kept. Uses in unchanged files come first.
+  The block's header sentence gains "Entries in a changed file outside the
+  diff show code the diff does not show." `coverage.repo_context` gains
   `references_in_changed_files`, and the coverage line adds ", N of them in
   changed files outside the diff" when N is above 0. See
   [Repository context](docs/repo-context.md).

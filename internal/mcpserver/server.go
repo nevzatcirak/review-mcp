@@ -117,7 +117,7 @@ const serverInfoDescription = "Reports the review-mcp version, enabled providers
 // The server never fans out on its own; the client runs the focused
 // reviews.
 const serverInstructions = "review-mcp reviews, describes and discusses pull requests on Gitea, Bitbucket Server, GitHub and GitLab " +
-	"with a configured LLM.\n\n" +
+	"with a configured LLM. " + listGuidance + "\n\n" +
 	"For a thorough review, run pr_review with focus for several areas (for example security, architecture, " +
 	"performance and tests), in parallel if you can; merge the findings and drop duplicates; then call pr_review " +
 	"once with the merged findings and publish=true, which publishes them without another model call. Never " +
@@ -168,6 +168,8 @@ func New(deps Deps) *mcp.Server {
 	registerPRCommentReply(s, deps)
 	registerPRCommentCreate(s, deps)
 	registerPRInfo(s, deps)
+	registerPRListReviewRequests(s, deps)
+	registerPRListAuthored(s, deps)
 	registerPRReview(s, deps)
 	registerPRAsk(s, deps)
 	registerPRDescribe(s, deps)

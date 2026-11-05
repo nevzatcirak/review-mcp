@@ -33,6 +33,8 @@ const diagUsageText = `usage:
   review-mcp diag describe <PR_URL> [--dry-run] [--show-prompt] [--json]
   review-mcp diag improve <PR_URL> [--dry-run] [--show-prompt] [--json]
   review-mcp diag cache [--prune]
+  review-mcp diag list review-requests|authored [--provider KIND] [--limit N]
+                       [--include-assigned] [--json]
 
 diag pr      fetch a pull request and print a JSON connectivity report;
               --show-patch prints the hunk-only patch of one changed file
@@ -80,6 +82,14 @@ diag improve  suggest code changes for the pull request with the configured
               markdown; nothing is posted. --dry-run, --show-prompt and
               --json behave as for diag review (the prompts shown are those
               of the first suggestion call)
+diag list     list your open pull requests on the configured providers (the
+              pr_list_review_requests and pr_list_authored tools): review-requests
+              the ones that ask you for a review, authored the ones you opened,
+              as markdown, or with --json as the structured result. --provider
+              restricts the list to one provider, --limit (1 to 100, default 30)
+              caps it, --include-assigned (review-requests only) adds the ones
+              assigned to you. Exit 0 when no provider failed, 1 when any
+              provider failed, 2 on usage
 diag cache    list the repository-context cache (context.repo.cache_dir) as
               JSON: each repository with its size, last use and idle days;
               --prune first deletes repositories idle longer than
@@ -195,6 +205,8 @@ func runDiag(args []string, stdout, stderr io.Writer, load configLoader) int {
 		return runDiagImprove(rest, stdout, stderr, load)
 	case "cache":
 		return runDiagCache(rest, stdout, stderr, load)
+	case "list":
+		return runDiagList(rest, stdout, stderr, load)
 	default:
 		diagUsage(stderr)
 		return 2

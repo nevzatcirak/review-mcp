@@ -11,6 +11,19 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/nevzatcirak/review-mcp/internal/version"
+)
+
+// The sentences for a name this binary does not know. They name the running
+// version because the usual cause is a client that starts an older binary than
+// the one the setting was written for (WP-22 section 3). The version is read
+// from the version package (build metadata, no dependencies, so no import
+// cycle). Only the environment variable is ignored; an unknown key in the
+// configuration file fails the load, so its sentence does not say "ignored".
+const (
+	UnknownEnvFormat = "unknown environment variable %s (ignored; this is review-mcp %s, and the setting may belong to a newer version)"
+	UnknownKeyFormat = "unknown config key %q in %s (this is review-mcp %s, and the setting may belong to a newer version)"
 )
 
 // Load builds the effective configuration from compiled defaults, the optional
@@ -163,7 +176,7 @@ func (l *loader) loadFile() {
 		if _, ok := byKey[key]; !ok && !isFallbackKey(key) {
 			rejected = true
 			unknownPrefixes = append(unknownPrefixes, key)
-			l.problem("unknown config key %q in %s", key, path)
+			l.problem(UnknownKeyFormat, key, path, version.Version)
 		}
 	}
 	if decErr != nil {
@@ -266,7 +279,7 @@ func (l *loader) warnUnknownEnv() {
 		if i > 0 && unknown[i-1] == n {
 			continue
 		}
-		l.warn("unknown environment variable %s (ignored)", n)
+		l.warn(UnknownEnvFormat, n, version.Version)
 	}
 }
 

@@ -1,10 +1,14 @@
 package config
 
 import (
+	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"github.com/nevzatcirak/review-mcp/internal/version"
 )
 
 func TestDefaultsAppliedWhenNothingSet(t *testing.T) {
@@ -345,7 +349,7 @@ func TestUnknownEnvVariableIsWarningNotError(t *testing.T) {
 	})
 	_, rep := mustLoad(t, MemSource{Env: env})
 	for _, name := range []string{"REVIEW_MCP_LLM_BASEURL", "REVIEW_MCP_BOGUS"} {
-		want := "unknown environment variable " + name + " (ignored)"
+		want := fmt.Sprintf(UnknownEnvFormat, name, version.Version)
 		found := false
 		for _, w := range rep.Warnings {
 			if w == want {
@@ -550,5 +554,26 @@ func TestFileDecodeErrorsNeverEchoValues(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestUnknownNamesCarryTheVersion: both sentences name the running binary's
+// version (WP-22 section 3), whatever value is in effect.
+func TestUnknownNamesCarryTheVersion(t *testing.T) {
+	old := version.Version
+	t.Cleanup(func() { version.Version = old })
+	version.Version = "v9.9.9-test"
+
+	_, rep := mustLoad(t, MemSource{Env: envWith(map[string]string{"REVIEW_MCP_FROM_THE_FUTURE": "x"})})
+	wantEnv := "unknown environment variable REVIEW_MCP_FROM_THE_FUTURE (ignored; this is review-mcp v9.9.9-test, and the setting may belong to a newer version)"
+	if !slices.Contains(rep.Warnings, wantEnv) {
+		t.Errorf("warnings %q, want %q", rep.Warnings, wantEnv)
+	}
+
+	env := envWith(map[string]string{"REVIEW_MCP_CONFIG": "/c.toml"})
+	_, _, err := Load(memSrc(env, map[string]string{"/c.toml": "[llm]\nfuture_key = \"x\"\n"}))
+	wantKey := `unknown config key "llm.future_key" in /c.toml (this is review-mcp v9.9.9-test, and the setting may belong to a newer version)`
+	if !hasProblem(problemsOf(t, err), wantKey) {
+		t.Errorf("err %v, want problem %q", err, wantKey)
 	}
 }

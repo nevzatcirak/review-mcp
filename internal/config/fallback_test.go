@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/nevzatcirak/review-mcp/internal/version"
 )
 
 // fallbackFile is a config file with two fallback models.
@@ -193,7 +195,7 @@ func TestFallbackUnknownEnv(t *testing.T) {
 	env := minimalEnv()
 	env["REVIEW_MCP_LLM_FALLBACK_4_MODEL"] = "m"
 	_, rep := mustLoad(t, MemSource{Env: env})
-	if !slices.Contains(rep.Warnings, "unknown environment variable REVIEW_MCP_LLM_FALLBACK_4_MODEL (ignored)") {
+	if !slices.Contains(rep.Warnings, fmt.Sprintf(UnknownEnvFormat, "REVIEW_MCP_LLM_FALLBACK_4_MODEL", version.Version)) {
 		t.Errorf("warnings %q", rep.Warnings)
 	}
 }

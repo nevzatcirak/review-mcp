@@ -735,3 +735,116 @@ func TestCutLine(t *testing.T) {
 		t.Errorf("cutLine cut inside a character: %q", got)
 	}
 }
+
+// TestGrepChangedFileOutsideHunks (canary y): a file of Query.Hunks is
+// searched although Exclude names it. A use outside its ranges is a hit
+// marked InChangedFile, a use inside one is not, a changed file without
+// Hunks stays excluded, and the hits in unchanged files come first.
+func TestGrepChangedFileOutsideHunks(t *testing.T) {
+	r, c := localCheckout(t, map[string]string{
+		"svc/Order.java":   numbered(40, 8, "        return computeTotal(o);") + "    computeTotal(x);\n",
+		"svc/Billing.java": numbered(5, 3, "        computeTotal(o);"),
+		"svc/Gone.java":    "computeTotal(o);\n",
+	}, "")
+	q := Query{
+		Symbols: []Symbol{{Name: "computeTotal", Path: "svc/Order.java"}},
+		Exclude: []string{"svc/Order.java", "svc/Gone.java"},
+		Hunks:   map[string][]LineRange{"svc/Order.java": {{From: 25, To: 35}, {From: 41, To: 41}}},
+	}
+	res, err := r.Grep(context.Background(), c, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, h := range res.Hits {
+		got = append(got, fmt.Sprintf("%s:%d:%v", h.Path, h.Line, h.InChangedFile))
+	}
+	want := "svc/Billing.java:3:false,svc/Order.java:8:true"
+	if strings.Join(got, ",") != want {
+		t.Errorf("hits = %v, want %s (the use in an unchanged part of the changed file, labelled)", got, want)
+	}
+	if res.InChangedFiles != 1 || res.Files != 2 {
+		t.Errorf("in changed files = %d, files = %d; want 1 and 2", res.InChangedFiles, res.Files)
+	}
+}
+
+// TestInRanges: the ranges are inclusive.
+func TestInRanges(t *testing.T) {
+	rs := []LineRange{{From: 3, To: 5}, {From: 9, To: 9}}
+	for line, want := range map[int]bool{2: false, 3: true, 5: true, 6: false, 9: true, 10: false} {
+		if inRanges(rs, line) != want {
+			t.Errorf("inRanges(%d) = %v", line, !want)
+		}
+	}
+}
+
+// TestGrepDropsOwnDefinition: a hit in one of a symbol's own files (Path or
+// Paths) on a line that defines the same name is the definition, not a use,
+// and is dropped before the hits are chosen and counted. A definition of the
+// same name in another file (an override) stays.
+func TestGrepDropsOwnDefinition(t *testing.T) {
+	own := "package svc;\n\npublic class OrderService {\n" +
+		"    long invoice(Order o) { return computeTotal(o) + 1; }\n"
+	for i := 5; i <= 19; i++ {
+		own += fmt.Sprintf("    // note %d\n", i)
+	}
+	own += "    public long computeTotal(Order o) { return o.sum(); }\n"
+	for i := 21; i <= 30; i++ {
+		own += fmt.Sprintf("    // note %d\n", i)
+	}
+	override := "class Discount extends OrderService {\n    public long computeTotal(Order o) { return 0; }\n}\n"
+	r, c := localCheckout(t, map[string]string{
+		"svc/OrderService.java": own,
+		"svc/Discount.java":     override,
+		"svc/Billing.java":      "    long due(Order o) { return new OrderService().total(o); }\n",
+	}, "")
+	if name, ok := definitionName("    public long computeTotal(Order o) { return 0; }", "java", true); !ok || name != "computeTotal" {
+		t.Fatalf("the override line is not a definition: %q %v", name, ok)
+	}
+	q := Query{
+		Symbols: []Symbol{
+			{Name: "computeTotal", Path: "svc/OrderService.java"},
+			// Defined in another changed file too: its own files are both.
+			{Name: "OrderService", Path: "svc/Api.java", Paths: []string{"svc/Api.java", "svc/OrderService.java"}},
+		},
+		Hunks: map[string][]LineRange{"svc/OrderService.java": {{From: 25, To: 30}}},
+	}
+	res, err := r.Grep(context.Background(), c, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, h := range res.Hits {
+		got = append(got, fmt.Sprintf("%s:%s:%d:%v", h.Symbol, h.Path, h.Line, h.InChangedFile))
+	}
+	want := "computeTotal:svc/Discount.java:2:false,computeTotal:svc/OrderService.java:4:true,OrderService:svc/Billing.java:1:false,OrderService:svc/Discount.java:1:false"
+	if strings.Join(got, ",") != want {
+		t.Errorf("hits = %v,\nwant %s (OrderService.java:20 and :3 are the definitions themselves; the override in Discount.java and its extends clause stay)", got, want)
+	}
+	if res.References() != 4 || res.InChangedFiles != 1 || res.Files != 3 || res.SymbolsWithHits != 2 {
+		t.Errorf("references %d, in changed files %d, files %d, symbols with hits %d; want 4, 1, 3, 2 (counted after the drop)",
+			res.References(), res.InChangedFiles, res.Files, res.SymbolsWithHits)
+	}
+}
+
+// TestOwnDefinition: only a definition of the same name in one of the
+// symbol's own files.
+func TestOwnDefinition(t *testing.T) {
+	s := Symbol{Name: "computeTotal", Path: "a/A.java", Paths: []string{"a/A.java", "b/B.java"}}
+	def := "    public long computeTotal(Order o) {"
+	for _, tc := range []struct {
+		path, line string
+		want       bool
+	}{
+		{"a/A.java", def, true},
+		{"b/B.java", def, true},
+		{"c/C.java", def, false},
+		{"a/A.java", "    return computeTotal(o);", false},
+		{"a/A.java", "    public long computeTotalAll(Order o) {", false},
+		{"", def, false},
+	} {
+		if got := s.OwnDefinition(tc.path, tc.line); got != tc.want {
+			t.Errorf("OwnDefinition(%q, %q) = %v", tc.path, tc.line, got)
+		}
+	}
+}

@@ -207,14 +207,19 @@ func coverage(b *strings.Builder, heading string, c *llmrun.Coverage, verb strin
 }
 
 // RepoContextLine is the "Repository context" line of the coverage section
-// (RC-9): "N symbols, M references from K files", or "skipped: <reason>". It
+// (RC-9): "N symbols, M references from K files", followed by ", J of them
+// in changed files outside the diff" when J > 0, or "skipped: <reason>". It
 // is empty when repository context is off (and for a zero value), so a
 // result without it renders as it always did.
 func RepoContextLine(r llmrun.RepoContext) string {
 	switch r.Status {
 	case llmrun.RepoUsed:
-		return TextRepoContext + ": " + count(r.Symbols, "symbol", "symbols") + ", " +
+		line := TextRepoContext + ": " + count(r.Symbols, "symbol", "symbols") + ", " +
 			count(r.References, "reference", "references") + " from " + count(r.Files, "file", "files")
+		if r.ReferencesInChangedFiles > 0 {
+			line += ", " + strconv.Itoa(r.ReferencesInChangedFiles) + " of them in changed files outside the diff"
+		}
+		return line
 	case llmrun.RepoSkipped:
 		return TextRepoContext + ": skipped: " + mdutil.Literal(r.Reason)
 	}

@@ -30,6 +30,8 @@ func TestCoverageRepositoryContextLine(t *testing.T) {
 		{llmrun.RepoContext{Status: "used", Symbols: 5, References: 7, Files: 3}, "- Repository context: 5 symbols, 7 references from 3 files\n"},
 		{llmrun.RepoContext{Status: "used", Symbols: 1, References: 1, Files: 1}, "- Repository context: 1 symbol, 1 reference from 1 file\n"},
 		{llmrun.RepoContext{Status: "used"}, "- Repository context: 0 symbols, 0 references from 0 files\n"},
+		{llmrun.RepoContext{Status: "used", Symbols: 4, References: 6, ReferencesInChangedFiles: 2, Files: 3},
+			"- Repository context: 4 symbols, 6 references from 3 files, 2 of them in changed files outside the diff\n"},
 		{llmrun.RepoContext{Status: "skipped", Reason: "auth"}, "- Repository context: skipped: `auth`\n"},
 		{llmrun.RepoContext{Status: "skipped", Reason: "budget"}, "- Repository context: skipped: `budget`\n"},
 	} {
@@ -49,7 +51,7 @@ func TestRepoContextZeroValueMarshalsAsOff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), `"repo_context":{"status":"off","reason":"","symbols":0,"references":0,"files":0}`) {
+	if !strings.Contains(string(raw), `"repo_context":{"status":"off","reason":"","symbols":0,"references":0,"references_in_changed_files":0,"files":0}`) {
 		t.Errorf("coverage JSON = %s", raw)
 	}
 }

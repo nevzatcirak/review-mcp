@@ -29,6 +29,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/gitctx"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/mdutil"
+	"github.com/nevzatcirak/review-mcp/internal/patch"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
 )
@@ -36,6 +37,7 @@ import (
 // Header is the sentence above the fenced block (RC-8, verbatim).
 const Header = "Related code that uses symbols changed in this pull request (read-only context; it may be incomplete). " +
 	"Entries marked as changed in this pull request are reviewed in another part or not at all. " +
+	"Entries in a changed file outside the diff show code the diff does not show. " +
 	"Use this code to judge the effect of the change on callers and implementations. " +
 	"Do not report issues in it unless the pull request causes them."
 
@@ -53,6 +55,11 @@ const ReasonClientFindings = "client_findings"
 // of the review carries (left out by the budget, too large for a part,
 // skipped by the provider). The text is shown after the entry's symbol.
 const MarkNotReviewed = "changed in this pull request; not reviewed"
+
+// MarkOutsideDiff marks a use in a file whose diff the prompt carries, on a
+// line outside the hunks it shows (gitctx.Hit.InChangedFile): code of a
+// changed file that the model does not see.
+const MarkOutsideDiff = "in a changed file, outside the diff"
 
 // MarkReviewedInPart marks a use in a file of the pull request that part j
 // of a review in parts reviews.
@@ -120,7 +127,10 @@ type Session struct {
 	marks    map[string]string
 	flt      *filter.Filter
 	settings Settings
-	log      *slog.Logger
+	// diff widens the hunks of the prompt's files (diff.extra_lines_before
+	// and diff.extra_lines_after), as the prompt does.
+	diff config.Diff
+	log  *slog.Logger
 	// docNames adds the names the changed documentation mentions to the
 	// symbols (LookUpDocNames).
 	docNames bool
@@ -137,7 +147,8 @@ type Session struct {
 // enabled (the caller checks); backend nil selects the real gitctx runner.
 // files are every reviewable file of the pull request: by default their
 // paths are excluded from the search, being in the prompt already (a Scope
-// narrows that for a part of a review in parts). skipped are the files the
+// narrows that for a part of a review in parts), except the lines a prompt
+// does not show of the files whose diff it carries (see FindIn). skipped are the files the
 // provider did not hand over; a use in one is shown, marked MarkNotReviewed.
 // Nothing is fetched until Find.
 func Open(cfg *config.Config, backend Backend, ref provider.PRRef, p provider.Provider, headSHA string,
@@ -160,6 +171,7 @@ func Open(cfg *config.Config, backend Backend, ref provider.PRRef, p provider.Pr
 		marks:    marks,
 		flt:      flt,
 		settings: SettingsFrom(cfg.Context.Repo),
+		diff:     cfg.Diff,
 		log:      log,
 	}
 }
@@ -324,15 +336,12 @@ func (s *Session) LookUpDocNames() { s.docNames = true }
 
 // Symbols returns the symbols of files, ranked and capped. It does no I/O.
 // With LookUpDocNames the names of the changed documentation come first,
-// then the symbols of the code; context.repo.max_symbols caps them together.
+// then the symbols of the code; context.repo.max_symbols caps them together
+// (gitctx.CapSymbols: the accessors of one field count once).
 func (s *Session) Symbols(files []provider.FilePatch) []gitctx.Symbol {
 	code := gitctx.ExtractSymbols(files, s.settings.MaxSymbols)
 	if !s.docNames {
 		return code
-	}
-	max := s.settings.MaxSymbols
-	if max <= 0 {
-		max = gitctx.DefaultMaxSymbols
 	}
 	out := docSymbols(files)
 	seen := map[string]bool{}
@@ -344,10 +353,7 @@ func (s *Session) Symbols(files []provider.FilePatch) []gitctx.Symbol {
 			out = append(out, sym)
 		}
 	}
-	if len(out) > max {
-		out = out[:max]
-	}
-	return out
+	return gitctx.CapSymbols(out, s.settings.MaxSymbols)
 }
 
 // ready fetches the head once. The error is a gitctx reason.
@@ -377,7 +383,10 @@ func (s *Session) Find(ctx context.Context, files []provider.FilePatch) Found {
 }
 
 // FindIn is Find for a prompt of a review in parts (sc non-nil) or in one
-// call (sc nil).
+// call (sc nil). files are the files whose diff the prompt carries: a use in
+// one of them is kept when it lies outside the lines the prompt shows of it
+// (its hunks widened by diff.extra_lines_before and diff.extra_lines_after)
+// and marked MarkOutsideDiff; a deleted file stays excluded.
 func (s *Session) FindIn(ctx context.Context, files []provider.FilePatch, sc *Scope) Found {
 	syms := s.Symbols(files)
 	if len(syms) == 0 {
@@ -392,7 +401,8 @@ func (s *Session) FindIn(ctx context.Context, files []provider.FilePatch, sc *Sc
 		exclude = sc.Exclude
 	}
 	res, err := s.backend.Grep(ctx, s.co, gitctx.Query{
-		Symbols: syms, Exclude: exclude, Filter: s.flt, MaxHitsPerSymbol: s.settings.MaxHitsPerSymbol,
+		Symbols: syms, Exclude: exclude, Hunks: ShownLines(files, s.diff), Filter: s.flt,
+		MaxHitsPerSymbol: s.settings.MaxHitsPerSymbol,
 	})
 	if err != nil {
 		reason := reasonOf(err)
@@ -400,9 +410,41 @@ func (s *Session) FindIn(ctx context.Context, files []provider.FilePatch, sc *Sc
 		return Found{Symbols: len(syms), Names: names(syms), Skipped: reason}
 	}
 	s.log.Debug("repository context: searched", "symbols", res.Symbols, "symbols_with_hits", res.SymbolsWithHits,
-		"references", res.References(), "files", res.Files, "skipped_blobs", res.SkippedBlobs,
+		"references", res.References(), "in_changed_files", res.InChangedFiles, "files", res.Files, "skipped_blobs", res.SkippedBlobs,
 		"skipped_symbols", res.SkippedSymbols, "truncated", res.Truncated)
 	return Found{Symbols: res.Symbols, Names: names(syms), Hits: res.Hits}
+}
+
+// ShownLines returns, for each file of files whose head side the prompt
+// shows, the head-side line ranges it shows: every hunk widened as the fast
+// path widens it (patch.ExtendFile with d). A deleted or binary file, and a
+// patch that does not parse or has a malformed hunk, has no entry: such a
+// file stays excluded from the search.
+func ShownLines(files []provider.FilePatch, d config.Diff) map[string][]gitctx.LineRange {
+	out := map[string][]gitctx.LineRange{}
+	for _, fp := range files {
+		if fp.Type == provider.ChangeDeleted || fp.Binary || fp.Path == "" {
+			continue
+		}
+		hunks, err := patch.ParseHunks(fp.Patch)
+		if err != nil || slices.ContainsFunc(hunks, patch.Hunk.Malformed) {
+			continue
+		}
+		ranges := []gitctx.LineRange{}
+		for _, h := range patch.ExtendFile(fp, hunks, d) {
+			n := 0
+			for _, l := range h.Lines {
+				if l.Op == ' ' || l.Op == '+' {
+					n++
+				}
+			}
+			if n > 0 {
+				ranges = append(ranges, gitctx.LineRange{From: h.NewStart, To: h.NewStart + n - 1})
+			}
+		}
+		out[fp.Path] = ranges
+	}
+	return out
 }
 
 func names(syms []gitctx.Symbol) []string {
@@ -426,8 +468,9 @@ func reasonOf(err error) string {
 type Block struct {
 	// Text is the header and the fenced entries; "" when no entry fits.
 	Text string
-	// Entries and Omitted count the uses shown and the ones left out.
-	Entries, Omitted int
+	// Entries and Omitted count the uses shown and the ones left out;
+	// InChangedFiles the uses shown that are marked MarkOutsideDiff.
+	Entries, Omitted, InChangedFiles int
 	// Files is the number of distinct files among the shown uses, and Paths
 	// those files, in the order of the entries.
 	Files int
@@ -494,6 +537,9 @@ func render(hits []gitctx.Hit, maxTokens int, factor float64, marks map[string]s
 		if !slices.Contains(best.Paths, hits[i].Path) {
 			best.Paths = append(best.Paths, hits[i].Path)
 		}
+		if hits[i].InChangedFile && marks[hits[i].Path] == "" {
+			best.InChangedFiles++
+		}
 	}
 	best.Files = len(best.Paths)
 	return best
@@ -514,8 +560,12 @@ func blockText(header string, entries []string) string {
 const pathRunes = 200
 
 // entry is "[<path>:<line>] uses <symbol>", the mark in parentheses when
-// there is one, and the snippet.
+// there is one (MarkOutsideDiff for a use in a changed file outside the
+// diff), and the snippet.
 func entry(h *gitctx.Hit, mark string) string {
+	if mark == "" && h.InChangedFile {
+		mark = MarkOutsideDiff
+	}
 	head := "[" + cleanLine(h.Path, pathRunes) + ":" + strconv.Itoa(h.Line) + "] uses " + cleanLine(h.Symbol, pathRunes)
 	if mark != "" {
 		head += " (" + mark + ")"
@@ -554,9 +604,10 @@ type Outcome struct {
 	// skipped.
 	Status, Reason string
 	// Symbols is the number of symbols searched; References and Files count
-	// the uses shown and their distinct files; Omitted the uses clipped
-	// from the block.
-	Symbols, References, Files, Omitted int
+	// the uses shown and their distinct files; InChangedFiles the uses shown
+	// that are marked MarkOutsideDiff; Omitted the uses clipped from the
+	// block.
+	Symbols, References, InChangedFiles, Files, Omitted int
 	// Names are the symbols searched, in rank order (for the diag dry run,
 	// never logged).
 	Names []string
@@ -606,6 +657,7 @@ func (s *Session) Attach(ctx context.Context, files []provider.FilePatch, sc *Sc
 	}
 	if placed.Block.Entries > 0 {
 		out.Block, out.References, out.Files, out.Omitted = placed.Block.Text, placed.Block.Entries, placed.Block.Files, placed.Block.Omitted
+		out.InChangedFiles = placed.Block.InChangedFiles
 		out.Paths = placed.Block.Paths
 		out.BlockTokens = tokens.Estimate(out.Block, b.Factor)
 	}
@@ -618,8 +670,8 @@ func (s *Session) Attach(ctx context.Context, files []provider.FilePatch, sc *Sc
 //
 // A review is "used" when at least one prompt searched the repository (also
 // when it found nothing: the counts say 0), "skipped" with the first reason
-// when none did. Symbols are the symbols searched, References and Files
-// those shown, summed over the prompts.
+// when none did. Symbols are the symbols searched, References, Files and
+// ReferencesInChangedFiles those shown, summed over the prompts.
 func Summarize(outs []Outcome) (llmrun.RepoContext, []string) {
 	if len(outs) == 0 {
 		return llmrun.RepoContext{Status: llmrun.RepoOff}, nil
@@ -638,6 +690,7 @@ func Summarize(outs []Outcome) (llmrun.RepoContext, []string) {
 		rc.Status = llmrun.RepoUsed
 		rc.Symbols += o.Symbols
 		rc.References += o.References
+		rc.ReferencesInChangedFiles += o.InChangedFiles
 		rc.Files += o.Files
 		omitted += o.Omitted
 	}

@@ -110,6 +110,7 @@
       "reason": "",
       "symbols": 0,
       "references": 0,
+      "references_in_changed_files": 0,
       "files": 0
     },
     "guidelines": {

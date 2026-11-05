@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -314,4 +315,76 @@ func TestNarrow(t *testing.T) {
 	}
 	var none *Session
 	none.Narrow(a, nil)
+}
+
+// widenFixture is a 40-line file whose line 26 changes, with git's hunk of
+// three context lines (23-29) and both contents.
+func widenFixture() provider.FilePatch {
+	var base, head strings.Builder
+	for i := 1; i <= 40; i++ {
+		switch i {
+		case 26:
+			base.WriteString("old 26\n")
+			head.WriteString("new 26\n")
+		default:
+			fmt.Fprintf(&base, "line %d\n", i)
+			fmt.Fprintf(&head, "line %d\n", i)
+		}
+	}
+	b, h := base.String(), head.String()
+	return provider.FilePatch{Path: "svc/order.go", Type: provider.ChangeModified,
+		Patch:       "@@ -23,7 +23,7 @@\n line 23\n line 24\n line 25\n-old 26\n+new 26\n line 27\n line 28\n line 29\n",
+		BaseContent: &b, HeadContent: &h}
+}
+
+// TestShownLinesWiden (canary y2): the ranges are the hunks widened by
+// diff.extra_lines_before and diff.extra_lines_after, as the prompt shows
+// them; a deleted file, a binary file and a patch that does not parse have
+// none (they stay excluded); a file without its contents keeps the hunk.
+func TestShownLinesWiden(t *testing.T) {
+	d := config.Defaults().Diff // 5 lines before, 1 after
+	fp := widenFixture()
+	noContent := fp
+	noContent.Path, noContent.BaseContent, noContent.HeadContent = "svc/plain.go", nil, nil
+	got := ShownLines([]provider.FilePatch{
+		fp, noContent,
+		{Path: "svc/gone.go", Type: provider.ChangeDeleted, Patch: "@@ -1 +0,0 @@\n-x\n"},
+		{Path: "img.png", Type: provider.ChangeModified, Binary: true},
+		{Path: "bad.go", Type: provider.ChangeModified, Patch: "not a patch"},
+	}, d)
+	if r := got["svc/order.go"]; len(r) != 1 || r[0] != (gitctx.LineRange{From: 18, To: 30}) {
+		t.Errorf("widened ranges = %v, want [{18 30}] (hunk 23-29, 5 lines before, 1 after)", r)
+	}
+	if r := got["svc/plain.go"]; len(r) != 1 || r[0] != (gitctx.LineRange{From: 23, To: 29}) {
+		t.Errorf("ranges without contents = %v, want the hunk itself [{23 29}]", r)
+	}
+	if len(got) != 2 {
+		t.Errorf("ShownLines = %v; want entries for the two modified text files only", got)
+	}
+}
+
+// TestAttachMarksOutsideDiff: the prompt's files go to the search as Hunks,
+// a hit outside them carries the label, and the shown ones are counted.
+func TestAttachMarksOutsideDiff(t *testing.T) {
+	fb := &fakeBackend{hits: map[string][]gitctx.Hit{"Alpha": {
+		{Symbol: "Alpha", Path: "u.go", Line: 2, Snippet: "Alpha()"},
+		{Symbol: "Alpha", Path: "a.go", Line: 40, Snippet: "Alpha()", InChangedFile: true},
+	}}}
+	s := sessionOf(fb)
+	a := []provider.FilePatch{goFile("a.go", "func Alpha() {}")}
+	out := s.Attach(context.Background(), a, nil, tokens.Budget{ContextWindow: 32000, Factor: 1},
+		100, false, func(string) (bool, error) { return false, nil })
+	if h := fb.queries[0].Hunks; len(h) != 1 || len(h["a.go"]) != 1 {
+		t.Errorf("hunks = %v, want a.go's", h)
+	}
+	if !strings.Contains(out.Block, "[a.go:40] uses Alpha ("+MarkOutsideDiff+")") || strings.Contains(out.Block, "[u.go:2] uses Alpha (") {
+		t.Errorf("block:\n%s", out.Block)
+	}
+	if out.References != 2 || out.InChangedFiles != 1 {
+		t.Errorf("outcome = %+v", out)
+	}
+	rc, _ := Summarize([]Outcome{out, out})
+	if rc.References != 4 || rc.ReferencesInChangedFiles != 2 {
+		t.Errorf("summary = %+v", rc)
+	}
 }

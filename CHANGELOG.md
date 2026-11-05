@@ -24,9 +24,34 @@ Nothing in the tools or the configuration of 2.7.0-rc.1 is removed or renamed.
   header is `no_token`). See [Pull request lists](docs/pr-lists.md).
 - `review-mcp diag list review-requests|authored [--provider KIND] [--limit N]
   [--include-assigned] [--json]`: the same lists without a client.
+- Repository context shows uses in changed files outside the diff. A file of
+  the pull request that the prompt carries is searched, and a use on a line
+  the model does not see (outside every hunk, widened by
+  `diff.extra_lines_before` and `diff.extra_lines_after`) is kept and labelled
+  `(in a changed file, outside the diff)`; a use inside the shown lines is
+  dropped, and a deleted file stays excluded. A line of the symbol's own file
+  that defines the same name is not a use and is dropped; a definition of the
+  same name in another file is kept. Uses in unchanged files come first. The block's header sentence gains "Entries in a changed file outside
+  the diff show code the diff does not show." `coverage.repo_context` gains
+  `references_in_changed_files`, and the coverage line adds ", N of them in
+  changed files outside the diff" when N is above 0. See
+  [Repository context](docs/repo-context.md).
 
 ### Changed
 
+- Repository context ranks bean accessors and logger names below other
+  symbols: `LOGGER`, `LOG`, `logger`, `log` and `serialVersionUID` are never
+  searched (case-sensitive), an accessor of a field of the same file comes
+  last within its rank, and a getter and setter of one field count once
+  against `context.repo.max_symbols`.
+- The warning for an unknown `REVIEW_MCP_*` variable, and the problem for an
+  unknown configuration-file key, now name the running version ("this is
+  review-mcp X, and the setting may belong to a newer version"); `server_info`
+  shows the same text.
+- The client setups in the documentation use `@nevzatcirak/review-mcp@latest`
+  (or a pinned version) instead of the bare package name, so that `npx` does
+  not reuse an older cached copy. See
+  [Troubleshooting](docs/troubleshooting.md#an-older-version-runs-although-a-newer-one-is-released).
 - Gitea before 1.14 is refused for lists with `unsupported_version`, because
   its issue search ignores the role filters and would list other people's
   pull requests. A version that cannot be read lets the list go ahead.

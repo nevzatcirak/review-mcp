@@ -11,8 +11,8 @@ import (
 )
 
 // docsSentence is the system-prompt sentence of the docs focus (v2.1 spec
-// V-5 §3a item 1, verbatim).
-const docsSentence = "This review covers documentation only: statements in changed documentation (README, guides, CHANGELOG, configuration and API references, doc comments in code) that contradict the code in this pull request or in the repository context; behaviour the code changes without the matching documentation update; names of options, flags, keys, functions, paths, defaults and messages that do not match the code; broken links or anchors; steps that are missing or out of order; and wording, terminology and tone that differ from the rest of the documentation or from the documentation style given below. When the code a statement describes is not shown, do not guess: report only contradictions you can see."
+// V-5 §3a item 1, verbatim, amended by X-51: the style is in the user message).
+const docsSentence = "This review covers documentation only: statements in changed documentation (README, guides, CHANGELOG, configuration and API references, doc comments in code) that contradict the code in this pull request or in the repository context; behaviour the code changes without the matching documentation update; names of options, flags, keys, functions, paths, defaults and messages that do not match the code; broken links or anchors; steps that are missing or out of order; and wording, terminology and tone that differ from the rest of the documentation or from the documentation style given in the user message. When the code a statement describes is not shown, do not guess: report only contradictions you can see."
 
 const styleMarker = "FORMAL-IMPERSONAL-STYLE-MARKER"
 

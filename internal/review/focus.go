@@ -53,18 +53,13 @@ var focusSentences = map[string]string{
 	FocusTests: "This review covers tests only: changed behaviour without a test, tests that do not check what " +
 		"they claim to, missing edge and failure cases, flaky constructs (sleeps, order or time dependence, shared " +
 		"state), and tests tied to implementation details instead of behaviour.",
-	// DESIGN-QUESTION (WP-23b DQ-3): this sentence (V-5 §3a item 1, verbatim)
-	// ends "...from the documentation style given below", but since X-51 the
-	// style is in the user message, not below this sentence. The fixed
-	// sentence of projctx.DocsStyleSentence tells the model where it is.
-	// Recommendation: reword to "given in the user message" with the next
-	// change to this sentence (it is pinned by a verbatim test).
+	// The wording follows the X-51 placement of the documentation style.
 	FocusDocs: "This review covers documentation only: statements in changed documentation (README, guides, " +
 		"CHANGELOG, configuration and API references, doc comments in code) that contradict the code in this pull " +
 		"request or in the repository context; behaviour the code changes without the matching documentation " +
 		"update; names of options, flags, keys, functions, paths, defaults and messages that do not match the code; " +
 		"broken links or anchors; steps that are missing or out of order; and wording, terminology and tone that " +
-		"differ from the rest of the documentation or from the documentation style given below. When the code a " +
+		"differ from the rest of the documentation or from the documentation style given in the user message. When the code a " +
 		"statement describes is not shown, do not guess: report only contradictions you can see.",
 }
 

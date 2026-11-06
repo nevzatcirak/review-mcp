@@ -5,9 +5,9 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.9.0-rc.1]
 
-Planned version: 2.9.0-rc.1 (the npm dist-tag `next`; `latest` stays on 2.6.0).
+First 2.9 release candidate (the npm dist-tag `next`; `latest` stays on 2.6.0).
 Focus profiles (X-51): a review can look at areas of your own. An operator or a
 repository defines named custom focuses with their own instructions, and focus
 rules choose them by the files a pull request changes. A repository can keep its

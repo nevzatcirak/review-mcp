@@ -19,8 +19,9 @@ The operator turns it on and off and chooses the path; both settings are
   that publish. With `review.incremental` set in the file, the file is read
   before the lookup of the last review.
 - **The prompt reads it:** `multi_perspective_review` reads it when it is
-  called without `focuses`, to take `review.focuses` (see
-  [Focus defaults](#focus-defaults)).
+  called without `focuses`, to take `review.focuses`, the custom focuses and
+  the focus rules (see [Focus defaults](#focus-defaults)); with `focuses` it
+  reads it only to look up a custom name that is not an operator's.
 - **Tools that never read it:** `pr_info`, `pr_comments`, `pr_comment_reply`,
   `pr_comment_create` and `server_info`.
 - **One request:** each read is one request for the file at the pull
@@ -50,8 +51,11 @@ The operator turns it on and off and chooses the path; both settings are
 | `improve.max_suggestions` | an integer in the operator key's range | **tighten only**: the smaller of the two |
 | `improve.min_score` | an integer from 0 to 10 | **tighten only**: the larger of the two |
 | `review.extra_instructions`, `ask.extra_instructions` | text, at most 2,000 bytes (longer text is cut at a character boundary, with a note) | **added** after the operator's instructions, as fenced repository guidance |
-| `review.focuses` | a list out of `security`, `architecture`, `performance`, `ux`, `tests` and `docs` | the default list of the `multi_perspective_review` prompt only |
-| `review.docs_style` | text, at most 1,000 bytes | replaces; used only by the [`docs` focus](review.md#the-docs-focus) |
+| `review.focuses` | a list out of `security`, `architecture`, `performance`, `ux`, `tests` and `docs`, and the names of custom focuses defined for the repository | the default list of the `multi_perspective_review` prompt only |
+| `review.docs_style` | text, at most 1,000 bytes | replaces; used only by a focus that uses the [documentation style](review.md#documentation-style) (`docs`, or a custom focus with `docs_style = true`) |
+| `review.docs_style_file` | a repository-relative path, at most 200 bytes | replaces `review.docs_style` when the file is read; repository config only ([below](#custom-focuses-focus-rules-and-the-style-file)) |
+| `review.custom_focuses` | up to 10 `[[review.custom_focuses]]` tables ([below](#custom-focuses-focus-rules-and-the-style-file)) | **merged** with the operator's; a repository entry replaces an operator entry of the same name |
+| `review.focus_rules` | up to 20 `[[review.focus_rules]]` tables ([below](#custom-focuses-focus-rules-and-the-style-file)) | the repository's list **replaces** the operator's; an empty list turns them off |
 | `review.issue_compliance` | true or false | replaces; false turns [issue compliance](review.md#issue-compliance) off for the repository |
 | `related.contract_globs` | a list of globs, validated as `ignore.glob` | **added** to the operator's list; paths shown first in a [related pull request](review.md#contract-files-first) |
 | `related.repos` | up to 4 `[[related.repos]]` tables ([below](#related-repositories)) | used only with the operator key `related.from_repo_config`; otherwise ignored with a note |
@@ -162,8 +166,79 @@ default):
 | `.review-mcp.toml` on the target branch could not be read as TOML (line N) and was ignored. | A syntax error at line N; nothing in the file was used. Without a line number, the sentence has no "(line N)". |
 | `.review-mcp.toml` on the target branch is larger than 16 KiB and was ignored. | The file is over the size cap, or over `diff.max_file_bytes`. |
 | `.review-mcp.toml` on the target branch could not be read and was ignored. | The read failed for another reason (authentication, a transport error, a rate limit), or the pull request reports no base revision. |
+| The value of review.custom_focuses[2] in `.review-mcp.toml` is not valid and was ignored. | An entry of `review.custom_focuses` or `review.focus_rules` is invalid (also `review.docs_style_file` as a whole). `[2]` is the entry's position, counting from 0; the entry's text is never quoted. One note per entry. |
+| The repository config redefines the focus `x`. | A custom focus of the file has the name of one of the operator's; the file's definition is used for this repository. `x` stands for the focus name. |
 
 What to do about each: [Troubleshooting](troubleshooting.md#repository-config-notes).
+
+## Custom focuses, focus rules and the style file
+
+Three keys add focus profiles (the design is X-51). The areas, the prompts
+and the results are described in [Custom focuses](review.md#custom-focuses),
+[Focus rules](review.md#focus-rules) and [Documentation
+style](review.md#documentation-style); this section gives the file side.
+
+```toml
+[review]
+docs_style_file = "docs/STYLE.md"
+
+[[review.custom_focuses]]
+name = "api-contract"
+instructions = "Public REST contracts: changed request or response shapes, status codes, field names and versioning."
+docs_style = false
+
+[[review.custom_focuses]]
+name = "doc-standard"
+instructions = "Documentation against the project's writing standard: terms defined on first use, one requirement per sentence."
+docs_style = true
+
+[[review.focus_rules]]
+paths = ["**/*.md", "**/docs/**"]
+focus = "doc-standard"
+
+[[review.focus_rules]]
+paths = ["**/controller/**"]
+focus = "api-contract"
+
+```
+
+| Key | Value and limits |
+|---|---|
+| `review.custom_focuses` | at most 10 entries. `name`: `^[a-z][a-z0-9-]{1,31}$`, unique in the file, not `security`, `architecture`, `performance`, `ux`, `tests`, `docs` or `impact`. `instructions`: 1 to 1,000 bytes; line feed and tab are allowed, other control characters and bidirectional formatting characters are refused. `docs_style`: optional true or false (default false). Another key in an entry makes it invalid. |
+| `review.focus_rules` | at most 20 entries. `paths`: 1 to 20 globs, validated as `ignore.glob`. `focus`: a built-in name or a custom focus that is defined (the file's own, or the operator's). Another key in an entry makes it invalid. |
+| `review.docs_style_file` | a path relative to the repository root, at most 200 bytes, validated like `repo_config.path`. The file is read at the base revision and cut at a line boundary under 8 KiB. |
+
+**Invalid entries are ignored one by one.** Each gets a note that names the key
+and the entry's position (counting from 0) and never its text; the valid
+entries are kept. Entries after the tenth custom focus or the twentieth rule
+are invalid. A value that is not a list of tables is invalid as a whole.
+
+**Precedence.**
+
+- **Definitions** (`review.custom_focuses`) are the operator's and the
+  repository's together. A repository definition with the name of an operator
+  definition replaces it for that repository, in its place, with the note
+  "The repository config redefines the focus `x`." The repository's new
+  focuses come after the operator's.
+- **Rules** (`review.focus_rules`) never merge across sources. When the file
+  has the key, its list is the rule list of the run: it replaces the
+  operator's, an empty list (`review.focus_rules = []`) turns the operator's
+  rules off, and a list whose entries are all invalid still replaces them (each
+  invalid entry gets its note). Without the key, the operator's rules apply.
+- **The style file** replaces `review.docs_style` when it is read, with a note
+  when both were set. It is a repository key only: an operator cannot set it.
+
+**The base revision decides.** Every repository-side item, the definitions,
+the rules and the style file, is read at the target branch. A pull request that
+adds a focus, a rule or a style file in its own branch is reviewed without
+them.
+
+**With `repo_config.enabled` false** nothing is read: the prompt reads nothing,
+so focus rules (the operator's included) do not apply, and the default list is
+used. Only the operator's custom focuses exist.
+
+The notes of the style file are listed in [Documentation
+style](review.md#documentation-style).
 
 ## Focus defaults
 
@@ -171,18 +246,27 @@ When the client calls the `multi_perspective_review` prompt without
 `focuses`, the prompt chooses the list as follows:
 
 1. It resolves `pr_url`, reads the pull request and reads the file at the
-   target branch, and nothing else.
-2. A valid `review.focuses` is used as the list. A list with an unknown value
-   is not valid, and is ignored as a whole.
+   target branch, and then lists the changed files (without their content)
+   when it needs them.
+2. A valid `review.focuses` is used as the base list; its values are the
+   built-in names and the custom focuses defined for the repository. A list
+   with an unknown value is not valid, and is ignored as a whole.
 3. Otherwise the built-in default `security,architecture,performance,tests`
    is used, with `docs` added when the pull request changes a documentation
    file (see [the `docs` focus](review.md#the-docs-focus)).
+4. The focus of each [focus rule](review.md#focus-rules) that matches a changed
+   file is appended when it is not in the list yet.
+5. The list is cut at 8 areas, in its order, and the message names what was
+   cut. Each area is listed with the reason it was chosen (see [The prompt's
+   default list](review.md#the-prompts-default-list)).
 
 The reads share one 10-second deadline. Any failure falls back to the
-built-in default without an error: no provider for the URL, a missing
-credential, a read error, a timeout, or an invalid file. With
-`repo_config.enabled` false, nothing is read. `focuses` given by the client
-are used as given, and nothing is read.
+built-in default without an error and without rules: no provider for the URL, a
+missing credential, a read error, a timeout, or an invalid file. With
+`repo_config.enabled` false the prompt reads nothing, so focus rules (the
+operator's included) do not apply; the default list is used. `focuses` given by
+the client are used as given; the file is read only to look up a custom name
+that is not an operator's.
 
 ## A sample file
 
@@ -204,6 +288,14 @@ extra_instructions = """
 Public functions in internal/ must keep their doc comments up to date.
 """
 docs_style = "Formal, impersonal tone; passive voice for procedures; present tense; American English; second person never used."
+
+[[review.custom_focuses]]
+name = "api-contract"
+instructions = "Public REST contracts: changed request or response shapes, status codes and versioning."
+
+[[review.focus_rules]]
+paths = ["**/controller/**"]
+focus = "api-contract"
 
 [improve]
 min_score = 8

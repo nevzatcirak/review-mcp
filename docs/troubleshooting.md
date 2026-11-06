@@ -415,6 +415,9 @@ the problems (the position, never the value of a path):
 | review.max_guidelines_tokens: -1 must not be negative (0 turns the guidelines off) | Same. |
 | review.max_tree_tokens: -1 must not be negative (0 turns the file tree off) | Same. |
 | review.guidelines_paths: 11 paths, at most 10 are allowed | List at most 10 paths. |
+| review.custom_focuses[0]: name must be 2 to 32 characters: a lower-case letter, then lower-case letters, digits or "-" / name is reserved for a built-in focus / instructions must not be empty / instructions are longer than 1000 bytes / instructions must be valid UTF-8 / instructions must not contain control or bidirectional formatting characters other than line breaks and tabs / name is already defined by an earlier entry | An entry of `[[review.custom_focuses]]` in the configuration file; `[0]` is its position, counting from 0. Fix that entry ([Focus profiles](setup.md#focus-profiles)). |
+| review.custom_focuses: at most 10 custom focuses may be defined (found N) / review.focus_rules: at most 20 focus rules may be defined (found N) | Too many entries in the file; keep at most 10 focuses and 20 rules. |
+| review.focus_rules[0]: paths must hold 1 to 20 globs / paths: must not be empty / paths: not a valid glob pattern (doublestar syntax) / focus must be a built-in focus or a custom focus defined in the same configuration | An entry of `[[review.focus_rules]]`. Give 1 to 20 valid globs and a `focus` that is a built-in name or one of the file's custom focuses. |
 | review.guidelines_paths[0]: must not be empty / longer than 512 bytes / must be relative to the repository root (no leading "/") / must use "/" as the separator / must not contain control characters / must not contain an empty segment ("//" or a trailing "/") / must not contain "." or ".." segments | `[0]` is the position of the path in the list (counting from 0). Fix that path. In the environment the list is comma-separated, so an empty item between commas is an empty path. |
 
 ## Repository config notes
@@ -436,6 +439,8 @@ no note.
 | `.review-mcp.toml` on the target branch could not be read as TOML (line N) and was ignored. | A syntax error at line N (an unclosed table header, a missing quote, a duplicate key). Nothing in the file was used (`invalid`). Fix the file on the target branch; a fix on the pull request's branch is not read. |
 | `.review-mcp.toml` on the target branch is larger than 16 KiB and was ignored. | The file is over the 16 KiB cap (or over `diff.max_file_bytes`). Shorten it (`invalid`). |
 | `.review-mcp.toml` on the target branch could not be read and was ignored. | The read failed: the token cannot read the repository's files, the host was unreachable or rate limited, or the pull request reports no base revision (`unreadable`). Check [connectivity](#check-connectivity-with-diag-pr); the run used the operator's configuration. |
+| The value of review.custom_focuses[2] in `.review-mcp.toml` is not valid and was ignored. | An entry of `review.custom_focuses` or `review.focus_rules` is not valid: `[2]` is its position, counting from 0, and its text is never quoted. Check the name (`^[a-z][a-z0-9-]{1,31}$`, not `security`, `architecture`, `performance`, `ux`, `tests`, `docs` or `impact`, not used twice), the instructions (1 to 1,000 bytes, no control characters other than line feed and tab), the globs (1 to 20 per rule) and that a rule's `focus` is a built-in name or a defined custom focus; entries after the 10th focus or the 20th rule are invalid too. The other entries were applied. A rule list in which every entry is invalid still replaces the operator's rules. |
+| The repository config redefines the focus `x`. | The file defines a custom focus with the name of one of the operator's (`x` stands for the name). Its definition is used for this repository. Not a problem; rename the focus if you wanted both. |
 | None of the guidelines files in review.guidelines_paths exists at the target branch; the review ran without project guidelines. | Also given when `review.guidelines_paths` came from the repository config and none of its paths exists. Fix the path in the file. |
 | Repository context is off, so documentation was checked against the code in this pull request only. | A `focus=docs` review of a diff that changes documentation files only, with `context.repo.enabled` off. The model could not see the code the documentation describes, so it reported only what the pull request shows. Turn on [repository context](repo-context.md) (stdio) to let it look up the names the documentation mentions. |
 
@@ -616,7 +621,7 @@ sent to the provider or to the model. They are checked in this order.
 
 | Sentence | Cause and what to do |
 |---|---|
-| focus must be one of security, architecture, performance, ux, tests or docs, the name of a custom focus, or a description of 1 to 200 characters without line breaks or control characters | `focus` is blank after trimming, longer than 200 characters, or holds a line break, a control character or a bidirectional formatting character. Use a known value, or a one-line description. |
+| focus must be one of security, architecture, performance, ux, tests or docs, the name of a custom focus, or a description of 1 to 200 characters without line breaks or control characters | `focus` is blank after trimming, longer than 200 characters, or holds a line break, a control character or a bidirectional formatting character. Use a known value, the name of a custom focus defined in the configuration (see [Custom focuses](review.md#custom-focuses)), or a one-line description. |
 | findings cannot be combined with focus; call pr_review with findings and publish=true, without focus | `findings` is the merged result of focused runs, not a focused run. Drop `focus`. |
 | a focused review does not publish; merge the findings and call pr_review with findings and publish=true | `focus` with `publish=true`. Run the focused reviews without `publish`, merge their findings, then publish once with `findings` ([Focused reviews](review.md#focused-reviews-and-the-merged-publish)). |
 | findings are only used to publish; call pr_review with findings and publish=true | `findings` (also an empty list) without `publish=true`. Add `publish=true`, or drop `findings` for a normal review. |
@@ -637,6 +642,29 @@ A finding that is already on the pull request is skipped as a duplicate as for
 any publish (see [Findings and suggestions skipped as
 duplicates](#findings-and-suggestions-skipped-as-duplicates)); a second merged
 publish adds nothing new.
+
+## Focus profile notes
+
+Custom focuses, focus rules and the documentation style file ([Custom
+focuses](review.md#custom-focuses), [Documentation
+style](review.md#documentation-style)) add these fixed sentences to the notes
+of a focused review. The style file's text and a focus's instructions are never
+quoted. `x` stands for a focus name.
+
+| Sentence | Cause and what to do |
+|---|---|
+| No custom focus named `x` is defined; it was used as free text. | `focus` has the form of a custom focus name, but no custom focus of that name is defined for the run, so it was used as a free-text description. Define the focus in the operator's configuration or in the repository config on the target branch (a definition only on the pull request's branch is not read), or fix the spelling. |
+| The documentation style file was not found at the base revision; review.docs_style was used. | `review.docs_style_file` names a path that does not exist at the target branch; `review.docs_style` was used instead. Add the file on the target branch, or fix the path. |
+| The documentation style file was not found at the base revision; no documentation style was used. | The same, and `review.docs_style` is not set. |
+| The documentation style file could not be read at the base revision; review.docs_style was used. | The read failed (authentication, a transport error, a rate limit), or the file is not text. `review.docs_style` was used. Check [connectivity](#check-connectivity-with-diag-pr). |
+| The documentation style file could not be read at the base revision; no documentation style was used. | The same, and `review.docs_style` is not set. |
+| The documentation style file at the base revision holds no text; review.docs_style was used. | The file is empty or has nothing left after cleaning. `review.docs_style` was used. |
+| The documentation style file at the base revision holds no text; no documentation style was used. | The same, and `review.docs_style` is not set. |
+| The documentation style file is larger than 8 KiB and was cut at a line boundary. | The file is over 8 KiB; the model got its first whole lines under 8 KiB (`coverage.docs_style.cut` is true). Shorten the file. |
+| The documentation style file replaced review.docs_style, which was also set. | Both keys are set; the file wins. Not a problem; remove one to silence the note. |
+
+A review in which a style file failed is never failed for it: the notes say
+what was used (`coverage.docs_style.source` is `text` or `none`).
 
 ## Incremental review notes
 
@@ -709,7 +737,8 @@ one of these fixed messages (the value is never echoed):
 | Message | Cause and what to do |
 |---|---|
 | pr_url must be the http or https URL of a pull request, without credentials | `pr_url` is missing, longer than 2048 bytes, not an absolute `http` or `https` URL with a host, or it carries credentials (`user:password@`). Pass the pull request's page URL. |
-| focuses must be a comma-separated list of security, architecture, performance, ux, tests and docs | `focuses` holds a value that is not one of the six (free text is not accepted here; use it with `pr_review`'s `focus`), or no value at all. Leave `focuses` out for the default: `review.focuses` of the [repository config](repo-config.md#focus-defaults), else `security,architecture,performance,tests`, with `docs` added when the pull request changes a documentation file. |
+| focuses must be a comma-separated list of security, architecture, performance, ux, tests and docs, or the name of a custom focus defined for the repository; no custom focus is defined | `focuses` holds a value that is neither one of the six built-in values nor the name of a custom focus (free text is not accepted here; use it with `pr_review`'s `focus`), or no value at all. The sentence ends with "; no custom focus is defined" when none is defined for the run. Leave `focuses` out for the default: `review.focuses` of the [repository config](repo-config.md#focus-defaults), else `security,architecture,performance,tests`, with `docs` added when the pull request changes a documentation file, and then the focuses of the [focus rules](review.md#focus-rules) that match a changed file. |
+| focuses must be a comma-separated list of security, architecture, performance, ux, tests and docs, or the name of a custom focus defined for the repository; custom focuses defined: api-contract, doc-standard | The same, when custom focuses are defined: the sentence lists their names (here two generic names) after "custom focuses defined: ". Fix the value or the name; a repository's focuses are read at the target branch, so a focus added only on the pull request's branch is not defined yet. |
 
 ## Pull request lists
 

@@ -5,6 +5,71 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Planned version: 2.9.0-rc.1 (the npm dist-tag `next`; `latest` stays on 2.6.0).
+Focus profiles (X-51): a review can look at areas of your own. An operator or a
+repository defines named custom focuses with their own instructions, and focus
+rules choose them by the files a pull request changes. A repository can keep its
+documentation style in a file. Nothing in the tools or the configuration of
+2.8.0-rc.1 is removed or renamed.
+
+Not verified live yet. The acceptance (record to follow) runs the cases of the
+specification on a Gitea host: rules adding focuses to the prompt, a focused
+review with a custom focus, the base-revision rule, the style file present,
+missing and over 8 KiB, and the merged publish grouped by focus.
+
+### Added
+
+- Custom focuses: `[[review.custom_focuses]]` with `name`
+  (`^[a-z][a-z0-9-]{1,31}$`; `security`, `architecture`, `performance`, `ux`,
+  `tests`, `docs` and `impact` are reserved), `instructions` (1 to 1,000 bytes)
+  and an optional `docs_style`, in the operator's configuration file and in the
+  repository config. At most 10 per source. A name is accepted by the `focus`
+  argument of `pr_review`, the `focuses` of the `multi_perspective_review`
+  prompt, `review.focuses`, focus rules, `ci review --focus` and the `focus` of a
+  supplied finding. The instructions reach the user prompt only, fenced under a
+  header that names their source; the system prompt gets one fixed sentence. A
+  repository definition replaces an operator's of the same name, with a note. A
+  custom name defined nowhere is used as free text, with a note. See
+  [Custom focuses](docs/review.md#custom-focuses).
+- Focus rules: `[[review.focus_rules]]` with `paths` (1 to 20 globs, as
+  `ignore.glob`) and `focus`, at most 20 per source. Without rules the prompt's
+  list is unchanged; with rules, the focus of each rule that matches a changed
+  file is appended, once, and the list is cut at 8 areas. A repository's rules
+  replace the operator's; an empty list turns them off. The prompt message gains
+  a "Why these areas" list with the reason for each area. See
+  [Focus rules](docs/review.md#focus-rules).
+- `review.docs_style_file` in the repository config: a repository file with the
+  documentation style, read at the base revision and cut at a line boundary
+  under 8 KiB. It replaces `review.docs_style`; a missing, unreadable or empty
+  file falls back to it with a note. The style is now in the user prompt. See
+  [Documentation style](docs/review.md#documentation-style).
+- `pr_review` results: `focus_source` (`builtin`, `operator`, `repo_config` or
+  `free_text`) and `coverage.docs_style` (`source`, `bytes`, `cut`) for a focus
+  that uses the style. The client view names the focus of a focused run, and a
+  merged publish groups the overview by focus.
+- `server_info`: `config.focus_profiles` (the names of the operator's custom
+  focuses, their count and the number of focus rules; never the instructions)
+  and a "Focus profiles" section. See [Setup](docs/setup.md#focus-profiles).
+- A guide, [Choosing areas for a pull
+  request](docs/review.md#choosing-areas-for-a-pull-request), and the design
+  decision X-51.
+
+### Changed
+
+- The sentence of the `docs` focus ends "...from the documentation style given
+  in the user message." instead of "...given below", because the style is part
+  of the user message.
+- The documentation style moved from the system prompt to the user prompt; the
+  system prompt keeps one fixed sentence about it. It counts as prompt
+  scaffolding and is never trimmed to make room for the diff.
+- The `focuses` of the prompt and the `focus` argument name custom focuses in
+  their descriptions and refusals; the prompt's refusal lists the defined
+  custom focuses, or says that none is defined.
+- With `repo_config.enabled` false the prompt reads nothing, so focus rules (the
+  operator's included) do not apply and the default list is used.
+
 ## [2.8.0-rc.1]
 
 First 2.8 release candidate (the npm dist-tag `next`; `latest` stays on 2.6.0).

@@ -6,7 +6,9 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"testing/fstest"
 
+	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/logging"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 )
@@ -214,5 +216,41 @@ func TestCIStepSummary(t *testing.T) {
 	r = ciCall(t, reviewDiagEnv(g, l), nil, "review", "--pr-url", prURLOf(g, 8))
 	if r.code != 0 || strings.Contains(r.errs, "step summary") {
 		t.Errorf("exit %d; stderr:\n%s", r.code, r.errs)
+	}
+}
+
+// TestCIFocusAcceptsACustomName (X-51): ci review --focus takes the name of a
+// custom focus of the operator's configuration, resolved as the tool
+// argument is: the result names it with its source, and its instructions are
+// in the model request.
+func TestCIFocusAcceptsACustomName(t *testing.T) {
+	g, l := newFakeGitea(t), newFakeLLM(t, 200, ciReviewAnswer(false, "No", ""))
+	env := reviewDiagEnv(g, l)
+	env["REVIEW_MCP_CONFIG"] = "/c.toml"
+	file := "[[review.custom_focuses]]\nname = \"api-contract\"\ninstructions = \"CI-FOCUS-INSTRUCTIONS-QX4\"\n"
+	load := func() (*config.Config, *config.Report, error) {
+		return config.Load(config.MemSource{Env: env, FS: fstest.MapFS{"c.toml": {Data: []byte(file)}}})
+	}
+	var out, errb bytes.Buffer
+	code := runCI([]string{"review", "--pr-url", prURLOf(g, 8), "--json", "--focus", "API-Contract"}, &out, &errb, load,
+		newCIVars(nil).get)
+	if code != 0 {
+		t.Fatalf("exit %d; stderr:\n%s", code, errb.String())
+	}
+	var res review.Result
+	if err := json.Unmarshal(out.Bytes(), &res); err != nil {
+		t.Fatalf("stdout is not the result: %v", err)
+	}
+	if res.Focus != "api-contract" || res.FocusSource != "operator" {
+		t.Errorf("focus %q, focus_source %q", res.Focus, res.FocusSource)
+	}
+	validateCIOutput(t, review.ResultSchema(), out.String())
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.bodies) == 0 || !strings.Contains(strings.Join(l.bodies, "\n"), "CI-FOCUS-INSTRUCTIONS-QX4") {
+		t.Error("the instructions are not in the model request")
+	}
+	if strings.Contains(out.String()+errb.String(), "CI-FOCUS-INSTRUCTIONS-QX4") {
+		t.Error("the instructions reached the output")
 	}
 }

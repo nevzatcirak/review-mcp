@@ -800,3 +800,57 @@ func TestIncrementalEarlierInlineLine(t *testing.T) {
 		}
 	}
 }
+
+// TestFocusGroupsAndLine (X-51): an overview of a merged publish shows a
+// heading where a group of findings with one focus starts, and nothing when
+// no finding has a focus; the client view names the focus of a focused run
+// and where a custom focus was defined. A free text cannot form markup.
+func TestFocusGroupsAndLine(t *testing.T) {
+	const inj = "<b>x</b> `y` *z*"
+	mk := func(focus, header string) review.KeyIssue {
+		return review.KeyIssue{RelevantFile: "a.go", IssueHeader: header, IssueContent: "c", StartLine: 1, EndLine: 1, Focus: focus}
+	}
+	res := &review.Result{
+		PR: basePR(), EnabledFields: allKeys, Coverage: review.Coverage{},
+		Review: &review.Review{KeyIssuesToReview: []review.KeyIssue{
+			mk("", "H0"), mk("security", "H1"), mk("security", "H2"), mk("api-contract", "H3"), mk(inj, "H4")}},
+	}
+	for name, caps := range map[string]provider.Capabilities{"gitea": capsGitea, "bitbucket": capsBB} {
+		out := Provider(res, caps)
+		if strings.Count(out, "Focus:") != 3 {
+			t.Errorf("%s: want 3 group headings\n%s", name, out)
+		}
+		if i, j := strings.Index(out, "Focus:"), strings.Index(out, "H1"); i < 0 || j < i || strings.Index(out, "H0") > i {
+			t.Errorf("%s: the heading is not between the ungrouped and the first group", name)
+		}
+		// In HTML the text is escaped; in markdown it sits in a code span.
+		if strings.Contains(out, "<b>x</b>") && !strings.Contains(out, "``"+inj+"``") {
+			t.Errorf("%s: free text formed markup\n%s", name, out)
+		}
+	}
+	if out := Client(res); strings.Count(out, "**Focus:**") != 3 {
+		t.Errorf("client view\n%s", out)
+	}
+	for i := range res.Review.KeyIssuesToReview {
+		res.Review.KeyIssuesToReview[i].Focus = ""
+	}
+	if out := Provider(res, capsGitea) + Client(res); strings.Contains(out, "Focus:") {
+		t.Errorf("a heading without any focus\n%s", out)
+	}
+
+	for _, tc := range []struct{ focus, source, want string }{
+		{"security", "builtin", "Focus: `security`"},
+		{"api-contract", "repo_config", "Focus: `api-contract` (repository config)"},
+		{"api-contract", "operator", "Focus: `api-contract` (defined by the operator)"},
+		{"locking", "free_text", "Focus: `locking` (free text)"},
+		{"", "", ""},
+	} {
+		r := &review.Result{PR: basePR(), Focus: tc.focus, FocusSource: tc.source, Review: &review.Review{}}
+		if got := FocusLine(r); got != tc.want {
+			t.Errorf("FocusLine(%q, %q) = %q, want %q", tc.focus, tc.source, got, tc.want)
+		}
+		if tc.want != "" && !strings.Contains(Client(r), "\n"+tc.want+"\n") {
+			t.Errorf("the client view lacks %q", tc.want)
+		}
+	}
+}

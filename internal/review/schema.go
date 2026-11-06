@@ -76,6 +76,7 @@ func ResultSchema() map[string]any {
 			"related":    RelatedCoverageSchema(),
 			"guidelines": llmrun.GuidelinesSchema("the project guidelines read at the target branch (X-32); present except in a publish of supplied findings, which sends no prompt"),
 			"file_tree":  llmrun.FileTreeSchema("the listing of the directories the change touches, at the target branch (X-32); present except in a publish of supplied findings, which sends no prompt"),
+			"docs_style": llmrun.DocsStyleSchema("where the documentation style of the prompt came from (X-51); present only in a review whose focus uses it (docs, or a custom focus with docs_style)"),
 		}, "included", "clipped", "deleted_listed", "omitted", "skipped", "filtered", "partial", "reviewed_files",
 			"total_files", "not_reviewed_files", "model_calls", "failed_parts", "repo_context", "related"),
 		"notes": strList("notes about truncation, dropped findings, clipped or trimmed files and the re-ask"),
@@ -104,8 +105,12 @@ func ResultSchema() map[string]any {
 		"ci":          CISchema(),
 		"repo_config": repocfg.Schema(),
 		"issue":       IssueSchema(),
-		"focus": str("the focus of a focused run (X-33): security, architecture, performance, ux, tests, docs or the " +
-			"cleaned free text; absent without one"),
+		"focus": str("the focus of a focused run (X-33): security, architecture, performance, ux, tests, docs, the name " +
+			"of a custom focus (X-51) or the cleaned free text; absent without one"),
+		"focus_source": map[string]any{"type": "string", "enum": stringsAny(FocusSourceValues),
+			"description": "where the focus comes from (X-51): builtin (one of the six values), operator or repo_config " +
+				"(a custom focus defined in the operator's configuration or in the repository config) or free_text; " +
+				"absent without a focus"},
 		"incremental": object("whether the whole pull request or only the files that changed since the last review were reviewed (X-36); always set by pr_review", map[string]any{
 			"mode": map[string]any{"type": "string", "enum": []any{IncrementalFull, IncrementalChanged, IncrementalUnchanged},
 				"description": "full: the whole pull request was reviewed; incremental: only the files that changed since the last review; unchanged: nothing changed since the last review, so nothing was reviewed, the model was not called and nothing was published"},
@@ -257,6 +262,15 @@ func relatedReasons() []any {
 	}
 	for _, r := range related.GitReasons {
 		out = append(out, r)
+	}
+	return out
+}
+
+// stringsAny is list as the []any a JSON schema enum holds.
+func stringsAny(list []string) []any {
+	out := make([]any, len(list))
+	for i, v := range list {
+		out[i] = v
 	}
 	return out
 }

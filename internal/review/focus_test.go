@@ -18,9 +18,9 @@ func TestNormalizeFocus(t *testing.T) {
 		{"  error handling in the retry loop  ", "error handling in the retry loop"},
 		{strings.Repeat("é", MaxFocusRunes), strings.Repeat("é", MaxFocusRunes)},
 	} {
-		got, err := NormalizeFocus(c.in)
-		if err != nil || got != c.want {
-			t.Errorf("NormalizeFocus(%q) = %q, %v; want %q", c.in, got, err, c.want)
+		f, err := NormalizeFocus(c.in, nil)
+		if got := f.Name; err != nil || got != c.want {
+			t.Errorf("NormalizeFocus(%q) = %+v, %v; want %q", c.in, f, err, c.want)
 		}
 	}
 	for name, in := range map[string]string{
@@ -31,8 +31,8 @@ func TestNormalizeFocus(t *testing.T) {
 		"bidi":      "locking \u202e reversed",
 		"separator": "locking\u2028retries",
 	} {
-		if got, err := NormalizeFocus(in); !errors.Is(err, ErrFocusInvalid) || got != "" {
-			t.Errorf("%s: NormalizeFocus = %q, %v; want ErrFocusInvalid", name, got, err)
+		if got, err := NormalizeFocus(in, nil); !errors.Is(err, ErrFocusInvalid) || got != (Focus{}) {
+			t.Errorf("%s: NormalizeFocus = %+v, %v; want ErrFocusInvalid", name, got, err)
 		}
 	}
 }
@@ -103,7 +103,7 @@ func TestValidatedModes(t *testing.T) {
 		want string
 	}{
 		{"invalid focus", Args{Focus: "a\nb"},
-			"focus must be one of security, architecture, performance, ux, tests or docs, or a description of 1 to 200 characters without line breaks or control characters"},
+			"focus must be one of security, architecture, performance, ux, tests or docs, the name of a custom focus, or a description of 1 to 200 characters without line breaks or control characters"},
 		{"focus with publish", Args{Focus: "security", Publish: true},
 			"a focused review does not publish; merge the findings and call pr_review with findings and publish=true"},
 		{"free focus with publish", Args{Focus: "locking", Publish: true},

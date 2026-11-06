@@ -11,8 +11,8 @@ import (
 )
 
 // docsSentence is the system-prompt sentence of the docs focus (v2.1 spec
-// V-5 §3a item 1, verbatim).
-const docsSentence = "This review covers documentation only: statements in changed documentation (README, guides, CHANGELOG, configuration and API references, doc comments in code) that contradict the code in this pull request or in the repository context; behaviour the code changes without the matching documentation update; names of options, flags, keys, functions, paths, defaults and messages that do not match the code; broken links or anchors; steps that are missing or out of order; and wording, terminology and tone that differ from the rest of the documentation or from the documentation style given below. When the code a statement describes is not shown, do not guess: report only contradictions you can see."
+// V-5 §3a item 1, verbatim, amended by X-51: the style is in the user message).
+const docsSentence = "This review covers documentation only: statements in changed documentation (README, guides, CHANGELOG, configuration and API references, doc comments in code) that contradict the code in this pull request or in the repository context; behaviour the code changes without the matching documentation update; names of options, flags, keys, functions, paths, defaults and messages that do not match the code; broken links or anchors; steps that are missing or out of order; and wording, terminology and tone that differ from the rest of the documentation or from the documentation style given in the user message. When the code a statement describes is not shown, do not guess: report only contradictions you can see."
 
 const styleMarker = "FORMAL-IMPERSONAL-STYLE-MARKER"
 
@@ -21,8 +21,8 @@ func TestDocsFocusValue(t *testing.T) {
 		t.Errorf("FocusValues = %q, want docs after tests", FocusValues)
 	}
 	for _, in := range []string{"docs", "Docs", " DOCS "} {
-		if got, err := NormalizeFocus(in); err != nil || got != FocusDocs {
-			t.Errorf("NormalizeFocus(%q) = %q, %v", in, got, err)
+		if got, err := NormalizeFocus(in, nil); err != nil || got.Name != FocusDocs || got.Kind != FocusKindBuiltin {
+			t.Errorf("NormalizeFocus(%q) = %+v, %v", in, got, err)
 		}
 	}
 	h := newHarness(goodAnswer)
@@ -32,9 +32,9 @@ func TestDocsFocusValue(t *testing.T) {
 	}
 }
 
-// TestDocsStyleOnlyForTheDocsFocus: review.docs_style reaches the prompt,
-// fenced under its fixed header, only in a review with focus docs and only
-// when it is set; there is no default style. [canary]
+// TestDocsStyleOnlyForTheDocsFocus: review.docs_style reaches the user
+// prompt (X-51), fenced under its fixed header, only in a review with focus
+// docs and only when it is set; there is no default style. [canary]
 func TestDocsStyleOnlyForTheDocsFocus(t *testing.T) {
 	for _, tc := range []struct {
 		name, focus, style string
@@ -51,7 +51,7 @@ func TestDocsStyleOnlyForTheDocsFocus(t *testing.T) {
 			h.deps.Config.Review.DocsStyle = tc.style
 			pl := prepareWith(t, h, Args{Focus: tc.focus})
 			all := pl.Prompts.System + pl.Prompts.User
-			if got := strings.Contains(all, projctx.DocsStyleHeader); got != tc.want {
+			if got := strings.Contains(pl.Prompts.User, projctx.DocsStyleHeader); got != tc.want {
 				t.Fatalf("style header present = %v, want %v", got, tc.want)
 			}
 			if !tc.want {
@@ -60,7 +60,7 @@ func TestDocsStyleOnlyForTheDocsFocus(t *testing.T) {
 				}
 				return
 			}
-			_, rest, _ := strings.Cut(pl.Prompts.System, projctx.DocsStyleHeader+"\n```\n")
+			_, rest, _ := strings.Cut(pl.Prompts.User, projctx.DocsStyleHeader+"\n```\n")
 			body, _, closed := strings.Cut(rest, "\n```")
 			if !closed || body != styleMarker {
 				t.Errorf("the style is not fenced under its header: %q", rest)
@@ -76,7 +76,7 @@ func TestDocsStyleFromTheRepositoryFile(t *testing.T) {
 	h.deps.Config.Review.DocsStyle = "OPERATOR-STYLE"
 	withRepoConfig(h, "[review]\ndocs_style = \""+styleMarker+"\"\n")
 	pl := prepareWith(t, h, Args{Focus: "docs"})
-	if !strings.Contains(pl.Prompts.System, styleMarker) || strings.Contains(pl.Prompts.System, "OPERATOR-STYLE") {
+	if !strings.Contains(pl.Prompts.User, styleMarker) || strings.Contains(pl.Prompts.User, "OPERATOR-STYLE") {
 		t.Error("the repository's style does not replace the operator's")
 	}
 	if !slices.Contains(pl.Result.RepoConfig.Applied, "review.docs_style") {

@@ -109,6 +109,22 @@ type Coverage struct {
 	// nil, and they are omitted.
 	Guidelines *Guidelines `json:"guidelines,omitempty"`
 	FileTree   *FileTree   `json:"file_tree,omitempty"`
+
+	// DocsStyle says where the documentation style of a run came from
+	// (X-51); set only by a run whose focus uses the style (docs, or a
+	// custom focus with docs_style), omitted otherwise.
+	DocsStyle *DocsStyle `json:"docs_style,omitempty"`
+}
+
+// DocsStyle is coverage.docs_style (X-51, v2.9 spec V-19 §2.2): the source
+// of the documentation style in the user prompt, its size in bytes (the
+// text, without the header and fence) and whether it was cut.
+type DocsStyle struct {
+	// Source is file (review.docs_style_file at the base revision), text
+	// (review.docs_style) or none.
+	Source string `json:"source"`
+	Bytes  int    `json:"bytes"`
+	Cut    bool   `json:"cut"`
 }
 
 // Values of Guidelines.Status and FileTree.Status (X-32). Not every value
@@ -553,6 +569,19 @@ func GuidelinesSchema(desc string) map[string]any {
 				ProjectNotFound, ProjectEmpty, ProjectTooLarge, ProjectUnreadable},
 				"description": "off: turned off (review.guidelines_paths empty or review.max_guidelines_tokens 0); used: in the prompt in full; cut: in the prompt, cut at a line boundary to its budget or for the diff; left_out: read but not in the prompt; not_found: no configured path exists at the target branch; empty: the file holds no text; too_large: larger than diff.max_file_bytes; unreadable: the file could not be read or is not text"},
 			"tokens": map[string]any{"type": "integer", "description": "estimated tokens of the guidelines block in the prompt; 0 when it is not in the prompt"},
+		}}
+}
+
+// DocsStyleSchema is the JSON schema of coverage.docs_style (X-51) under the
+// description desc.
+func DocsStyleSchema(desc string) map[string]any {
+	return map[string]any{"type": "object", "description": desc, "additionalProperties": false,
+		"required": []any{"source", "bytes", "cut"},
+		"properties": map[string]any{
+			"source": map[string]any{"type": "string", "enum": []any{"file", "text", "none"},
+				"description": "file: review.docs_style_file of the repository config, read at the target branch; text: review.docs_style; none: no documentation style was given"},
+			"bytes": map[string]any{"type": "integer", "description": "bytes of the style text in the prompt, without its header and fence; 0 for none"},
+			"cut":   map[string]any{"type": "boolean", "description": "true when the style file was larger than 8 KiB and was cut at a line boundary"},
 		}}
 }
 

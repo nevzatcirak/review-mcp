@@ -21,6 +21,9 @@ type Summary struct {
 	Warnings []string `json:"warnings"`
 	// Fallbacks lists the fallback models (X-38), in order.
 	Fallbacks []FallbackSummary `json:"fallbacks"`
+	// FocusProfiles are the operator's custom focuses and focus rules
+	// (X-51): names and counts, never the instructions.
+	FocusProfiles FocusProfilesSummary `json:"focus_profiles"`
 }
 
 // SummaryValue is one effective value and the layer that supplied it.
@@ -48,6 +51,8 @@ func (c *Config) Summary(r *Report) Summary {
 		Providers: []ProviderSummary{},
 		Warnings:  []string{},
 		Fallbacks: c.fallbackSummaries(),
+
+		FocusProfiles: c.focusProfilesSummary(),
 	}
 	for _, e := range table {
 		src := OriginDefault

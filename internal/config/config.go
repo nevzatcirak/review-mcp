@@ -251,6 +251,21 @@ type Review struct {
 	// MaxIssueTokens is the token budget of all issue text of one prompt
 	// together (X-42); 0 turns issue compliance off.
 	MaxIssueTokens int `toml:"max_issue_tokens" json:"max_issue_tokens"`
+	// CustomFocuses are the named custom focuses (X-51, [[review.custom_focuses]]):
+	// in the operator's configuration its own, in a run's merged copy those
+	// of the operator and the repository config together (repocfg.Apply).
+	// Configuration file and repository config only (no environment
+	// variable); the instructions never appear in JSON.
+	CustomFocuses []CustomFocus `toml:"custom_focuses" json:"custom_focuses"`
+	// FocusRules map path globs to a focus (X-51, [[review.focus_rules]]):
+	// the repository's rules when its config sets the key, else the
+	// operator's.
+	FocusRules []FocusRule `toml:"focus_rules" json:"focus_rules"`
+	// DocsStyleFile is review.docs_style_file of the repository config
+	// (X-51): a file of the repository, read at the base revision, whose text
+	// replaces DocsStyle. Only a run's merged copy has it; it is not an
+	// operator key.
+	DocsStyleFile string `toml:"-" json:"-"`
 }
 
 // Related configures related pull requests (X-41, v2.3 spec V-13a): pull

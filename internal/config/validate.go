@@ -87,6 +87,7 @@ func (l *loader) validate() {
 	l.validateImprove()
 	l.validateContextRepo()
 	l.validateRepoConfig()
+	l.validateFocusProfiles()
 	l.validateRelated()
 	l.validateDecision()
 	if _, err := logging.ParseLevel(c.Log.Level); err != nil {

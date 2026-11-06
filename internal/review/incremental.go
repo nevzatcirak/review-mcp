@@ -291,6 +291,7 @@ func (pl *Plan) unchangedPlan(ctx context.Context, deps Deps, args Args, window 
 		EnabledFields: []string{},
 		Metadata:      Metadata{Model: cfg.LLM.Model, ContextWindow: window, ReviewedAt: reviewedAt(deps.Clock)},
 		Focus:         args.Focus,
+		FocusSource:   focusSourceOf(args.Focus, cfg.Review.CustomFocuses),
 		Incremental:   inc,
 		RepoConfig:    pl.repo.Result,
 	}

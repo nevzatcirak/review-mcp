@@ -173,7 +173,7 @@ func (l *loader) loadFile() {
 		if underAny(key, unknownPrefixes) {
 			continue
 		}
-		if _, ok := byKey[key]; !ok && !isFallbackKey(key) {
+		if _, ok := byKey[key]; !ok && !isFallbackKey(key) && !isFocusProfileKey(key) {
 			rejected = true
 			unknownPrefixes = append(unknownPrefixes, key)
 			l.problem(UnknownKeyFormat, key, path, version.Version)
@@ -190,6 +190,14 @@ func (l *loader) loadFile() {
 	if md.IsDefined("llm", "fallback") {
 		l.cfg.LLM.Fallback = fc.LLM.Fallback
 		l.rep.Sources[fallbackSection] = OriginFile
+	}
+	if md.IsDefined("review", "custom_focuses") {
+		l.cfg.Review.CustomFocuses = fc.Review.CustomFocuses
+		l.rep.Sources[keyCustomFocuses] = OriginFile
+	}
+	if md.IsDefined("review", "focus_rules") {
+		l.cfg.Review.FocusRules = fc.Review.FocusRules
+		l.rep.Sources[keyFocusRules] = OriginFile
 	}
 	for _, k := range md.Keys() {
 		key := strings.Join(k, ".")

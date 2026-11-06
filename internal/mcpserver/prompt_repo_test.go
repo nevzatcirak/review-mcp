@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
@@ -117,8 +118,31 @@ func focusLines(text string) []string {
 	return out
 }
 
-func wantFocuses(focuses ...string) string {
-	return multiPerspectiveText(promptPR, focuses, false)
+// wantFocuses is the expected focus list in the form gotFocuses reads.
+func wantFocuses(focuses ...string) string { return strings.Join(focuses, ",") }
+
+// gotFocuses reads the focus names of the prompt's call lines.
+func gotFocuses(text string) string {
+	var names []string
+	for _, l := range focusLines(text) {
+		var c struct {
+			Focus string `json:"focus"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(l, "   - ")), &c); err != nil {
+			return "bad line: " + l
+		}
+		names = append(names, c.Focus)
+	}
+	return strings.Join(names, ",")
+}
+
+// defaultFocusesFor is the default list of a prompt call, as names.
+func defaultFocusesFor(ctx context.Context, deps Deps, req *mcp.GetPromptRequest, prURL string) []string {
+	var names []string
+	for _, e := range planFocuses(readPromptContext(ctx, deps, req, prURL, true)).entries {
+		names = append(names, e.name)
+	}
+	return names
 }
 
 var builtinDefault = []string{"security", "architecture", "performance", "tests"}
@@ -137,7 +161,7 @@ func TestPromptTakesFocusesFromTheRepositoryConfig(t *testing.T) {
 	f := &promptFake{file: "[review]\nfocuses = [\"security\", \"tests\"]\n"}
 	cs := promptSession(t, f)
 	text := promptText(t, cs, map[string]string{"pr_url": promptPR})
-	if text != wantFocuses("security", "tests") {
+	if gotFocuses(text) != wantFocuses("security", "tests") {
 		t.Errorf("message = %s", text)
 	}
 	if got := focusLines(text); len(got) != 2 || strings.Contains(text, "architecture") {
@@ -151,7 +175,7 @@ func TestPromptTakesFocusesFromTheRepositoryConfig(t *testing.T) {
 func TestPromptNormalisesTheRepositoryFocuses(t *testing.T) {
 	f := &promptFake{file: "[review]\nfocuses = [\" UX\", \"tests\", \"ux\"]\n"}
 	cs := promptSession(t, f)
-	if text := promptText(t, cs, map[string]string{"pr_url": promptPR}); text != wantFocuses("ux", "tests") {
+	if text := promptText(t, cs, map[string]string{"pr_url": promptPR}); gotFocuses(text) != wantFocuses("ux", "tests") {
 		t.Errorf("message = %s", text)
 	}
 }
@@ -173,7 +197,7 @@ func TestPromptFallsBackToTheBuiltInDefault(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			cs := promptSession(t, f)
-			if text := promptText(t, cs, map[string]string{"pr_url": promptPR}); text != wantFocuses(builtinDefault...) {
+			if text := promptText(t, cs, map[string]string{"pr_url": promptPR}); gotFocuses(text) != wantFocuses(builtinDefault...) {
 				t.Errorf("message = %s", text)
 			}
 		})
@@ -185,7 +209,7 @@ func TestPromptFallsBackToTheBuiltInDefault(t *testing.T) {
 func TestPromptWithFocusesReadsNothing(t *testing.T) {
 	f := &promptFake{file: "[review]\nfocuses = [\"ux\"]\n"}
 	cs := promptSession(t, f)
-	if text := promptText(t, cs, map[string]string{"pr_url": promptPR, "focuses": "tests,security"}); text != wantFocuses("tests", "security") {
+	if text := promptText(t, cs, map[string]string{"pr_url": promptPR, "focuses": "tests,security"}); gotFocuses(text) != wantFocuses("tests", "security") {
 		t.Errorf("message = %s", text)
 	}
 	if f.prCalls != 0 || len(f.reads) != 0 {
@@ -200,7 +224,7 @@ func TestPromptWithRepoConfigOffReadsNothing(t *testing.T) {
 	env["REVIEW_MCP_REPO_CONFIG_ENABLED"] = "false"
 	deps, n := withFake(depsFor(env, nil), f)
 	cs := connect(t, deps)
-	if text := promptText(t, cs, map[string]string{"pr_url": promptPR}); text != wantFocuses(builtinDefault...) {
+	if text := promptText(t, cs, map[string]string{"pr_url": promptPR}); gotFocuses(text) != wantFocuses(builtinDefault...) {
 		t.Errorf("message = %s", text)
 	}
 	if f.prCalls != 0 || len(f.reads) != 0 || n.Load() != 0 {
@@ -214,7 +238,7 @@ func TestPromptWithAUrlNoProviderMatches(t *testing.T) {
 	f := &promptFake{file: "[review]\nfocuses = [\"ux\"]\n"}
 	cs := promptSession(t, f)
 	other := "https://other.example/octo/demo/pulls/7"
-	if text := promptText(t, cs, map[string]string{"pr_url": other}); text != multiPerspectiveText(other, builtinDefault, false) {
+	if text := promptText(t, cs, map[string]string{"pr_url": other}); gotFocuses(text) != wantFocuses(builtinDefault...) {
 		t.Errorf("message = %s", text)
 	}
 	if f.prCalls != 0 {
@@ -264,7 +288,7 @@ func TestPromptReadsAreBounded(t *testing.T) {
 			if d := time.Since(start); d > promptReadTimeout+2*time.Second {
 				t.Errorf("the prompt took %v, deadline %v", d, promptReadTimeout)
 			}
-			if text != wantFocuses(builtinDefault...) {
+			if gotFocuses(text) != wantFocuses(builtinDefault...) {
 				t.Errorf("message = %s", text)
 			}
 		})
@@ -295,7 +319,7 @@ func TestPromptAddsDocsWhenDocumentationChanges(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cs := promptSession(t, tc.f)
-			if text := promptText(t, cs, map[string]string{"pr_url": promptPR}); text != wantFocuses(tc.want...) {
+			if text := promptText(t, cs, map[string]string{"pr_url": promptPR}); gotFocuses(text) != wantFocuses(tc.want...) {
 				t.Errorf("message = %s", text)
 			}
 			if tc.f.kept != 0 {
@@ -311,13 +335,13 @@ func TestPromptAddsDocsWhenDocumentationChanges(t *testing.T) {
 	}
 	// Given focuses are used as given: no docs is added and nothing is read.
 	f = &promptFake{changed: []string{"README.md"}}
-	if text := promptText(t, promptSession(t, f), map[string]string{"pr_url": promptPR, "focuses": "tests"}); text != wantFocuses("tests") ||
+	if text := promptText(t, promptSession(t, f), map[string]string{"pr_url": promptPR, "focuses": "tests"}); gotFocuses(text) != wantFocuses("tests") ||
 		f.diffs != 0 || f.prCalls != 0 {
 		t.Errorf("given focuses: message %s, diffs %d, pr reads %d", text, f.diffs, f.prCalls)
 	}
 	// docs is a focus value of the argument too.
 	f = &promptFake{}
-	if text := promptText(t, promptSession(t, f), map[string]string{"pr_url": promptPR, "focuses": "Docs,security"}); text != wantFocuses("docs", "security") {
+	if text := promptText(t, promptSession(t, f), map[string]string{"pr_url": promptPR, "focuses": "Docs,security"}); gotFocuses(text) != wantFocuses("docs", "security") {
 		t.Errorf("message = %s", text)
 	}
 }

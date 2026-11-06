@@ -93,7 +93,9 @@ func TestTableMatchesStruct(t *testing.T) {
 	for key := range leaves {
 		// The fallback entries are a list; fallbackFields covers them
 		// (below), with REVIEW_MCP_LLM_FALLBACK_<N>_<FIELD> variables.
-		if !seenKey[key] && key != fallbackSection {
+		// The focus profiles are lists of tables too, in the file and the
+		// repository config only (X-51); focusProfileFields covers them.
+		if !seenKey[key] && key != fallbackSection && key != keyCustomFocuses && key != keyFocusRules {
 			t.Errorf("Config field %s has no table row (no env variable)", key)
 		}
 	}

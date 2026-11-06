@@ -149,6 +149,12 @@ func matchAny(globs []string, p string) bool {
 	return false
 }
 
+// MatchGlob reports whether the slash-separated path p matches the glob g
+// with the semantics of ignore.glob (matchGlob); a focus rule's paths
+// (X-51) use it, so that a rule and an ignore list read a glob the same
+// way.
+func MatchGlob(g, p string) bool { return matchGlob(g, p) }
+
 // matchGlob applies the one glob semantics used for ignore.glob and the
 // generated-code table. A pattern without "/" matches the basename at any
 // depth, which is the same as an implicit "**/" prefix, so PR-Agent patterns

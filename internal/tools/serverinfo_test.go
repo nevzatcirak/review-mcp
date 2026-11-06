@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"unicode"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
@@ -516,5 +517,36 @@ func TestServerInfoRelatedRepositoryKeys(t *testing.T) {
 	md := RenderServerInfoMarkdown(r)
 	if !strings.Contains(md, "`related.max_identifiers` = `50` (env)") || !strings.Contains(md, "`related.from_repo_config` = `true` (env)") {
 		t.Errorf("markdown lacks the keys:\n%s", md)
+	}
+}
+
+// TestServerInfoFocusProfiles (X-51, v2.9 spec V-19 §1.1): server_info shows
+// the names of the operator's custom focuses and the counts, never the
+// instructions, in the structured result and in the text.
+func TestServerInfoFocusProfiles(t *testing.T) {
+	env := validEnv()
+	env[config.EnvConfig] = "/etc/review-mcp.toml"
+	file := "[[review.custom_focuses]]\nname = \"api-contract\"\ninstructions = \"SERVERINFO-INSTRUCTIONS-QX4\"\n" +
+		"[[review.focus_rules]]\npaths = [\"**/controller/**\"]\nfocus = \"api-contract\"\n"
+	src := config.MemSource{Env: env, FS: fstest.MapFS{"etc/review-mcp.toml": &fstest.MapFile{Data: []byte(file)}}}
+	cfg, rep, err := config.Load(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := ServerInfo(cfg, rep, nil)
+	fp := r.Config.FocusProfiles
+	if len(fp.CustomFocuses) != 1 || fp.CustomFocuses[0] != "api-contract" || fp.CustomFocusCount != 1 || fp.FocusRuleCount != 1 {
+		t.Errorf("focus profiles %+v", fp)
+	}
+	md := RenderServerInfoMarkdown(r)
+	if !strings.Contains(md, "## Focus profiles\n\n- Custom focuses: 1 (`api-contract`)\n- Focus rules: 1\n") {
+		t.Errorf("markdown lacks the focus profiles:\n%s", md)
+	}
+	b, _ := json.Marshal(r)
+	if strings.Contains(md+string(b), "SERVERINFO-INSTRUCTIONS-QX4") {
+		t.Error("server_info shows the instructions")
+	}
+	if md := RenderServerInfoMarkdown(ServerInfo(nil, nil, nil)); strings.Contains(md, "## Focus profiles") {
+		t.Error("the section is shown without focus profiles")
 	}
 }

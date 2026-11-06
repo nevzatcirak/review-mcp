@@ -2,10 +2,12 @@ package review
 
 import (
 	"context"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
 	"github.com/nevzatcirak/review-mcp/internal/prompt"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
@@ -22,7 +24,9 @@ type SuppliedFinding struct {
 	IssueHeader  string
 	IssueContent string
 	// Focus is the focus of the run the finding came from; "" when not
-	// given. It is validated like the focus argument.
+	// given. It is validated like the focus argument: a built-in value, the
+	// name of a custom focus defined for the repository (stored in lower
+	// case), or free text of up to MaxFocusRunes runes.
 	Focus string
 }
 
@@ -60,7 +64,8 @@ func noteHeldDropped(n int) string {
 //     exactly by its (new) path as a model finding's file is; start_line
 //     positive and end_line at least start_line; header and content not
 //     empty after trimming and within MaxSuppliedHeaderRunes and
-//     MaxSuppliedContentRunes; the focus, when given, valid. An invalid
+//     MaxSuppliedContentRunes; the focus, when given, valid (a custom name
+//     of the run is stored in lower case and never refused). An invalid
 //     item is dropped and counted (noteSuppliedDropped).
 //   - exact repeats (the same file and lines, and the same header after the
 //     fingerprint's normalization: case and runs of white space) are merged
@@ -81,7 +86,7 @@ func (pl *Plan) supplyFindings(args Args) (*Review, []string) {
 	seen := map[string]bool{}
 	dropped, merged := 0, 0
 	for _, f := range args.Findings {
-		ki, ok := suppliedIssue(f, files)
+		ki, ok := suppliedIssue(f, files, pl.cfg.Review.CustomFocuses)
 		if !ok {
 			dropped++
 			continue
@@ -112,14 +117,56 @@ func (pl *Plan) supplyFindings(args Args) (*Review, []string) {
 	if pl.toggles.Performance && strings.TrimSpace(args.PerformanceConcerns) != "" {
 		convertConcerns(args.PerformanceConcerns, &rev.PerformanceConcerns, PerformanceNo)
 	}
+	groupByFocus(rev.KeyIssuesToReview, pl.cfg.Review.CustomFocuses)
 	pl.log.Debug("review: supplied findings", "supplied", len(args.Findings), "dropped", dropped, "merged", merged,
 		"kept", len(rev.KeyIssuesToReview), "max_total_findings", pl.maxTotal)
 	return rev, notes
 }
 
+// groupByFocus orders the findings of a merged publish by focus, so that the
+// overview shows them in groups (X-51, v2.9 spec V-19 §2.3), keeping the
+// order inside a group. The groups are: findings without a focus; the
+// built-in values in FocusValues order (the order of the prompt's default
+// list); the custom focuses of the run in their merged order (the operator's
+// first, a repository redefinition in place, the repository's own after:
+// WP-23a DQ-9); other free texts in order of first appearance.
+//
+// DESIGN-QUESTION (WP-23b DQ-5): the spec says "in the order the prompt gave",
+// but the merged publish is a separate call that does not know the prompt's
+// list. The prompt's default list is built-in values in FocusValues order
+// followed by rule focuses, so the same order is rebuilt here from the run's
+// configuration. Recommendation: keep.
+func groupByFocus(issues []KeyIssue, customs []config.CustomFocus) {
+	var free []string
+	rank := func(focus string) int {
+		if focus == "" {
+			return 0
+		}
+		if i := slices.Index(FocusValues, focus); i >= 0 {
+			return 1 + i
+		}
+		for i, c := range customs {
+			if c.Name == focus {
+				return 1 + len(FocusValues) + i
+			}
+		}
+		i := slices.Index(free, focus)
+		if i < 0 {
+			free = append(free, focus)
+			i = len(free) - 1
+		}
+		return 1 + len(FocusValues) + len(customs) + i
+	}
+	// Free texts rank in order of first appearance, so rank them first.
+	for i := range issues {
+		rank(issues[i].Focus)
+	}
+	slices.SortStableFunc(issues, func(a, b KeyIssue) int { return rank(a.Focus) - rank(b.Focus) })
+}
+
 // suppliedIssue validates one supplied finding against the diff's files
 // and converts it; ok is false for an invalid one.
-func suppliedIssue(f SuppliedFinding, files map[string]bool) (KeyIssue, bool) {
+func suppliedIssue(f SuppliedFinding, files map[string]bool, customs []config.CustomFocus) (KeyIssue, bool) {
 	ki := KeyIssue{
 		RelevantFile: prompt.PyStrip(f.RelevantFile),
 		IssueHeader:  prompt.PyStrip(f.IssueHeader),
@@ -127,7 +174,7 @@ func suppliedIssue(f SuppliedFinding, files map[string]bool) (KeyIssue, bool) {
 		StartLine:    f.StartLine,
 		EndLine:      f.EndLine,
 	}
-	focus, err := NormalizeFocus(f.Focus)
+	focus, err := NormalizeFocus(f.Focus, customs)
 	switch {
 	case err != nil,
 		!files[ki.RelevantFile],
@@ -136,7 +183,7 @@ func suppliedIssue(f SuppliedFinding, files map[string]bool) (KeyIssue, bool) {
 		ki.IssueContent == "" || utf8.RuneCountInString(ki.IssueContent) > MaxSuppliedContentRunes:
 		return KeyIssue{}, false
 	}
-	ki.Focus = focus
+	ki.Focus = focus.Name
 	return ki, true
 }
 

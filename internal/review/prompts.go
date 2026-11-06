@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"text/template"
 
+	"github.com/nevzatcirak/review-mcp/internal/config"
+	"github.com/nevzatcirak/review-mcp/internal/projctx"
 	"github.com/nevzatcirak/review-mcp/internal/prompt"
 	"github.com/nevzatcirak/review-mcp/internal/repotools"
 	"github.com/nevzatcirak/review-mcp/internal/tokens"
@@ -44,7 +46,10 @@ type PromptInput struct {
 	// scaffolding.
 	RepoInstructions string
 	// DocsStyle is the rendered documentation-style block (docsStyleBlock);
-	// empty omits it. Only a review with focus docs has one.
+	// empty omits it. Only a review with focus docs, or with a custom focus
+	// that sets docs_style, has one. It is repository text: it goes to the
+	// user prompt (X-51), and the system prompt gets one fixed sentence
+	// about it (projctx.DocsStyleSentence).
 	DocsStyle string
 	// Language is the effective output language (the per-call argument,
 	// else output.language). Empty means en-US.
@@ -105,8 +110,13 @@ type PromptInput struct {
 	// NormalizeFocus); empty reviews everything and renders as before. A
 	// known value adds its fixed sentence to the system prompt; a free text
 	// adds the free-text sentence there and its fenced block (FocusHeader)
-	// to the user prompt.
+	// to the user prompt. A custom focus (X-51) adds the custom-focus
+	// sentence there and its fenced instructions (CustomFocusHeader) to the
+	// user prompt; its instructions never enter the system prompt.
 	Focus string
+	// CustomFocus is the definition of Focus when it names a custom focus;
+	// nil for any other focus.
+	CustomFocus *config.CustomFocus
 	// Incremental marks an incremental run (X-36), whose diff holds only
 	// the files that changed since the last review: the system prompt
 	// carries IncrementalSentence. False renders as before.
@@ -141,6 +151,7 @@ func (in *PromptInput) vars() map[string]any {
 		"extra_instructions":  prompt.WithOutputLanguage(in.ExtraInstructions, in.Language),
 		"repo_instructions":   in.RepoInstructions,
 		"docs_style":          in.DocsStyle,
+		"docs_style_note":     docsStyleNote(in.DocsStyle),
 		"schema":              SchemaText(in.Toggles, in.MaxFindings),
 		"example":             ExampleYAML(in.Toggles),
 		"date":                in.Date,
@@ -157,13 +168,22 @@ func (in *PromptInput) vars() map[string]any {
 		"guidelines":          in.Guidelines,
 		"file_tree":           in.FileTree,
 		"repo_context":        in.RepoContext,
-		"focus":               focusInstruction(in.Focus),
-		"focus_block":         focusBlock(in.Focus),
+		"focus":               focusInstruction(in.Focus, in.CustomFocus),
+		"focus_block":         focusBlock(in.Focus, in.CustomFocus),
 		"incremental":         incrementalInstruction(in.Incremental),
 		"tools_instruction":   ToolsInstruction(in.ToolRounds, in.ToolRepos...),
 		"part_header":         in.PartHeader,
 		"diff":                in.Diff,
 	}
+}
+
+// docsStyleNote is the system prompt's sentence about the documentation
+// style when the user prompt carries one, "" otherwise.
+func docsStyleNote(block string) string {
+	if block != "" {
+		return projctx.DocsStyleSentence
+	}
+	return ""
 }
 
 // relatedInstruction is RelatedInstruction with a related block, followed

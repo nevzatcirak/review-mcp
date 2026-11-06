@@ -29,6 +29,11 @@ var allowList = []string{
 	"ask.extra_instructions",
 	"review.focuses",
 	"review.docs_style",
+	// The focus profiles (X-51, v2.9 spec V-19 §1.2): custom focuses come
+	// before the rules, which may name them.
+	"review.custom_focuses",
+	"review.focus_rules",
+	"review.docs_style_file",
 	"review.issue_compliance",
 	"related.contract_globs",
 	// related.repos is [[related.repos]], a list of tables (v2.5 spec V-13b

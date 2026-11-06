@@ -241,6 +241,9 @@ type Plan struct {
 	// proj is the project context (X-32), whose coverage a review in parts
 	// carries too.
 	proj *projctx.Context
+	// style is coverage.docs_style: set only by a run whose focus uses the
+	// documentation style (X-51).
+	style *llmrun.DocsStyle
 	// cfg is the run's merged configuration and args the call's arguments
 	// with the configuration's defaults filled in (X-40); repo is the
 	// repository config the merge came from.
@@ -450,6 +453,16 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		rc.NoRelatedNote()
 	}
 	cfg = rc.Config
+	// The focus is resolved again against the run's custom focuses (X-51,
+	// v2.9 spec V-19 §1.3): those of the operator, which Validated saw, and
+	// those of the repository config, read at the base revision, which may
+	// redefine them. A name that is defined nowhere stays free text, with a
+	// note.
+	runFocus, err := resolveRunFocus(&args, cfg, rc)
+	customFocus := runFocus.Custom
+	if err != nil {
+		return nil, err
+	}
 	deps.Config = cfg
 	args = args.WithConfigDefaults(cfg)
 	toggles := TogglesFrom(cfg.Review)
@@ -671,13 +684,29 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 	issueBlock := ic.Render(cfg.Review.MaxIssueTokens, factor)
 
+	// The documentation style (X-51): read once, at the base revision, and
+	// only by a run whose focus uses it. A failed read falls back to
+	// review.docs_style with a note, never a failed review.
+	//
+	// DESIGN-QUESTION (WP-23b DQ-8): the style (up to 8 KiB) is part of the
+	// scaffolding and, unlike the guidelines, is not cut when the diff needs
+	// the room; a context window too small for it ends in the usual
+	// does-not-fit refusal. Recommendation: keep; cut it like the guidelines
+	// if windows that small are in use.
+	var style projctx.DocsStyleText
+	if focusUsesDocsStyle(args.Focus, customFocus) {
+		style = projctx.ReadDocsStyle(ctx, projctx.ProviderSource(p, ref, pr.BaseSHA), cfg.Review.DocsStyleFile,
+			cfg.Review.DocsStyle, log)
+		pl.style = &style.Coverage
+	}
+
 	// Step 3: description.
 	in := PromptInput{
 		Toggles:           toggles,
 		MaxFindings:       maxFindings,
 		ExtraInstructions: extra,
 		RepoInstructions:  projctx.RepoGuidance(cfg.RepoConfig.Path, cfg.Review.RepoInstructions),
-		DocsStyle:         docsStyleBlock(args.Focus, cfg.Review.DocsStyle),
+		DocsStyle:         docsStyleBlock(args.Focus, customFocus, style.Text),
 		Language:          language,
 		Title:             pr.Title,
 		Branch:            pr.SourceBranch,
@@ -687,6 +716,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		Guidelines:        proj.Guidelines(),
 		FileTree:          proj.Tree(),
 		Focus:             args.Focus,
+		CustomFocus:       customFocus,
 		Incremental:       inc.Mode == IncrementalChanged,
 		Date:              prompt.Date(deps.Clock),
 	}
@@ -821,6 +851,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			AlreadyDiscussed: disc.Included,
 		},
 		Focus:       args.Focus,
+		FocusSource: runFocus.Source(),
 		Incremental: inc,
 		RepoConfig:  rc.Result,
 		Issue:       issueResultOf(ic),
@@ -840,11 +871,13 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		res.Notes = append(res.Notes, NoteCILeftOut)
 	}
 	res.Notes = append(res.Notes, proj.Notes()...)
+	res.Notes = append(res.Notes, style.Notes...)
 	res.Notes = append(res.Notes, ic.Notes...)
 	if docsOnlyWithoutContext(args.Focus, cfg.Context.Repo.Enabled, d.Files) {
 		res.Notes = append(res.Notes, NoteDocsWithoutRepoContext)
 	}
 	res.Coverage.Guidelines, res.Coverage.FileTree = proj.Coverage()
+	res.Coverage.DocsStyle = pl.style
 	for _, f := range enabledFields(toggles) {
 		res.EnabledFields = append(res.EnabledFields, f.key)
 	}
@@ -896,6 +929,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			pl.Budget = budget
 			res.Coverage, res.Metadata.DiffTokens, res.Metadata.FastPath = buildCoverage(prep, flt), prep.Tokens, prep.FastPath
 			res.Coverage.Guidelines, res.Coverage.FileTree = proj.Coverage()
+			res.Coverage.DocsStyle = pl.style
 			if leavesFilesOut(prep) {
 				if ok, err = pl.planParts(ctx, dIn, in, maxChunks, rcs, 0); err != nil {
 					return nil, err

@@ -597,9 +597,56 @@ repository file cannot set them.
 |---|---|---|---|
 | `repo_config.enabled` | `REVIEW_MCP_REPO_CONFIG_ENABLED` | `true` | Read the repository config. With `false` nothing is read, and every result says `repo_config.status` `off`. |
 | `repo_config.path` | `REVIEW_MCP_REPO_CONFIG_PATH` | `.review-mcp.toml` | The file's path, relative to the repository root, without `..`, `.` or empty segments. |
-| `review.docs_style` | `REVIEW_MCP_REVIEW_DOCS_STYLE` | (empty) | The documentation style of the [`docs` focus](review.md#the-docs-focus), at most 1,000 bytes; a repository config may replace it. |
+| `review.docs_style` | `REVIEW_MCP_REVIEW_DOCS_STYLE` | (empty) | The [documentation style](review.md#documentation-style) of the [`docs` focus](review.md#the-docs-focus) (and of a custom focus with `docs_style = true`), at most 1,000 bytes; a repository config may replace it, or name a file that holds it (`review.docs_style_file`, repository config only). |
 
 `server_info` shows all three.
+
+### Focus profiles
+
+An operator can define **custom focuses** (named review areas with their own
+instructions) and **focus rules** (path globs that add a focus to the
+`multi_perspective_review` prompt's list). Both are lists of tables, which an
+environment variable cannot express, so they exist in the **configuration
+file only**:
+
+```toml
+[[review.custom_focuses]]
+name = "message-queue"
+instructions = "Messaging: changed topic or queue names, message schemas, delivery and retry behaviour, ordering and idempotency of consumers."
+
+[[review.focus_rules]]
+paths = ["**/messaging/**", "**/*Topic*.java"]
+focus = "message-queue"
+```
+
+The shape, the limits (at most 10 custom focuses and 20 rules, 1 to 1,000 bytes
+of instructions, 1 to 20 globs per rule) and the reserved names are those of the
+[repository config](repo-config.md#custom-focuses-focus-rules-and-the-style-file);
+what the model gets is in [Custom focuses](review.md#custom-focuses). A
+repository config adds its own focuses to the operator's, may redefine one of
+the same name, and replaces the operator's rules with its own list. With
+`repo_config.enabled` false the prompt reads nothing, so focus rules (the
+operator's included) do not apply; the default list is used.
+
+An invalid entry in the file is a **configuration problem** (the server starts
+in degraded mode, see [Troubleshooting](troubleshooting.md#configuration-problems)),
+and the problem names the key and the entry's position, never its text, for
+example `review.custom_focuses[0]`.
+
+`server_info` shows the focus profiles without the instructions: in its
+structured result `config.focus_profiles` has `custom_focuses` (the names, in
+order), `custom_focus_count` and `focus_rule_count`; its text has a "Focus
+profiles" section, shown only when the operator defined at least one focus or
+rule:
+
+```text
+## Focus profiles
+
+- Custom focuses: 1 (`message-queue`)
+- Focus rules: 1
+```
+
+`review.docs_style_file` is not an operator key; the repository config sets it.
 
 ### Issue compliance
 

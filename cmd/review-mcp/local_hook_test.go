@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"os/exec"
@@ -13,13 +14,16 @@ import (
 )
 
 // hookSample returns the sh block under the given heading of
-// docs/local-review.md.
+// docs/local-review.md, with LF line endings.
 func hookSample(t *testing.T, heading string) string {
 	t.Helper()
 	doc, err := os.ReadFile(filepath.Join("..", "..", "docs", "local-review.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A Windows checkout may have CRLF line endings; a hook needs LF, as
+	// the docs say, so the sample is read with LF.
+	doc = bytes.ReplaceAll(doc, []byte("\r\n"), []byte("\n"))
 	re := regexp.MustCompile("(?s)\n### " + regexp.QuoteMeta(heading) + "\n.*?```sh\n(.*?)```")
 	m := re.FindSubmatch(doc)
 	if m == nil {

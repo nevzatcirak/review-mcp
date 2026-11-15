@@ -451,6 +451,9 @@ type gitRun struct {
 	// offline command, and the tests of the older guards) an offline
 	// command runs against the checkout itself.
 	view string
+	// local is set for the reads of a repository on the user's machine
+	// (Local.viewRun): every command gets the local settings.
+	local *localEnv
 }
 
 func (g *gitRun) run(ctx context.Context, c gitCmd) result {
@@ -460,7 +463,7 @@ func (g *gitRun) run(ctx context.Context, c gitCmd) result {
 		c.objectDir = filepath.Join(g.gitDir, "objects")
 	}
 	c.args = append(pre, c.args...)
-	c.dir, c.home = g.dir, g.home
+	c.dir, c.home, c.local = g.dir, g.home, g.local
 	return run(ctx, g.path, c)
 }
 

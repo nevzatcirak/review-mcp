@@ -62,6 +62,13 @@ type gitCmd struct {
 	// as HOME and XDG_CONFIG_HOME; "" passes neither (the version probe,
 	// which runs before the cache is known).
 	home string
+	// local, when set, makes this a command on a repository on the user's
+	// machine (local.go): the local safety arguments and environment
+	// replace the cache's, and the subcommand must be on the allow-list.
+	local *localEnv
+	// indexFile, when set, is passed as GIT_INDEX_FILE (the private copy
+	// of a local repository's index).
+	indexFile string
 }
 
 // netPolicy are the non-secret settings of a command that talks to the
@@ -244,7 +251,21 @@ type result struct {
 // result.err as the raw *exec.ExitError (or the context error); the caller
 // classifies it with failure.
 func run(ctx context.Context, gitPath string, c gitCmd) result {
-	argv := append(safetyArgsFor(c.net, runtime.GOOS, c.offline), c.args...)
+	var argv, env []string
+	if c.local != nil {
+		argv = append(localSafetyArgs(c.local), c.args...)
+		if testLocalHook != nil {
+			testLocalHook(argv)
+		}
+		if !localSubcommands[subcommandOf(c.args)] {
+			return result{err: errLocalRefused}
+		}
+		env = localChildEnv(c.local, runtime.GOOS)
+		c.local.calls.Add(1)
+	} else {
+		argv = append(safetyArgsFor(c.net, runtime.GOOS, c.offline), c.args...)
+		env = childEnv(c.home, append(append([][2]string(nil), testExtraConfig...), c.config...), runtime.GOOS)
+	}
 	limit := c.maxStdout
 	if limit <= 0 {
 		limit = maxStdout
@@ -254,12 +275,15 @@ func run(ctx context.Context, gitPath string, c gitCmd) result {
 	defer stop()
 	//nolint:gosec // G204: the binary is the configured or looked-up git, and every argument is built here; no shell is involved.
 	cmd := exec.CommandContext(stopCtx, gitPath, argv...)
-	cmd.Env = childEnv(c.home, append(append([][2]string(nil), testExtraConfig...), c.config...), runtime.GOOS)
+	cmd.Env = env
 	if c.offline {
 		cmd.Env = append(cmd.Env, "GIT_NO_LAZY_FETCH=1")
 	}
 	if c.objectDir != "" {
 		cmd.Env = append(cmd.Env, "GIT_OBJECT_DIRECTORY="+c.objectDir)
+	}
+	if c.indexFile != "" {
+		cmd.Env = append(cmd.Env, "GIT_INDEX_FILE="+c.indexFile)
 	}
 	cmd.Dir = c.dir
 	if c.stdin != nil {

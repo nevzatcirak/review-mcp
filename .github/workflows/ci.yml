@@ -44,6 +44,8 @@ jobs:
         run: go test -count=1 -v ./internal/gitctx/...
       - name: Test the local review source
         run: go test -count=1 -v ./internal/provider/local/...
+      - name: Test local_review and the local prompt
+        run: go test -count=1 -v -run 'Local' ./internal/mcpserver/
       - name: Test CI mode
         run: go test -count=1 -run 'TestCI' ./cmd/review-mcp
 

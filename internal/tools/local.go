@@ -126,6 +126,9 @@ func (c *LocalReviewCall) Run(ctx context.Context, progress func(stage string)) 
 		Resolver: c.deps.Resolver,
 		LLM:      c.client,
 		Progress: progress,
+		// Repository context and the repository tools read the user's
+		// repository at HEAD, read-only (§2.3, E3).
+		RepoContext: c.src.ContextBackend(),
 	}, c.args)
 	if err != nil {
 		return nil, "", err

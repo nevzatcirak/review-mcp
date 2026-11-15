@@ -939,7 +939,7 @@ func TestLocalSubcommandAllowList(t *testing.T) {
 		}
 	}
 	want := LocalSubcommands()
-	if len(want) != 11 || slices.Contains(want, "checkout") || slices.Contains(want, "show") {
+	if len(want) != 12 || slices.Contains(want, "checkout") || slices.Contains(want, "show") || !slices.Contains(want, "rev-list") {
 		t.Errorf("the allow-list changed: %v", want)
 	}
 }
@@ -1025,5 +1025,79 @@ func TestValidLocalRev(t *testing.T) {
 		if ValidLocalRev(bad) {
 			t.Errorf("ValidLocalRev(%q) = true", bad)
 		}
+	}
+}
+
+// TestLocalRunner: the runner of a local repository serves repository
+// context and the repository tools at HEAD through the read view (E3): it
+// fetches nothing, finds the uses of a symbol, reads files and directory
+// entries, searches text, and runs no trap of the repository; any other
+// head is sha_mismatch, and a cache runner refuses a local repository.
+func TestLocalRunner(t *testing.T) {
+	r, marker := trapRepo(t)
+	writeFiles(t, r.dir, map[string]string{"src/use.go": "package app\n\nfunc use() int { return Run() }\n"})
+	r.run(t, "add", "src/use.go")
+	r.run(t, "commit", "-q", "--no-verify", "-m", "a use")
+	if err := os.Remove(marker); err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+	calls := recordSubcommands(t)
+	l := r.open(t, LocalOptions{})
+	run := l.Runner()
+	ctx := t.Context()
+	repo := Repo{Kind: provider.KindLocal, Name: "demo"}
+	if _, err := run.Ensure(ctx, repo, PR{HeadSHA: r.base}); ReasonOf(err) != ReasonSHAMismatch {
+		t.Errorf("Ensure with another head = %v, want sha_mismatch", err)
+	}
+	co, err := run.Ensure(ctx, repo, PR{HeadSHA: l.HeadSHA()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := run.Grep(ctx, co, Query{Symbols: []Symbol{{Name: "Run", Path: "src/app.go"}}, Exclude: []string{"src/app.go"}})
+	if err != nil || len(res.Hits) != 1 || res.Hits[0].Path != "src/use.go" {
+		t.Errorf("Grep = %+v, %v", res, err)
+	}
+	if b, err := run.FileAt(ctx, co, co.HeadSHA, "src/use.go", 1<<20); err != nil || !strings.Contains(string(b), "Run()") {
+		t.Errorf("FileAt = %q, %v", b, err)
+	}
+	if ents, err := run.DirEntries(ctx, co, co.HeadSHA, "src"); err != nil || len(ents) != 3 {
+		t.Errorf("DirEntries = %+v, %v", ents, err)
+	}
+	if tr, err := run.SearchText(ctx, co, TextQuery{Text: "helper"}); err != nil || len(tr.Hits) != 1 {
+		t.Errorf("SearchText = %+v, %v", tr, err)
+	}
+	if !run.HasCommit(ctx, co, r.base) {
+		t.Error("HasCommit(base) = false")
+	}
+	if m := readMarker(marker); m != "" {
+		t.Errorf("a trap ran: %q", m)
+	}
+	for _, s := range calls() {
+		if !localSubcommands[s] {
+			t.Errorf("the subcommand %q was started on the local repository", s)
+		}
+	}
+	if !slices.Contains(calls(), "rev-list") || !slices.Contains(calls(), "grep") {
+		t.Errorf("the search did not run rev-list and grep: %v", calls())
+	}
+	cache := New(Options{CacheDir: t.TempDir()})
+	if _, err := cache.Ensure(ctx, repo, PR{HeadSHA: l.HeadSHA()}); ReasonOf(err) != ReasonUnsupported {
+		t.Errorf("a cache runner with a local repository = %v, want unsupported", err)
+	}
+	if _, err := cache.Grep(ctx, co, Query{Symbols: []Symbol{{Name: "Run"}}}); err == nil {
+		t.Error("a cache runner searched the local repository")
+	}
+}
+
+// TestLocalChangedInWorkTree lists the tracked files with uncommitted
+// changes, staged and unstaged, and nothing else.
+func TestLocalChangedInWorkTree(t *testing.T) {
+	r := newLocalRepo(t)
+	writeFiles(t, r.dir, map[string]string{"src/util.go": "package app\n// staged\n", "README.md": "# demo\nunstaged\n", "new.txt": "x\n"})
+	r.run(t, "add", "src/util.go")
+	l := r.open(t, LocalOptions{})
+	got, err := l.ChangedInWorkTree(t.Context())
+	if err != nil || !slices.Equal(got, []string{"README.md", "src/util.go"}) {
+		t.Errorf("ChangedInWorkTree = %q, %v", got, err)
 	}
 }

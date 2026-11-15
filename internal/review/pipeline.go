@@ -165,6 +165,17 @@ type Args struct {
 	Local bool
 }
 
+// uncommittedLister is the local source's list of the files whose
+// uncommitted changes the review includes (internal/provider/local).
+type uncommittedLister interface {
+	UncommittedPaths(ctx context.Context) []string
+}
+
+// NoteLocalUncommittedNotSearched is the note of a local review with
+// repository context and uncommitted changes (v2.10 spec V-20 §2.3).
+const NoteLocalUncommittedNotSearched = "Repository context searched the last commit (HEAD): uses in files with " +
+	"uncommitted changes were not searched."
+
 // localRun turns off, for a local review, what does not apply to local
 // work (Args.Local): cfg is a copy with the CI status and the incremental
 // review off, and args drop publish, findings, incremental and related and
@@ -227,6 +238,9 @@ const (
 // Plan is the outcome of steps 1 to 6 of the pipeline: everything up to the
 // model call. Run continues from it; diag review --dry-run prints it.
 type Plan struct {
+	// localUncommitted: a local review whose files with uncommitted changes
+	// are left out of the repository-context search (its note).
+	localUncommitted bool
 	// Result is the review so far: PR, coverage, notes and the metadata
 	// known before the model call (prompt, diff and request tokens).
 	Result *Result
@@ -613,6 +627,16 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			// too (v2.1 spec V-5 §3a item 3).
 			rcs.LookUpDocNames()
 		}
+		// A local review searches HEAD's commit (v2.10 spec V-20 §2.3):
+		// the files with uncommitted changes are left out of the search
+		// entirely, since their lines there are not the diff's, and a note
+		// says so.
+		if lw, ok := p.(uncommittedLister); ok && args.Local {
+			if paths := lw.UncommittedPaths(ctx); len(paths) > 0 {
+				rcs.ExcludeWhole(paths)
+				pl.localUncommitted = true
+			}
+		}
 		if len(rcs.Symbols(d.Files)) > 0 {
 			progress(deps, StageRepoContext)
 			fetched = rcs.Ready(ctx) == ""
@@ -893,6 +917,9 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// Changed files the provider could not list at all (GitHub lists at
 	// most 3000) are named by its fixed note.
 	res.Notes = append(res.Notes, d.Notes...)
+	if pl.localUncommitted {
+		res.Notes = append(res.Notes, NoteLocalUncommittedNotSearched)
+	}
 	res.Notes = append(res.Notes, incNotes...)
 	res.Notes = append(res.Notes, discNotes...)
 	if disc.Omitted > 0 {

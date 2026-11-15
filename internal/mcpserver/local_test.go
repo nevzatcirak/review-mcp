@@ -433,3 +433,83 @@ func commitFile(t *testing.T, w *localWorkTree, branch, path, content string) {
 	run("checkout", "-q", "feat")
 	run("rebase", "-q", branch)
 }
+
+// TestLocalReviewRepoContext: with context.repo.enabled, repository
+// context reads the user's repository read-only at HEAD (E3): the use of a
+// changed function in another file reaches the model; the files with
+// uncommitted changes are left out of the search and a note says so.
+func TestLocalReviewRepoContext(t *testing.T) {
+	w := newLocalWorkTree(t)
+	commitFile(t, w, "feat", "src/calc.go", "package main\n\nfunc Compute() int { return 2 }\n")
+	commitFile(t, w, "main", "src/caller.go", "package main\n\nfunc caller() int { return Compute() + 41 }\n")
+	l := newFakeLLMHost(t, 200, goodAnswer)
+	env := localEnv(l)
+	env["REVIEW_MCP_CONTEXT_REPO_ENABLED"] = "true"
+	env["REVIEW_MCP_CONTEXT_REPO_MAX_TOOL_ROUNDS"] = "0"
+	cs := connect(t, realDeps(env, nil))
+	res := callTool(t, cs, "local_review", map[string]any{"repo_path": w.dir, "base": "main"})
+	if res.IsError {
+		t.Fatalf("tool error: %s", textOf(t, res))
+	}
+	var got review.Result
+	decodeStructured(t, res, &got)
+	if got.Coverage.RepoContext.Status != "used" {
+		t.Errorf("repo_context = %+v, notes %q", got.Coverage.RepoContext, got.Notes)
+	}
+	bodies := l.recorded()
+	if len(bodies) != 1 || !strings.Contains(bodies[0], "[src/caller.go:3] uses Compute") {
+		t.Fatalf("the use of Compute did not reach the model")
+	}
+	if slices.Contains(got.Notes, review.NoteLocalUncommittedNotSearched) {
+		t.Error("the uncommitted note without uncommitted changes")
+	}
+	// An uncommitted edit of src/caller.go: that file is not searched.
+	if err := os.WriteFile(filepath.Join(w.dir, "src", "caller.go"),
+		[]byte("package main\n\nfunc caller() int { return Compute() + 42 }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res = callTool(t, cs, "local_review", map[string]any{"repo_path": w.dir, "base": "main"})
+	if res.IsError {
+		t.Fatalf("tool error: %s", textOf(t, res))
+	}
+	decodeStructured(t, res, &got)
+	if !slices.Contains(got.Notes, review.NoteLocalUncommittedNotSearched) {
+		t.Errorf("notes lack the uncommitted note: %q", got.Notes)
+	}
+	bodies = l.recorded()
+	if strings.Contains(bodies[1], "[src/caller.go:") {
+		t.Error("a file with uncommitted changes was searched at HEAD")
+	}
+}
+
+// TestLocalReviewConfigAtMergeBase is canary (i): the repository config
+// is read at the merge base, not at HEAD or in the work tree; the fixture
+// edits .review-mcp.toml in an uncommitted change and in a commit after the
+// merge base.
+// Mutation: read every revision of the head side from the work tree.
+func TestLocalReviewConfigAtMergeBase(t *testing.T) {
+	w := newLocalWorkTree(t)
+	commitFile(t, w, "main", ".review-mcp.toml", "[review]\nextra_instructions = \"BASE-CONFIG-MARKER\"\n")
+	commitFile(t, w, "feat", ".review-mcp.toml", "[review]\nextra_instructions = \"HEAD-CONFIG-MARKER\"\n")
+	if err := os.WriteFile(filepath.Join(w.dir, ".review-mcp.toml"),
+		[]byte("[review]\nextra_instructions = \"WORKTREE-CONFIG-MARKER\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l := newFakeLLMHost(t, 200, goodAnswer)
+	cs := connect(t, realDeps(localEnv(l), nil))
+	res := callTool(t, cs, "local_review", map[string]any{"repo_path": w.dir, "base": "main"})
+	if res.IsError {
+		t.Fatalf("tool error: %s", textOf(t, res))
+	}
+	bodies := l.recorded()
+	if len(bodies) != 1 {
+		t.Fatalf("LLM requests = %d", len(bodies))
+	}
+	// The extra instructions are fenced in the prompt; the diff shows the
+	// other versions as changed lines only.
+	fenced := func(m string) bool { return strings.Contains(bodies[0], "```\\n"+m+"\\n```") }
+	if !fenced("BASE-CONFIG-MARKER") || fenced("HEAD-CONFIG-MARKER") || fenced("WORKTREE-CONFIG-MARKER") {
+		i := strings.Index(bodies[0], "CONFIG-MARKER")
+		t.Errorf("the repository config does not come from the merge base: %q", bodies[0][max(0, i-40):min(len(bodies[0]), i+40)])
+	}
+}

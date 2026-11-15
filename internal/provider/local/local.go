@@ -305,6 +305,27 @@ func (s *Source) Ref() provider.PRRef {
 // Close removes the temporary directory; the repository is not touched.
 func (s *Source) Close() error { return s.repo.Close() }
 
+// ContextBackend is the backend of repository context and the repository
+// tools for this source (v2.10 spec V-20 §2.3): the user's repository,
+// read-only at HEAD's commit through its read view; nothing is fetched.
+func (s *Source) ContextBackend() *gitctx.Runner { return s.repo.Runner() }
+
+// UncommittedPaths returns the tracked files whose uncommitted changes are
+// part of the review (nil without IncludeUncommitted). Repository context
+// searches HEAD's commit, so their uses are not searched (§2.3); a failure
+// to list them is logged and treated as none.
+func (s *Source) UncommittedPaths(ctx context.Context) []string {
+	if !s.info.Uncommitted {
+		return nil
+	}
+	paths, err := s.repo.ChangedInWorkTree(ctx)
+	if err != nil {
+		s.log.Debug("local uncommitted files not listed", "reason", reasonOf(err))
+		return nil
+	}
+	return paths
+}
+
 // Calls is the number of git processes started for the repository.
 func (s *Source) Calls() int64 { return s.repo.Calls() }
 

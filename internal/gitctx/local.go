@@ -91,6 +91,9 @@ var localSubcommands = map[string]bool{
 	"symbolic-ref": true,
 	"grep":         true,
 	"ls-tree":      true,
+	// rev-list lists the blobs a partial clone lacks for the search of
+	// repository context (Local.Runner, WP-24b §2.3).
+	"rev-list": true,
 }
 
 // LocalSubcommands returns the allow-list, sorted (for documentation and
@@ -620,6 +623,37 @@ func (l *Local) viewRun() *gitRun {
 	return &gitRun{path: l.gitPath, gitDir: l.commonDir, dir: l.tmp, home: l.env.home, view: l.view, local: l.env}
 }
 
+// Runner returns the runner of this repository for repository context and
+// the repository tools (v2.10 spec V-20 §2.3, E3): Ensure fetches nothing
+// and returns HEAD's commit (localRef), and every read (grep, cat-file,
+// ls-tree, rev-list) runs through this repository's read view, with the
+// local settings and allow-list. The repository is never written to.
+func (l *Local) Runner() *Runner { return &Runner{local: l} }
+
+// localRef is the Checkout.Ref of a local repository's checkout.
+const localRef = "HEAD"
+
+// checkout is Ensure for a local repository: the repository is the one
+// opened, and pr's head must be HEAD's commit.
+func (l *Local) checkout(repo Repo, pr PR) (Checkout, error) {
+	if repo.Kind != provider.KindLocal {
+		return Checkout{}, fail(ReasonUnsupported)
+	}
+	if !strings.EqualFold(pr.HeadSHA, l.headSHA) {
+		return Checkout{}, fail(ReasonSHAMismatch)
+	}
+	return Checkout{GitDir: l.commonDir, HeadSHA: l.headSHA, Ref: localRef}, nil
+}
+
+// openCheckout is Runner.openCheckout for a local repository: c must be the
+// checkout this repository handed out.
+func (l *Local) openCheckout(c Checkout) (*gitRun, error) {
+	if c.GitDir != l.commonDir || c.Ref != localRef || l.view == "" {
+		return nil, fail(ReasonUnsupported)
+	}
+	return l.viewRun(), nil
+}
+
 // hexRE is an abbreviated or full object name.
 var hexRE = regexp.MustCompile(`^[0-9a-fA-F]{4,64}$`)
 
@@ -814,6 +848,43 @@ func (l *Local) Diff(ctx context.Context, from, to string, workTree bool, maxByt
 		return nil, localFail(LocalTooLarge)
 	}
 	return res.stdout, nil
+}
+
+// ChangedInWorkTree returns the paths of the tracked files whose work-tree
+// state differs from HEAD's commit: the uncommitted changes, staged and
+// unstaged (slash-separated, relative to the top level). It runs like the
+// diff against the work tree (Diff): through the read view, with a private
+// copy of the index and no filter, textconv or external diff.
+func (l *Local) ChangedInWorkTree(ctx context.Context) ([]string, error) {
+	copyDir, index, err := l.copyIndex()
+	if copyDir != "" {
+		defer l.removeTemp(copyDir)
+	}
+	if err != nil {
+		return nil, err
+	}
+	args := []string{"--git-dir=" + l.view, "--work-tree=" + l.top,
+		"-c", "core.autocrlf=input", "-c", "core.fileMode=false"}
+	if runtime.GOOS == "windows" {
+		args = append(args, "-c", "core.symlinks=false")
+	}
+	args = append(args, "diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv",
+		"--ignore-submodules=dirty", "--end-of-options", l.headSHA, "--")
+	res := l.runLocal(ctx, gitCmd{args: args, dir: l.top, local: l.env, maxStdout: maxChangedOutput,
+		objectDir: filepath.Join(l.commonDir, "objects"), indexFile: index})
+	if res.err != nil {
+		return nil, localFailure(res)
+	}
+	if res.truncated {
+		return nil, localFail(LocalTooLarge)
+	}
+	var out []string
+	for _, p := range bytes.Split(res.stdout, []byte{0}) {
+		if len(p) > 0 {
+			out = append(out, string(p))
+		}
+	}
+	return out, nil
 }
 
 // copyIndex copies the work tree's index, and any shared index files of a

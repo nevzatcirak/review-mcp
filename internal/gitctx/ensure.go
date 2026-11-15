@@ -338,6 +338,9 @@ func (r *Runner) Ensure(ctx context.Context, repo Repo, pr PR) (Checkout, error)
 	if err := ctx.Err(); err != nil {
 		return Checkout{}, err
 	}
+	if r.local != nil {
+		return r.local.checkout(repo, pr)
+	}
 	p, err := newPlan(repo, pr)
 	if err != nil {
 		return Checkout{}, err
@@ -365,6 +368,9 @@ func (r *Runner) Ensure(ctx context.Context, repo Repo, pr PR) (Checkout, error)
 func (r *Runner) EnsureBranch(ctx context.Context, repo Repo, branch string) (Checkout, error) {
 	if err := ctx.Err(); err != nil {
 		return Checkout{}, err
+	}
+	if r.local != nil {
+		return Checkout{}, fail(ReasonUnsupported) // a local review has no related repositories
 	}
 	p, err := newBranchPlan(repo, branch)
 	if err != nil {

@@ -3,6 +3,7 @@ package gitctx
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -50,6 +51,7 @@ func newLocalRepo(t *testing.T) *localRepo {
 	if real, err := filepath.EvalSymlinks(dir); err == nil {
 		dir = real
 	}
+	isolateUserHome(t)
 	r := &localRepo{git: g, dir: dir}
 	r.run(t, "init", "-q", "-b", "main")
 	r.run(t, "config", "core.autocrlf", "false")
@@ -68,6 +70,18 @@ func newLocalRepo(t *testing.T) *localRepo {
 	r.run(t, "commit", "-q", "-am", "feature work\n\nWith a body line.")
 	r.feature = r.rev(t, "HEAD")
 	return r
+}
+
+// isolateUserHome points the user's home variables at an empty directory for
+// the test, so that the global excludes lookup (GlobalExcludesFile) never
+// reads the real user's configuration. It returns that directory.
+func isolateUserHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("USERPROFILE", home)
+	return home
 }
 
 func (r *localRepo) run(t *testing.T, args ...string) string {
@@ -436,12 +450,80 @@ func TestLocalUntracked(t *testing.T) {
 	writeFiles(t, r.dir, map[string]string{"notes/todo.md": "x\n", "debug.log": "ignored\n", "excluded.txt": "x\n"})
 	writeFiles(t, r.dir, map[string]string{".git/info/exclude": "excluded.txt\n"})
 	l := r.open(t, LocalOptions{})
-	got, err := l.Untracked(t.Context())
+	got, held, err := l.Untracked(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(got, []string{"notes/todo.md"}) {
-		t.Errorf("Untracked = %q, want only notes/todo.md", got)
+	if !slices.Equal(got, []string{"notes/todo.md"}) || held != 0 {
+		t.Errorf("Untracked = %q, %d held back; want only notes/todo.md", got, held)
+	}
+}
+
+// TestLocalUntrackedGlobalExcludes is canary (g2): an untracked file that
+// only the user's global excludes file ignores is left out, both when
+// core.excludesFile names that file in the global configuration and when
+// the default ~/.config/git/ignore is used; the repository config's own
+// core.excludesFile applies as well.
+// Mutation: skip the global excludes file (GlobalExcludesFile returns "").
+func TestLocalUntrackedGlobalExcludes(t *testing.T) {
+	r := newLocalRepo(t)
+	home := isolateUserHome(t)
+	writeFiles(t, home, map[string]string{
+		".gitconfig":       "[core]\n\texcludesFile = ~/my-global-ignore\n",
+		"my-global-ignore": "private-notes.txt\n",
+	})
+	repoEx := filepath.Join(t.TempDir(), "repo-excludes")
+	writeFiles(t, filepath.Dir(repoEx), map[string]string{"repo-excludes": "repo-only.txt\n"})
+	r.run(t, "config", "core.excludesFile", filepath.ToSlash(repoEx))
+	writeFiles(t, r.dir, map[string]string{"private-notes.txt": "x\n", "repo-only.txt": "x\n", "kept.txt": "x\n", "default-ignored.txt": "x\n"})
+	l := r.open(t, LocalOptions{})
+	got, _, err := l.Untracked(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got, []string{"default-ignored.txt", "kept.txt"}) {
+		t.Errorf("Untracked with a global core.excludesFile = %q, want default-ignored.txt and kept.txt", got)
+	}
+	// Without the key, git's default global file applies.
+	if err := os.Remove(filepath.Join(home, ".gitconfig")); err != nil {
+		t.Fatal(err)
+	}
+	writeFiles(t, home, map[string]string{".config/git/ignore": "default-ignored.txt\n"})
+	got, _, err = l.Untracked(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got, []string{"kept.txt", "private-notes.txt"}) {
+		t.Errorf("Untracked with the default global file = %q, want kept.txt and private-notes.txt", got)
+	}
+	// A global file that does not exist is skipped silently.
+	writeFiles(t, home, map[string]string{".gitconfig": "[core]\n\texcludesFile = ~/missing\n"})
+	if got, _, err := l.Untracked(t.Context()); err != nil || len(got) != 3 {
+		t.Errorf("Untracked with a missing global file = %q, %v", got, err)
+	}
+}
+
+// TestLocalUntrackedSecrets is canary (g3): untracked files whose base
+// names suggest secrets are held back and counted, whatever their case and
+// directory, even when nothing ignores them.
+// Mutation: an empty secret list.
+func TestLocalUntrackedSecrets(t *testing.T) {
+	r := newLocalRepo(t)
+	writeFiles(t, r.dir, map[string]string{
+		".env": "A=1\n", "deploy.pem": "x\n", "config/.env.local": "x\n", "keys/Server.KEY": "x\n",
+		"Credentials.json": "x\n", "id_rsa.pub": "x\n", "infra/prod.tfvars": "x\n", ".npmrc": "x\n",
+		"notes.md": "x\n", "config.env": "x\n", "src/keyboard.go": "package app\n",
+	})
+	l := r.open(t, LocalOptions{})
+	got, held, err := l.Untracked(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got, []string{"config.env", "notes.md", "src/keyboard.go"}) || held != 8 {
+		t.Errorf("Untracked = %q, %d held back; want config.env, notes.md, src/keyboard.go and 8 held back", got, held)
+	}
+	if n := fmt.Sprintf(NoteUntrackedHeldBack, held); n != "8 untracked files were left out because their names suggest secrets." {
+		t.Errorf("note %q", n)
 	}
 }
 
@@ -577,7 +659,7 @@ func exerciseLocal(t *testing.T, l *Local, r *localRepo) {
 	if out, err := l.Diff(ctx, r.base, "", true, 1<<20); err != nil || !strings.Contains(string(out), "return 4") {
 		t.Errorf("Diff(work tree) = %v\n%s", err, out)
 	}
-	if _, err := l.Untracked(ctx); err != nil {
+	if _, _, err := l.Untracked(ctx); err != nil {
 		t.Errorf("Untracked: %v", err)
 	}
 	if _, err := l.FileAt(ctx, head, "src/app.go", 1<<20); err != nil {
@@ -634,7 +716,7 @@ func TestLocalTrapsNeverRun(t *testing.T) {
 func TestLocalTrapFSMonitor(t *testing.T) {
 	r, marker := trapRepo(t)
 	l := r.open(t, LocalOptions{})
-	if _, err := l.Untracked(t.Context()); err != nil {
+	if _, _, err := l.Untracked(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if m := readMarker(marker); strings.Contains(m, "fsmonitor") {
@@ -733,6 +815,22 @@ func TestLocalRefusesUnlistedSubcommand(t *testing.T) {
 		if !errors.Is(err, &LocalError{Reason: LocalGitFailed}) {
 			t.Errorf("%s: %v", sub, err)
 		}
+	}
+	// config only in its one form, and only that form sees the real home.
+	for _, args := range [][]string{
+		{"config", "--get", "user.name"},
+		{"config", "--global", "--get", "--path", "core.excludesFile", "extra"},
+		{"config", "--global", "core.excludesFile", "/tmp/x"},
+		{"config", "--local", "--get", "--path", "core.excludesFile"},
+		{"config", "--global", "--unset", "core.excludesFile"},
+		{"show", "HEAD"},
+	} {
+		if _, err := l.inRepo(t.Context(), l.top, gitCmd{args: args}); !errors.Is(err, &LocalError{Reason: LocalGitFailed}) {
+			t.Errorf("%v: %v", args, err)
+		}
+	}
+	if res := l.runLocal(t.Context(), gitCmd{args: []string{"rev-parse", "HEAD"}, dir: l.top, local: l.env, userHome: true}); !errors.Is(res.err, errLocalRefused) {
+		t.Errorf("a command other than the excludes query got the real home: %v", res.err)
 	}
 	if l.Calls() != n {
 		t.Errorf("git was started for a refused subcommand (%d calls)", l.Calls()-n)
@@ -841,7 +939,7 @@ func TestLocalSubcommandAllowList(t *testing.T) {
 		}
 	}
 	want := LocalSubcommands()
-	if len(want) != 11 || slices.Contains(want, "checkout") {
+	if len(want) != 11 || slices.Contains(want, "checkout") || slices.Contains(want, "show") {
 		t.Errorf("the allow-list changed: %v", want)
 	}
 }
@@ -899,7 +997,7 @@ func TestLocalSafetyArgs(t *testing.T) {
 	t.Setenv("GIT_DIR", "/elsewhere")
 	t.Setenv("GIT_WORK_TREE", "/elsewhere")
 	t.Setenv("HTTPS_PROXY", "http://proxy.example.com")
-	env := localChildEnv(le, runtime.GOOS)
+	env := localChildEnv(le, runtime.GOOS, false)
 	for _, want := range []string{"GIT_TERMINAL_PROMPT=0", "GIT_NO_LAZY_FETCH=1", "GIT_OPTIONAL_LOCKS=0", "LC_ALL=C",
 		"GIT_CONFIG_NOSYSTEM=1", "HOME=/tmp/x/home"} {
 		if !slices.Contains(env, want) {

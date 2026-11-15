@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"path/filepath"
 	"slices"
@@ -155,6 +156,10 @@ type Info struct {
 	// untracked files included (0 without IncludeUntracked).
 	Uncommitted    bool
 	UntrackedFiles int
+	// HeldBack is the number of untracked files left out because their
+	// base names suggest secrets (gitctx.LikelySecret): the result's
+	// local.untracked_held_back.
+	HeldBack int
 	// Branch is the current branch's short name, "" for a detached HEAD.
 	Branch string
 }
@@ -167,6 +172,7 @@ type Source struct {
 	info      Info
 	commits   []gitctx.LocalCommit // newest first, after the merge base
 	untracked []string
+	heldBack  int
 	log       *slog.Logger
 }
 
@@ -211,7 +217,7 @@ func (s *Source) init(ctx context.Context) error {
 	}
 	s.commits = commits
 	if s.req.IncludeUntracked {
-		if s.untracked, err = s.repo.Untracked(ctx); err != nil {
+		if s.untracked, s.heldBack, err = s.repo.Untracked(ctx); err != nil {
 			return err
 		}
 	}
@@ -224,10 +230,11 @@ func (s *Source) init(ctx context.Context) error {
 		BaseRemote:     strings.HasPrefix(baseFull, "refs/remotes/"),
 		Uncommitted:    s.req.IncludeUncommitted,
 		UntrackedFiles: len(s.untracked),
+		HeldBack:       s.heldBack,
 		Branch:         strings.TrimPrefix(s.repo.Branch(), "refs/heads/"),
 	}
 	s.log.Debug("local review opened", "commits", len(commits), "uncommitted", s.req.IncludeUncommitted,
-		"untracked", len(s.untracked), "base_remote", s.info.BaseRemote)
+		"untracked", len(s.untracked), "held_back", s.heldBack, "base_remote", s.info.BaseRemote)
 	return nil
 }
 
@@ -309,6 +316,15 @@ func (s *Source) StaleBaseNote() string {
 	}
 	return "the base " + s.info.BaseRef + " is the local copy of a remote-tracking branch and may be behind the remote; " +
 		"nothing was fetched"
+}
+
+// HeldBackNote is the note of the untracked files held back as likely
+// secrets (gitctx.NoteUntrackedHeldBack), or "" when there are none.
+func (s *Source) HeldBackNote() string {
+	if s.heldBack == 0 {
+		return ""
+	}
+	return fmt.Sprintf(gitctx.NoteUntrackedHeldBack, s.heldBack)
 }
 
 // EmptyNote is the note of a review with nothing to review (§1.3): it

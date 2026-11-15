@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -45,6 +46,12 @@ import (
 //   - the subcommand must be one of localSubcommands, checked before git
 //     is started; anything else is refused without a process.
 //
+// One command is different: GlobalExcludesFile runs exactly
+// "git config --global --get --path core.excludesFile" with the user's real
+// home variables (and no repository, no system configuration), so that the
+// user's global ignore rules apply to untracked files. run refuses any
+// other config form, and refuses the real home to any other command.
+//
 // There are two ways a command reaches the repository (E1, E3 of the spec):
 //
 //   - in the repository (cwd = the work tree): rev-parse, symbolic-ref,
@@ -69,14 +76,15 @@ import (
 // applies to it: the view alone would not check the owner.
 
 // localSubcommands is the fixed allow-list of the git subcommands run on a
-// local repository (spec §1.1, plus ls-tree for ListDir, §1.3).
+// local repository (spec §1.1 as amended at a103349). "config" is allowed in
+// exactly one form, globalExcludesQuery; run refuses any other.
 // TestLocalSubcommandAllowList checks every call site against it.
 var localSubcommands = map[string]bool{
 	"rev-parse":    true,
 	"merge-base":   true,
 	"diff":         true,
 	"ls-files":     true,
-	"show":         true,
+	"config":       true,
 	"cat-file":     true,
 	"log":          true,
 	"for-each-ref": true,
@@ -137,22 +145,37 @@ func localSafetyArgs(le *localEnv) []string {
 	return a
 }
 
+// userHomeVars are the variables git finds the user's home and global
+// configuration with; they are passed on only to globalExcludesQuery.
+var userHomeVars = []string{"HOME", "XDG_CONFIG_HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH"}
+
 // localChildEnv is the environment of a local git process: an allowlist,
-// never the parent's environment.
-func localChildEnv(le *localEnv, goos string) []string {
+// never the parent's environment. userHome passes the user's real home
+// variables instead of the empty home (globalExcludesQuery only).
+func localChildEnv(le *localEnv, goos string, userHome bool) []string {
 	var env []string
 	for _, kv := range os.Environ() {
 		k, _, ok := strings.Cut(kv, "=")
 		if !ok || k == "" {
 			continue
 		}
-		if k == "PATH" || (goos == "windows" && (strings.EqualFold(k, "PATH") || strings.EqualFold(k, "SYSTEMROOT"))) {
+		pass := k == "PATH" || (goos == "windows" && (strings.EqualFold(k, "PATH") || strings.EqualFold(k, "SYSTEMROOT")))
+		if userHome {
+			for _, h := range userHomeVars {
+				if k == h || (goos == "windows" && strings.EqualFold(k, h)) {
+					pass = true
+				}
+			}
+		}
+		if pass {
 			env = append(env, kv)
 		}
 	}
-	env = append(env, "HOME="+le.home, "XDG_CONFIG_HOME="+le.home)
-	if goos == "windows" {
-		env = append(env, "USERPROFILE="+le.home)
+	if !userHome {
+		env = append(env, "HOME="+le.home, "XDG_CONFIG_HOME="+le.home)
+		if goos == "windows" {
+			env = append(env, "USERPROFILE="+le.home)
+		}
 	}
 	env = append(env,
 		"GIT_CONFIG_NOSYSTEM=1",
@@ -175,6 +198,13 @@ func localChildEnv(le *localEnv, goos string) []string {
 // it ("-c k=v", --git-dir=, --work-tree=, --shallow-file <file>,
 // --no-optional-locks).
 func subcommandOf(args []string) string {
+	if i := subcommandIndex(args); i >= 0 {
+		return args[i]
+	}
+	return ""
+}
+
+func subcommandIndex(args []string) int {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
@@ -182,10 +212,28 @@ func subcommandOf(args []string) string {
 			i++
 		case strings.HasPrefix(a, "--git-dir=") || strings.HasPrefix(a, "--work-tree=") || a == "--no-optional-locks":
 		default:
-			return a
+			return i
 		}
 	}
-	return ""
+	return -1
+}
+
+// globalExcludesQuery is the one config command allowed: it reads the
+// user's global core.excludesFile and nothing else (spec §1.1, DQ-6).
+var globalExcludesQuery = []string{"--global", "--get", "--path", "core.excludesFile"}
+
+// localArgsAllowed is the runtime check of a local command: the subcommand
+// is on the allow-list, config is exactly globalExcludesQuery, and only that
+// query may see the user's real home directory.
+func localArgsAllowed(args []string, userHome bool) bool {
+	i := subcommandIndex(args)
+	if i < 0 || !localSubcommands[args[i]] {
+		return false
+	}
+	if args[i] == "config" {
+		return slices.Equal(args[i+1:], globalExcludesQuery)
+	}
+	return !userHome
 }
 
 // errLocalRefused is the result of a local command whose subcommand is not
@@ -831,24 +879,114 @@ func copyRegular(src, dst string) error {
 	return out.Close()
 }
 
-// Untracked returns the untracked files of the work tree that the
+// Untracked returns the untracked files of the work tree that neither the
 // repository's ignore rules (.gitignore files, .git/info/exclude and
-// core.excludesFile of the repository's configuration) do not exclude, as
-// slash-separated paths relative to the top level, in git's order.
-func (l *Local) Untracked(ctx context.Context) ([]string, error) {
-	out, err := l.inRepo(ctx, l.top, gitCmd{args: []string{"ls-files", "-z", "--others", "--exclude-standard", "--full-name"},
-		maxStdout: maxListOutput})
+// core.excludesFile of the repository's configuration) nor the user's
+// global excludes file (GlobalExcludesFile) exclude, as slash-separated
+// paths relative to the top level, in git's order. A file whose base name
+// suggests a secret (LikelySecret) is held back and only counted.
+//
+// The global file is passed with --exclude-from, not -c core.excludesFile:
+// a -c value would replace the repository's own core.excludesFile, and both
+// must apply.
+func (l *Local) Untracked(ctx context.Context) (paths []string, heldBack int, err error) {
+	args := []string{"ls-files", "-z", "--others", "--exclude-standard", "--full-name"}
+	global, err := l.GlobalExcludesFile(ctx)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	var paths []string
+	if global != "" {
+		args = append(args, "--exclude-from="+global)
+	}
+	out, err := l.inRepo(ctx, l.top, gitCmd{args: args, maxStdout: maxListOutput})
+	if err != nil {
+		return nil, 0, err
+	}
 	for _, p := range bytes.Split(out, []byte{0}) {
-		if len(p) > 0 {
-			paths = append(paths, string(p))
+		if len(p) == 0 {
+			continue
+		}
+		if LikelySecret(string(p)) {
+			heldBack++
+			continue
+		}
+		paths = append(paths, string(p))
+	}
+	return paths, heldBack, nil
+}
+
+// GlobalExcludesFile returns the user's global excludes file, or "" when
+// there is none: the value of core.excludesFile in the user's global
+// configuration (git config --global --get --path core.excludesFile, run
+// with the real home directory, no repository and no system
+// configuration), else $XDG_CONFIG_HOME/git/ignore, else
+// ~/.config/git/ignore. A file that does not exist, or a value that is not
+// an absolute path, is skipped silently.
+func (l *Local) GlobalExcludesFile(ctx context.Context) (string, error) {
+	args := append([]string{"config"}, globalExcludesQuery...)
+	res := l.runLocal(ctx, gitCmd{args: args, dir: l.tmp, local: l.env, userHome: true})
+	var p string
+	switch {
+	case res.err == nil:
+		p = filepath.Clean(filepath.FromSlash(strings.TrimRight(string(res.stdout), "\r\n")))
+	case isExitCode(res.err, 1): // the key is not set
+		p = defaultGlobalExcludes()
+	default:
+		return "", localFailure(res)
+	}
+	if p == "" || !filepath.IsAbs(p) {
+		return "", nil
+	}
+	if fi, err := os.Stat(p); err != nil || !fi.Mode().IsRegular() {
+		return "", nil
+	}
+	return p, nil
+}
+
+// defaultGlobalExcludes is git's default global excludes file:
+// $XDG_CONFIG_HOME/git/ignore, else $HOME/.config/git/ignore.
+func defaultGlobalExcludes() string {
+	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
+		return filepath.Join(x, "git", "ignore")
+	}
+	home := os.Getenv("HOME")
+	if home == "" {
+		home, _ = os.UserHomeDir()
+	}
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".config", "git", "ignore")
+}
+
+func isExitCode(err error, code int) bool {
+	var ee interface{ ExitCode() int }
+	return errors.As(err, &ee) && ee.ExitCode() == code
+}
+
+// secretPatterns are the base names of untracked files that likely hold
+// secrets (spec §1.1, DQ-6), lower case.
+var secretPatterns = []string{
+	".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "*.jks", "*.keystore",
+	"id_rsa*", "id_ed25519*", ".netrc", ".npmrc", ".pypirc", "*.tfvars", "credentials*",
+}
+
+// LikelySecret reports whether the base name of path (slash-separated)
+// matches one of the likely-secret patterns, without case. It applies to
+// untracked files only.
+func LikelySecret(path string) bool {
+	base := strings.ToLower(path[strings.LastIndexByte(path, '/')+1:])
+	for _, pat := range secretPatterns {
+		if ok, _ := pathpkg.Match(pat, base); ok {
+			return true
 		}
 	}
-	return paths, nil
+	return false
 }
+
+// NoteUntrackedHeldBack is the note of untracked files held back as likely
+// secrets; %d is their number.
+const NoteUntrackedHeldBack = "%d untracked files were left out because their names suggest secrets."
 
 // FileAt returns the content of the file path at commit rev, at most
 // maxBytes bytes (larger is a provider too_large error). A path that is not

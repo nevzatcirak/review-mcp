@@ -66,6 +66,9 @@ type gitCmd struct {
 	// machine (local.go): the local safety arguments and environment
 	// replace the cache's, and the subcommand must be on the allow-list.
 	local *localEnv
+	// userHome passes the user's real home variables to a local command;
+	// only globalExcludesQuery may set it (localArgsAllowed).
+	userHome bool
 	// indexFile, when set, is passed as GIT_INDEX_FILE (the private copy
 	// of a local repository's index).
 	indexFile string
@@ -257,10 +260,10 @@ func run(ctx context.Context, gitPath string, c gitCmd) result {
 		if testLocalHook != nil {
 			testLocalHook(argv)
 		}
-		if !localSubcommands[subcommandOf(c.args)] {
+		if !localArgsAllowed(c.args, c.userHome) {
 			return result{err: errLocalRefused}
 		}
-		env = localChildEnv(c.local, runtime.GOOS)
+		env = localChildEnv(c.local, runtime.GOOS, c.userHome)
 		c.local.calls.Add(1)
 	} else {
 		argv = append(safetyArgsFor(c.net, runtime.GOOS, c.offline), c.args...)

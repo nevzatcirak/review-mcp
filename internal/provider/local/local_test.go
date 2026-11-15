@@ -76,6 +76,12 @@ func newRepo(t *testing.T) *repo {
 	if real, err := filepath.EvalSymlinks(dir); err == nil {
 		dir = real
 	}
+	// The global excludes lookup must not read the real user's
+	// configuration.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("USERPROFILE", home)
 	r := &repo{t: t, git: gitBin(t), dir: dir}
 	r.run("init", "-q", "-b", "main")
 	r.run("config", "core.autocrlf", "false")
@@ -383,11 +389,16 @@ func TestUntracked(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := paths(d)
-	if !slices.Contains(got, ".env") || !slices.Contains(got, "notes/todo.md") || slices.Contains(got, "debug.log") {
+	if !slices.Contains(got, "notes/todo.md") || slices.Contains(got, "debug.log") || slices.Contains(got, ".env") {
 		t.Errorf("files with untracked files = %v", got)
 	}
-	if s.Info().UntrackedFiles != 2 {
-		t.Errorf("UntrackedFiles = %d, want 2", s.Info().UntrackedFiles)
+	// .env is not ignored, but its name suggests a secret: held back and
+	// counted (DQ-6).
+	if in := s.Info(); in.UntrackedFiles != 1 || in.HeldBack != 1 {
+		t.Errorf("UntrackedFiles = %d, HeldBack = %d; want 1 and 1", in.UntrackedFiles, in.HeldBack)
+	}
+	if n := s.HeldBackNote(); n != "1 untracked files were left out because their names suggest secrets." {
+		t.Errorf("HeldBackNote = %q", n)
 	}
 	for _, f := range d.Files {
 		if f.Path != "notes/todo.md" {

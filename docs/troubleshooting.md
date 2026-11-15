@@ -1117,7 +1117,7 @@ unknown environment variable REVIEW_MCP_EXAMPLE (ignored; this is review-mcp 2.3
 
 | Symptom | What to do |
 |---|---|
-| The warning names a version older than the one you installed or read about. | Name a version in the client configuration: `npx -y @nevzatcirak/review-mcp@latest` (or an exact one such as `@2.6.0`). Without one `npx` may reuse a cached copy. |
+| The warning names a version older than the one you installed or read about. | Name a version in the client configuration: `npx -y @nevzatcirak/review-mcp@latest` (or an exact one such as `@2.9.0`). Without one `npx` may reuse a cached copy. |
 | You are not sure which version runs. | Run `npx -y @nevzatcirak/review-mcp@latest version` for the newest, and compare it with the `version` that `server_info` reports. |
 | The version is right and the warning remains. | The name is misspelled, or the setting belongs to a version that is not released yet; check the name against the [Setup guide](setup.md). |
 

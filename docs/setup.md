@@ -33,7 +33,7 @@ binary for your platform comes from an optional dependency
 (`@nevzatcirak/review-mcp-<os>-<cpu>`). In an MCP client you use the same
 `npx -y @nevzatcirak/review-mcp@latest` as the server command (see
 [step 4](#4-register-with-an-mcp-client)). Always name a version: `@latest`, or
-an exact one such as `npx -y @nevzatcirak/review-mcp@2.6.0`. Without one,
+an exact one such as `npx -y @nevzatcirak/review-mcp@2.9.0`. Without one,
 `npx` may reuse an older cached copy (see
 [troubleshooting](troubleshooting.md#an-older-version-runs-although-a-newer-one-is-released));
 release candidates of the next version are under the `next` tag.

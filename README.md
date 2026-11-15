@@ -12,7 +12,7 @@ mode), are never logged and are never persisted. There is no telemetry and there
 are no embedded defaults for URLs or endpoints: everything comes from your
 configuration.
 
-**Status: stable (2.6.0).** Stable releases are published under the npm
+**Status: stable (2.9.0).** Stable releases are published under the npm
 dist-tag `latest`; release candidates of the next version under `next`. See the
 [changelog](CHANGELOG.md).
 
@@ -23,7 +23,7 @@ dist-tag `latest`; release candidates of the next version under `next`. See the
    token is enough for reviews and questions that are not published.
 2. Register the server with your client. With npm there is nothing to install.
    Always name a version: `@latest`, or an exact one (the examples pin
-   `@nevzatcirak/review-mcp@2.6.0`; update the pin to upgrade). Without one,
+   `@nevzatcirak/review-mcp@2.9.0`; update the pin to upgrade). Without one,
    `npx` may reuse an older cached copy.
 
    **Claude Code**
@@ -35,7 +35,7 @@ dist-tag `latest`; release candidates of the next version under `next`. See the
      --env REVIEW_MCP_GITEA_BASE_URL=https://your-gitea.example \
      --env REVIEW_MCP_LLM_API_KEY="$REVIEW_MCP_LLM_API_KEY" \
      --env REVIEW_MCP_GITEA_TOKEN="$REVIEW_MCP_GITEA_TOKEN" \
-     -- npx -y @nevzatcirak/review-mcp@2.6.0
+     -- npx -y @nevzatcirak/review-mcp@2.9.0
    ```
 
    **opencode** (`opencode.json`)
@@ -46,7 +46,7 @@ dist-tag `latest`; release candidates of the next version under `next`. See the
      "mcp": {
        "review-mcp": {
          "type": "local",
-         "command": ["npx", "-y", "@nevzatcirak/review-mcp@2.6.0"],
+         "command": ["npx", "-y", "@nevzatcirak/review-mcp@2.9.0"],
          "enabled": true,
          "environment": {
            "REVIEW_MCP_LLM_BASE_URL": "https://llm.example.com/v1",

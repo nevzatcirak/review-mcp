@@ -5,6 +5,45 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.0]
+
+Tenth stable release. The code is the same as `2.9.0-rc.1`. It is the first
+stable release since 2.6.0. It carries everything in `2.7.0-rc.1`,
+`2.8.0-rc.1` and `2.9.0-rc.1`; those sections of this file list the details.
+Nothing in the tools or in the configuration of 2.6.0 is removed or renamed: a
+2.6.0 setup keeps working as before.
+
+The release candidates were accepted on a throwaway Gitea host:
+
+- the review decision in record #66;
+- the pull request lists, the repository context fixes and the focus profiles in
+  record #70, with a recording test endpoint in place of a model for the cases
+  that call one;
+- the repository context fixes also in use on a large stdio review.
+
+Not verified live: the review decision and the pull request lists on GitHub,
+GitLab and Bitbucket Server, and a custom-focus review with a real model.
+
+### Highlights
+
+- Review decision (opt-in, stdio only): `pr_review_decision` records your own
+  approval, change request or cleared decision, tied to the reviewed head
+  commit. It is off until `decision.enabled` is set. See
+  [Review decisions](docs/decision.md).
+- Pull request lists: `pr_list_review_requests` (requested reviewer, with
+  `include_assigned` for assignees) and `pr_list_authored` list your open pull
+  requests on every configured provider, newest first, read-only. See
+  [Pull request lists](docs/pr-lists.md).
+- Repository context:
+  - uses of a changed symbol in an unchanged part of a changed file are found
+    and labelled;
+  - accessors and logger names no longer crowd out other symbols;
+  - an unknown setting's warning names the running version.
+- Focus profiles: named custom focuses with your own instructions, focus rules
+  that pick them by the files a pull request changes, and a documentation style
+  read from a repository file. Every repository-side item is read at the base
+  revision. See [Review](docs/review.md).
+
 ## [2.9.0-rc.1]
 
 First 2.9 release candidate (the npm dist-tag `next`; `latest` stays on 2.6.0).

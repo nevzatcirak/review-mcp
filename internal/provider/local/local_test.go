@@ -46,7 +46,7 @@ func (r *repo) run(args ...string) string {
 		"GIT_COMMITTER_NAME=Test", "GIT_COMMITTER_EMAIL=test@example.com",
 	}
 	if runtime.GOOS == "windows" {
-		cmd.Env = append(cmd.Env, "SYSTEMROOT="+os.Getenv("SYSTEMROOT"))
+		cmd.Env = append(cmd.Env, "SYSTEMROOT="+os.Getenv("SYSTEMROOT"), "TMP="+os.TempDir(), "TEMP="+os.TempDir())
 	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {

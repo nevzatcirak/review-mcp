@@ -5,10 +5,10 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.10.0-rc.1]
 
-Planned as `2.10.0-rc.1`, the first 2.10 release candidate (the npm dist-tag
-`next`). Local review (X-52): review work before you push it, from your MCP
+The first 2.10 release candidate (the npm dist-tag `next`; `latest` stays on
+2.9.0). Local review (X-52): review work before you push it, from your MCP
 client or from a git `pre-push` hook. Nothing in the tools or the configuration
 of 2.9.0 is removed or renamed.
 

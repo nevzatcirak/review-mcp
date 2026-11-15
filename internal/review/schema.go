@@ -38,8 +38,9 @@ func ResultSchema() map[string]any {
 
 	return object("pr_review result", map[string]any{
 		"pr": object("the reviewed pull request", map[string]any{
-			"kind":     str("provider kind: gitea, bitbucket_server, github or gitlab"),
-			"url":      str("pull request URL with credentials and query values removed"),
+			"kind": str("provider kind: gitea, bitbucket_server, github or gitlab; local for local work (local_review)"),
+			"url": map[string]any{"type": []any{"string", "null"},
+				"description": "pull request URL with credentials and query values removed; null for local work"},
 			"number":   integer("pull request number"),
 			"title":    str("pull request title"),
 			"head_sha": str("head commit the review describes"),
@@ -105,6 +106,16 @@ func ResultSchema() map[string]any {
 		"ci":          CISchema(),
 		"repo_config": repocfg.Schema(),
 		"issue":       IssueSchema(),
+		"local": object("the local work a local_review reviewed; absent for a pull request", map[string]any{
+			"repo_path":           str("the work tree's absolute path"),
+			"base_ref":            str("the base as given, or the default that was found (the branch's upstream, origin/HEAD, origin/main, origin/master, main or master)"),
+			"base_sha":            str("the commit base_ref names"),
+			"merge_base":          str("the merge base of base_sha and head_sha: the diff starts here"),
+			"head_sha":            str("HEAD's commit"),
+			"uncommitted":         boolean("true when the uncommitted changes to tracked files were included"),
+			"untracked_files":     integer("the number of untracked files included"),
+			"untracked_held_back": integer("the number of untracked files left out because their names suggest secrets"),
+		}, "repo_path", "base_ref", "base_sha", "merge_base", "head_sha", "uncommitted", "untracked_files", "untracked_held_back"),
 		"focus": str("the focus of a focused run (X-33): security, architecture, performance, ux, tests, docs, the name " +
 			"of a custom focus (X-51) or the cleaned free text; absent without one"),
 		"focus_source": map[string]any{"type": "string", "enum": stringsAny(FocusSourceValues),

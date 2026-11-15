@@ -156,6 +156,29 @@ type Args struct {
 	// nil means not given. The tool layer refuses them with focus or
 	// findings.
 	Related []string
+	// Local marks a local review (X-52, v2.10 spec V-20 §0 item 7): the
+	// resolver hands out the read-only local source, and what does not
+	// apply to local work is off, after the repository config is merged
+	// and without a note: publish, supplied findings, incremental, related
+	// pull requests and repositories (also declared ones), the CI status
+	// and the existing discussion (localRun). issue_context is accepted.
+	Local bool
+}
+
+// localRun turns off, for a local review, what does not apply to local
+// work (Args.Local): cfg is a copy with the CI status and the incremental
+// review off, and args drop publish, findings, incremental and related and
+// get no discussion block.
+func localRun(cfg *config.Config, args Args) (*config.Config, Args) {
+	cfg = cfg.Clone()
+	cfg.Review.CIStatus = false
+	cfg.Review.Incremental = false
+	off, none := false, 0
+	args.Publish, args.Findings, args.SecurityConcerns, args.PerformanceConcerns = false, nil, "", ""
+	args.Incremental, args.Related = &off, nil
+	args.InlineFindings, args.PersistentOverview = &off, &off
+	args.MaxDiscussionTokens = &none
+	return cfg, args
 }
 
 // WithConfigDefaults returns a with every option the call left unset (nil,
@@ -453,6 +476,12 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		rc.NoRelatedNote()
 	}
 	cfg = rc.Config
+	if args.Local {
+		// Nothing of the repository config can turn the CI status, the
+		// incremental review or declared related repositories back on.
+		cfg, args = localRun(cfg, args)
+		rc.NoRelatedNote()
+	}
 	// The focus is resolved again against the run's custom focuses (X-51,
 	// v2.9 spec V-19 §1.3): those of the operator, which Validated saw, and
 	// those of the repository config, read at the base revision, which may
@@ -465,6 +494,9 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 	deps.Config = cfg
 	args = args.WithConfigDefaults(cfg)
+	if args.Local {
+		_, args = localRun(cfg, args)
+	}
 	toggles := TogglesFrom(cfg.Review)
 	factor := cfg.LLM.TokenEstimateFactor
 	maxFindings := cfg.Review.MaxFindings
@@ -528,7 +560,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	case len(args.Related) > 0:
 		pl.related = related.Read(ctx, deps.Resolver, primaryURL, ref, args.Related, flt.Include,
 			cfg.Related.MaxTokens == 0, related.RepositoriesFor(cfg, operator, deps.RepoContext), log)
-	case len(rc.Related) > 0 && args.Focus == "" && !supplied:
+	case len(rc.Related) > 0 && args.Focus == "" && !supplied && !args.Local:
 		pl.related = related.ReadDeclared(ctx, deps.Resolver, primaryURL, ref, rc.Related,
 			cfg.Related.MaxTokens == 0, related.RepositoriesFor(cfg, operator, deps.RepoContext), log)
 	}

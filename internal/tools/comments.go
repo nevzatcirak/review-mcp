@@ -405,6 +405,9 @@ func UserMessage(err error) string {
 	if errors.As(err, &re) {
 		return re.UserMessage()
 	}
+	if msg := localUserMessage(err); msg != "" {
+		return msg
+	}
 	msg := genericErrorMessage
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):

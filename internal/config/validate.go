@@ -90,11 +90,23 @@ func (l *loader) validate() {
 	l.validateFocusProfiles()
 	l.validateRelated()
 	l.validateDecision()
+	l.validateLocal()
 	if _, err := logging.ParseLevel(c.Log.Level); err != nil {
 		l.problem("log.level: %v", err)
 	}
 	if l.mode == ModeServe {
 		l.validateServe()
+	}
+}
+
+// validateLocal checks local.allowed_roots (v2.10 spec V-20 §0 item 8):
+// each item is a non-empty absolute path. An item is reported by its index,
+// not its value.
+func (l *loader) validateLocal() {
+	for i, r := range l.cfg.Local.AllowedRoots {
+		if r == "" || !filepath.IsAbs(r) {
+			l.problem("local.allowed_roots[%d]: must be an absolute path", i)
+		}
 	}
 }
 

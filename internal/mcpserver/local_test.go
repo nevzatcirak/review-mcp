@@ -312,3 +312,124 @@ func TestLocalReviewWithoutNotes(t *testing.T) {
 		t.Errorf("notes are not a list: %s", raw)
 	}
 }
+
+// TestLocalPrompt is Q9: multi_perspective_review with repo_path lists
+// one local_review call per focus, chosen from the repository config at
+// the merge base and the local diff's files (an uncommitted edit of the
+// config does not count); exactly one of pr_url and repo_path is required,
+// and base needs repo_path.
+func TestLocalPrompt(t *testing.T) {
+	w := newLocalWorkTree(t)
+	cs := connect(t, depsFor(validEnv(), nil))
+	get := func(args map[string]string) (string, error) {
+		res, err := cs.GetPrompt(context.Background(), &mcp.GetPromptParams{Name: "multi_perspective_review", Arguments: args})
+		if err != nil {
+			return "", err
+		}
+		return res.Messages[0].Content.(*mcp.TextContent).Text, nil
+	}
+	text, err := get(map[string]string{"repo_path": w.dir, "base": "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := `{"repo_path":` + jsonText(w.dir) + `,"base":"main","focus":"security"}`
+	if !strings.Contains(text, "with local_review") || !strings.Contains(text, call) ||
+		strings.Contains(text, "publish=true") || strings.Contains(text, "pr_review") {
+		t.Errorf("message = %s", text)
+	}
+	// docs/ is not changed by the local work: no docs focus.
+	if strings.Contains(text, `"focus":"docs"`) {
+		t.Errorf("docs focus without a documentation change:\n%s", text)
+	}
+	for name, args := range map[string]map[string]string{
+		"both":          {"repo_path": w.dir, "pr_url": "https://your-gitea.example/octo/demo/pulls/7"},
+		"neither":       {"focuses": "security"},
+		"base with url": {"pr_url": "https://your-gitea.example/octo/demo/pulls/7", "base": "main"},
+		"relative path": {"repo_path": "relative/dir"},
+		"unknown base":  {"repo_path": w.dir, "base": "nope"},
+	} {
+		if _, err := get(args); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+// TestLocalPromptConfigAtMergeBase: the repository config's review.focuses
+// is read at the merge base; an uncommitted edit of .review-mcp.toml does
+// not change the list (§2.3).
+func TestLocalPromptConfigAtMergeBase(t *testing.T) {
+	w := newLocalWorkTree(t)
+	commitFile(t, w, "main", ".review-mcp.toml", "[review]\nfocuses = [\"ux\", \"tests\"]\n")
+	if err := os.WriteFile(filepath.Join(w.dir, ".review-mcp.toml"), []byte("[review]\nfocuses = [\"performance\"]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cs := connect(t, depsFor(validEnv(), nil))
+	// main holds the config; origin/main is still the older commit.
+	res, err := cs.GetPrompt(context.Background(), &mcp.GetPromptParams{Name: "multi_perspective_review",
+		Arguments: map[string]string{"repo_path": w.dir, "base": "main"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := res.Messages[0].Content.(*mcp.TextContent).Text
+	if !strings.Contains(text, `"focus":"ux"`) || !strings.Contains(text, `"focus":"tests"`) || strings.Contains(text, `"focus":"performance"`) {
+		t.Errorf("the focuses do not come from the config at the merge base:\n%s", text)
+	}
+}
+
+// TestLocalPromptNotInServe is canary (h), the prompt half: in serve mode
+// repo_path is InvalidParams with the stdio-only sentence; with
+// local.enabled false it is refused too.
+func TestLocalPromptNotInServe(t *testing.T) {
+	w := newLocalWorkTree(t)
+	srv := httptest.NewServer(NewHTTPHandler(serveDeps(t, nil)))
+	t.Cleanup(srv.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0"}, nil).
+		Connect(ctx, &mcp.StreamableClientTransport{Endpoint: srv.URL}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cs.Close() })
+	_, err = cs.GetPrompt(ctx, &mcp.GetPromptParams{Name: "multi_perspective_review", Arguments: map[string]string{"repo_path": w.dir}})
+	if err == nil || !strings.Contains(err.Error(), promptServeLocalMessage) {
+		t.Errorf("serve prompt with repo_path = %v", err)
+	}
+	env := validEnv()
+	env["REVIEW_MCP_LOCAL_ENABLED"] = "false"
+	off := connect(t, depsFor(env, nil))
+	_, err = off.GetPrompt(ctx, &mcp.GetPromptParams{Name: "multi_perspective_review", Arguments: map[string]string{"repo_path": w.dir}})
+	if err == nil || !strings.Contains(err.Error(), promptLocalOffMessage) {
+		t.Errorf("prompt with local.enabled false = %v", err)
+	}
+}
+
+// commitFile commits path with content on branch (then returns to the
+// branch that was checked out), moving the branch and keeping the work
+// tree's own state otherwise; the commits of feat are rebased onto it.
+func commitFile(t *testing.T, w *localWorkTree, branch, path, content string) {
+	t.Helper()
+	g, _ := exec.LookPath("git")
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command(g, args...) //nolint:gosec // G204: the system git with fixed test arguments
+		cmd.Dir = w.dir
+		cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + os.Getenv("HOME"), "GIT_CONFIG_NOSYSTEM=1",
+			"GIT_AUTHOR_NAME=Test", "GIT_AUTHOR_EMAIL=test@example.com",
+			"GIT_COMMITTER_NAME=Test", "GIT_COMMITTER_EMAIL=test@example.com"}
+		if runtime.GOOS == "windows" {
+			cmd.Env = append(cmd.Env, "SYSTEMROOT="+os.Getenv("SYSTEMROOT"), "TMP="+os.TempDir(), "TEMP="+os.TempDir())
+		}
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("checkout", "-q", branch)
+	if err := os.WriteFile(filepath.Join(w.dir, filepath.FromSlash(path)), []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run("add", path)
+	run("commit", "-q", "-m", "add "+path)
+	run("checkout", "-q", "feat")
+	run("rebase", "-q", branch)
+}

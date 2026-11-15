@@ -174,11 +174,22 @@ func checkGuidance(t *testing.T, cs *mcp.ClientSession, serve bool) {
 		t.Fatalf("prompts = %+v", list.Prompts)
 	}
 	for _, p := range list.Prompts {
-		n := 2
-		if p.Name == "review_linked_prs" {
-			n = 3
+		if p.Name == "multi_perspective_review" {
+			// pr_url, focuses, repo_path, base (v2.10 spec V-20 §2.2):
+			// exactly one of pr_url and repo_path, so none is required.
+			var names []string
+			for _, a := range p.Arguments {
+				names = append(names, a.Name)
+				if a.Required {
+					t.Errorf("prompt %s argument %s is required", p.Name, a.Name)
+				}
+			}
+			if strings.Join(names, ",") != "pr_url,focuses,repo_path,base" {
+				t.Fatalf("prompt %s arguments = %v", p.Name, names)
+			}
+			continue
 		}
-		if len(p.Arguments) != n || !p.Arguments[0].Required || p.Arguments[1].Required {
+		if len(p.Arguments) != 3 || !p.Arguments[0].Required || p.Arguments[1].Required {
 			t.Fatalf("prompt %s arguments = %+v", p.Name, p.Arguments)
 		}
 	}

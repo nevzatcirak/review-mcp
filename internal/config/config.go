@@ -30,6 +30,7 @@ type Config struct {
 	RepoConfig      RepoConfig      `toml:"repo_config" json:"repo_config"`
 	Related         Related         `toml:"related" json:"related"`
 	Decision        Decision        `toml:"decision" json:"decision"`
+	Local           Local           `toml:"local" json:"local"`
 	Log             Log             `toml:"log" json:"log"`
 	Serve           Serve           `toml:"serve" json:"serve"`
 	Secrets         Secrets         `toml:"-" json:"secrets"`
@@ -379,6 +380,18 @@ type Decision struct {
 	Allowed []string `toml:"allowed" json:"allowed"`
 }
 
+// Local configures local_review (X-52, v2.10 spec V-20 §0 item 8). Both
+// keys are operator keys: a repository config cannot set them.
+type Local struct {
+	// Enabled registers local_review in stdio mode; on by default. serve
+	// mode never registers it (the server's disk is not the user's).
+	Enabled bool `toml:"enabled" json:"enabled"`
+	// AllowedRoots limits repo_path to these directories and those below
+	// them, after symbolic links are resolved; empty allows any git work
+	// tree. Each must be an absolute path.
+	AllowedRoots []string `toml:"allowed_roots" json:"allowed_roots"`
+}
+
 // The decisions of decision.allowed. They are the values of
 // provider.Decision; config does not import provider.
 const (
@@ -471,6 +484,7 @@ func Defaults() *Config {
 		RepoConfig: RepoConfig{Enabled: true, Path: DefaultRepoConfigPath},
 		Related:    Related{MaxTokens: 8000, ContractGlobs: []string{}, MaxIdentifiers: DefaultRelatedIdentifiers},
 		Decision:   Decision{Allowed: []string{DecisionApprove, DecisionRequestChanges, DecisionClear}},
+		Local:      Local{Enabled: true},
 		Log:        Log{Level: "info"},
 		Serve: Serve{
 			Listen:             DefaultServeListen,

@@ -31,8 +31,9 @@ const (
 	toolJobResult  = "job_result"
 )
 
-// jobResultDescription is the tool description from spec P8 §2.3.
-const jobResultDescription = "Returns the result of a long-running pr_review, pr_ask, pr_describe or pr_improve call that answered with a job_id, waiting up to wait_seconds for it to finish." + partialSentence + describePartialSentence
+// jobResultDescription is the tool description from spec P8 §2.3, with
+// local_review (v2.10 spec V-20, DQ-3 of the WP-24b report).
+const jobResultDescription = "Returns the result of a long-running pr_review, local_review, pr_ask, pr_describe or pr_improve call that answered with a job_id, waiting up to wait_seconds for it to finish." + partialSentence + describePartialSentence
 
 // Jobs is the background job store of stdio mode (X-16, P8 spec §2). A
 // pr_review, pr_ask, pr_describe or pr_improve call starts its run as a job
@@ -290,7 +291,7 @@ func runningResult(snap jobs.Snapshot[jobOutcome]) (*mcp.CallToolResult, any, er
 }
 
 type jobResultInput struct {
-	JobID       string `json:"job_id" jsonschema:"the job_id a pr_review, pr_ask, pr_describe or pr_improve call answered with"`
+	JobID       string `json:"job_id" jsonschema:"the job_id a pr_review, local_review, pr_ask, pr_describe or pr_improve call answered with"`
 	WaitSeconds *int   `json:"wait_seconds,omitempty" jsonschema:"seconds to wait for the result, 0 to 600; replaces llm.wait_seconds (default 45) for this call"`
 }
 

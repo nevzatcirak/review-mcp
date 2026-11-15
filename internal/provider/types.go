@@ -27,6 +27,10 @@ const (
 	KindGitHub Kind = "github"
 	// KindGitLab is the GitLab provider (gitlab.com and self-managed GitLab).
 	KindGitLab Kind = "gitlab"
+	// KindLocal is the read-only source of a local review (X-52,
+	// internal/provider/local): work on the user's own machine that has not
+	// been pushed. No URL resolves to it; the Resolver never builds one.
+	KindLocal Kind = "local"
 )
 
 // PRRef identifies one pull request.
@@ -201,6 +205,9 @@ const (
 	// BaseGitLabDiffRefs: the base_sha of the merge request's diff_refs,
 	// the revision GitLab computed the merge request's diff against.
 	BaseGitLabDiffRefs = "gitlab:diff_refs"
+	// BaseLocalMergeBase: the merge base of the local review's base and
+	// HEAD, computed by git merge-base in the user's repository (X-52).
+	BaseLocalMergeBase = "local:merge_base"
 )
 
 // Diff is the result of Provider.GetDiff.

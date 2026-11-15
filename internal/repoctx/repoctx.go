@@ -134,6 +134,8 @@ type Session struct {
 	// docNames adds the names the changed documentation mentions to the
 	// symbols (LookUpDocNames).
 	docNames bool
+	// whole are the paths ExcludeWhole keeps out of the search entirely.
+	whole map[string]bool
 
 	once sync.Once
 	co   gitctx.Checkout
@@ -279,6 +281,26 @@ func (s *Session) Head() (hr HeadReader, co gitctx.Checkout, flt *filter.Filter,
 	return hr, s.co, s.flt, true
 }
 
+// ExcludeWhole keeps paths out of the search altogether, also outside their
+// hunks: the files of a local review with uncommitted changes, whose lines
+// at HEAD's commit (which the search reads) are not the lines of the diff
+// (v2.10 spec V-20 §2.3). Call it before the first Find; a nil session is
+// left alone.
+func (s *Session) ExcludeWhole(paths []string) {
+	if s == nil {
+		return
+	}
+	if s.whole == nil {
+		s.whole = map[string]bool{}
+	}
+	for _, p := range paths {
+		s.whole[p] = true
+		if !slices.Contains(s.exclude, p) {
+			s.exclude = append(s.exclude, p)
+		}
+	}
+}
+
 // Narrow makes files the pull request files of a review in one call that
 // only part of the pull request reaches: an incremental review (X-36), whose
 // prompt carries only the files that changed since the last review. Their
@@ -400,8 +422,15 @@ func (s *Session) FindIn(ctx context.Context, files []provider.FilePatch, sc *Sc
 	if sc != nil {
 		exclude = sc.Exclude
 	}
+	hunks := ShownLines(files, s.diff)
+	for p := range s.whole {
+		delete(hunks, p)
+		if !slices.Contains(exclude, p) {
+			exclude = append(slices.Clone(exclude), p)
+		}
+	}
 	res, err := s.backend.Grep(ctx, s.co, gitctx.Query{
-		Symbols: syms, Exclude: exclude, Hunks: ShownLines(files, s.diff), Filter: s.flt,
+		Symbols: syms, Exclude: exclude, Hunks: hunks, Filter: s.flt,
 		MaxHitsPerSymbol: s.settings.MaxHitsPerSymbol,
 	})
 	if err != nil {

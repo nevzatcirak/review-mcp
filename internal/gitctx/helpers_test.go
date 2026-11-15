@@ -253,7 +253,9 @@ func gitOut(t *testing.T, dir, gitPath string, args ...string) string {
 		"GIT_COMMITTER_NAME=Test", "GIT_COMMITTER_EMAIL=test@example.com",
 	}
 	if runtime.GOOS == "windows" {
-		cmd.Env = append(cmd.Env, "SYSTEMROOT="+os.Getenv("SYSTEMROOT"))
+		// Git for Windows writes the temporary files of a textconv or an
+		// external diff under TMP (TestLocalTrapsArmed runs both plainly).
+		cmd.Env = append(cmd.Env, "SYSTEMROOT="+os.Getenv("SYSTEMROOT"), "TMP="+os.TempDir(), "TEMP="+os.TempDir())
 	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {

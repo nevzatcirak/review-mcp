@@ -156,6 +156,40 @@ type Args struct {
 	// nil means not given. The tool layer refuses them with focus or
 	// findings.
 	Related []string
+	// Local marks a local review (X-52, v2.10 spec V-20 §0 item 7): the
+	// resolver hands out the read-only local source, and what does not
+	// apply to local work is off, after the repository config is merged
+	// and without a note: publish, supplied findings, incremental, related
+	// pull requests and repositories (also declared ones), the CI status
+	// and the existing discussion (localRun). issue_context is accepted.
+	Local bool
+}
+
+// uncommittedLister is the local source's list of the files whose
+// uncommitted changes the review includes (internal/provider/local).
+type uncommittedLister interface {
+	UncommittedPaths(ctx context.Context) []string
+}
+
+// NoteLocalUncommittedNotSearched is the note of a local review with
+// repository context and uncommitted changes (v2.10 spec V-20 §2.3).
+const NoteLocalUncommittedNotSearched = "Repository context searched the last commit (HEAD): uses in files with " +
+	"uncommitted changes were not searched."
+
+// localRun turns off, for a local review, what does not apply to local
+// work (Args.Local): cfg is a copy with the CI status and the incremental
+// review off, and args drop publish, findings, incremental and related and
+// get no discussion block.
+func localRun(cfg *config.Config, args Args) (*config.Config, Args) {
+	cfg = cfg.Clone()
+	cfg.Review.CIStatus = false
+	cfg.Review.Incremental = false
+	off, none := false, 0
+	args.Publish, args.Findings, args.SecurityConcerns, args.PerformanceConcerns = false, nil, "", ""
+	args.Incremental, args.Related = &off, nil
+	args.InlineFindings, args.PersistentOverview = &off, &off
+	args.MaxDiscussionTokens = &none
+	return cfg, args
 }
 
 // WithConfigDefaults returns a with every option the call left unset (nil,
@@ -204,6 +238,9 @@ const (
 // Plan is the outcome of steps 1 to 6 of the pipeline: everything up to the
 // model call. Run continues from it; diag review --dry-run prints it.
 type Plan struct {
+	// localUncommitted: a local review whose files with uncommitted changes
+	// are left out of the repository-context search (its note).
+	localUncommitted bool
 	// Result is the review so far: PR, coverage, notes and the metadata
 	// known before the model call (prompt, diff and request tokens).
 	Result *Result
@@ -453,6 +490,12 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		rc.NoRelatedNote()
 	}
 	cfg = rc.Config
+	if args.Local {
+		// Nothing of the repository config can turn the CI status, the
+		// incremental review or declared related repositories back on.
+		cfg, args = localRun(cfg, args)
+		rc.NoRelatedNote()
+	}
 	// The focus is resolved again against the run's custom focuses (X-51,
 	// v2.9 spec V-19 §1.3): those of the operator, which Validated saw, and
 	// those of the repository config, read at the base revision, which may
@@ -465,6 +508,9 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 	deps.Config = cfg
 	args = args.WithConfigDefaults(cfg)
+	if args.Local {
+		_, args = localRun(cfg, args)
+	}
 	toggles := TogglesFrom(cfg.Review)
 	factor := cfg.LLM.TokenEstimateFactor
 	maxFindings := cfg.Review.MaxFindings
@@ -528,7 +574,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	case len(args.Related) > 0:
 		pl.related = related.Read(ctx, deps.Resolver, primaryURL, ref, args.Related, flt.Include,
 			cfg.Related.MaxTokens == 0, related.RepositoriesFor(cfg, operator, deps.RepoContext), log)
-	case len(rc.Related) > 0 && args.Focus == "" && !supplied:
+	case len(rc.Related) > 0 && args.Focus == "" && !supplied && !args.Local:
 		pl.related = related.ReadDeclared(ctx, deps.Resolver, primaryURL, ref, rc.Related,
 			cfg.Related.MaxTokens == 0, related.RepositoriesFor(cfg, operator, deps.RepoContext), log)
 	}
@@ -580,6 +626,16 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			// The names the changed documentation mentions are looked up
 			// too (v2.1 spec V-5 §3a item 3).
 			rcs.LookUpDocNames()
+		}
+		// A local review searches HEAD's commit (v2.10 spec V-20 §2.3):
+		// the files with uncommitted changes are left out of the search
+		// entirely, since their lines there are not the diff's, and a note
+		// says so.
+		if lw, ok := p.(uncommittedLister); ok && args.Local {
+			if paths := lw.UncommittedPaths(ctx); len(paths) > 0 {
+				rcs.ExcludeWhole(paths)
+				pl.localUncommitted = true
+			}
 		}
 		if len(rcs.Symbols(d.Files)) > 0 {
 			progress(deps, StageRepoContext)
@@ -861,6 +917,9 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	// Changed files the provider could not list at all (GitHub lists at
 	// most 3000) are named by its fixed note.
 	res.Notes = append(res.Notes, d.Notes...)
+	if pl.localUncommitted {
+		res.Notes = append(res.Notes, NoteLocalUncommittedNotSearched)
+	}
 	res.Notes = append(res.Notes, incNotes...)
 	res.Notes = append(res.Notes, discNotes...)
 	if disc.Omitted > 0 {

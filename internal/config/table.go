@@ -147,6 +147,9 @@ var table = []entry{
 	// decision.* rows: v2.7 spec V-14 §2.1 (X-47).
 	{"decision.enabled", "REVIEW_MCP_DECISION_ENABLED", func(c *Config) any { return &c.Decision.Enabled }},
 	{"decision.allowed", "REVIEW_MCP_DECISION_ALLOWED", func(c *Config) any { return &c.Decision.Allowed }},
+	// local.* rows: v2.10 spec V-20 §0 item 8 (X-52).
+	{"local.enabled", "REVIEW_MCP_LOCAL_ENABLED", func(c *Config) any { return &c.Local.Enabled }},
+	{"local.allowed_roots", "REVIEW_MCP_LOCAL_ALLOWED_ROOTS", func(c *Config) any { return &c.Local.AllowedRoots }},
 
 	{"log.level", "REVIEW_MCP_LOG_LEVEL", func(c *Config) any { return &c.Log.Level }},
 

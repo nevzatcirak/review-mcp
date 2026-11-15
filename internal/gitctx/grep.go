@@ -286,6 +286,9 @@ func (r *Runner) openCheckout(c Checkout) (*gitRun, error) {
 	if c.GitDir == "" {
 		return nil, fail(ReasonUnsupported)
 	}
+	if r.local != nil {
+		return r.local.openCheckout(c)
+	}
 	probe := gitProbe(r.opts.GitPath)
 	if !probe.ok() {
 		return nil, fail(ReasonGitUnavailable)

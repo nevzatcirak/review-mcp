@@ -1,9 +1,12 @@
 package review
 
 import (
+	"encoding/json"
+
 	"github.com/nevzatcirak/review-mcp/internal/diffpipe"
 	"github.com/nevzatcirak/review-mcp/internal/filter"
 	"github.com/nevzatcirak/review-mcp/internal/llmrun"
+	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/repocfg"
 )
 
@@ -62,6 +65,9 @@ type Result struct {
 	// Run always sets it; a pointer so that a result built elsewhere omits
 	// it.
 	Issue *IssueResult `json:"issue,omitempty"`
+	// Local describes the local work a local_review reviewed (X-52, v2.10
+	// spec V-20 §2.1); nil, and omitted, for a pull request.
+	Local *LocalInfo `json:"local,omitempty"`
 	// Reviewed is the commit record of the overview (X-36). It is not part
 	// of the tool result: the renderers show it and the publish writes it.
 	Reviewed ReviewedCommit `json:"-"`
@@ -76,6 +82,41 @@ type ReviewedCommit struct {
 	// Since is the commit an incremental run continues from
 	// (Incremental.Since); "" for a full review.
 	Since string
+}
+
+// LocalInfo is the local object of a local_review result (v2.10 spec V-20
+// §2.1).
+type LocalInfo struct {
+	// RepoPath is the work tree's absolute path.
+	RepoPath string `json:"repo_path"`
+	// BaseRef is the base as given, or the default that was found.
+	BaseRef string `json:"base_ref"`
+	// BaseSHA is the commit BaseRef names, MergeBase the merge base of it
+	// and HeadSHA, HEAD's commit.
+	BaseSHA   string `json:"base_sha"`
+	MergeBase string `json:"merge_base"`
+	HeadSHA   string `json:"head_sha"`
+	// Uncommitted says whether the uncommitted changes to tracked files were
+	// included.
+	Uncommitted bool `json:"uncommitted"`
+	// UntrackedFiles is the number of untracked files included;
+	// UntrackedHeldBack the number left out because their names suggest
+	// secrets.
+	UntrackedFiles    int `json:"untracked_files"`
+	UntrackedHeldBack int `json:"untracked_held_back"`
+}
+
+// MarshalJSON writes the pull request, with url null for local work (kind
+// local), which has no URL (v2.10 spec V-20 §2.1).
+func (p PRInfo) MarshalJSON() ([]byte, error) {
+	type plain PRInfo
+	if p.Kind != string(provider.KindLocal) {
+		return json.Marshal(plain(p))
+	}
+	return json.Marshal(struct {
+		plain
+		URL *string `json:"url"`
+	}{plain: plain(p)})
 }
 
 // PRInfo identifies the reviewed pull request.

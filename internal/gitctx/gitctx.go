@@ -154,6 +154,11 @@ func OptionsFromConfig(c config.ContextRepo) Options {
 // concurrent use; several processes may share one cache directory.
 type Runner struct {
 	opts Options
+	// local, when set, makes this the runner of one local repository
+	// (Local.Runner): Ensure fetches nothing and returns HEAD's commit, and
+	// every read runs through the repository's read view with the local
+	// settings and allow-list.
+	local *Local
 }
 
 // New returns a Runner for opts.
@@ -190,6 +195,11 @@ func RepoFor(cfg *config.Config, ref provider.PRRef, p provider.Provider) (repo 
 		// Basic user is fixed, so the identity below is never asked for.
 		repo.BaseURL, repo.Token = cfg.GitHub.BaseURL, cfg.Secrets.GitHubToken
 		repo.CACert, repo.InsecureSkipVerify = cfg.GitHub.CACert, cfg.GitHub.InsecureSkipVerify
+	case provider.KindLocal:
+		// A local repository (X-52): nothing is fetched; only the runner of
+		// that repository (Local.Runner) can open it, any other runner
+		// refuses the kind.
+		return repo, true
 	case provider.KindGitLab:
 		// The web base, with any context path (never {base}/api/v4). The
 		// Basic user is fixed, so the identity below is never asked for.

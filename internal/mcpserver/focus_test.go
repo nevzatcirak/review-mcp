@@ -152,10 +152,15 @@ const wantMultiPerspective = `Review the pull request "https://your-gitea.exampl
 
 // checkGuidance checks the initialize instructions and the prompt of X-33
 // on one client session.
-func checkGuidance(t *testing.T, cs *mcp.ClientSession) {
+func checkGuidance(t *testing.T, cs *mcp.ClientSession, serve bool) {
 	t.Helper()
 	ctx := context.Background()
-	if init := cs.InitializeResult(); init == nil || init.Instructions != serverInstructions {
+	want := serverInstructions
+	if !serve {
+		// local_review is registered in stdio mode (v2.10 spec V-20 §2.1).
+		want = strings.Replace(want, listGuidance+"\n\n", listGuidance+"\n\n"+localGuidance+"\n\n", 1)
+	}
+	if init := cs.InitializeResult(); init == nil || init.Instructions != want {
 		t.Errorf("instructions = %+v", init)
 	}
 	list, err := cs.ListPrompts(ctx, nil)
@@ -169,11 +174,22 @@ func checkGuidance(t *testing.T, cs *mcp.ClientSession) {
 		t.Fatalf("prompts = %+v", list.Prompts)
 	}
 	for _, p := range list.Prompts {
-		n := 2
-		if p.Name == "review_linked_prs" {
-			n = 3
+		if p.Name == "multi_perspective_review" {
+			// pr_url, focuses, repo_path, base (v2.10 spec V-20 §2.2):
+			// exactly one of pr_url and repo_path, so none is required.
+			var names []string
+			for _, a := range p.Arguments {
+				names = append(names, a.Name)
+				if a.Required {
+					t.Errorf("prompt %s argument %s is required", p.Name, a.Name)
+				}
+			}
+			if strings.Join(names, ",") != "pr_url,focuses,repo_path,base" {
+				t.Fatalf("prompt %s arguments = %v", p.Name, names)
+			}
+			continue
 		}
-		if len(p.Arguments) != n || !p.Arguments[0].Required || p.Arguments[1].Required {
+		if len(p.Arguments) != 3 || !p.Arguments[0].Required || p.Arguments[1].Required {
 			t.Fatalf("prompt %s arguments = %+v", p.Name, p.Arguments)
 		}
 	}
@@ -220,7 +236,7 @@ func checkGuidance(t *testing.T, cs *mcp.ClientSession) {
 
 // TestGuidanceStdio: the instructions and the prompt in stdio mode.
 func TestGuidanceStdio(t *testing.T) {
-	checkGuidance(t, connect(t, depsFor(validEnv(), nil)))
+	checkGuidance(t, connect(t, depsFor(validEnv(), nil)), false)
 }
 
 // TestGuidanceServe: the same over serve mode's HTTP handler.
@@ -235,7 +251,7 @@ func TestGuidanceServe(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = cs.Close() })
-	checkGuidance(t, cs)
+	checkGuidance(t, cs, true)
 }
 
 // TestRateLimitGuidance (X-37, v2.1 spec V-6 §2.4): with

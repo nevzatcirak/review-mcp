@@ -31,6 +31,9 @@ jobs:
   # and the cache sweeps. The git http-backend tests skip themselves there
   # with a stated reason. -race needs cgo, which this runner lacks. The CI
   # mode tests (V-4) run here too: paths, the event file, the step summary.
+  # So do the local review tests (V-20): the fsmonitor, textconv, filter and
+  # hook traps through Git for Windows' shell, CRLF work trees, paths, and
+  # the local review command.
   gitctx-windows:
     runs-on: windows-latest
     steps:
@@ -40,8 +43,14 @@ jobs:
           go-version-file: go.mod
       - name: Test internal/gitctx
         run: go test -count=1 -v ./internal/gitctx/...
+      - name: Test the local review source
+        run: go test -count=1 -v ./internal/provider/local/...
+      - name: Test local_review and the local prompt
+        run: go test -count=1 -v -run 'Local' ./internal/mcpserver/
       - name: Test CI mode
         run: go test -count=1 -run 'TestCI' ./cmd/review-mcp
+      - name: Test the local review command
+        run: go test -count=1 -v -run 'TestLocalCLI' ./cmd/review-mcp
 
   # The packages that run real git, with older gits (WP-15 §2 item 7): the
   # supported minimum 2.31.0, 2.43.0 (no GIT_NO_LAZY_FETCH, dies after a
@@ -92,7 +101,7 @@ jobs:
       - name: Test with git ${{ matrix.git }}
         run: |
           git --version | grep -Fx "git version ${{ matrix.git }}"
-          go test -race -count=1 ./internal/gitctx/ ./internal/repotools/ ./internal/repoctx/ ./internal/related/
+          go test -race -count=1 ./internal/gitctx/ ./internal/repotools/ ./internal/repoctx/ ./internal/related/ ./internal/provider/local/
 
   licenses:
     runs-on: ubuntu-latest

@@ -37,6 +37,7 @@ func (c *Config) Clone() *Config {
 	}
 	cp.Related.ContractGlobs = slices.Clone(c.Related.ContractGlobs)
 	cp.Decision.Allowed = slices.Clone(c.Decision.Allowed)
+	cp.Local.AllowedRoots = slices.Clone(c.Local.AllowedRoots)
 	cp.Serve.AllowedOrigins = slices.Clone(c.Serve.AllowedOrigins)
 	return &cp
 }

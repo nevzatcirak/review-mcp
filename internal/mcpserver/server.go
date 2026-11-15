@@ -153,12 +153,23 @@ func instructionsFor(cfg *config.Config) string {
 	return s
 }
 
+// instructionsForDeps is instructionsFor with localGuidance as its own
+// paragraph after the first one when local_review is registered (v2.10
+// spec V-20 §2.1: one sentence).
+func instructionsForDeps(deps Deps) string {
+	s := instructionsFor(deps.Config)
+	if localEnabled(deps) {
+		s = strings.Replace(s, listGuidance+"\n\n", listGuidance+"\n\n"+localGuidance+"\n\n", 1)
+	}
+	return s
+}
+
 // New builds an MCP server with every tool and the prompt registered. The transport is
 // chosen by the caller, so a future HTTP mode can reuse it.
 func New(deps Deps) *mcp.Server {
 	s := mcp.NewServer(
 		&mcp.Implementation{Name: tools.ServerName, Version: version.Info().Version},
-		&mcp.ServerOptions{Logger: sdkLogger(deps.Logger, deps.Serve), Instructions: instructionsFor(deps.Config)},
+		&mcp.ServerOptions{Logger: sdkLogger(deps.Logger, deps.Serve), Instructions: instructionsForDeps(deps)},
 	)
 	if deps.Serve {
 		s.AddReceivingMiddleware(concurrencyGate(deps))
@@ -176,6 +187,9 @@ func New(deps Deps) *mcp.Server {
 	registerPRImprove(s, deps)
 	if decisionEnabled(deps) {
 		registerPRReviewDecision(s, deps)
+	}
+	if localEnabled(deps) {
+		registerLocalReview(s, deps)
 	}
 	if deps.background() {
 		registerJobResult(s, deps)

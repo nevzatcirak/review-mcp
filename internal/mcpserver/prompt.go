@@ -42,6 +42,15 @@ const maxPromptURLBytes = 2048
 // Fixed errors of the prompt's arguments. They never echo a value.
 const (
 	promptURLMessage = "pr_url must be the http or https URL of a pull request, without credentials"
+	// promptOneOfMessage refuses a call with both or neither of pr_url and
+	// repo_path (v2.10 spec V-20 §2.2).
+	promptOneOfMessage = "exactly one of pr_url and repo_path must be given"
+	// promptServeLocalMessage refuses repo_path in serve mode (§0 item 4).
+	promptServeLocalMessage = "local reviews run in stdio mode only"
+	// promptLocalOffMessage refuses repo_path when local.enabled is false.
+	promptLocalOffMessage = "local reviews are turned off (local.enabled)"
+	// promptBaseMessage refuses base without repo_path.
+	promptBaseMessage = "base applies to repo_path only"
 	// DESIGN-QUESTION: an unknown value in focuses — treat it as a free
 	// text focus or refuse it? — chose to refuse: a comma-separated list
 	// cannot carry a free text that holds a comma, and a typo of a known
@@ -75,19 +84,34 @@ func registerMultiPerspectivePrompt(s *mcp.Server, deps Deps) {
 		Name:  promptMultiPerspective,
 		Title: "Multi-perspective review",
 		Description: "Review a pull request from several focused perspectives with pr_review, merge the findings, " +
-			"and publish them once.",
+			"and publish them once; or review local work before it is pushed with local_review (stdio only) and " +
+			"show the merged findings.",
 		Arguments: []*mcp.PromptArgument{
-			{Name: "pr_url", Description: "URL of the pull request", Required: true},
+			{Name: "pr_url", Description: "URL of the pull request; exactly one of pr_url and repo_path"},
 			{Name: "focuses", Description: "comma-separated focus areas out of security, architecture, " +
 				"performance, ux, tests and docs, or the name of a custom focus defined for the repository (default: " +
 				"review.focuses of the repository config, else " + defaultFocuses + ", with docs added when the pull " +
 				"request changes a documentation file; then the focuses of the repository's focus rules that match a " +
 				"changed file, at most 8 in all)"},
+			{Name: "repo_path", Description: "absolute path of a local git work tree whose unpushed work to review " +
+				"with local_review (stdio mode only); exactly one of pr_url and repo_path"},
+			{Name: "base", Description: "with repo_path, the branch, tag or commit to compare with (default: the " +
+				"current branch's upstream, else origin/HEAD, origin/main, origin/master, main, master)"},
 		},
 	}, func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 		var args map[string]string
 		if req != nil && req.Params != nil {
 			args = req.Params.Arguments
+		}
+		repoPath, rawURL := strings.TrimSpace(args["repo_path"]), strings.TrimSpace(args["pr_url"])
+		if (repoPath == "") == (rawURL == "") {
+			return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: promptOneOfMessage}
+		}
+		if repoPath != "" {
+			return localPrompt(ctx, deps, req, repoPath, strings.TrimSpace(args["base"]), args["focuses"], queued)
+		}
+		if strings.TrimSpace(args["base"]) != "" {
+			return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: promptBaseMessage}
 		}
 		prURL, ok := promptPRURL(args["pr_url"])
 		if !ok {

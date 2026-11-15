@@ -321,12 +321,12 @@ func TestJobResultToolDefinition(t *testing.T) {
 		names = append(names, tl.Name)
 	}
 	sort.Strings(names)
-	if got := strings.Join(names, ","); got != "job_result,pr_ask,pr_comment_create,pr_comment_reply,pr_comments,pr_describe,pr_improve,pr_info,pr_list_authored,pr_list_review_requests,pr_review,server_info" {
+	if got := strings.Join(names, ","); got != "job_result,local_review,pr_ask,pr_comment_create,pr_comment_reply,pr_comments,pr_describe,pr_improve,pr_info,pr_list_authored,pr_list_review_requests,pr_review,server_info" {
 		t.Fatalf("stdio tools = %s", got)
 	}
 
 	tl := byName["job_result"]
-	if tl.Description != "Returns the result of a long-running pr_review, pr_ask, pr_describe or pr_improve call that answered with a job_id, waiting up to wait_seconds for it to finish. If the result says the review is partial, tell the user how many files were not reviewed and never state that those files have no issues. If the result says the description is partial, tell the user how many files were not described and never present the walkthrough as covering those files." {
+	if tl.Description != "Returns the result of a long-running pr_review, local_review, pr_ask, pr_describe or pr_improve call that answered with a job_id, waiting up to wait_seconds for it to finish. If the result says the review is partial, tell the user how many files were not reviewed and never state that those files have no issues. If the result says the description is partial, tell the user how many files were not described and never present the walkthrough as covering those files." {
 		t.Errorf("description = %q", tl.Description)
 	}
 	a := tl.Annotations
@@ -345,6 +345,9 @@ func TestJobResultToolDefinition(t *testing.T) {
 	if strings.Join(in.Required, ",") != "job_id" || len(in.Properties) != 2 ||
 		in.Properties["job_id"]["description"] == nil || in.Properties["wait_seconds"]["description"] == nil {
 		t.Errorf("input schema = %s", raw)
+	}
+	if d := in.Properties["job_id"]["description"]; d != "the job_id a pr_review, local_review, pr_ask, pr_describe or pr_improve call answered with" {
+		t.Errorf("job_id description = %v", d)
 	}
 	var out struct {
 		OneOf []any `json:"oneOf"`

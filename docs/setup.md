@@ -705,6 +705,23 @@ keys are operator-only (a repository config cannot set them) and need
 The endpoint must support tool calling. If it does not, the run is single-pass
 with a note, and `server_info` shows `refused` for that model.
 
+### Local review
+
+[`local_review`](local-review.md) and `review-mcp local review` review work in
+a git repository on this machine before it is pushed (stdio and the command
+line only). It needs no token: the repository is read with git, read-only,
+and only the LLM endpoint is contacted. Two operator keys control it; a
+repository config cannot set them.
+
+| Key | Environment variable | Default | Meaning |
+|---|---|---|---|
+| `local.enabled` | `REVIEW_MCP_LOCAL_ENABLED` | `true` | With `false`, `local_review` is not registered, the `multi_perspective_review` prompt refuses `repo_path`, and `review-mcp local review` exits 1. Serve mode never registers the tool. |
+| `local.allowed_roots` | `REVIEW_MCP_LOCAL_ALLOWED_ROOTS` | (empty) | Absolute directories (comma-separated in the environment). When set, `repo_path` must be one of them or under one, after symbolic links are resolved; empty allows any git work tree. |
+
+For a `pre-push` hook, the hook's environment needs the `REVIEW_MCP_*`
+settings (the LLM key is read from `REVIEW_MCP_LLM_API_KEY` only); see
+[A `pre-push` hook](local-review.md#a-pre-push-hook).
+
 ### `context_window` and `max_output_tokens`
 
 - Set `context_window` to the window your server really runs, not the largest

@@ -5,6 +5,64 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Planned as `2.10.0-rc.1`, the first 2.10 release candidate (the npm dist-tag
+`next`). Local review (X-52): review work before you push it, from your MCP
+client or from a git `pre-push` hook. Nothing in the tools or the configuration
+of 2.9.0 is removed or renamed.
+
+Not verified live yet. The acceptance runs the cases of the specification in a
+container with a recording test endpoint in place of a model.
+
+### Added
+
+- `local_review` (stdio only): reviews the commits after the merge base of a
+  base and `HEAD` in a git repository on the machine where review-mcp runs, plus
+  the uncommitted changes to tracked files (`include_uncommitted`, default
+  `true`) and, only with `include_untracked`, untracked files that are not
+  ignored. Without `base`, the base is the current branch's upstream, then
+  `origin/HEAD`, `origin/main`, `origin/master`, `main`, `master`; nothing is
+  fetched, and a remote-tracking base gets a note that it may be behind the
+  remote. Nothing is published. The result is the `pr_review` result with
+  `pr.kind` `local`, `pr.url` `null` and a `local` object (`repo_path`,
+  `base_ref`, `base_sha`, `merge_base`, `head_sha`, `uncommitted`,
+  `untracked_files`, `untracked_held_back`). See
+  [Local review](docs/local-review.md).
+- `review-mcp local review`: the same review from a terminal or a `pre-push`
+  hook, with CI mode's exit codes (0 done, 1 the run failed, 2 usage error or no
+  repository or base, 3 a `--fail-on` condition is met), `--fail-on`, `--json`
+  and `--path` (default: the current directory). It never reads standard input.
+  The documentation has `pre-push` hook samples for POSIX shells and for Git
+  for Windows.
+- The `multi_perspective_review` prompt takes `repo_path` and `base` instead
+  of `pr_url` (exactly one of the two) and runs one `local_review` per focus;
+  in serve mode it refuses `repo_path`.
+- Configuration: `local.enabled` (`REVIEW_MCP_LOCAL_ENABLED`, default `true`)
+  and `local.allowed_roots` (`REVIEW_MCP_LOCAL_ALLOWED_ROOTS`, default empty:
+  any work tree), operator-only.
+
+### Security
+
+- The user's repository is only read: git runs with an allow-list of read
+  subcommands and a minimal environment; no hook, clean or smudge filter,
+  textconv or external diff driver, or fsmonitor runs; the work-tree diff uses a
+  private copy of the index; nothing is written to the repository, its index,
+  its configuration or its refs; nothing is fetched. No `safe.directory` entry
+  is ever added.
+- Untracked files whose names suggest secrets (`.env`, `.env.*`, `*.pem`,
+  `*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`, `id_rsa*`, `id_ed25519*`,
+  `.netrc`, `.npmrc`, `.pypirc`, `*.tfvars`, `credentials*`) are always held
+  back and counted; the repository's ignore rules and the user's global excludes
+  file both apply.
+
+### Changed
+
+- The `job_result` description and its `job_id` argument name `local_review`.
+- The output schema shared by `pr_review`, `local_review` and `job_result`
+  declares `pr.url` as a string or `null` and the optional `local` object.
+  `pr_review` results are unchanged.
+
 ## [2.9.0]
 
 Tenth stable release. The code is the same as `2.9.0-rc.1`. It is the first

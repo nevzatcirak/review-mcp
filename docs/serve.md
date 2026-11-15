@@ -1,6 +1,6 @@
 # Serve mode
 
-`review-mcp serve` runs the same tools over HTTP (eleven: everything stdio has except `job_result`, see [Long calls](#long-calls), and except [`pr_review_decision`](decision.md)), for a team that shares one
+`review-mcp serve` runs the same tools over HTTP (eleven: everything stdio has except `job_result`, see [Long calls](#long-calls), [`local_review`](#local-review-is-not-available) and [`pr_review_decision`](decision.md)), for a team that shares one
 server instead of everyone running a local process. The default transport,
 stdio, is described in the [Setup guide](setup.md).
 
@@ -363,6 +363,20 @@ request lacks is not an error: it is reported with the status `no_token`,
 nothing is sent to it, and the other providers are listed as usual. Naming a
 provider without its header (`provider: "github"`) gives the same status, not a
 refusal. `server_info` shows which headers a request sends.
+
+## Local review is not available
+
+[`local_review`](local-review.md) reads a git repository on the machine where
+review-mcp runs, and a shared server's disk is not the user's. In serve mode
+the tool is not registered, whatever `local.enabled` says, and the
+`multi_perspective_review` prompt refuses `repo_path` with
+
+```text
+local reviews run in stdio mode only
+```
+
+Run review-mcp in stdio mode, or `review-mcp local review` in a terminal or a
+`pre-push` hook, to review work before it is pushed.
 
 ## Decisions are not available
 

@@ -1101,3 +1101,32 @@ func TestLocalChangedInWorkTree(t *testing.T) {
 		t.Errorf("ChangedInWorkTree = %q, %v", got, err)
 	}
 }
+
+// TestLocalIndexCopyKeepsModTime: the private index copy keeps the index's
+// modification time, so that git's racy-clean check sees the entries as
+// it would in the repository (a same-size edit in the same timestamp tick
+// is compared by content, not trusted by stat).
+// Mutation: copy the index with a fresh modification time.
+func TestLocalIndexCopyKeepsModTime(t *testing.T) {
+	r := newLocalRepo(t)
+	src := filepath.Join(r.dir, ".git", "index")
+	past := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
+	if err := os.Chtimes(src, past, past); err != nil {
+		t.Fatal(err)
+	}
+	l := r.open(t, LocalOptions{})
+	dir, idx, err := l.copyIndex()
+	if dir != "" {
+		defer l.removeTemp(dir)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(idx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fi.ModTime().Equal(past) {
+		t.Errorf("index copy modified %v, want the index's %v", fi.ModTime(), past)
+	}
+}

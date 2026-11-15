@@ -925,7 +925,12 @@ func (l *Local) removeTemp(dir string) {
 }
 
 // copyRegular copies the regular file src (not followed when it is a
-// link) to the new file dst.
+// link) to the new file dst, with src's modification time. For the index
+// that time matters: git treats an entry whose file is not older than the
+// index as racily clean and compares its content, which catches a
+// same-size edit made in the same timestamp tick (ctime does not change on
+// Windows). A copy with a fresh time would make git trust the stat data and
+// miss that edit.
 func copyRegular(src, dst string) error {
 	fi, err := os.Lstat(src)
 	if err != nil {
@@ -947,7 +952,10 @@ func copyRegular(src, dst string) error {
 		_ = out.Close()
 		return err
 	}
-	return out.Close()
+	if err := out.Close(); err != nil {
+		return err
+	}
+	return os.Chtimes(dst, time.Now(), fi.ModTime())
 }
 
 // Untracked returns the untracked files of the work tree that neither the

@@ -540,6 +540,13 @@ func inRanges(ranges []LineRange, line int) bool {
 // order. Within a group files are in path order and hits in line order, so
 // the choice is deterministic.
 func chooseHits(sym Symbol, raw []rawHit, max int) []rawHit {
+	return chooseHitsOrdered(sym, raw, max, false)
+}
+
+// chooseHitsOrdered is chooseHits; with testsLast, the files that are not
+// test files (IsTestPath) come before test files, ahead of every other key
+// (the impact trace: a test is a caller, not something callers depend on).
+func chooseHitsOrdered(sym Symbol, raw []rawHit, max int, testsLast bool) []rawHit {
 	if len(raw) == 0 || max <= 0 {
 		return nil
 	}
@@ -561,6 +568,11 @@ func chooseHits(sym Symbol, raw []rawHit, max int) []rawHit {
 	}
 	changed := func(p string) bool { return byFile[p][0].changed }
 	sort.SliceStable(files, func(i, j int) bool {
+		if testsLast {
+			if ti, tj := IsTestPath(files[i]), IsTestPath(files[j]); ti != tj {
+				return tj
+			}
+		}
 		if ci, cj := changed(files[i]), changed(files[j]); ci != cj {
 			return cj
 		}

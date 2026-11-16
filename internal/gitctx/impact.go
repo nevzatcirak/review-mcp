@@ -52,6 +52,9 @@ const (
 	NotFollowedDepth      = "depth"
 	NotFollowedBudget     = "budget"
 	NotFollowedOutOfScope = "out_of_scope"
+	// NotFollowedTest: the node is in a test file (IsTestPath). It is kept
+	// as a caller, but a test is not something other code depends on.
+	NotFollowedTest = "test"
 )
 
 // Kinds of link (ImpactNode.Kind).
@@ -109,7 +112,9 @@ type ImpactNode struct {
 	// base name of its file.
 	Name string
 	// Path is the file of the definition. For a seed it is the changed file
-	// the symbol was taken from.
+	// the symbol was taken from (Symbol.Path; for a body-only seed, the file
+	// of the hunk), so that a chain can be shown with its seed's file and
+	// assigned to the part of a review that holds it.
 	Path string
 	// DefLine and DefText are the definition's line and its text (untrusted
 	// repository text, one line). A seed has them when it comes from a
@@ -138,10 +143,11 @@ type ImpactNode struct {
 	// hunks).
 	InPR bool
 	// NotFollowed says why the node's uses were not searched: "" (they
-	// were, or a search failed), NotFollowedWidelyUsed (its own search
-	// returned too many hits, or its parent's did), NotFollowedDepth (the
-	// last hop, or a use outside any definition) or NotFollowedBudget
-	// (MaxLinks or the time limit was reached first).
+	// were, or a search failed), NotFollowedTest (the node is in a test
+	// file), NotFollowedWidelyUsed (its own search returned too many hits,
+	// or its parent's did), NotFollowedDepth (the last hop, or a use outside
+	// any definition) or NotFollowedBudget (MaxLinks or the time limit was
+	// reached first).
 	NotFollowed string
 	// MoreUses is the number of uses of the node found beyond the ones kept
 	// (MaxCallersPerNode).
@@ -263,6 +269,8 @@ type tracer struct {
 	paths    []string
 	excludes []string
 	links    int
+	// imports counts the hits dropped on import lines (debug only).
+	imports int
 }
 
 // Trace follows the uses of q's seeds through the head tree of c, breadth
@@ -330,6 +338,7 @@ func (r *Runner) Trace(ctx context.Context, c Checkout, q ImpactQuery) (ImpactRe
 			"depth_reached", res.DepthReached, "not_followed", res.NotFollowed,
 			"widely_used", res.NotFollowedBy[NotFollowedWidelyUsed], "depth", res.NotFollowedBy[NotFollowedDepth],
 			"budget", res.NotFollowedBy[NotFollowedBudget], "out_of_scope", res.NotFollowedBy[NotFollowedOutOfScope],
+			"test", res.NotFollowedBy[NotFollowedTest], "import_lines", t.imports,
 			"entry_points_reached", res.EntryPointsReached, "skipped_blobs", res.SkippedBlobs,
 			"truncated", res.Truncated, "duration_ms", time.Since(started).Milliseconds())
 	}
@@ -502,7 +511,13 @@ func (t *tracer) run(ctx, total context.Context, pathspecs []string) error {
 // expand adds the nodes of one name's hits and returns those to follow.
 func (t *tracer) expand(ctx context.Context, idx, hop int, raw []rawHit) []int {
 	self := t.syms[idx]
-	raw = slices.DeleteFunc(raw, func(h rawHit) bool { return self.OwnDefinition(h.path, h.text) })
+	raw = slices.DeleteFunc(raw, func(h rawHit) bool {
+		if importLine(h.text) {
+			t.imports++
+			return true
+		}
+		return self.OwnDefinition(h.path, h.text)
+	})
 	kept := raw[:0]
 	for _, h := range raw {
 		if t.inScope(h.path) {
@@ -514,7 +529,7 @@ func (t *tracer) expand(ctx context.Context, idx, hop int, raw []rawHit) []int {
 	raw = kept
 	maxHits := t.q.MaxCallersPerNode
 	wide := len(raw) > widelyUsedFactor*maxHits
-	chosen := chooseHits(Symbol{Name: self.Name, Path: t.syms[t.root[idx]].Path}, raw, maxHits)
+	chosen := chooseHitsOrdered(Symbol{Name: self.Name, Path: t.syms[t.root[idx]].Path}, raw, maxHits, true)
 	t.nodes[idx].MoreUses = len(raw) - len(chosen)
 	if wide {
 		t.nodes[idx].NotFollowed = NotFollowedWidelyUsed
@@ -551,9 +566,14 @@ func (t *tracer) expand(ctx context.Context, idx, hop int, raw []rawHit) []int {
 			UseLine: h.line, UseText: use, Hop: hop, Parent: idx,
 			Kind: linkKind(h.text, parent.Name, lang), Entry: t.entry(h.path), InPR: h.changed,
 		}
+		if !ok {
+			node.Name = pathpkg.Base(h.path)
+		}
 		switch {
+		case IsTestPath(h.path):
+			node.NotFollowed = NotFollowedTest
 		case !ok:
-			node.Name, node.NotFollowed = pathpkg.Base(h.path), NotFollowedDepth
+			node.NotFollowed = NotFollowedDepth
 		case wide:
 			node.NotFollowed = NotFollowedWidelyUsed
 		case hop == t.q.Depth:
@@ -626,6 +646,17 @@ func (t *tracer) count() {
 	for _, v := range r.NotFollowedBy {
 		r.NotFollowed += v
 	}
+}
+
+// importRE matches a line that imports a name rather than using it: import,
+// from ... import, using (not "using (", a C# statement), package, and
+// require (a Ruby or PHP statement, or a CommonJS "= require(").
+var importRE = regexp.MustCompile(`^(?:import\b|export\s+(?:type\s+)?(?:\*|\{[^}]*\})\s*from\b|from\s+\S+\s+import\b|using\s+[^\s(]|package\b|require(?:_once|_relative)?\b|(?:(?:const|let|var)\s+)?[\w${},\s]+=\s*require\s*\()`)
+
+// importLine reports whether a hit's line is an import line (spec review of
+// WP-20a, DQ-8). Such hits are dropped before anything counts them.
+func importLine(line string) bool {
+	return importRE.MatchString(strings.TrimSpace(line))
 }
 
 var (

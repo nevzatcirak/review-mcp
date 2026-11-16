@@ -466,3 +466,84 @@ func TestHasWordAndSkipParens(t *testing.T) {
 		t.Fatalf("skipParens unbalanced = %q", got)
 	}
 }
+
+// TestTraceTestCallerIsALeaf is canary (t1): a caller in a test file is a
+// node, marked NotFollowedTest, and its own callers are not searched.
+func TestTraceTestCallerIsALeaf(t *testing.T) {
+	files := map[string]string{
+		"src/main/java/app/Repo.java":        "public class Repo {\n    public void save(Order o) {\n    }\n}\n",
+		"src/test/java/app/RepoTest.java":    "public class RepoTest {\n    void savesAnOrder() {\n        repo.save(order);\n    }\n}\n",
+		"src/test/java/app/SuiteRunner.java": "public class SuiteRunner {\n    void runAll() {\n        savesAnOrder();\n    }\n}\n",
+	}
+	r, c := localCheckout(t, files, "")
+	res := trace(t, r, c, ImpactQuery{Seeds: []Symbol{seed("save", "src/main/java/app/Repo.java", RankSignature)}, Depth: 3})
+	i := nodeNamed(res, "savesAnOrder")
+	if i < 0 || res.Nodes[i].NotFollowed != NotFollowedTest || res.NotFollowedBy[NotFollowedTest] != 1 {
+		t.Fatalf("test caller missing or followed:%s\n%+v", describe(res), res.NotFollowedBy)
+	}
+	if nodeNamed(res, "runAll") >= 0 {
+		t.Fatalf("a test caller's callers were searched:%s", describe(res))
+	}
+}
+
+// TestTraceImportLineIsNotANode is canary (t2): an import line is never a
+// node, and is not counted.
+func TestTraceImportLineIsNotANode(t *testing.T) {
+	files := map[string]string{
+		"src/app/OrderStore.java": "package app;\n\npublic class OrderStore {\n}\n",
+		"src/web/Checkout.java":   "package web;\n\nimport app.OrderStore;\n\npublic class Checkout {\n    void submit(OrderStore store) {\n    }\n}\n",
+		"web/cart.ts":             "import { OrderStore } from \"../app\";\n",
+		"web/legacy.js":           "const { OrderStore } = require(\"../app\");\n",
+		"tools/report.py":         "from app.store import OrderStore\n",
+	}
+	r, c := localCheckout(t, files, "")
+	res := trace(t, r, c, ImpactQuery{Seeds: []Symbol{seed("OrderStore", "src/app/OrderStore.java", RankRemoved)}, Depth: 1})
+	for _, n := range res.Nodes[1:] {
+		if importLine(n.UseText) || n.UseLine == 3 && n.Path == "src/web/Checkout.java" || n.Path != "src/web/Checkout.java" {
+			t.Fatalf("an import line became a node:%s", describe(res))
+		}
+	}
+	if nodeNamed(res, "submit") < 0 || res.Links != 1 || res.NotFollowed != 1 {
+		t.Fatalf("want the one real use only:%s\n%+v", describe(res), res.NotFollowedBy)
+	}
+}
+
+func TestImportLine(t *testing.T) {
+	yes := []string{
+		"import example.app.Repo;", "import static example.app.Repo.save;", "import { Repo } from \"./repo\";",
+		"import Repo from './repo'", "from billing.repository import InvoiceRepository", "using Example.App;",
+		"using static Example.App.Repo;", "using Store = Example.App.Store;", "package example.app;",
+		"require 'repo'", "require_relative 'repo'", "require_once 'Repo.php';", "const repo = require(\"./repo\");",
+		"const { Repo } = require('./repo')", "export { Repo } from './repo';", "export * from './repo';", "  import app.Repo",
+	}
+	no := []string{
+		"repo.save(order);", "using (var s = store.Open())", "Repo repo = new Repo();", "importRepo(x)",
+		"packageName = repo.name", "requireNonNull(repo)", "return from(repo)", "export class Repo {",
+	}
+	for _, l := range yes {
+		if !importLine(l) {
+			t.Errorf("not an import line: %q", l)
+		}
+	}
+	for _, l := range no {
+		if importLine(l) {
+			t.Errorf("read as an import line: %q", l)
+		}
+	}
+}
+
+func TestChooseHitsTestsLast(t *testing.T) {
+	raw := []rawHit{
+		{path: "a/FooTest.java", line: 1},
+		{path: "b/Changed.java", line: 1, changed: true},
+		{path: "c/Other.java", line: 1},
+	}
+	got := chooseHitsOrdered(Symbol{Name: "save", Path: "x/Repo.java"}, raw, 3, true)
+	if p := []string{got[0].path, got[1].path, got[2].path}; !slices.Equal(p, []string{"c/Other.java", "b/Changed.java", "a/FooTest.java"}) {
+		t.Fatalf("order %v", p)
+	}
+	got = chooseHits(Symbol{Name: "save", Path: "x/Repo.java"}, raw, 3)
+	if got[2].path != "b/Changed.java" {
+		t.Fatalf("chooseHits changed for the symbol search: %v", got)
+	}
+}

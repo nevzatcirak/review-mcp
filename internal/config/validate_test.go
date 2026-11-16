@@ -314,6 +314,7 @@ func TestProviderEnablementRules(t *testing.T) {
 		env := minimalEnv()
 		delete(env, "REVIEW_MCP_GITEA_BASE_URL")
 		delete(env, "REVIEW_MCP_GITEA_TOKEN")
+		env["REVIEW_MCP_LOCAL_ENABLED"] = "false"
 		_, _, err := Load(MemSource{Env: env})
 		if !hasProblem(problemsOf(t, err), "no provider enabled") {
 			t.Errorf("got %v", err)
@@ -545,6 +546,7 @@ func TestGitHubConfig(t *testing.T) {
 		env := minimalEnv()
 		delete(env, "REVIEW_MCP_GITEA_BASE_URL")
 		delete(env, "REVIEW_MCP_GITEA_TOKEN")
+		env["REVIEW_MCP_LOCAL_ENABLED"] = "false"
 		_, _, err := Load(MemSource{Env: env})
 		want := "no provider enabled: set gitea.base_url (REVIEW_MCP_GITEA_BASE_URL), bitbucket_server.base_url (REVIEW_MCP_BITBUCKET_SERVER_BASE_URL), " +
 			"github.base_url (REVIEW_MCP_GITHUB_BASE_URL) and/or gitlab.base_url (REVIEW_MCP_GITLAB_BASE_URL)"

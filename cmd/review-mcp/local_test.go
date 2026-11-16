@@ -84,13 +84,10 @@ func localAnswer(finding bool, security string) string {
 		"  security_concerns: \"" + security + "\"\n```\n"
 }
 
-// localLLMEnv is a configuration pointing at the fake LLM. The
-// configuration needs one provider; its placeholder host is never
-// contacted by a local review.
+// localLLMEnv is a local-only configuration (WP-24d) pointing at the fake
+// LLM: no git provider, only llm.* is set.
 func localLLMEnv(l *fakeLLM) map[string]string {
 	env := diagEnv(nil, nil)
-	env["REVIEW_MCP_GITEA_BASE_URL"] = "https://gitea.example.invalid"
-	env["REVIEW_MCP_GITEA_TOKEN"] = diagGiteaToken
 	env["REVIEW_MCP_LLM_BASE_URL"] = l.srv.URL + "/v1"
 	return env
 }
@@ -281,6 +278,9 @@ func TestLocalCLIFailures(t *testing.T) {
 
 	env := localLLMEnv(l)
 	env["REVIEW_MCP_LOCAL_ENABLED"] = "false"
+	// With local.enabled = false a provider is required to load at all.
+	env["REVIEW_MCP_GITEA_BASE_URL"] = "https://gitea.example.invalid"
+	env["REVIEW_MCP_GITEA_TOKEN"] = diagGiteaToken
 	r = localCall(t, env, "review", "--path", dir)
 	if r.code != 1 || r.lastStderr != localOffLine {
 		t.Errorf("local off: exit %d, final line %q", r.code, r.lastStderr)

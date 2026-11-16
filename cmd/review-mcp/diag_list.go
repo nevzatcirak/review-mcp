@@ -73,7 +73,7 @@ func runDiagList(args []string, stdout, stderr io.Writer, load configLoader) int
 		a.IncludeAssigned = *includeAssigned
 	}
 
-	cfg, logger, code := diagSetup(load, stderr)
+	cfg, logger, code := diagSetupPR(load, stderr)
 	if cfg == nil {
 		return code
 	}

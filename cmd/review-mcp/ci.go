@@ -189,7 +189,7 @@ func runCI(args []string, stdout, stderr io.Writer, load configLoader, env ciEnv
 		}
 		return 2
 	}
-	cfg, logger, code := diagSetup(load, stderr)
+	cfg, logger, code := diagSetupPR(load, stderr)
 	if cfg == nil {
 		return code
 	}

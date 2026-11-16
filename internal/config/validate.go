@@ -513,9 +513,11 @@ func (l *loader) validateProviders() {
 		l.warn("%s is set but gitlab is not enabled (gitlab.base_url is unset); the token is ignored", envGitLabToken)
 	}
 
-	if !giteaOn && !bbOn && !ghOn && !glOn {
-		l.problem("no provider enabled: set gitea.base_url (%s), bitbucket_server.base_url (%s), github.base_url (%s) and/or gitlab.base_url (%s)",
-			keyToEnv["gitea.base_url"], keyToEnv["bitbucket_server.base_url"], keyToEnv["github.base_url"], keyToEnv["gitlab.base_url"])
+	// A configuration with no provider is valid for local reviews only
+	// (WP-24d): stdio with local.enabled. Serve, and local.enabled = false,
+	// still need one.
+	if !giteaOn && !bbOn && !ghOn && !glOn && (serve || !c.Local.Enabled) {
+		l.problem("%s", noProviderProblem())
 	}
 
 	l.checkCACert("gitea.ca_cert", g.CACert)

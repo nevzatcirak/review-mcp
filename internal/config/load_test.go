@@ -128,20 +128,23 @@ func TestRequiredMissingListsAllInOneError(t *testing.T) {
 		"llm.base_url is required",
 		"llm.model is required",
 		"REVIEW_MCP_LLM_API_KEY is required",
-		"no provider enabled",
 	} {
 		if !hasProblem(probs, want) {
 			t.Errorf("missing problem %q in %v", want, probs)
 		}
 	}
-	if len(probs) != 4 {
-		t.Errorf("got %d problems, want exactly 4: %v", len(probs), probs)
+	if len(probs) != 3 {
+		t.Errorf("got %d problems, want exactly 3: %v", len(probs), probs)
+	}
+	// WP-24d: no provider is valid while local.enabled is true.
+	if hasProblem(probs, "no provider enabled") {
+		t.Errorf("no provider must be valid for local reviews: %v", probs)
 	}
 	// X-15: llm.context_window is optional, so its absence is not a problem.
 	if hasProblem(probs, "llm.context_window") {
 		t.Errorf("an unset llm.context_window must be valid: %v", probs)
 	}
-	if !strings.Contains(err.Error(), "llm.model is required") || !strings.Contains(err.Error(), "no provider enabled") {
+	if !strings.Contains(err.Error(), "llm.model is required") || !strings.Contains(err.Error(), "REVIEW_MCP_LLM_API_KEY is required") {
 		t.Errorf("Error() must join all problems: %v", err)
 	}
 	if cfg.Log.Level != "info" {

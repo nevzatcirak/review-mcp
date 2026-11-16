@@ -123,6 +123,10 @@ commands:
 `)
 }
 
+// localOnlyStartupLine follows the startup line in a local-only stdio start
+// (WP-24d §1.3). Fixed words; the docs quote it verbatim.
+const localOnlyStartupLine = "no git provider is configured; only local reviews are available"
+
 // runStdio loads the configuration and serves MCP over stdin/stdout.
 //
 // Degraded start: when the configuration is invalid the server still starts,
@@ -145,6 +149,9 @@ func runStdio(stdin io.Reader, stdout, stderr io.Writer, load configLoader) int 
 	bi := version.Info()
 	logger.Info("review-mcp starting",
 		"version", bi.Version, "providers", kinds, "warnings", len(rep.Warnings), "config_valid", loadErr == nil)
+	if loadErr == nil && cfg.LocalOnly() {
+		logger.Info(localOnlyStartupLine)
+	}
 	for _, w := range rep.Warnings {
 		logger.Warn(logging.RedactText(w))
 	}

@@ -600,22 +600,62 @@ func (s *searcher) addContext(ctx context.Context, hits []Hit, ctxLines int) {
 	if ctxLines == 0 || len(hits) == 0 {
 		return
 	}
-	var paths []string
-	index := map[string]int{}
+	paths := make([]string, 0, len(hits))
 	for _, h := range hits {
-		if strings.ContainsAny(h.Path, "\r\n") {
+		paths = append(paths, h.Path)
+	}
+	blobs := s.readBlobs(ctx, paths)
+	for i := range hits {
+		lines := blobs[hits[i].Path]
+		if lines == nil {
+			continue
+		}
+		if snip, start := around(lines, hits[i].Line, ctxLines); start > 0 {
+			hits[i].Snippet, hits[i].StartLine = snip, start
+		}
+	}
+}
+
+// around returns line (1-based) of lines with up to n lines before and
+// after it, joined by "\n", each cut at 400 bytes, and the line number of the
+// first. A line outside lines gives "" and 0.
+func around(lines []string, line, n int) (string, int) {
+	at := line - 1
+	if at < 0 || at >= len(lines) {
+		return "", 0
+	}
+	from, to := max(0, at-n), min(len(lines), at+n+1)
+	var b strings.Builder
+	for k := from; k < to; k++ {
+		if k > from {
+			b.WriteByte('\n')
+		}
+		b.WriteString(cutLine(strings.TrimSuffix(lines[k], "\r")))
+	}
+	return b.String(), from + 1
+}
+
+// readBlobs reads the files paths of the head tree with one git cat-file
+// --batch (offline, 32 MiB of output in all) and returns each readable one
+// split into lines. A path given twice is read once; a path that cannot
+// name a specification (a line break), is missing, is not a blob or is cut
+// by the output cap has no entry.
+func (s *searcher) readBlobs(ctx context.Context, paths []string) map[string][]string {
+	var uniq []string
+	seen := map[string]bool{}
+	for _, p := range paths {
+		if seen[p] || strings.ContainsAny(p, "\r\n") {
 			continue // cat-file reads one specification per line
 		}
-		if _, ok := index[h.Path]; !ok {
-			index[h.Path] = len(paths)
-			paths = append(paths, h.Path)
-		}
+		seen[p] = true
+		uniq = append(uniq, p)
 	}
-	if len(paths) == 0 {
-		return
+	out := map[string][]string{}
+	if len(uniq) == 0 {
+		return out
 	}
 	var in bytes.Buffer
-	for _, p := range paths {
+	for _, p := range uniq {
 		in.WriteString(s.sha + ":" + p + "\n")
 	}
 	cctx, cancel := context.WithTimeout(ctx, grepTimeout)
@@ -627,11 +667,10 @@ func (s *searcher) addContext(ctx context.Context, hits []Hit, ctxLines int) {
 		maxStdout: maxBlobOutput,
 	})
 	if res.err != nil {
-		return
+		return out
 	}
-	blobs := make([][]string, len(paths))
 	rest := res.stdout
-	for i := range paths {
+	for _, p := range uniq {
 		nl := bytes.IndexByte(rest, '\n')
 		if nl < 0 {
 			break
@@ -652,29 +691,10 @@ func (s *searcher) addContext(ctx context.Context, hits []Hit, ctxLines int) {
 			rest = rest[1:]
 		}
 		if m[2] == "blob" {
-			blobs[i] = strings.Split(string(body), "\n")
+			out[p] = strings.Split(string(body), "\n")
 		}
 	}
-	for i := range hits {
-		j, ok := index[hits[i].Path]
-		if !ok || blobs[j] == nil {
-			continue
-		}
-		lines := blobs[j]
-		at := hits[i].Line - 1
-		if at < 0 || at >= len(lines) {
-			continue
-		}
-		from, to := max(0, at-ctxLines), min(len(lines), at+ctxLines+1)
-		var b strings.Builder
-		for k := from; k < to; k++ {
-			if k > from {
-				b.WriteByte('\n')
-			}
-			b.WriteString(cutLine(strings.TrimSuffix(lines[k], "\r")))
-		}
-		hits[i].Snippet, hits[i].StartLine = b.String(), from+1
-	}
+	return out
 }
 
 // cutLine trims a trailing CR and cuts a line at maxSnippetLine bytes on a

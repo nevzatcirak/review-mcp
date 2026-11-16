@@ -106,6 +106,10 @@ type PromptInput struct {
 	// and the fenced uses of the changed symbols, see repoctx.Render); empty
 	// omits it. It is repository text, and part of the scaffolding.
 	RepoContext string
+	// Impact is the rendered impact block (repoctx.ImpactHeader and the
+	// fenced chains, X-50); empty omits it. It is repository text placed
+	// in the room the diff leaves, after the repository context.
+	Impact string
 	// Focus is the normalized focus of a focused run (X-33,
 	// NormalizeFocus); empty reviews everything and renders as before. A
 	// known value adds its fixed sentence to the system prompt; a free text
@@ -168,6 +172,7 @@ func (in *PromptInput) vars() map[string]any {
 		"guidelines":          in.Guidelines,
 		"file_tree":           in.FileTree,
 		"repo_context":        in.RepoContext,
+		"impact":              in.Impact,
 		"focus":               focusInstruction(in.Focus, in.CustomFocus),
 		"focus_block":         focusBlock(in.Focus, in.CustomFocus),
 		"incremental":         incrementalInstruction(in.Incremental),

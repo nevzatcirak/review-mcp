@@ -57,6 +57,7 @@ type prReviewInput struct {
 	PerformanceConcerns string             `json:"performance_concerns,omitempty" jsonschema:"with findings, the overview's performance concerns text (No when there are none), for example from a focused performance run; at most 5000 characters"`
 	Incremental         *bool              `json:"incremental,omitempty" jsonschema:"review only the files whose content changed since the last review review-mcp published on this pull request; when nothing changed, the model is not called and nothing is posted. Without an earlier review the whole pull request is reviewed. Ignored with findings; replaces review.incremental for this call"`
 	Related             []string           `json:"related,omitempty" jsonschema:"Up to 4 related pull request or repository URLs on configured providers, for example the backend change a UI pull request depends on, or a repository (optionally a branch) that may use what the pull request changes. Read as context only; nothing is published to them. A repository needs context.repo.enabled (stdio only). Not with focus or findings."`
+	ImpactPaths         []string           `json:"impact_paths,omitempty" jsonschema:"Up to 10 repository-relative directory prefixes (each at most 200 bytes) to which the impact trace is limited for this call; they replace context.impact.paths and turn the trace on for this call. Needs context.repo.enabled (stdio only); ignored with a note when it is off. Not with findings."`
 	IssueContext        []issueContextItem `json:"issue_context,omitempty" jsonschema:"The issue or ticket this pull request implements, for example fetched from a tracker MCP server. Used to check that the change does what the issue asks. 1 to 3 issues; when given, no issue is looked up on the provider. Ignored with focus or findings"`
 }
 
@@ -209,6 +210,7 @@ func registerPRReview(s *mcp.Server, deps Deps) {
 			Focus: in.Focus, Findings: suppliedFindings(in.Findings),
 			SecurityConcerns: in.SecurityConcerns, PerformanceConcerns: in.PerformanceConcerns,
 			Incremental: in.Incremental, IssueContext: issueContext(in.IssueContext), Related: in.Related,
+			ImpactPaths: in.ImpactPaths,
 		})
 		wait := 0
 		if err == nil && deps.background() {

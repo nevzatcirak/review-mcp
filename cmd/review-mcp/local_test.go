@@ -216,6 +216,8 @@ func TestLocalCLIUsageErrors(t *testing.T) {
 		{"max findings", []string{"review", "--max-findings", "21"}, ""},
 		{"empty path", []string{"review", "--path", ""}, "local review: --path is empty"},
 		{"publish", []string{"review", "--publish"}, ""},
+		{"impact", []string{"review", "--impact", "yes"}, "local review: --impact must be on or off"},
+		{"impact paths", []string{"review", "--impact-paths", "/abs"}, "local review: --impact-paths: " + review.ErrImpactPathsInvalid.Message},
 		{"issue file", []string{"review", "--issue-context-file", filepath.Join(t.TempDir(), "missing.json")},
 			"local review: --issue-context-file: the file cannot be read"},
 	} {

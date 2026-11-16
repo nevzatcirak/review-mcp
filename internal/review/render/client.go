@@ -163,6 +163,12 @@ func writeClientIssues(b *strings.Builder, issues []review.KeyIssue, none string
 			// result has no field for it, so the client view says it too.
 			b.WriteString(textUnverified)
 		}
+		if i.Caller {
+			// A finding in a caller the impact trace found (X-50): outside
+			// the diff, with a head-commit link or, in local work, the path
+			// and line alone.
+			b.WriteString(textInCaller)
+		}
 		b.WriteString("\n")
 		if c := strings.TrimSpace(i.IssueContent); c != "" {
 			b.WriteString("\n" + indentLines(proseText(c), indent) + "\n")

@@ -40,8 +40,8 @@ const (
 	// widelyUsedFactor: a name whose search returns more than this many
 	// times MaxCallersPerNode hits is widely used (§0 item 5).
 	widelyUsedFactor = 3
-	// impactUseLines is the number of lines kept around a use.
-	impactUseLines = 2
+	// ImpactUseLines is the number of lines kept around a use (UseText).
+	ImpactUseLines = 2
 	// maxBodySeeds caps the seeds taken from body-only hunks.
 	maxBodySeeds = DefaultMaxSymbols
 )
@@ -78,6 +78,11 @@ type ImpactQuery struct {
 	// (head side). A hit inside a range is dropped: the diff shows it. A hit
 	// outside every range is kept with InPR set and followed.
 	Hunks map[string][]LineRange
+	// Exclude are paths left out of the trace altogether, as Query.Exclude
+	// leaves them out of the symbol search: the files of a local review
+	// with uncommitted changes, whose lines at HEAD's commit are not the
+	// diff's. No body-only seed is taken from them either.
+	Exclude []string
 	// Filter is the filter of the search, as in Query.
 	Filter *filter.Filter
 	// Scope limits where hits are taken from and marks entry points.
@@ -166,7 +171,8 @@ type ImpactResult struct {
 	// DepthReached is the largest hop of a node.
 	DepthReached int
 	// NotFollowed is the sum of NotFollowedBy: per reason, the nodes marked
-	// with it, plus for NotFollowedOutOfScope the hits dropped by the scope
+	// with it (for NotFollowedWidelyUsed the names, not the uses they keep),
+	// plus for NotFollowedOutOfScope the hits dropped by the scope
 	// and for NotFollowedBudget the hits dropped once MaxLinks was reached.
 	NotFollowed   int
 	NotFollowedBy map[string]int
@@ -319,7 +325,7 @@ func (r *Runner) Trace(ctx context.Context, c Checkout, q ImpactQuery) (ImpactRe
 	}
 	total, cancel := context.WithTimeout(ctx, grepTotalTimeout)
 	defer cancel()
-	s := &searcher{g: g, sha: sha, q: Query{Hunks: q.Hunks, Filter: q.Filter}, exclude: map[string]bool{}}
+	s := &searcher{g: g, sha: sha, q: Query{Hunks: q.Hunks, Filter: q.Filter, Exclude: q.Exclude}, exclude: toSet(q.Exclude)}
 	missing, err := s.missingFiles(total)
 	if err != nil {
 		return res, err
@@ -402,7 +408,7 @@ func (t *tracer) addSeeds(ctx context.Context, seeds []Symbol) {
 	var body []seed
 	files := make([]string, 0, len(t.q.BodyLines))
 	for p := range t.q.BodyLines {
-		if p != "" && !IsTestPath(p) && (t.q.Filter == nil || t.q.Filter.Include(p)) {
+		if p != "" && !IsTestPath(p) && !t.s.exclude[p] && (t.q.Filter == nil || t.q.Filter.Include(p)) {
 			files = append(files, p)
 		}
 	}
@@ -557,7 +563,7 @@ func (t *tracer) expand(ctx context.Context, idx, hop int, raw []rawHit) []int {
 			continue
 		}
 		t.visited[key] = true
-		use, _ := around(lines, h.line, impactUseLines)
+		use, _ := around(lines, h.line, ImpactUseLines)
 		if use == "" {
 			use = h.text
 		}
@@ -636,7 +642,11 @@ func (t *tracer) count() {
 	r.Links = t.links
 	for _, n := range t.nodes {
 		r.DepthReached = max(r.DepthReached, n.Hop)
-		if n.NotFollowed != "" {
+		// A widely used name counts once: the uses it keeps carry the mark
+		// too, but they are not names that were searched (review of WP-20a,
+		// DQ-3).
+		wideChild := n.NotFollowed == NotFollowedWidelyUsed && n.Parent >= 0 && t.nodes[n.Parent].NotFollowed == NotFollowedWidelyUsed
+		if n.NotFollowed != "" && !wideChild {
 			r.NotFollowedBy[n.NotFollowed]++
 		}
 		if n.Hop > 0 && n.Entry {

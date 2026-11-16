@@ -169,6 +169,9 @@ func coverage(b *strings.Builder, heading string, c *llmrun.Coverage, verb strin
 	if line := RepoToolsLine(c.RepoContext.Tools); line != "" {
 		b.WriteString("- " + line + "\n")
 	}
+	if line := ImpactLine(c.Impact); line != "" {
+		b.WriteString("- " + line + "\n")
+	}
 
 	var groups []coverageGroup
 	if len(c.Clipped) > 0 {
@@ -224,6 +227,52 @@ func RepoContextLine(r llmrun.RepoContext) string {
 		return TextRepoContext + ": skipped: " + mdutil.Literal(r.Reason)
 	}
 	return ""
+}
+
+// TextImpact starts the impact line of the coverage section.
+const TextImpact = "Impact"
+
+// ImpactLine is the impact line of the coverage section (X-50, v2.10 spec
+// V-18 §2.5): "Impact: 6 symbols traced, 23 links to depth 2 (3 not
+// followed: widely used); found by name matching." It is empty when the
+// trace is off (and for nil), so a result without it renders as before. It
+// names no symbol or path.
+func ImpactLine(im *llmrun.Impact) string {
+	if im == nil {
+		return ""
+	}
+	switch im.Status {
+	case llmrun.ImpactOn:
+	case llmrun.ImpactNoSymbols:
+		return TextImpact + ": no changed symbol to trace."
+	case llmrun.ImpactFailed:
+		return TextImpact + ": the trace could not run."
+	case llmrun.ImpactRepoContextOff:
+		return TextImpact + ": not traced, repository context is off."
+	default:
+		return ""
+	}
+	line := TextImpact + ": " + count(im.Seeds, "symbol", "symbols") + " traced, " +
+		count(im.Links, "link", "links") + " to depth " + strconv.Itoa(im.DepthReached)
+	nf := im.NotFollowed
+	var reasons []string
+	total := 0
+	for _, r := range []struct {
+		n    int
+		text string
+	}{{nf.WidelyUsed, "widely used"}, {nf.Budget, "budget"}, {nf.OutOfScope, "out of scope"}, {nf.Test, "tests"}} {
+		if r.n > 0 {
+			total += r.n
+			reasons = append(reasons, r.text)
+		}
+	}
+	if total > 0 {
+		line += " (" + strconv.Itoa(total) + " not followed: " + strings.Join(reasons, ", ") + ")"
+	}
+	if im.Truncated {
+		line += ", cut by the time limit"
+	}
+	return line + "; found by name matching."
 }
 
 // RepoToolsLine is the "Repository tools" line of the coverage section

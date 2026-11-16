@@ -45,6 +45,15 @@ hunks it shows (widened by diff.extra_lines_before/after), ends its first
 line with "(in a changed file, outside the diff)" (WP-22, X-22 amendment);
 the intro sentence says that such entries show code the diff does not show.
 
+Intentional deviation (X-50, v2.10 spec V-18 §2.4): upstream has no impact
+trace. When the trace is on and found chains of uses of the changed
+symbols, the pipeline supplies .impact (the fixed sentence of
+repoctx.ImpactHeader and one tree per seed inside an adaptive code fence,
+budgeted by context.impact.max_tokens and placed in the room the diff
+leaves). It follows the repository context and precedes the focus block;
+without one nothing is rendered, so the prompt is byte-identical to the one
+without the feature.
+
 Intentional deviation (X-31): upstream has no CI results. When review.ci_status
 is on and the head commit has checks, the pipeline supplies one block (.ci,
 already rendered: the fixed header of CIHeader and the failing and pending
@@ -150,6 +159,10 @@ PR Description:
 {{- if .repo_context }}
 
 {{ .repo_context }}
+{{- end }}
+{{- if .impact }}
+
+{{ .impact }}
 {{- end }}
 {{- if .focus_block }}
 

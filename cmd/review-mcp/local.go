@@ -32,6 +32,7 @@ const localUsageText = `usage:
                           [--focus NAME] [--max-findings N] [--output-language L]
                           [--issue-context-file PATH] [--json] [--timeout D]
                           [--fail-on security|any|issue-not-compliant]
+                          [--impact on|off] [--impact-paths P1,P2]
 
 local review reviews the work of a git repository on this machine that is
 not pushed yet: the commits after the merge base with the base, plus the
@@ -54,6 +55,10 @@ The command never asks a question on the terminal.
 --output-language L       the output_language argument, for example en-US
 --issue-context-file PATH a JSON file holding the issue_context argument
                           (1 to 3 issues)
+--impact on|off           override context.impact.enabled for this run (the
+                          impact trace; it needs context.repo.enabled)
+--impact-paths P1,P2      the impact_paths argument: directory prefixes
+                          that limit the impact trace for this run
 --json                    print the structured result instead of markdown
 --timeout D               bound the whole run (a Go duration, default 30m,
                           at least 1m)
@@ -90,6 +95,8 @@ type localOptions struct {
 	asJSON  bool
 	timeout time.Duration
 	args    tools.LocalReviewArgs
+	// impact is --impact: on, off or "" (the configuration decides).
+	impact string
 }
 
 // runLocal implements "review-mcp local ...". A usage error exits 2 before
@@ -113,6 +120,7 @@ func runLocal(args []string, stdout, stderr io.Writer, load configLoader, getwd 
 		_, _ = fmt.Fprintln(stderr, localOffLine)
 		return 1
 	}
+	applyImpactFlag(cfg, opts.impact)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	return localExecute(ctx, opts, cfg, logger, stdout, stderr)
@@ -142,6 +150,8 @@ func parseLocal(args []string, stderr io.Writer, getwd func() (string, error)) (
 	maxFindings := fs.Int("max-findings", 0, "the max_findings argument, 1 to 20")
 	outputLanguage := fs.String("output-language", "", "the output_language argument")
 	issueFile := fs.String("issue-context-file", "", "a JSON file holding the issue_context argument")
+	fs.StringVar(&o.impact, "impact", "", "`on` or `off`: override context.impact.enabled for this run (the impact trace; needs repository context)")
+	impactPaths := fs.String("impact-paths", "", "comma-separated `prefixes`: the impact_paths argument")
 	fs.BoolVar(&o.asJSON, "json", false, "print the structured result instead of markdown")
 	fs.DurationVar(&o.timeout, "timeout", ciDefaultTimeout, "bound the whole run")
 	fs.StringVar(&o.failOn, "fail-on", "", "exit 3 when the review meets this `level`: security, any or issue-not-compliant")
@@ -165,6 +175,13 @@ func parseLocal(args []string, stderr io.Writer, getwd func() (string, error)) (
 	if flagSet(fs, "path") && *path == "" {
 		return nil, usageErrorf("%s: --path is empty", name)
 	}
+	if o.impact != "" && o.impact != "on" && o.impact != "off" {
+		return nil, usageErrorf("%s: --impact must be on or off", name)
+	}
+	paths, err := impactPathsFlag(*impactPaths, flagSet(fs, "impact-paths"))
+	if err != nil {
+		return nil, usageErrorf("%s: --impact-paths: %s", name, tools.UserMessage(err))
+	}
 	var issues []issuectx.Input
 	if flagSet(fs, "issue-context-file") {
 		var err error
@@ -173,7 +190,7 @@ func parseLocal(args []string, stderr io.Writer, getwd func() (string, error)) (
 		}
 	}
 	a := tools.LocalReviewArgs{Base: *base, Focus: *focus, OutputLanguage: *outputLanguage, IssueContext: issues,
-		IncludeUncommitted: uncommitted, IncludeUntracked: untracked}
+		IncludeUncommitted: uncommitted, IncludeUntracked: untracked, ImpactPaths: paths}
 	if flagSet(fs, "max-findings") {
 		a.MaxFindings = maxFindings
 	}

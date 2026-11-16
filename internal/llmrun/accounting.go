@@ -114,6 +114,102 @@ type Coverage struct {
 	// (X-51); set only by a run whose focus uses the style (docs, or a
 	// custom focus with docs_style), omitted otherwise.
 	DocsStyle *DocsStyle `json:"docs_style,omitempty"`
+
+	// Impact accounts for the impact trace (X-50). pr_review and
+	// local_review always set it; the other tools leave it nil, and it is
+	// omitted.
+	Impact *Impact `json:"impact,omitempty"`
+}
+
+// Values of Impact.Status (X-50, v2.10 spec V-18 §2.5).
+const (
+	// ImpactOn: the trace ran (also when it found nothing).
+	ImpactOn = "on"
+	// ImpactOff: the trace is not enabled for the run.
+	ImpactOff = "off"
+	// ImpactNoSymbols: enabled, but the diff gave no symbol to trace.
+	ImpactNoSymbols = "skipped_no_symbols"
+	// ImpactFailed: enabled, but the head could not be read or no name
+	// could be searched.
+	ImpactFailed = "failed"
+	// ImpactRepoContextOff: enabled (or impact_paths given), but
+	// context.repo.enabled is off.
+	ImpactRepoContextOff = "repo_context_off"
+)
+
+// Values of Impact.ScopeSource.
+const (
+	ImpactScopeTool       = "tool"
+	ImpactScopeRepoConfig = "repo_config"
+	ImpactScopeOperator   = "operator"
+	ImpactScopeNone       = "none"
+)
+
+// Impact is coverage.impact (X-50, v2.10 spec V-18 §2.5 and §6 item 5).
+type Impact struct {
+	Status string `json:"status"`
+	// Seeds are the symbols traced from; Links the nodes found, seeds not
+	// counted; DepthReached the largest hop.
+	Seeds        int `json:"seeds"`
+	Links        int `json:"links"`
+	DepthReached int `json:"depth_reached"`
+	// NotFollowed counts what the trace or the prompt did not follow.
+	NotFollowed ImpactNotFollowed `json:"not_followed"`
+	// EntryPointsReached counts the nodes in entry-point files.
+	EntryPointsReached int `json:"entry_points_reached"`
+	// ScopeSource says where the scope came from: tool, repo_config,
+	// operator or none.
+	ScopeSource string `json:"scope_source"`
+	// Truncated is true when the time limit stopped the trace or a search
+	// was cut at its output cap.
+	Truncated bool `json:"truncated"`
+	// MaxTokens is the effective context.impact.max_tokens.
+	MaxTokens int `json:"max_tokens"`
+}
+
+// ImpactNotFollowed is coverage.impact.not_followed.
+type ImpactNotFollowed struct {
+	// WidelyUsed counts names whose uses were too many to follow.
+	WidelyUsed int `json:"widely_used"`
+	// Depth counts nodes at the last hop and uses outside any definition.
+	Depth int `json:"depth"`
+	// Budget counts what context.impact.max_links, the time limit or
+	// context.impact.max_tokens left out of the trace or the prompt.
+	Budget int `json:"budget"`
+	// OutOfScope counts uses dropped by the scope.
+	OutOfScope int `json:"out_of_scope"`
+	// Test counts callers in test files, kept but not followed.
+	Test int `json:"test"`
+}
+
+// ImpactSchema is the JSON schema of coverage.impact (X-50) under the
+// description desc.
+func ImpactSchema(desc string) map[string]any {
+	integer := func(d string) map[string]any { return map[string]any{"type": "integer", "description": d} }
+	return map[string]any{"type": "object", "description": desc, "additionalProperties": false,
+		"required": []any{"status", "seeds", "links", "depth_reached", "not_followed", "entry_points_reached",
+			"scope_source", "truncated", "max_tokens"},
+		"properties": map[string]any{
+			"status": map[string]any{"type": "string", "enum": []any{ImpactOn, ImpactOff, ImpactNoSymbols, ImpactFailed, ImpactRepoContextOff},
+				"description": "on: the trace ran; off: not enabled (context.impact.enabled false and no impact_paths); skipped_no_symbols: the diff gave nothing to trace; failed: the head could not be read or searched; repo_context_off: enabled or impact_paths given, but context.repo.enabled is off"},
+			"seeds":         integer("changed symbols traced from, body-only changes included"),
+			"links":         integer("callers and implementations found, seeds not counted"),
+			"depth_reached": integer("the largest number of hops reached"),
+			"not_followed": map[string]any{"type": "object", "description": "what was not followed, by reason", "additionalProperties": false,
+				"required": []any{"widely_used", "depth", "budget", "out_of_scope", "test"},
+				"properties": map[string]any{
+					"widely_used":  integer("names with too many uses to follow (more than 3 x context.impact.max_callers_per_node)"),
+					"depth":        integer("nodes at the last hop, and uses outside any definition"),
+					"budget":       integer("nodes or uses left out by context.impact.max_links, the time limit or context.impact.max_tokens"),
+					"out_of_scope": integer("uses outside the scope's paths or inside its exclude_paths"),
+					"test":         integer("callers in test files, shown but not followed"),
+				}},
+			"entry_points_reached": integer("nodes in files matching context.impact.entry_points"),
+			"scope_source": map[string]any{"type": "string", "enum": []any{ImpactScopeTool, ImpactScopeRepoConfig, ImpactScopeOperator, ImpactScopeNone},
+				"description": "where the scope came from: the impact_paths argument, the repository config, the operator configuration, or none"},
+			"truncated":  map[string]any{"type": "boolean", "description": "true when the time limit stopped the trace or a search reached its output cap"},
+			"max_tokens": integer("the effective token budget of the impact block (context.impact.max_tokens)"),
+		}}
 }
 
 // DocsStyle is coverage.docs_style (X-51, v2.9 spec V-19 §2.2): the source
@@ -202,6 +298,10 @@ type RepoContext struct {
 	// prompt carries, outside the lines it shows (WP-22); 0 when none.
 	ReferencesInChangedFiles int `json:"references_in_changed_files"`
 	Files                    int `json:"files"`
+	// MaxTokens is the effective context.repo.max_tokens of a pr_review or
+	// local_review (v2.10 spec V-18 §6 item 5); 0, and omitted, in the
+	// other tools.
+	MaxTokens int `json:"max_tokens,omitempty"`
 	// Tools is what the run did with the repository tools (X-43): always
 	// set by pr_review; nil, and omitted, in the tools that do not use
 	// them.

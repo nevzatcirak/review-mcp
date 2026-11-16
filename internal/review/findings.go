@@ -206,7 +206,7 @@ func (pl *Plan) publishSupplied(ctx context.Context, deps Deps, args Args) *Resu
 	res.Coverage.Guidelines, res.Coverage.FileTree = nil, nil
 	if deps.Config.Context.Repo.Enabled {
 		res.Coverage.RepoContext = llmrun.RepoContext{Status: llmrun.RepoSkipped, Reason: repoctx.ReasonClientFindings,
-			Tools: res.Coverage.RepoContext.Tools}
+			MaxTokens: res.Coverage.RepoContext.MaxTokens, Tools: res.Coverage.RepoContext.Tools}
 	}
 	res.Metadata.RequestTokens = 0
 	// No model was shown the discussion in this run.
@@ -242,6 +242,14 @@ func (pl *Plan) attachSnippets(rev *Review) {
 		// prefix, a basename) could pick the wrong file and show unrelated
 		// lines; an unmatched file keeps the finding without a snippet or link.
 		fp := files[ki.RelevantFile]
+		if pl.isCaller(ki, files) {
+			// A finding in a caller of the change (X-50): no diff to take a
+			// snippet from; the link points at the line at the head
+			// commit ("" for a provider without file-line URLs).
+			ki.Caller = true
+			ki.Link = p.FileLineURL(ref, pr, ki.RelevantFile, ki.StartLine)
+			continue
+		}
 		ki.Snippet, ki.SnippetNote = snippet(fp, ki.StartLine, ki.EndLine)
 		if ki.SnippetNote == SnippetNoteUnverified {
 			unverified++

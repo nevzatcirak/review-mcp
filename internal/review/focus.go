@@ -394,8 +394,12 @@ func (a Args) Validated(cfg *config.Config) (Args, error) {
 		return a, ErrFocusPublish
 	case a.Findings != nil && !a.Publish:
 		return a, ErrFindingsWithoutPublish
+	case a.Findings != nil && a.ImpactPaths != nil:
+		return a, ErrImpactPathsWithFindings
 	case a.Findings == nil && (a.SecurityConcerns != "" || a.PerformanceConcerns != ""):
 		return a, ErrConcernsWithoutFindings
+	case ValidateImpactPaths(a.ImpactPaths) != nil:
+		return a, ErrImpactPathsInvalid
 	case utf8.RuneCountInString(a.SecurityConcerns) > MaxSuppliedContentRunes ||
 		utf8.RuneCountInString(a.PerformanceConcerns) > MaxSuppliedContentRunes:
 		return a, ErrConcernsTooLong

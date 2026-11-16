@@ -163,6 +163,11 @@ type Args struct {
 	// pull requests and repositories (also declared ones), the CI status
 	// and the existing discussion (localRun). issue_context is accepted.
 	Local bool
+	// ImpactPaths is the impact_paths argument (X-50, v2.10 spec V-18
+	// §2.3): repository-relative directory prefixes that replace
+	// context.impact.paths for this call and turn the trace on when
+	// repository context is on. nil means not given.
+	ImpactPaths []string
 }
 
 // uncommittedLister is the local source's list of the files whose
@@ -290,6 +295,9 @@ type Plan struct {
 	// style is coverage.docs_style: set only by a run whose focus uses the
 	// documentation style (X-51).
 	style *llmrun.DocsStyle
+	// impact is the impact trace of the run (X-50); nil when it is not
+	// wanted.
+	impact *impactRun
 	// cfg is the run's merged configuration and args the call's arguments
 	// with the configuration's defaults filled in (X-40); repo is the
 	// repository config the merge came from.
@@ -452,7 +460,14 @@ func run(ctx context.Context, deps Deps, args Args) (*Result, error) {
 // diff fetch, description, token measurement, diff preparation and the
 // request-size guard. It sends nothing to the model and needs no
 // Deps.LLM.
-func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
+func Prepare(ctx context.Context, deps Deps, args Args) (plan *Plan, err error) {
+	defer func() {
+		// Every pr_review result carries coverage.impact and the effective
+		// context.repo.max_tokens (X-50), whatever path the run took.
+		if plan != nil && plan.Result != nil {
+			plan.stampCoverage(&plan.Result.Coverage)
+		}
+	}()
 	// Step 1: config.
 	if deps.Config == nil || deps.ConfigErr != nil {
 		return nil, ErrConfigInvalid
@@ -703,6 +718,10 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 		log.Debug("review: changes since the last review", "mode", inc.Mode, "strategy", r.Strategy,
 			"changed", changed, "unchanged", unchanged)
 	}
+	// The impact trace (X-50) runs once, on the files the review covers
+	// (the reduced diff of an incremental run), after the head is fetched;
+	// its block is placed below, after the repository context.
+	pl.impact = pl.planImpact(ctx, cfg, args, operator, rcs, d.Files, supplied)
 	reserve := 0
 	if fetched && maxChunks > 1 && len(rcs.Symbols(d.Files)) > 0 {
 		reserve = rcs.Settings().MaxTokens
@@ -1094,6 +1113,15 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			"reason", res.Coverage.RepoContext.Reason, "symbols", o.Symbols, "references", o.References,
 			"files", o.Files, "omitted", o.Omitted)
 	}
+	// The impact block (X-50) goes last into the room the diff leaves.
+	if pin, pfit, err := pl.placeImpact(pl.impact, in, prep.Text, fit, budget, nil); err != nil {
+		return nil, err
+	} else if pin.Impact != in.Impact {
+		in, fit = pin, pfit
+		if res.Metadata.PromptTokens, err = ScaffoldingTokens(in, factor); err != nil {
+			return nil, err
+		}
+	}
 	if err := pl.planTools(ctx, deps, in, fit, prep.Text, budget, rcs, res.Coverage.RepoContext); err != nil {
 		return nil, err
 	}
@@ -1118,6 +1146,7 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 	res.Notes = append(res.Notes, llmrun.PartialNotes(&res.Coverage, budget)...)
 	res.Notes = append(res.Notes, repoNotes...)
+	res.Notes = append(res.Notes, pl.impactNotes()...)
 	pl.reportRelated(res)
 	return pl, nil
 }

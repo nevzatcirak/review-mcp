@@ -172,6 +172,21 @@ func TestTraceWidelyUsed(t *testing.T) {
 			t.Fatalf("child not marked:%s", describe(res))
 		}
 	}
+	if res.NotFollowedBy[NotFollowedWidelyUsed] != 1 {
+		t.Fatalf("widely used names counted %d, want 1 (the name, not its uses)", res.NotFollowedBy[NotFollowedWidelyUsed])
+	}
+}
+
+func TestTraceExclude(t *testing.T) {
+	r, c := localCheckout(t, javaChain, "")
+	files := []provider.FilePatch{{Path: servicePath, Type: provider.ChangeModified, Patch: bodyOnlyPatch}}
+	res := trace(t, r, c, ImpactQuery{Seeds: []Symbol{seed("save", repoPath, RankSignature)}, BodyLines: BodyHunkLines(files),
+		Exclude: []string{servicePath}, Depth: 2})
+	for _, n := range res.Nodes {
+		if n.Path == servicePath && n.Hop > 0 || n.Name == "persist" {
+			t.Fatalf("an excluded file was traced:%s", describe(res))
+		}
+	}
 }
 
 // TestTraceExcludePaths is canary (e): ExcludePaths drops a hit.

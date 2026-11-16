@@ -118,7 +118,7 @@ func ResultSchema() map[string]any {
 			"untracked_files":     integer("the number of untracked files included"),
 			"untracked_held_back": integer("the number of untracked files left out because their names suggest secrets"),
 		}, "repo_path", "base_ref", "base_sha", "merge_base", "head_sha", "uncommitted", "untracked_files", "untracked_held_back"),
-		"focus": str("the focus of a focused run (X-33): security, architecture, performance, ux, tests, docs, the name " +
+		"focus": str("the focus of a focused run (X-33): security, architecture, performance, ux, tests, docs, impact, the name " +
 			"of a custom focus (X-51) or the cleaned free text; absent without one"),
 		"focus_source": map[string]any{"type": "string", "enum": stringsAny(FocusSourceValues),
 			"description": "where the focus comes from (X-51): builtin (one of the six values), operator or repo_config " +

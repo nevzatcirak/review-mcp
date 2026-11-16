@@ -17,8 +17,8 @@ const docsSentence = "This review covers documentation only: statements in chang
 const styleMarker = "FORMAL-IMPERSONAL-STYLE-MARKER"
 
 func TestDocsFocusValue(t *testing.T) {
-	if !slices.Equal(FocusValues, []string{"security", "architecture", "performance", "ux", "tests", "docs"}) {
-		t.Errorf("FocusValues = %q, want docs after tests", FocusValues)
+	if !slices.Equal(FocusValues, []string{"security", "architecture", "performance", "ux", "tests", "docs", "impact"}) {
+		t.Errorf("FocusValues = %q, want docs after tests and impact after docs (V-18 §2.6)", FocusValues)
 	}
 	for _, in := range []string{"docs", "Docs", " DOCS "} {
 		if got, err := NormalizeFocus(in, nil); err != nil || got.Name != FocusDocs || got.Kind != FocusKindBuiltin {

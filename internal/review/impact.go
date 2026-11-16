@@ -209,18 +209,21 @@ func (pl *Plan) impactCoverage() *llmrun.Impact {
 	return c
 }
 
-// impactNotes are the notes of the run's trace.
+// impactNotes are the notes of the run's trace, and of a run with focus
+// impact whose trace did not run (§2.6: it proceeds with repository
+// context only).
 func (pl *Plan) impactNotes() []string {
 	ir := pl.impact
-	if ir == nil {
-		return nil
-	}
 	var notes []string
-	if ir.status == llmrun.ImpactRepoContextOff && pl.args.ImpactPaths != nil {
+	if ir != nil && ir.status == llmrun.ImpactRepoContextOff && pl.args.ImpactPaths != nil {
 		notes = append(notes, NoteImpactRepoContextOff)
 	}
-	if ir.status == llmrun.ImpactOn && (ir.res.Truncated || ir.res.NotFollowedBy[gitctx.NotFollowedBudget] > 0 || ir.cut) {
+	if ir != nil && ir.status == llmrun.ImpactOn && (ir.res.Truncated || ir.res.NotFollowedBy[gitctx.NotFollowedBudget] > 0 || ir.cut) {
 		notes = append(notes, NoteImpactTruncated)
+	}
+	if pl.args.Focus == FocusImpact && (ir == nil || ir.status == llmrun.ImpactOff || ir.status == llmrun.ImpactRepoContextOff ||
+		ir.status == llmrun.ImpactFailed) {
+		notes = append(notes, NoteImpactFocusWithoutTrace)
 	}
 	return notes
 }

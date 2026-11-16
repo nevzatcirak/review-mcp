@@ -89,7 +89,7 @@ func registerMultiPerspectivePrompt(s *mcp.Server, deps Deps) {
 		Arguments: []*mcp.PromptArgument{
 			{Name: "pr_url", Description: "URL of the pull request; exactly one of pr_url and repo_path"},
 			{Name: "focuses", Description: "comma-separated focus areas out of security, architecture, " +
-				"performance, ux, tests and docs, or the name of a custom focus defined for the repository (default: " +
+				"performance, ux, tests, docs and impact, or the name of a custom focus defined for the repository (default: " +
 				"review.focuses of the repository config, else " + defaultFocuses + ", with docs added when the pull " +
 				"request changes a documentation file; then the focuses of the repository's focus rules that match a " +
 				"changed file, at most 8 in all)"},

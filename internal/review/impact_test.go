@@ -359,3 +359,52 @@ func (r fixedResolver) Resolve(string) (provider.PRRef, provider.Provider, error
 }
 
 func localResolverFor(p provider.Provider) Resolver { return fixedResolver{p} }
+
+// impactSentence is the focus sentence of V-18 §2.6, verbatim.
+const impactSentence = "This review covers the effects of this change on the rest of the code only: callers and implementations that the change breaks or silently alters (arguments, return values, null or error cases, units, ordering, side effects, overridden behaviour), shown in the impact chains and the repository context. Report a problem only when this pull request causes it, and name the affected file and line."
+
+func TestImpactFocus(t *testing.T) {
+	if got, err := NormalizeFocus(" Impact ", nil); err != nil || got.Name != FocusImpact || got.Kind != FocusKindBuiltin {
+		t.Fatalf("NormalizeFocus = %+v, %v", got, err)
+	}
+	h, _ := impactHarness(goodAnswer)
+	res := runImpact(t, h, Args{Focus: FocusImpact})
+	sys, user := h.llm.calls[0].system, h.llm.calls[0].user
+	if !strings.Contains(sys, impactSentence) || !strings.Contains(user, repoctx.ImpactHeader) {
+		t.Fatalf("focus impact: sentence %v, block %v", strings.Contains(sys, impactSentence), strings.Contains(user, repoctx.ImpactHeader))
+	}
+	if slices.Contains(res.Notes, NoteImpactFocusWithoutTrace) || res.Focus != FocusImpact {
+		t.Fatalf("notes %v, focus %q", res.Notes, res.Focus)
+	}
+	// Without the trace: repository context only, and the note.
+	for name, set := range map[string]func(h *harness){
+		"trace off":        func(h *harness) { h.deps.Config.Context.Impact.Enabled = false },
+		"repo context off": func(h *harness) { h.deps.Config.Context.Repo.Enabled = false },
+	} {
+		h, ft := impactHarness(goodAnswer)
+		set(h)
+		res := runImpact(t, h, Args{Focus: FocusImpact})
+		if len(ft.queries) != 0 || !slices.Contains(res.Notes, NoteImpactFocusWithoutTrace) ||
+			!strings.Contains(h.llm.calls[0].system, impactSentence) {
+			t.Fatalf("%s: queries %d, notes %v", name, len(ft.queries), res.Notes)
+		}
+	}
+	// Another focus with the trace off has no such note.
+	h2, _ := impactHarness(goodAnswer)
+	h2.deps.Config.Context.Impact.Enabled = false
+	if res := runImpact(t, h2, Args{Focus: FocusTests}); slices.Contains(res.Notes, NoteImpactFocusWithoutTrace) {
+		t.Fatal("the note on another focus")
+	}
+}
+
+func TestImpactFocusFromRepoConfig(t *testing.T) {
+	h, _ := impactHarness(goodAnswer)
+	h.prov.revs["base0"][".review-mcp.toml"] = "[review]\nfocuses = [\"impact\", \"tests\"]\n" +
+		"[[review.focus_rules]]\npaths = [\"pkg/**\"]\nfocus = \"impact\"\n"
+	res := runImpact(t, h, Args{})
+	for _, k := range []string{"review.focuses", "review.focus_rules"} {
+		if !slices.Contains(res.RepoConfig.Applied, k) {
+			t.Fatalf("%s not applied: %+v", k, res.RepoConfig)
+		}
+	}
+}

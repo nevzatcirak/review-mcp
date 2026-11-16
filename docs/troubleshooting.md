@@ -1051,7 +1051,7 @@ not cause this.
 | `REVIEW_MCP_GITLAB_TOKEN is required because gitlab.base_url is set` | Stdio: set the token. |
 | `REVIEW_MCP_GITLAB_TOKEN is set but gitlab is not enabled (gitlab.base_url is unset); the token is ignored` | Warning: set `REVIEW_MCP_GITLAB_BASE_URL`, or unset the token. |
 | `TLS verification disabled for gitlab` | Warning: `REVIEW_MCP_GITLAB_INSECURE_SKIP_VERIFY` is set. Prefer `REVIEW_MCP_GITLAB_CA_CERT`. |
-| `no provider enabled: set gitea.base_url (...), bitbucket_server.base_url (...), github.base_url (...) and/or gitlab.base_url (...)` | No provider has a base URL; set at least one. |
+| `no provider enabled: set gitea.base_url (...), bitbucket_server.base_url (...), github.base_url (...) and/or gitlab.base_url (...)` | No provider has a base URL; set at least one. Since 2.10.0-rc.2 (planned) it no longer appears in stdio and for `review-mcp local review` while `local.enabled` is `true`: that is a [local-only configuration](local-review.md#local-reviews-only). It still appears in `review-mcp serve`, in `review-mcp ci`, in every `review-mcp diag` command that reads a pull request (`pr`, `comment`, `comments`, `reply`, `diff`, `review`, `ask`, `describe`, `improve`, `list`; not `cache`) and when `local.enabled` is `false`. |
 
 A GitLab URL that reports `url_not_configured` although it looks right: check
 that `gitlab.base_url` is the web address (`https://gitlab.com` for the public

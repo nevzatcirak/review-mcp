@@ -157,8 +157,9 @@ too: review-mcp does not force it.
 
 ### Review
 
-The markdown starts with `## PR Review` and a line naming the pull request,
-then the enabled fields in a fixed order:
+The markdown starts with `## PR Review` and a line naming the pull request
+(a [local review](local-review.md) starts with `## Local review` and
+`Local work: <subject>` instead), then the enabled fields in a fixed order:
 
 - **Estimated effort to review** (`review.require_effort_estimate`): `N/5`.
 - **Relevant tests** (`review.require_tests`): "PR contains tests" or "No

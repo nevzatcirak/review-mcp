@@ -1,0 +1,16 @@
+id = "typescript-cascade-unit"
+language = "typescript"
+category = "cascade"
+tags = ["body-only"]
+title = "Compute shipping quotes in whole cents"
+description = "quoteShipping adds up the tariff in integer cents, so a quote no longer carries floating-point remainders such as 5.6000000000000005. The checkout summary converts the quote to euros for display."
+
+[[issue]]
+id = "invoice-adds-cents-to-euros"
+severity = "high"
+kind = "cascade"
+path = "src/invoices/invoiceBuilder.ts"
+lines = [14, 18]
+hops = 2
+must_mention = ["buildInvoice", "invoiceBuilder", "cents", "shippingQuoteFor"]
+summary = "buildInvoice gets the quote through shippingQuoteFor and adds shipping.amount, now in cents, to item amounts in euros; an invoice shows shipping of 525.00 EUR instead of 5.25 EUR and a total that is off by the same."

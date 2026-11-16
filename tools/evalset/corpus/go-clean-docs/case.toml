@@ -1,0 +1,5 @@
+id = "go-clean-docs"
+language = "go"
+category = "clean"
+title = "Document the API and restocking"
+description = "The README explains how to run the server and links two new pages: docs/api.md for GET /items/{sku} and docs/restocking.md for booking deliveries. Documentation only."

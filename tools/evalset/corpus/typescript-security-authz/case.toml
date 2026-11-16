@@ -1,0 +1,14 @@
+id = "typescript-security-authz"
+language = "typescript"
+category = "security"
+title = "Add a printable receipt for each order"
+description = "GET /orders/:id/receipt returns a plain-text receipt of the order (lines, total, billing name and address) that the account page offers for printing."
+
+[[issue]]
+id = "receipt-without-ownership-check"
+severity = "high"
+kind = "local"
+path = "src/orders/routes.ts"
+lines = [23, 29]
+must_mention = ["/orders/:id/receipt", "customerId", "req.user", "ownership"]
+summary = "The receipt route loads any order by id and never checks order.customerId against req.user.id, unlike GET /orders/:id; any signed-in customer can read other customers' receipts, including billing name and address, by guessing order ids."

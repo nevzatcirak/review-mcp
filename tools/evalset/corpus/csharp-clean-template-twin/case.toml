@@ -1,0 +1,6 @@
+id = "csharp-clean-template-twin"
+language = "csharp"
+category = "clean"
+twin_of = "csharp-cascade-template"
+title = "Start every export with a header row"
+description = "ExportJob.Run writes a header row with the column names before the rows. The CSV and TSV exports share the separator through the new Separator property. The partner ledger keeps its format: the marker line and no header row."

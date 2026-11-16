@@ -1,0 +1,6 @@
+id = "go-clean-wrapped-error-twin"
+language = "go"
+category = "clean"
+twin_of = "go-cascade-wrapped-error"
+title = "Name the SKU in item-not-found errors"
+description = "Store.Get wraps ErrNotFound with the SKU, so a log line says which item was missing. Callers test for it with errors.Is: the API handler and the restocking of deliveries."

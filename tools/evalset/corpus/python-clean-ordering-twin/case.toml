@@ -1,0 +1,6 @@
+id = "python-clean-ordering-twin"
+language = "python"
+category = "clean"
+twin_of = "python-cascade-ordering"
+title = "List open invoices newest first"
+description = "InvoiceRepository.open_invoices returns the newest invoice first, the order in which the account page shows them, so the account page no longer reverses the list. The dunning run picks the oldest overdue invoice by its due date."

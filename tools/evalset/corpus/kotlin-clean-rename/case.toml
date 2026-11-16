@@ -1,0 +1,5 @@
+id = "kotlin-clean-rename"
+language = "kotlin"
+category = "clean"
+title = "Rename StatusEmails to CustomerNotifier"
+description = "Status notifications will not stay email-only, so StatusEmails becomes CustomerNotifier and statusChanged becomes notifyStatus. Every caller is renamed with it; nothing else changes."

@@ -1,0 +1,14 @@
+id = "typescript-local-copy-paste"
+language = "typescript"
+category = "local"
+title = "Let customers enter a separate billing address"
+description = "The checkout form gets an optional billing address. When the customer unchecks 'billing address same as shipping', the billing fields are validated and sent as the order's billing address."
+
+[[issue]]
+id = "billing-city-from-shipping"
+severity = "medium"
+kind = "local"
+path = "src/forms/checkoutForm.ts"
+lines = [44, 48]
+must_mention = ["billingAddress", "shippingCity", "billingCity", "city"]
+summary = "billingAddress fills city from form.shippingCity instead of form.billingCity, so a separate billing address always carries the shipping city and the billing city the customer entered is dropped."

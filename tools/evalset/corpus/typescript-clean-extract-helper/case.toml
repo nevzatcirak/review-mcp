@@ -1,0 +1,5 @@
+id = "typescript-clean-extract-helper"
+language = "typescript"
+category = "clean"
+title = "Share one helper for adding up amounts"
+description = "The parcel weight, the summary's item total and the invoice total all added up a list with reduce. They now call sumBy from src/util/sum.ts, which does the same addition in the same order."

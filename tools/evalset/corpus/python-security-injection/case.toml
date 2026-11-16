@@ -1,0 +1,15 @@
+id = "python-security-injection"
+language = "python"
+category = "security"
+title = "Let the order history be sorted"
+description = "GET /account/orders takes a sort query parameter, passed on to list_orders, so the account page can show the most expensive orders first. Without it the order stays newest first."
+
+[[issue]]
+id = "sort-into-order-by"
+severity = "high"
+kind = "cascade"
+path = "orders/repository.py"
+lines = [29, 33]
+hops = 1
+must_mention = ["list_orders", "order_by", "sort", "SQL injection"]
+summary = "get_orders passes the sort query parameter unchecked to list_orders, which formats order_by into the SQL with an f-string; a request can inject SQL (for example a CASE subquery that reads other customers' rows) through ORDER BY. The handler needs an allow-list of sort keys."

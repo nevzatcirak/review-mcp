@@ -1,0 +1,14 @@
+id = "java-concurrency-lock"
+language = "java"
+category = "concurrency"
+title = "Hold cashback until it becomes spendable"
+description = "A wallet keeps pending credits with the date they become spendable. An hourly job moves the due ones into the balance and the history."
+
+[[issue]]
+id = "release-without-lock"
+severity = "high"
+kind = "local"
+path = "src/main/java/com/example/wallet/Wallet.java"
+lines = [73, 87]
+must_mention = ["releaseDue", "lock", "balance", "pending"]
+summary = "releaseDue updates balance, history and pending without taking the wallet's lock, while checkout threads call deposit and withdraw and addPending runs concurrently; balance updates can be lost (or a withdrawal can pass on a stale balance) and the pending iterator can throw ConcurrentModificationException."

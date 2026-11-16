@@ -1,0 +1,14 @@
+{
+  "name": "@example/account-api",
+  "version": "4.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "5.4.5",
+    "vitest": "1.6.0"
+  }
+}

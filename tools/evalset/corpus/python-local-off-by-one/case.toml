@@ -1,0 +1,23 @@
+id = "python-local-off-by-one"
+language = "python"
+category = "local"
+title = "Add a command that rebuilds the search index"
+description = "python -m search.cli reindex clears the index and loads the whole catalog into it in batches (500 products by default, --batch-size to change it)."
+
+[[issue]]
+id = "last-product-skipped"
+severity = "medium"
+kind = "local"
+path = "search/reindex.py"
+lines = [18, 20]
+must_mention = ["reindex_all", "range", "len(ids) - 1", "batch"]
+summary = "reindex_all iterates range(0, len(ids) - 1, batch_size); when the catalog has one product, or one more than a multiple of the batch size, the last batch never starts and that product is missing from the rebuilt index."
+
+[[issue]]
+id = "index-empty-during-rebuild"
+severity = "low"
+kind = "local"
+path = "search/reindex.py"
+lines = [17, 20]
+must_mention = ["reindex_all", "clear", "empty", "search"]
+summary = "reindex_all clears the live index before loading the catalog, so searches made during a rebuild find nothing or only part of the catalog."

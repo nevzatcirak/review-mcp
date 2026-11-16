@@ -1,0 +1,4 @@
+# The corpus is pushed byte for byte to a test forge (evalset setup), and the
+# ground truth names line numbers: keep every file exactly as committed on
+# every OS (no CRLF conversion on Windows checkouts).
+* -text

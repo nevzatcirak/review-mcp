@@ -1,0 +1,6 @@
+id = "csharp-clean-null-twin"
+language = "csharp"
+category = "clean"
+twin_of = "csharp-cascade-null"
+title = "Look up customers without exceptions"
+description = "CustomerDirectory.FindByEmail returns null for an unknown email instead of throwing, so the nightly import no longer pays for an exception per new customer. The import and the billing contact resolver check for null."

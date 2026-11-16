@@ -33,7 +33,8 @@ jobs:
   # mode tests (V-4) run here too: paths, the event file, the step summary.
   # So do the local review tests (V-20): the fsmonitor, textconv, filter and
   # hook traps through Git for Windows' shell, CRLF work trees, paths, and
-  # the local review command.
+  # the local review command. So does the evaluation-set tool (V-9): the
+  # corpus self-check, setup -local and the scorer.
   gitctx-windows:
     runs-on: windows-latest
     steps:
@@ -51,6 +52,8 @@ jobs:
         run: go test -count=1 -run 'TestCI' ./cmd/review-mcp
       - name: Test the local review command
         run: go test -count=1 -v -run 'TestLocalCLI' ./cmd/review-mcp
+      - name: Test the evaluation-set tool
+        run: go test -count=1 ./tools/evalset/...
 
   # The packages that run real git, with older gits (WP-15 §2 item 7): the
   # supported minimum 2.31.0, 2.43.0 (no GIT_NO_LAZY_FETCH, dies after a

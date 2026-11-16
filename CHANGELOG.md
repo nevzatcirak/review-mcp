@@ -5,11 +5,11 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.10.0-rc.2]
 
-Planned 2.10.0-rc.2 (the release commit renames this heading). Local-only
-use and local wording (WP-24d); settles the two design questions of the
-2.10.0-rc.1 review. Nothing in the tools or the configuration of 2.10.0-rc.1
+The second 2.10 release candidate (the npm dist-tag `next`; `latest` stays on
+2.9.0). Local-only use and local wording (WP-24d); settles the two design
+questions of the 2.10.0-rc.1 review. Nothing in the tools or the configuration of 2.10.0-rc.1
 is removed or renamed.
 
 ### Added

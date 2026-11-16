@@ -28,6 +28,9 @@ keys (see the WP-21a report):
 `go.mod` keeps the Go sources of the cases out of the review-mcp module.
 `.gitattributes` keeps every file byte for byte on every OS.
 
+`go test ./tools/evalset/...` checks the corpus (§1.3). It reads the files
+only and runs nothing in them.
+
 ## Cases
 
 The hops column counts the calls between the changed code and the defect,

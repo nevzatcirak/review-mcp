@@ -34,7 +34,10 @@ only and runs nothing in them.
 ## Cases
 
 The hops column counts the calls between the changed code and the defect,
-for cases whose defect is in an unchanged file.
+for cases whose defect is in an unchanged file. Where the dependency is
+data rather than a call, it counts as 1 hop: an enum value compared
+elsewhere, a type assertion on an optional interface, a template method
+calling an override, an unchanged repository function given new input.
 
 | id | category | language | hops | files (base/changed) | tests |
 |---|---|---|---|---|---|

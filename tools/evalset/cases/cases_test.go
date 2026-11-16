@@ -109,7 +109,7 @@ func TestCheckCaseRejects(t *testing.T) {
 		}, "the overlay holds changed files only"},
 		{"base too small", func(c *Case, _ map[string]*Case) { delete(c.Base, "src/c.go") }, "base has 4 files"},
 		{"real host", func(c *Case, _ map[string]*Case) {
-			c.Base["README.md"] = []byte("# sample\nSee https://git.corp-internal.net/sample.\n")
+			c.Base["README.md"] = []byte("# sample\nSee https://git.unlisted-host.net/sample.\n")
 		}, "use placeholder hosts only"},
 		{"marker comment", func(c *Case, _ map[string]*Case) {
 			c.Head["src/a.go"] = []byte("package src\n\n// TODO: callers\nfunc A() int { return 2 }\n")

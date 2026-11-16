@@ -710,7 +710,9 @@ with a note, and `server_info` shows `refused` for that model.
 [`local_review`](local-review.md) and `review-mcp local review` review work in
 a git repository on this machine before it is pushed (stdio and the command
 line only). It needs no token: the repository is read with git, read-only,
-and only the LLM endpoint is contacted. Two operator keys control it; a
+and only the LLM endpoint is contacted. It also needs no git provider: to
+review local work only, set just the `REVIEW_MCP_LLM_*` variables
+([Local reviews only](local-review.md#local-reviews-only)). Two operator keys control it; a
 repository config cannot set them.
 
 | Key | Environment variable | Default | Meaning |

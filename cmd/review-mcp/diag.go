@@ -122,7 +122,7 @@ func runDiag(args []string, stdout, stderr io.Writer, load configLoader) int {
 			diagUsage(stderr)
 			return 2
 		}
-		cfg, logger, code := diagSetup(load, stderr)
+		cfg, logger, code := diagSetupPR(load, stderr)
 		if cfg == nil {
 			return code
 		}
@@ -143,7 +143,7 @@ func runDiag(args []string, stdout, stderr io.Writer, load configLoader) int {
 			diagUsage(stderr)
 			return 2
 		}
-		cfg, logger, code := diagSetup(load, stderr)
+		cfg, logger, code := diagSetupPR(load, stderr)
 		if cfg == nil {
 			return code
 		}
@@ -159,7 +159,7 @@ func runDiag(args []string, stdout, stderr io.Writer, load configLoader) int {
 		if !ok {
 			return 2
 		}
-		cfg, logger, code := diagSetup(load, stderr)
+		cfg, logger, code := diagSetupPR(load, stderr)
 		if cfg == nil {
 			return code
 		}
@@ -186,7 +186,7 @@ func runDiag(args []string, stdout, stderr io.Writer, load configLoader) int {
 			diagUsage(stderr)
 			return 2
 		}
-		cfg, logger, code := diagSetup(load, stderr)
+		cfg, logger, code := diagSetupPR(load, stderr)
 		if cfg == nil {
 			return code
 		}
@@ -268,6 +268,26 @@ func diagSetup(load configLoader, stderr io.Writer) (*config.Config, *slog.Logge
 		for _, w := range rep.Warnings {
 			logger.Warn(logging.RedactText(w))
 		}
+	}
+	return cfg, logger, 0
+}
+
+// diagSetupPR is diagSetup for the entry points that read a pull request: a
+// local-only configuration (no provider) is refused with the "no provider
+// enabled" sentence and exit code 1, before any resolver is built.
+func diagSetupPR(load configLoader, stderr io.Writer) (*config.Config, *slog.Logger, int) {
+	cfg, logger, code := diagSetup(load, stderr)
+	if cfg == nil {
+		return nil, nil, code
+	}
+	if err := config.RequireProvider(cfg); err != nil {
+		var ve *config.ValidationError
+		if errors.As(err, &ve) {
+			for _, p := range ve.Problems {
+				_, _ = fmt.Fprintln(stderr, logging.RedactText(p))
+			}
+		}
+		return nil, nil, 1
 	}
 	return cfg, logger, 0
 }

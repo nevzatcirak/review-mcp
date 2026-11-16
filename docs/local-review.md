@@ -11,8 +11,56 @@ You can use it in two ways:
   `multi_perspective_review` prompt with `repo_path`;
 - from a git `pre-push` hook or a terminal, with `review-mcp local review`.
 
-Local review is new in 2.10.0-rc.1 (planned; npm `next`). It is available in
-stdio mode and on the command line only; see [Not in serve mode](#not-in-serve-mode).
+Local review is new in 2.10.0-rc.1 (npm `next`). It is available in stdio
+mode and on the command line only; see [Not in serve mode](#not-in-serve-mode).
+Since 2.10.0-rc.2 (planned) it needs no git provider at all; see
+[Local reviews only](#local-reviews-only).
+
+## Local reviews only
+
+If you only want to review local work before you push it, set the LLM and
+nothing else. No git provider, no token and no host other than your LLM
+endpoint:
+
+```sh
+export REVIEW_MCP_LLM_BASE_URL=https://llm.example.com/v1
+export REVIEW_MCP_LLM_MODEL=example-model
+export REVIEW_MCP_LLM_API_KEY=...   # your own key
+```
+
+That configuration is valid when `local.enabled` is `true` (the default) and
+review-mcp runs over stdio or as `review-mcp local review`. Nothing marks it
+as a setting: review-mcp calls a configuration with no provider enabled
+*local-only*, and `server_info` reports `local_only: true`.
+
+In a local-only stdio start:
+
+- the tools are exactly `server_info`, `local_review` and (as always in stdio
+  mode) `job_result`; the `pr_*` tools are not registered. Add a provider
+  later and they appear;
+- the server instructions are this paragraph, and nothing else:
+
+  ```text
+  review-mcp reviews local git work before it is pushed. No git provider is configured, so only local_review is available: it reads the commits after the merge base with the base and the uncommitted changes, and publishes nothing. Pull request tools appear once a provider (gitea, bitbucket_server, github or gitlab) is configured.
+  ```
+
+- the startup log shows `providers=[]` and then one more line:
+
+  ```text
+  no git provider is configured; only local reviews are available
+  ```
+
+- the `multi_perspective_review` prompt accepts `repo_path`; with `pr_url` it
+  is refused (`InvalidParams`) with:
+
+  ```text
+  no git provider is configured; only local reviews are available (pass repo_path)
+  ```
+
+The configuration is **still invalid**, with the sentence `no provider
+enabled: ...` ([Troubleshooting](troubleshooting.md#configuration-sentences-gitlab)),
+when `local.enabled` is `false`, in `review-mcp serve`, in `review-mcp ci` and
+in every `review-mcp diag` command that reads a pull request.
 
 ## What is reviewed
 
@@ -242,6 +290,10 @@ review-mcp local review [--path DIR] [--base REF] [--uncommitted=true|false] [--
 | `--fail-on LEVEL` | Exit 3 when the review meets `LEVEL`, with the rules of [CI mode](ci.md#exit-codes): `security` (the security concerns are set, or a finding of a `--focus security` run), `any` (at least one finding) or `issue-not-compliant` (the issue verdict is `not_compliant`). |
 
 The review goes to standard output as markdown (or JSON with `--json`). The
+markdown heads with `## Local review` and the line `Local work: <subject>`
+(`Local work` when there is no subject), not with the pull request heading;
+the progress stages are `reading` and `reading repository context`, not
+`fetching`. The
 logs and one final line go to standard error. The command never reads
 standard input and never asks a question on the terminal, so it is safe in a
 hook.
@@ -249,9 +301,9 @@ hook.
 Settings come only from the `REVIEW_MCP_*` variables and the configuration
 file named by `REVIEW_MCP_CONFIG`, as for the MCP server
 ([Setup guide](setup.md)). The LLM API key is a secret and is read from
-`REVIEW_MCP_LLM_API_KEY` only. In 2.10.0-rc.1 the configuration is checked as
-for the server, so it needs one provider section even though a local review
-never contacts a provider.
+`REVIEW_MCP_LLM_API_KEY` only. A local review needs no provider section (see
+[Local reviews only](#local-reviews-only)); before 2.10.0-rc.2 it needed one,
+which was never contacted.
 
 ### Exit codes
 

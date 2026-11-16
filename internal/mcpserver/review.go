@@ -144,7 +144,7 @@ func progressFunc(ctx context.Context, req *mcp.CallToolRequest, log *slog.Logge
 		// when it happens (X-22). A review in N parts reports one "calling
 		// model (part I of N)" stage per part instead of one "calling
 		// model" (X-19), so its total is the other stages plus N.
-		if stage == review.StageRepoContext {
+		if stage == review.StageRepoContext || stage == review.StageRepoContextLocal {
 			extra = 1
 		}
 		// The reduce call of a description in parts (Y-6) is one more

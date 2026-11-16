@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -140,5 +141,20 @@ func TestDiffMaxTokensOmitsFilesIntoCoverage(t *testing.T) {
 	}
 	if pl.Result.Metadata.DiffTokens > capTokens+500 {
 		t.Errorf("diff tokens %d exceed the cap %d plus the soft-to-hard gap", pl.Result.Metadata.DiffTokens, capTokens)
+	}
+}
+
+// TestLocalRunReportsReadingStage: [canary] (r). A local run reports
+// "reading" first and never "fetching"; the other stages are unchanged.
+// Mutation: report StageFetching -> fails.
+func TestLocalRunReportsReadingStage(t *testing.T) {
+	h := newHarness(goodAnswer)
+	var stages []string
+	h.deps.Progress = func(s string) { stages = append(stages, s) }
+	if _, err := Run(context.Background(), h.deps, Args{PRURL: testPRURL, Local: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(stages, "|"); got != "reading|preparing diff|calling model" || slices.Contains(stages, StageFetching) {
+		t.Errorf("stages = %q", got)
 	}
 }

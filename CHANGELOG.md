@@ -5,6 +5,34 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Planned 2.10.0-rc.2 (the release commit renames this heading). Local-only
+use and local wording (WP-24d); settles the two design questions of the
+2.10.0-rc.1 review. Nothing in the tools or the configuration of 2.10.0-rc.1
+is removed or renamed.
+
+### Added
+
+- A local-only configuration: with no git provider and `local.enabled` true,
+  the configuration is valid in stdio mode and for `review-mcp local review`
+  (set only `REVIEW_MCP_LLM_*`). The stdio server then registers
+  `server_info`, `local_review` and `job_result`, with fixed instructions;
+  `multi_perspective_review` accepts `repo_path` only. `server_info` gains
+  `local_only`. The startup log adds
+  `no git provider is configured; only local reviews are available`.
+
+### Changed
+
+- A local review says what it does: the progress stages are `reading` and
+  `reading repository context` (not `fetching`), and the client markdown heads
+  with `## Local review` and `Local work: <subject>` (not `## PR Review` and
+  `Pull request: local`). Pull request output is unchanged byte for byte.
+- `review-mcp ci` and the `diag` commands that read a pull request refuse a
+  configuration with no provider with the same "no provider enabled"
+  sentence, as before. `review-mcp serve` and `local.enabled = false` are
+  unchanged.
+
 ## [2.10.0-rc.1]
 
 The first 2.10 release candidate (the npm dist-tag `next`; `latest` stays on

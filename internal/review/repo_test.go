@@ -660,3 +660,17 @@ func TestRepoContextProgressStage(t *testing.T) {
 		t.Errorf("disabled, yet stages = %q", got)
 	}
 }
+
+// TestLocalRepoContextProgressStage: a local run names the repository
+// context stage "reading repository context" (WP-24d).
+func TestLocalRepoContextProgressStage(t *testing.T) {
+	h, _ := repoHarness(defFiles(), nil)
+	var stages []string
+	h.deps.Progress = func(s string) { stages = append(stages, s) }
+	if _, err := Run(context.Background(), h.deps, Args{PRURL: testPRURL, Local: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(stages, "|"), "reading|reading repository context|preparing diff|calling model"; got != want {
+		t.Errorf("stages = %q, want %q", got, want)
+	}
+}

@@ -110,6 +110,9 @@ func registerMultiPerspectivePrompt(s *mcp.Server, deps Deps) {
 		if repoPath != "" {
 			return localPrompt(ctx, deps, req, repoPath, strings.TrimSpace(args["base"]), args["focuses"], queued)
 		}
+		if localOnly(deps) {
+			return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: localOnlyPromptMessage}
+		}
 		if strings.TrimSpace(args["base"]) != "" {
 			return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: promptBaseMessage}
 		}

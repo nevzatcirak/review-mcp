@@ -36,7 +36,7 @@ func runDiagImprove(rest []string, stdout, stderr io.Writer, load configLoader) 
 		diagUsage(stderr)
 		return 2
 	}
-	cfg, logger, code := diagSetup(load, stderr)
+	cfg, logger, code := diagSetupPR(load, stderr)
 	if cfg == nil {
 		return code
 	}

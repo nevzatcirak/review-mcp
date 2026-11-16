@@ -1,0 +1,6 @@
+id = "typescript-clean-unit-twin"
+language = "typescript"
+category = "clean"
+twin_of = "typescript-cascade-unit"
+title = "Compute shipping quotes in whole cents"
+description = "quoteShipping adds up the tariff in integer cents, so a quote no longer carries floating-point remainders such as 5.6000000000000005. The checkout summary and the invoice convert the quote to euros."

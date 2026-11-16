@@ -1,0 +1,6 @@
+id = "kotlin-clean-enum-twin"
+language = "kotlin"
+category = "clean"
+twin_of = "kotlin-cascade-enum"
+title = "Ship orders in several parcels"
+description = "An order whose lines are not all shipped yet becomes PARTIALLY_SHIPPED and stays there until the remaining parcels follow. The order keeps the quantities shipped so far, customers get a status email for the partial shipment, and cancelling a partially shipped order refunds the lines not shipped plus the returned ones."

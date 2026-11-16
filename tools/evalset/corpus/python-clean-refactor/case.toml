@@ -1,0 +1,5 @@
+id = "python-clean-refactor"
+language = "python"
+category = "clean"
+title = "Tidy up the dunning run and the account page"
+description = "reminder_level, next_reminder and run are written as expressions instead of loops with early returns, and the account page builds its rows in one helper. The reminders and rows produced are the same."

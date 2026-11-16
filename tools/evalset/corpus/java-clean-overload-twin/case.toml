@@ -1,0 +1,6 @@
+id = "java-clean-overload-twin"
+language = "java"
+category = "clean"
+twin_of = "java-cascade-overload"
+title = "Store the currency of each order"
+description = "OrderRepository.save takes the currency of the order, and the checkout request carries it. Subscription renewals pass the subscription's currency. The one-argument save stays for existing callers and stores EUR, the shop's original currency."

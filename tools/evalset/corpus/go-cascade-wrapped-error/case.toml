@@ -1,0 +1,16 @@
+id = "go-cascade-wrapped-error"
+language = "go"
+category = "cascade"
+tags = ["body-only"]
+title = "Name the SKU in item-not-found errors"
+description = "Store.Get wraps ErrNotFound with the SKU, so a log line says which item was missing. Callers test for it with errors.Is, as the API handler now does."
+
+[[issue]]
+id = "restock-compares-sentinel"
+severity = "high"
+kind = "cascade"
+path = "restock/restock.go"
+lines = [31, 36]
+hops = 2
+must_mention = ["Receive", "restock", "errors.Is", "ErrNotFound"]
+summary = "Restocker.Receive gets the error from Store.Get through current and compares it with == store.ErrNotFound; the wrapped error no longer matches, so a delivery with a new SKU fails instead of creating the item."

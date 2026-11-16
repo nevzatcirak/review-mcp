@@ -1,0 +1,7 @@
+id = "go-clean-large-twin"
+language = "go"
+category = "clean"
+tags = ["large"]
+twin_of = "go-large-cascade"
+title = "Log through platform/obs; report unknown SKUs as an error"
+description = "Two steps. First, a platform module with the obs package: both services log JSON lines with the service name for the log collector, and every log.Printf and log.Fatal call moves to obs. Second, ItemStore.Get returns ErrUnknownSKU (wrapped with the SKU) instead of a nil item, and so does AdjustStock; the callers that treated a nil item as unknown now check errors.Is(err, store.ErrUnknownSKU): the item API, reservations, the feed import, catalog availability, checkout pricing, adding to the cart and the guest cart merge at sign-in."

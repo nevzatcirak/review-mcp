@@ -1,0 +1,16 @@
+id = "go-large-cascade"
+language = "go"
+category = "cascade"
+tags = ["large"]
+title = "Log through platform/obs; report unknown SKUs as an error"
+description = "Two steps. First, a platform module with the obs package: both services log JSON lines with the service name for the log collector, and every log.Printf and log.Fatal call moves to obs. Second, ItemStore.Get returns ErrUnknownSKU (wrapped with the SKU) instead of a nil item, and so does AdjustStock; the callers that treated a nil item as unknown now check errors.Is(err, store.ErrUnknownSKU): the item API, reservations, the feed import, catalog availability, checkout pricing and adding to the cart."
+
+[[issue]]
+id = "merge-fails-on-unknown-sku"
+severity = "high"
+kind = "cascade"
+path = "orders/cart/merge.go"
+lines = [81, 88]
+hops = 2
+must_mention = ["MergeGuestCart", "merge.go", "ErrUnknownSKU", "Lookup", "sign-in"]
+summary = "MergeGuestCart reaches ItemStore.Get through Catalog.Lookup, whose unchanged body passes the error on; it still expects a nil entry for a product that left the catalog and drops that line, but now gets ErrUnknownSKU and returns it, so Login fails for every guest whose old cart holds a discontinued product (the feed import deletes discontinued items)."

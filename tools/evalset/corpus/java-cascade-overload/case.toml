@@ -1,0 +1,15 @@
+id = "java-cascade-overload"
+language = "java"
+category = "cascade"
+title = "Store the currency of each order"
+description = "OrderRepository.save takes the currency of the order, and the checkout request carries it. The one-argument save stays for existing callers and stores EUR, the shop's original currency."
+
+[[issue]]
+id = "renewal-default-currency"
+severity = "high"
+kind = "cascade"
+path = "src/main/java/com/example/shop/subscription/RenewalJob.java"
+lines = [34, 39]
+hops = 2
+must_mention = ["RenewalJob", "renew", "currency", "EUR"]
+summary = "RenewalJob.renew still calls OrderService.place(cart), whose unchanged body uses the one-argument save; every renewal is stored as EUR, even for a subscription billed in USD or GBP."

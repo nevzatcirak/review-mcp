@@ -1,0 +1,14 @@
+id = "go-local-error-check"
+language = "go"
+category = "local"
+title = "Import a CSV price list at start-up"
+description = "pricing -import FILE loads a price list exported by the merchandising team (sku,price,currency) into the store before serving."
+
+[[issue]]
+id = "price-parse-error-ignored"
+severity = "high"
+kind = "local"
+path = "importer/csv.go"
+lines = [36, 41]
+must_mention = ["ParseCSV", "parseCents", "err", "0 cents"]
+summary = "ParseCSV assigns the error of parseCents but never checks it; a malformed price such as 12,50 or 1.999 imports as 0 cents and the item is sold for free."

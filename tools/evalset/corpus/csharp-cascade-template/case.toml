@@ -1,0 +1,15 @@
+id = "csharp-cascade-template"
+language = "csharp"
+category = "cascade"
+title = "Start every export with a header row"
+description = "ExportJob.Run writes a header row with the column names before the rows. The CSV and TSV exports share the separator through the new Separator property."
+
+[[issue]]
+id = "ledger-header-row"
+severity = "high"
+kind = "cascade"
+path = "src/Reports/Partners/ErpLedgerExport.cs"
+lines = [28, 32]
+hops = 1
+must_mention = ["ErpLedgerExport", "WriteHeader", "header", "LEDGER;V2"]
+summary = "ErpLedgerExport.Run writes its format marker and then calls base.Run, which now writes the generic header row; the partner's importer reads every line after the marker as a booking, so the ledger file gets a bogus first booking (or is rejected). ErpLedgerExport needs to override WriteHeader."

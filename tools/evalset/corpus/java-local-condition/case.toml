@@ -1,0 +1,14 @@
+id = "java-local-condition"
+language = "java"
+category = "local"
+title = "Free domestic shipping for members from 50 EUR"
+description = "Members ship free within the country when their basket is worth 50 EUR or more. International shipping keeps its standard fee."
+
+[[issue]]
+id = "or-instead-of-and"
+severity = "high"
+kind = "local"
+path = "src/main/java/com/example/checkout/pricing/ShippingFeeCalculator.java"
+lines = [13, 16]
+must_mention = ["feeFor", "member", "||", "&&"]
+summary = "feeFor waives the fee when the customer is a member OR the subtotal reaches 50 EUR; it must be AND, so members ship free at any amount and every guest basket of 50 EUR or more ships free too."

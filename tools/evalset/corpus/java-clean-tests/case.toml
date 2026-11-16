@@ -1,0 +1,5 @@
+id = "java-clean-tests"
+language = "java"
+category = "clean"
+title = "Cover the repository, the cart and the checkout endpoint with tests"
+description = "Adds unit tests for InMemoryOrderRepository, Cart and CartLine, and CheckoutController. Tests only; no production code changes."

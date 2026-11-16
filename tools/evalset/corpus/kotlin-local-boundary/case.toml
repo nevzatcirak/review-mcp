@@ -1,0 +1,14 @@
+id = "kotlin-local-boundary"
+language = "kotlin"
+category = "local"
+title = "Bulk rate for wholesale lines of 100 units or more"
+description = "A quote line of 100 units or more is priced at 90% of the list price, rounded to cents."
+
+[[issue]]
+id = "bulk-threshold-exclusive"
+severity = "medium"
+kind = "local"
+path = "src/main/kotlin/com/example/wholesale/pricing/BulkDiscount.kt"
+lines = [11, 12]
+must_mention = ["unitPriceFor", "BULK_QUANTITY", ">=", "100 units"]
+summary = "unitPriceFor tests quantity > BULK_QUANTITY, so a line of exactly 100 units pays the list price although the bulk rate starts at 100 units; it must be >=."

@@ -1,0 +1,26 @@
+id = "csharp-cascade-null"
+language = "csharp"
+category = "cascade"
+tags = ["body-only"]
+title = "Look up customers without exceptions in the import"
+description = "CustomerDirectory.FindByEmail returns null for an unknown email instead of throwing, so the nightly import no longer pays for an exception per new customer. The import checks for null."
+
+[[issue]]
+id = "resolver-fallback-dead"
+severity = "high"
+kind = "cascade"
+path = "src/Billing/Invoicing/BillingContactResolver.cs"
+lines = [20, 28]
+hops = 1
+must_mention = ["BillingContactResolver", "Resolve", "null", "CustomerNotFoundException"]
+summary = "BillingContactResolver.Resolve relies on CustomerNotFoundException to fall back to the account owner; FindByEmail now returns null, so customer.Name throws a NullReferenceException and invoices for accounts with an unknown billing email fail."
+
+[[issue]]
+id = "interface-doc-stale"
+severity = "low"
+kind = "cascade"
+path = "src/Billing/Customers/ICustomerDirectory.cs"
+lines = [5, 7]
+hops = 1
+must_mention = ["ICustomerDirectory", "FindByEmail", "exception", "null"]
+summary = "The ICustomerDirectory.FindByEmail documentation still promises CustomerNotFoundException for an unknown email."

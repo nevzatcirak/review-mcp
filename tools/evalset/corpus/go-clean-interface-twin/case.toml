@@ -1,0 +1,6 @@
+id = "go-clean-interface-twin"
+language = "go"
+category = "clean"
+twin_of = "go-cascade-interface"
+title = "Report how many invoices a batch delivered"
+description = "The batch method of a delivery channel returns how many invoices it delivered, so the dispatcher can log a batch that failed part-way. BatchChannel.DeliverBatch becomes DeliverAll, and the email and EDI channels implement it."

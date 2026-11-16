@@ -1,0 +1,14 @@
+id = "go-concurrency-race"
+language = "go"
+category = "concurrency"
+title = "Cache exchange rates for a minute"
+description = "The converter keeps each currency pair's rate for a TTL (one minute in the server) instead of asking the rates provider on every request. A zero TTL keeps the old behaviour."
+
+[[issue]]
+id = "cache-map-race"
+severity = "high"
+kind = "local"
+path = "convert/convert.go"
+lines = [43, 60]
+must_mention = ["Converter", "cache", "mutex", "concurrent"]
+summary = "rate reads and writes c.cache (and creates it lazily) without a lock, while one Converter serves all HTTP requests concurrently; concurrent requests race on the map and Go aborts the server with \"concurrent map read and map write\"."

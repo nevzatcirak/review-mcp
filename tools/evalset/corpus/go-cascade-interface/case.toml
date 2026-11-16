@@ -1,0 +1,15 @@
+id = "go-cascade-interface"
+language = "go"
+category = "cascade"
+title = "Report how many invoices a batch delivered"
+description = "The batch method of a delivery channel returns how many invoices it delivered, so the dispatcher can log a batch that failed part-way. BatchChannel.DeliverBatch becomes DeliverAll, and the email channel implements it."
+
+[[issue]]
+id = "edi-batch-not-renamed"
+severity = "high"
+kind = "cascade"
+path = "partner/edi/channel.go"
+lines = [36, 42]
+hops = 1
+must_mention = ["edi", "DeliverBatch", "DeliverAll", "BatchChannel"]
+summary = "edi.Channel still implements DeliverBatch, so it no longer satisfies BatchChannel; the dispatcher falls back to Deliver, which the EDI channel refuses, and every partner delivery fails."

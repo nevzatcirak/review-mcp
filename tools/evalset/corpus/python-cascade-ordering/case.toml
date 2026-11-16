@@ -1,0 +1,16 @@
+id = "python-cascade-ordering"
+language = "python"
+category = "cascade"
+tags = ["body-only"]
+title = "List open invoices newest first"
+description = "InvoiceRepository.open_invoices returns the newest invoice first, the order in which the account page shows them, so the account page no longer reverses the list."
+
+[[issue]]
+id = "dunning-takes-newest"
+severity = "high"
+kind = "cascade"
+path = "billing/dunning.py"
+lines = [26, 32]
+hops = 2
+must_mention = ["next_reminder", "dunning", "oldest", "overdue[0]"]
+summary = "next_reminder takes overdue[0] from overdue_invoices, which keeps the repository order, as the oldest invoice; it is now the newest, so the reminder names the newest overdue invoice and its level is computed from the newest due date, under-escalating long-overdue customers."

@@ -1,0 +1,15 @@
+id = "kotlin-cascade-enum"
+language = "kotlin"
+category = "cascade"
+title = "Ship orders in several parcels"
+description = "An order whose lines are not all shipped yet becomes PARTIALLY_SHIPPED and stays there until the remaining parcels follow. The order keeps the quantities shipped so far, and customers get a status email for the partial shipment."
+
+[[issue]]
+id = "refund-ordinal-comparison"
+severity = "high"
+kind = "cascade"
+path = "src/main/kotlin/com/example/orders/refunds/RefundPolicy.kt"
+lines = [18, 20]
+hops = 1
+must_mention = ["RefundPolicy", "refundFor", "PARTIALLY_SHIPPED", "full refund"]
+summary = "RefundPolicy.refundFor refunds the whole order when status < SHIPPED; PARTIALLY_SHIPPED is declared before SHIPPED, so cancelling a partially shipped order refunds the parcels that already left as well."

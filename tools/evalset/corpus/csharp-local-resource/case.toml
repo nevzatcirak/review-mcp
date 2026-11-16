@@ -1,0 +1,14 @@
+id = "csharp-local-resource"
+language = "csharp"
+category = "local"
+title = "Keep a copy of every receipt for the back office"
+description = "The till appends each receipt to a text file per store and day, which the back office collects at closing time. The archive is optional; a till without one behaves as before."
+
+[[issue]]
+id = "writer-not-disposed"
+severity = "high"
+kind = "local"
+path = "src/Pos/Archive/ReceiptArchive.cs"
+lines = [25, 36]
+must_mention = ["ReceiptArchive", "Append", "StreamWriter", "Dispose", "using"]
+summary = "Append creates a StreamWriter and never disposes it; the file handle stays open until a garbage collection, so on Windows the next receipt of the day fails to open the same file (it is in use) and handles leak on every checkout."

@@ -7,9 +7,13 @@
 //
 //	go run ./tools/evalset setup -gitea-url URL -owner NAME [-prefix evalset-] -out DIR
 //	go run ./tools/evalset setup -local CLONES -out DIR
+//	go run ./tools/evalset run -bin ./review-mcp -prs DIR/prs.json [-variants off,on] [-repeat 1] [-mode gitea|local] -out DIR2
+//	go run ./tools/evalset score -runs DIR2 [-corpus tools/evalset/corpus] [-judge] -out DIR3
+//	go run ./tools/evalset agree -sample DIR3/sample.csv
 //
 // Secrets come from the environment only, never from flags:
-// EVALSET_GITEA_TOKEN (setup). It is never printed, logged or written under -out, and the review-mcp
+// EVALSET_GITEA_TOKEN (setup) and EVALSET_JUDGE_API_KEY (score -judge).
+// They are never printed, logged or written under -out, and the review-mcp
 // binary that evalset starts does not inherit any EVALSET_ variable.
 //
 // Every output goes under -out, which must be a new or empty directory and
@@ -40,6 +44,9 @@ import (
 // environment of the review-mcp binary.
 const (
 	envGiteaToken = "EVALSET_GITEA_TOKEN" //nolint:gosec // G101: the name of a variable, not a credential
+	envJudgeURL   = "EVALSET_JUDGE_BASE_URL"
+	envJudgeModel = "EVALSET_JUDGE_MODEL"
+	envJudgeKey   = "EVALSET_JUDGE_API_KEY" //nolint:gosec // G101: the name of a variable, not a credential
 	secretPrefix  = "EVALSET_"
 )
 
@@ -50,8 +57,12 @@ func main() {
 const usage = `usage:
   evalset setup -gitea-url URL -owner NAME [-prefix evalset-] [-corpus DIR] -out DIR
   evalset setup -local CLONES [-prefix evalset-] [-corpus DIR] -out DIR
+  evalset run -bin BINARY -prs DIR/prs.json [-variants off,on] [-repeat 1] [-mode gitea|local] -out DIR2
+  evalset score -runs DIR2 [-corpus DIR] [-judge] [-seed N] -out DIR3
+  evalset agree -sample DIR3/sample.csv
 
-The Gitea token is read from EVALSET_GITEA_TOKEN.
+The Gitea token is read from EVALSET_GITEA_TOKEN, the judge's settings from
+EVALSET_JUDGE_BASE_URL, EVALSET_JUDGE_MODEL and EVALSET_JUDGE_API_KEY.
 `
 
 // run is main with injectable output and environment.
@@ -63,6 +74,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, getenv fu
 	switch args[0] {
 	case "setup":
 		return cmdSetup(ctx, args[1:], stdout, stderr, getenv)
+	case "run":
+		return cmdRun(ctx, args[1:], stdout, stderr)
+	case "score":
+		return cmdScore(ctx, args[1:], stdout, stderr, getenv)
+	case "agree":
+		return cmdAgree(args[1:], stdout, stderr)
 	case "-h", "-help", "--help", "help":
 		_, _ = fmt.Fprint(stdout, usage)
 		return 0

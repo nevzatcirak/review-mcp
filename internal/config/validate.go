@@ -86,6 +86,7 @@ func (l *loader) validate() {
 	}
 	l.validateImprove()
 	l.validateContextRepo()
+	l.validateContextImpact()
 	l.validateRepoConfig()
 	l.validateFocusProfiles()
 	l.validateRelated()
@@ -357,6 +358,102 @@ func (l *loader) validateContextRepo() {
 	if cacheOK && repoOK && c.MaxRepoMB > c.MaxCacheMB {
 		l.problem("context.repo.max_repo_mb: %d must be at most context.repo.max_cache_mb (%d)", c.MaxRepoMB, c.MaxCacheMB)
 	}
+}
+
+// Bounds of context.impact.* (v2.10 spec V-18 §2.1).
+const (
+	MaxContextImpactDepth   = 3
+	MaxContextImpactCallers = 20
+	MaxContextImpactLinks   = 200
+	MinContextImpactTokens  = 500
+	MaxContextImpactTokens  = 20000
+	// MaxContextImpactList is the most items of paths, exclude_paths and
+	// entry_points.
+	MaxContextImpactList = 20
+	// MaxPathPrefixBytes bounds one path prefix, as the repository tools
+	// bound a path.
+	MaxPathPrefixBytes = 4096
+)
+
+// ServeImpactSentence is the fixed warning of context.impact.enabled in
+// serve mode: the keys are accepted and inert there, because the trace
+// runs on repository context, which serve mode does not offer.
+const ServeImpactSentence = "context.impact.enabled has no effect in serve mode: the impact trace needs repository context, which serve mode does not offer"
+
+// ImpactWithoutRepoSentence is the startup note of context.impact.enabled
+// without context.repo.enabled (not an error).
+const ImpactWithoutRepoSentence = "context.impact.enabled is set but context.repo.enabled is off, so no impact trace runs"
+
+// validateContextImpact checks the context.impact.* keys, whether or not
+// the trace is enabled. A list item is reported by its index, not its
+// value.
+func (l *loader) validateContextImpact() {
+	c := &l.cfg.Context.Impact
+	rng := func(key string, v, lo, hi int) {
+		if !l.bad[key] && (v < lo || v > hi) {
+			l.problem("%s: %d is out of range (%d-%d)", key, v, lo, hi)
+		}
+	}
+	rng("context.impact.depth", c.Depth, 1, MaxContextImpactDepth)
+	rng("context.impact.max_callers_per_node", c.MaxCallersPerNode, 1, MaxContextImpactCallers)
+	rng("context.impact.max_links", c.MaxLinks, 1, MaxContextImpactLinks)
+	rng("context.impact.max_tokens", c.MaxTokens, MinContextImpactTokens, MaxContextImpactTokens)
+	list := func(key string, items []string, problem func(string) string) {
+		if l.bad[key] {
+			return
+		}
+		if len(items) > MaxContextImpactList {
+			l.problem("%s: %d items, at most %d are allowed", key, len(items), MaxContextImpactList)
+		}
+		for i, it := range items {
+			if reason := problem(it); reason != "" {
+				l.problem("%s[%d]: %s", key, i, reason)
+			}
+		}
+	}
+	list("context.impact.paths", c.Paths, PathPrefixProblem)
+	list("context.impact.exclude_paths", c.ExcludePaths, PathPrefixProblem)
+	list("context.impact.entry_points", c.EntryPoints, GlobProblem)
+	switch {
+	case !c.Enabled:
+	case l.mode == ModeServe:
+		l.warn("%s", ServeImpactSentence)
+	case !l.cfg.Context.Repo.Enabled:
+		l.warn("%s", ImpactWithoutRepoSentence)
+	}
+}
+
+// PathPrefixProblem returns why p is not a valid repository-relative
+// directory prefix (context.impact.paths, impact_paths), or "": not empty,
+// at most MaxPathPrefixBytes, valid UTF-8 without control characters, no
+// leading "/", no "\", and no empty, ".", ".." or ".git" segment; one
+// trailing "/" is allowed. These are the rules of repocfg.ValidPathPrefix
+// (a test keeps the two in agreement).
+func PathPrefixProblem(p string) string {
+	q := strings.TrimSuffix(p, "/")
+	switch {
+	case q == "":
+		return "must not be empty or the root"
+	case len(q) > MaxPathPrefixBytes:
+		return fmt.Sprintf("longer than %d bytes", MaxPathPrefixBytes)
+	case !utf8.ValidString(q) || strings.ContainsFunc(q, unicode.IsControl):
+		return "must not contain control characters"
+	case strings.HasPrefix(q, "/"):
+		return "must be relative to the repository root (no leading \"/\")"
+	case strings.ContainsRune(q, '\\'):
+		return "must use \"/\" as the separator"
+	}
+	for _, seg := range strings.Split(q, "/") {
+		switch {
+		case seg == "":
+			return "must not contain an empty segment"
+		case seg == "." || seg == "..":
+			return "must not contain \".\" or \"..\" segments"
+		case strings.EqualFold(seg, ".git"):
+			return "must not name the .git directory"
+		}
+	}
+	return ""
 }
 
 func (l *loader) validateLLM() {

@@ -243,6 +243,37 @@ func applyKey(o *Outcome, key string, v any) keyResult {
 		c.Related.ContractGlobs = addUnique(c.Related.ContractGlobs, l)
 	case "review.issue_compliance":
 		return setBool(v, &c.Review.IssueCompliance)
+	case "context.impact.enabled":
+		// A repository may turn the trace off, never on: turning it on
+		// costs the operator's model calls and search time.
+		if b, ok := v.(bool); !ok || b {
+			return keyInvalid
+		}
+		c.Context.Impact.Enabled = false
+	case "context.impact.depth":
+		return tighten(v, 1, config.MaxContextImpactDepth, &c.Context.Impact.Depth, false)
+	case "context.impact.max_callers_per_node":
+		return tighten(v, 1, config.MaxContextImpactCallers, &c.Context.Impact.MaxCallersPerNode, false)
+	case "context.impact.max_links":
+		return tighten(v, 1, config.MaxContextImpactLinks, &c.Context.Impact.MaxLinks, false)
+	case "context.impact.paths":
+		l, ok := impactList(v, config.PathPrefixProblem)
+		if !ok {
+			return keyInvalid
+		}
+		c.Context.Impact.Paths = l
+	case "context.impact.exclude_paths":
+		l, ok := impactList(v, config.PathPrefixProblem)
+		if !ok {
+			return keyInvalid
+		}
+		c.Context.Impact.ExcludePaths = addUnique(c.Context.Impact.ExcludePaths, l)
+	case "context.impact.entry_points":
+		l, ok := impactList(v, config.GlobProblem)
+		if !ok {
+			return keyInvalid
+		}
+		c.Context.Impact.EntryPoints = l
 	case "review.max_findings":
 		return tighten(v, 1, 20, &c.Review.MaxFindings, false)
 	case "review.max_total_findings":
@@ -275,6 +306,16 @@ func applyKey(o *Outcome, key string, v any) keyResult {
 		o.Focuses = l
 	}
 	return keyApplied
+}
+
+// impactList reads a context.impact list of the file: at most
+// config.MaxContextImpactList strings, each valid by problem.
+func impactList(v any, problem func(string) string) ([]string, bool) {
+	l, ok := stringList(v)
+	if !ok || len(l) > config.MaxContextImpactList || slices.ContainsFunc(l, func(s string) bool { return problem(s) != "" }) {
+		return nil, false
+	}
+	return l, true
 }
 
 // stringList reads a TOML array of strings.

@@ -132,6 +132,15 @@ var table = []entry{
 	// v2.4 spec V-8 §0 (X-43).
 	{"context.repo.max_tool_rounds", "REVIEW_MCP_CONTEXT_REPO_MAX_TOOL_ROUNDS", func(c *Config) any { return &c.Context.Repo.MaxToolRounds }},
 	{"context.repo.max_tool_tokens", "REVIEW_MCP_CONTEXT_REPO_MAX_TOOL_TOKENS", func(c *Config) any { return &c.Context.Repo.MaxToolTokens }},
+	// context.impact.* rows: v2.10 spec V-18 §2.1 (X-50).
+	{"context.impact.enabled", "REVIEW_MCP_CONTEXT_IMPACT_ENABLED", func(c *Config) any { return &c.Context.Impact.Enabled }},
+	{"context.impact.depth", "REVIEW_MCP_CONTEXT_IMPACT_DEPTH", func(c *Config) any { return &c.Context.Impact.Depth }},
+	{"context.impact.max_callers_per_node", "REVIEW_MCP_CONTEXT_IMPACT_MAX_CALLERS_PER_NODE", func(c *Config) any { return &c.Context.Impact.MaxCallersPerNode }},
+	{"context.impact.max_links", "REVIEW_MCP_CONTEXT_IMPACT_MAX_LINKS", func(c *Config) any { return &c.Context.Impact.MaxLinks }},
+	{"context.impact.max_tokens", "REVIEW_MCP_CONTEXT_IMPACT_MAX_TOKENS", func(c *Config) any { return &c.Context.Impact.MaxTokens }},
+	{"context.impact.paths", "REVIEW_MCP_CONTEXT_IMPACT_PATHS", func(c *Config) any { return &c.Context.Impact.Paths }},
+	{"context.impact.exclude_paths", "REVIEW_MCP_CONTEXT_IMPACT_EXCLUDE_PATHS", func(c *Config) any { return &c.Context.Impact.ExcludePaths }},
+	{"context.impact.entry_points", "REVIEW_MCP_CONTEXT_IMPACT_ENTRY_POINTS", func(c *Config) any { return &c.Context.Impact.EntryPoints }},
 
 	// repo_config.* rows: v2.1 spec V-5 §1.1 (X-40).
 	{"repo_config.enabled", "REVIEW_MCP_REPO_CONFIG_ENABLED", func(c *Config) any { return &c.RepoConfig.Enabled }},

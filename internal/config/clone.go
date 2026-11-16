@@ -35,6 +35,9 @@ func (c *Config) Clone() *Config {
 			cp.Review.FocusRules[i] = r
 		}
 	}
+	cp.Context.Impact.Paths = slices.Clone(c.Context.Impact.Paths)
+	cp.Context.Impact.ExcludePaths = slices.Clone(c.Context.Impact.ExcludePaths)
+	cp.Context.Impact.EntryPoints = slices.Clone(c.Context.Impact.EntryPoints)
 	cp.Related.ContractGlobs = slices.Clone(c.Related.ContractGlobs)
 	cp.Decision.Allowed = slices.Clone(c.Decision.Allowed)
 	cp.Local.AllowedRoots = slices.Clone(c.Local.AllowedRoots)

@@ -59,6 +59,9 @@ type ServerInfoResult struct {
 	// RepoTools lists the configured models (the primary, then the
 	// fallbacks) with what this process knows of their tool calling.
 	RepoTools []ModelTools `json:"repo_tools" jsonschema:"for each configured model (the primary, then the fallbacks), what this process knows of its tool calling, which the repository tools need (context.repo.max_tool_rounds): not known yet, accepted or refused"`
+	// LocalOnly is true when no git provider is configured and only
+	// local_review is available (WP-24d).
+	LocalOnly bool `json:"local_only" jsonschema:"true when no git provider is configured and only local reviews are available"`
 	// Serve is present in serve mode only.
 	Serve *ServeInfo `json:"serve,omitempty" jsonschema:"serve-mode transport details; absent in stdio mode"`
 }
@@ -110,6 +113,9 @@ func ServerInfo(cfg *config.Config, rep *config.Report, loadErr error) ServerInf
 		Warnings:  append([]string{}, sum.Warnings...),
 		Providers: make([]ProviderInfo, 0, len(sum.Providers)),
 		Config:    sum,
+		// A degraded start (loadErr) registers the full set, so it is never
+		// local-only.
+		LocalOnly: loadErr == nil && cfg.LocalOnly(),
 	}
 	for _, p := range sum.Providers {
 		res.Providers = append(res.Providers, ProviderInfo{Kind: p.Kind, BaseURL: p.BaseURL, APIURL: p.APIURL})

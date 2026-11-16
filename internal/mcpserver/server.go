@@ -157,6 +157,9 @@ func instructionsFor(cfg *config.Config) string {
 // paragraph after the first one when local_review is registered (v2.10
 // spec V-20 §2.1: one sentence).
 func instructionsForDeps(deps Deps) string {
+	if localOnly(deps) {
+		return localOnlyInstructions
+	}
 	s := instructionsFor(deps.Config)
 	if localEnabled(deps) {
 		s = strings.Replace(s, listGuidance+"\n\n", listGuidance+"\n\n"+localGuidance+"\n\n", 1)
@@ -175,6 +178,16 @@ func New(deps Deps) *mcp.Server {
 		s.AddReceivingMiddleware(concurrencyGate(deps))
 	}
 	registerServerInfo(s, deps)
+	if localOnly(deps) {
+		// No git provider: local_review, job_result and the prompt only
+		// (WP-24d §2.1).
+		registerLocalReview(s, deps)
+		if deps.background() {
+			registerJobResult(s, deps)
+		}
+		registerMultiPerspectivePrompt(s, deps)
+		return s
+	}
 	registerPRComments(s, deps)
 	registerPRCommentReply(s, deps)
 	registerPRCommentCreate(s, deps)

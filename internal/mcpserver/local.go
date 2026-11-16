@@ -34,6 +34,25 @@ func localEnabled(deps Deps) bool {
 	return deps.Config != nil && deps.Config.Local.Enabled && !deps.Serve
 }
 
+// localOnlyInstructions are the server instructions of a local-only start
+// (WP-24d §2.3): exactly this paragraph, nothing else. The docs quote it
+// verbatim.
+const localOnlyInstructions = "review-mcp reviews local git work before it is pushed. No git provider is " +
+	"configured, so only local_review is available: it reads the commits after the merge base with the base " +
+	"and the uncommitted changes, and publishes nothing. Pull request tools appear once a provider (gitea, " +
+	"bitbucket_server, github or gitlab) is configured."
+
+// localOnlyPromptMessage is the InvalidParams message of the prompt when
+// pr_url is given in a local-only start (WP-24d §2.4).
+const localOnlyPromptMessage = "no git provider is configured; only local reviews are available (pass repo_path)"
+
+// localOnly reports a local-only start: no provider is enabled, the
+// configuration loaded without a problem and the transport is stdio. A
+// degraded start (an invalid configuration) keeps the full set.
+func localOnly(deps Deps) bool {
+	return !deps.Serve && deps.LoadErr == nil && deps.Config.LocalOnly()
+}
+
 // localReviewInput are the arguments of local_review (§2.1). publish,
 // findings, incremental and related do not exist for local work and are
 // not in the schema.

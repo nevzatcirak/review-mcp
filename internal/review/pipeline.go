@@ -235,6 +235,15 @@ const (
 	StageRendering     = "rendering"
 )
 
+// The stages of a local review (WP-24d): nothing is fetched from a provider,
+// so the words say what happens. StageReading replaces StageFetching and
+// StageRepoContextLocal replaces StageRepoContext; the other stages are
+// unchanged.
+const (
+	StageReading          = "reading"
+	StageRepoContextLocal = "reading repository context"
+)
+
 // Plan is the outcome of steps 1 to 6 of the pipeline: everything up to the
 // model call. Run continues from it; diag review --dry-run prints it.
 type Plan struct {
@@ -461,7 +470,11 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 	}
 
 	// Step 2: resolve and read the PR.
-	progress(deps, StageFetching)
+	if args.Local {
+		progress(deps, StageReading)
+	} else {
+		progress(deps, StageFetching)
+	}
 	ref, p, err := deps.Resolver.Resolve(args.PRURL)
 	if err != nil {
 		return nil, err
@@ -638,7 +651,11 @@ func Prepare(ctx context.Context, deps Deps, args Args) (*Plan, error) {
 			}
 		}
 		if len(rcs.Symbols(d.Files)) > 0 {
-			progress(deps, StageRepoContext)
+			if args.Local {
+				progress(deps, StageRepoContextLocal)
+			} else {
+				progress(deps, StageRepoContext)
+			}
 			fetched = rcs.Ready(ctx) == ""
 		}
 	}

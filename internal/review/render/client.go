@@ -15,6 +15,7 @@ import (
 
 	llmrender "github.com/nevzatcirak/review-mcp/internal/llmrun/render"
 	"github.com/nevzatcirak/review-mcp/internal/mdutil"
+	"github.com/nevzatcirak/review-mcp/internal/provider"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 )
 
@@ -37,8 +38,15 @@ func Client(res *review.Result) string {
 	if banner := llmrender.PartialBanner(&res.Coverage, false); banner != "" {
 		b.WriteString(banner + "\n\n")
 	}
-	b.WriteString("## PR Review\n\n")
-	b.WriteString(clientPRLine(&res.PR) + "\n")
+	if res.PR.Kind == string(provider.KindLocal) {
+		// A local review has no pull request (WP-24d): the heading and the
+		// line say so. The provider renderer is not used for local runs.
+		b.WriteString("## Local review\n\n")
+		b.WriteString(clientLocalLine(&res.PR) + "\n")
+	} else {
+		b.WriteString("## PR Review\n\n")
+		b.WriteString(clientPRLine(&res.PR) + "\n")
+	}
 	if l := FocusLine(res); l != "" {
 		b.WriteString(l + "\n")
 	}
@@ -97,6 +105,15 @@ func testsText(has bool) string {
 		return textTests
 	}
 	return textNoTests
+}
+
+// clientLocalLine is "Local work: <subject>", or "Local work" when the
+// subject is empty. No number, no URL.
+func clientLocalLine(pr *review.PRInfo) string {
+	if t := strings.TrimSpace(pr.Title); t != "" {
+		return "Local work: " + mdutil.Inline(t)
+	}
+	return "Local work"
 }
 
 func clientPRLine(pr *review.PRInfo) string {

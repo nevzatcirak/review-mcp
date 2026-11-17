@@ -49,7 +49,10 @@ nothing in the tools or the configuration of 2.10 is removed or renamed.
 - `tools/evalset`: the variants `impact` and `impact-10k`. Every run is
   checked against its variant's `coverage.impact.status` and against each
   budget the variant sets (`coverage.repo_context.max_tokens`,
-  `coverage.impact.max_tokens`).
+  `coverage.impact.max_tokens`). A budget the binary does not report is
+  recorded as not verified (`budget_verified: false`), not as a failure, so
+  one version of the tool scores 2.10 and 2.11; a result without
+  `coverage.impact` fails an `impact` variant.
 
 ## [2.10.0-rc.2]
 

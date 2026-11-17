@@ -680,7 +680,12 @@ The evaluation set (`tools/evalset`) has the variants `impact`
 `REVIEW_MCP_CONTEXT_IMPACT_ENABLED=true`. A run whose `coverage.impact.status`
 does not say the trace ran, or whose echoed budget is not the variant's, is
 recorded as failed, so a comparison never counts a run that did not apply its
-variant:
+variant. A binary before 2.11 reports neither the budget nor `coverage.impact`,
+and one version of the tool scores both: a missing budget is not a failure but
+is recorded as `budget_verified: false` in `run.json` and `metrics.json`, and
+`report.md` marks the variant "budget not verified (the binary does not report
+it)"; a missing `coverage.impact` fails an `impact` variant with "trace not
+available in this binary":
 
 ```sh
 go run ./tools/evalset run -bin ./review-mcp -prs DIR/prs.json -variants off,on,impact,impact-10k -repeat 3 -out DIR2

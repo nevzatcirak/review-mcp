@@ -196,6 +196,8 @@ type caseRun struct {
 	Findings int      `json:"findings"`
 	Matched  []string `json:"matched_issues"`
 	Issues   int      `json:"issues"`
+	// BudgetVerified is the run's flag (runRecord.BudgetVerified).
+	BudgetVerified *bool `json:"budget_verified,omitempty"`
 }
 
 // report is metrics.json.
@@ -219,8 +221,12 @@ type report struct {
 		LowIssues  int     `json:"low_issues"`
 		LowShare   float64 `json:"low_share"`
 	} `json:"corpus"`
-	Metrics map[string]map[string]stat      `json:"metrics"`
-	Cases   map[string]map[string][]caseRun `json:"cases"`
+	// BudgetVerified is set for each variant that sets a budget: false
+	// when a successful run of it could not verify the budget, because the
+	// binary does not report it (the WP-20c review, DQ-4).
+	BudgetVerified map[string]bool                 `json:"budget_verified,omitempty"`
+	Metrics        map[string]map[string]stat      `json:"metrics"`
+	Cases          map[string]map[string][]caseRun `json:"cases"`
 
 	failedRuns, findings, matchedFindings int
 	order                                 []string // case ids in run order
@@ -228,6 +234,10 @@ type report struct {
 }
 
 const agreementNotMeasured = "judge agreement not measured"
+
+// budgetNotVerified marks a variant in report.md whose budget the binary
+// does not report (the WP-20c review, DQ-4).
+const budgetNotVerified = "budget not verified (the binary does not report it)"
 
 func buildReport(rf runFile, runs []*runScore, jc *judgeConfig) *report {
 	rep := &report{Version: 1, Mode: rf.Mode, BinaryVersion: rf.BinaryVersion, Variants: rf.Variants, Repeat: rf.Repeat,
@@ -267,7 +277,15 @@ func buildReport(rf runFile, runs []*runScore, jc *judgeConfig) *report {
 				}
 			}
 		}
-		cr := caseRun{Repeat: rs.rec.Repeat, Failed: !rs.rec.OK, Findings: len(rs.findings), Issues: len(rs.c.Issues), Matched: []string{}}
+		cr := caseRun{Repeat: rs.rec.Repeat, Failed: !rs.rec.OK, Findings: len(rs.findings), Issues: len(rs.c.Issues), Matched: []string{},
+			BudgetVerified: rs.rec.BudgetVerified}
+		if bv := rs.rec.BudgetVerified; bv != nil {
+			if rep.BudgetVerified == nil {
+				rep.BudgetVerified = map[string]bool{}
+			}
+			was, seen := rep.BudgetVerified[rs.rec.Variant]
+			rep.BudgetVerified[rs.rec.Variant] = *bv && (was || !seen)
+		}
 		for i, m := range rs.matched {
 			if m == ruleLocation || m == ruleMention {
 				cr.Matched = append(cr.Matched, rs.c.Issues[i].ID)
@@ -341,7 +359,11 @@ func (rep *report) markdown(judged bool) string {
 	b.WriteString("# Evaluation report (V-9)\n\n")
 	fmt.Fprintf(&b, "- Binary: `%s`\n- Mode: %s\n- Repeats: %d\n", rep.BinaryVersion, rep.Mode, rep.Repeat)
 	for _, v := range rep.Variants {
-		fmt.Fprintf(&b, "- Variant `%s`: flags `%s`, environment `%s`\n", v.Name, strings.Join(v.Flags, " "), strings.Join(v.Env, " "))
+		fmt.Fprintf(&b, "- Variant `%s`: flags `%s`, environment `%s`", v.Name, strings.Join(v.Flags, " "), strings.Join(v.Env, " "))
+		if verified, ok := rep.BudgetVerified[v.Name]; ok && !verified {
+			b.WriteString("; " + budgetNotVerified)
+		}
+		b.WriteString("\n")
 	}
 	fmt.Fprintf(&b, "- Reviewer models recorded: %s\n", strings.Join(rep.ReviewerModels, ", "))
 	fmt.Fprintf(&b, "- Cases: %d (%d clean); issues: %d, of which %d low (%.1f%%), counted with weight 1\n",

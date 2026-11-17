@@ -105,12 +105,20 @@ type runRecord struct {
 		Symbols    int    `json:"symbols"`
 		References int    `json:"references"`
 		Files      int    `json:"files"`
-		MaxTokens  int    `json:"max_tokens,omitempty"`
+		MaxTokens  *int   `json:"max_tokens,omitempty"`
 	} `json:"repo_context"`
 	// Impact is coverage.impact of the result; Status is "" for a binary
 	// without the impact trace.
-	Impact   impactCoverage `json:"impact"`
-	Findings int            `json:"findings"`
+	Impact impactCoverage `json:"impact"`
+	// BudgetVerified is set on a successful run of a variant that sets a
+	// budget: false when
+	// the result does not report a budget the variant sets (a binary
+	// before 2.11), with the reason in BudgetNote. A run with an
+	// unverified budget is scored; a reported budget that differs fails
+	// the run.
+	BudgetVerified *bool  `json:"budget_verified,omitempty"`
+	BudgetNote     string `json:"budget_note,omitempty"`
+	Findings       int    `json:"findings"`
 }
 
 // impactCoverage is the part of coverage.impact evalset reads.
@@ -118,7 +126,7 @@ type impactCoverage struct {
 	Status    string `json:"status"`
 	Seeds     int    `json:"seeds"`
 	Links     int    `json:"links"`
-	MaxTokens int    `json:"max_tokens"`
+	MaxTokens *int   `json:"max_tokens,omitempty"`
 }
 
 // finding is one key issue of a result.
@@ -143,9 +151,11 @@ type reviewResult struct {
 			Symbols    int    `json:"symbols"`
 			References int    `json:"references"`
 			Files      int    `json:"files"`
-			MaxTokens  int    `json:"max_tokens"`
+			MaxTokens  *int   `json:"max_tokens"`
 		} `json:"repo_context"`
-		Impact impactCoverage `json:"impact"`
+		// Impact is nil when the result has no coverage.impact (a binary
+		// before V-18).
+		Impact *impactCoverage `json:"impact"`
 	} `json:"coverage"`
 	Metadata struct {
 		Model         string   `json:"model"`
@@ -353,16 +363,49 @@ func reviewOnce(ctx context.Context, bin, mode string, e prEntry, v variant, n i
 	rec.RequestTokens, rec.ToolRounds = res.Metadata.RequestTokens, res.Metadata.ToolRounds
 	rc := res.Coverage.RepoContext
 	rec.RepoContext.Status, rec.RepoContext.Symbols, rec.RepoContext.References, rec.RepoContext.Files = rc.Status, rc.Symbols, rc.References, rc.Files
-	rec.RepoContext.MaxTokens, rec.Impact = rc.MaxTokens, res.Coverage.Impact
-	if res.Review == nil {
+	rec.RepoContext.MaxTokens = rc.MaxTokens
+	if res.Coverage.Impact != nil {
+		rec.Impact = *res.Coverage.Impact
+	}
+	p, unverified := variantProblem(v, res)
+	switch {
+	case res.Review == nil:
 		rec.Failure = "the result has no review"
-	} else if p := variantProblem(v, res); p != "" {
+	case p != "":
 		rec.Failure = p
-	} else {
+	default:
 		rec.OK = true
 		rec.Findings = len(res.Review.Issues)
 	}
+	if rec.OK && setsBudget(v) {
+		verified := len(unverified) == 0
+		rec.BudgetVerified = &verified
+		if !verified {
+			rec.BudgetNote = "the binary does not report " + strings.Join(unverified, " or ")
+		}
+	}
 	return rec
+}
+
+// failNoTrace is the failure of a variant with the impact trace when the
+// result has no coverage.impact at all: the binary predates the trace.
+const failNoTrace = "trace not available in this binary"
+
+// budgets are the budget settings a variant can set, with the coverage
+// field that echoes each.
+var budgets = []struct{ env, field string }{
+	{maxTokensEnv, "coverage.repo_context.max_tokens"},
+	{impactMaxTokensEnv, "coverage.impact.max_tokens"},
+}
+
+// setsBudget reports whether the variant sets any budget.
+func setsBudget(v variant) bool {
+	for _, b := range budgets {
+		if _, ok := envInt(v.Env, b.env); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // variantProblem checks that a result shows its variant applied, and
@@ -372,33 +415,46 @@ func reviewOnce(ctx context.Context, bin, mode string, e prEntry, v variant, n i
 //     trace ran (on, or skipped_no_symbols when the diff gave nothing to
 //     trace); in a variant without it, the trace did not run (a binary
 //     before V-18 has no status at all);
+//   - a variant with the impact trace fails with failNoTrace when the
+//     result has no coverage.impact (a binary before V-18);
 //   - every budget the variant sets in its environment is the effective
 //     budget the result echoes (coverage.repo_context.max_tokens,
-//     coverage.impact.max_tokens; V-18 spec §6 item 5, WP-21b DQ-2).
-func variantProblem(v variant, res reviewResult) string {
-	rc, im := res.Coverage.RepoContext, res.Coverage.Impact
+//     coverage.impact.max_tokens; V-18 spec §6 item 5, WP-21b DQ-2). A
+//     reported budget that differs is a problem; an absent field is not:
+//     it is returned in unverified (the WP-20c review, DQ-4), so one
+//     version of the tool scores binaries before and after 2.11.
+func variantProblem(v variant, res reviewResult) (problem string, unverified []string) {
+	rc := res.Coverage.RepoContext
+	var im impactCoverage
+	if res.Coverage.Impact != nil {
+		im = *res.Coverage.Impact
+	}
 	switch {
 	case (rc.Status == "off") == v.RepoContext:
-		return "the variant was not applied: repository context is " + rc.Status
+		return "the variant was not applied: repository context is " + rc.Status, nil
+	case v.Impact && res.Coverage.Impact == nil:
+		return failNoTrace, nil
 	case v.Impact && im.Status != "on" && im.Status != "skipped_no_symbols":
 		status := im.Status
 		if status == "" {
 			status = "missing"
 		}
-		return "the variant was not applied: the impact trace is " + status
+		return "the variant was not applied: the impact trace is " + status, nil
 	case !v.Impact && im.Status == "on":
-		return "the variant was not applied: the impact trace ran"
+		return "the variant was not applied: the impact trace ran", nil
 	}
-	for _, b := range []struct {
-		env, field string
-		got        int
-	}{{maxTokensEnv, "coverage.repo_context.max_tokens", rc.MaxTokens}, {impactMaxTokensEnv, "coverage.impact.max_tokens", im.MaxTokens}} {
+	got := []*int{rc.MaxTokens, im.MaxTokens}
+	for i, b := range budgets {
 		want, ok := envInt(v.Env, b.env)
-		if ok && b.got != want {
-			return fmt.Sprintf("the variant was not applied: %s is %d, not %d", b.field, b.got, want)
+		switch {
+		case !ok:
+		case got[i] == nil:
+			unverified = append(unverified, b.field)
+		case *got[i] != want:
+			return fmt.Sprintf("the variant was not applied: %s is %d, not %d", b.field, *got[i], want), nil
 		}
 	}
-	return ""
+	return "", unverified
 }
 
 // envInt is the integer value of key in KEY=VALUE settings.

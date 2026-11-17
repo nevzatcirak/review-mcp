@@ -36,7 +36,8 @@ nothing in the tools or the configuration of 2.10 is removed or renamed.
   prefixes for the call; refused with `findings`, ignored with a note without
   repository context); `--impact on|off` and `--impact-paths` on
   `diag review` and `review-mcp local review`.
-- The `impact` focus, also accepted by `review.focuses` and focus rules.
+- The `impact` focus, also accepted by `review.focuses` and focus rules. The refusal
+  for an invalid focus lists it with the other known values.
 - A finding in a caller the trace found is listed in the overview only, with a
   link to its line at the head commit (path and line text in a local review),
   and carries `caller: true`.

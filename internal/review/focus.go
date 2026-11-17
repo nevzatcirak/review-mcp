@@ -345,7 +345,7 @@ func invalidArgument(msg string) *Error { return &Error{Class: ClassInvalidArgum
 var (
 	// ErrFocusInvalid: the focus is neither a known value nor a usable free
 	// text.
-	ErrFocusInvalid = invalidArgument("focus must be one of security, architecture, performance, ux, tests or docs, " +
+	ErrFocusInvalid = invalidArgument("focus must be one of security, architecture, performance, ux, tests, docs or impact, " +
 		"the name of a custom focus, or a description of 1 to 200 characters without line breaks or control characters")
 	// ErrFocusPublish: a focused run never publishes (spec 2F §4.1,
 	// verbatim).

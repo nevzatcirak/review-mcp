@@ -272,22 +272,37 @@ func TestImpactStatuses(t *testing.T) {
 			t.Fatalf("tool: %+v", res3.Coverage.Impact)
 		}
 	})
-	t.Run("supplied findings", func(t *testing.T) {
-		h, ft := impactHarness(goodAnswer)
-		res, err := Run(context.Background(), h.deps, Args{PRURL: testPRURL, Publish: true,
-			Findings: []SuppliedFinding{supplied("pkg/a.go", 2, 2, "H", "C")}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(ft.queries) != 0 || res.Coverage.Impact.Status != llmrun.ImpactOff {
-			t.Fatalf("supplied: %+v", res.Coverage.Impact)
-		}
-		validateResult(t, res)
+	t.Run("impact_paths with supplied findings", func(t *testing.T) {
+		h, _ := impactHarness(goodAnswer)
 		if _, err := Run(context.Background(), h.deps, Args{PRURL: testPRURL, Publish: true, ImpactPaths: []string{"pkg"},
 			Findings: []SuppliedFinding{supplied("pkg/a.go", 2, 2, "H", "C")}}); !errors.Is(err, ErrImpactPathsWithFindings) {
 			t.Fatalf("impact_paths with findings: %v", err)
 		}
 	})
+}
+
+// TestImpactSuppliedFindingsSkipped is canary (s1) of WP-20c (review DQ-1
+// of WP-20b): a run with supplied findings and the trace enabled traces
+// nothing and says skipped_client_findings, never off; off stays for a
+// trace that is not enabled.
+func TestImpactSuppliedFindingsSkipped(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		h, ft := impactHarness(goodAnswer)
+		h.deps.Config.Context.Impact.Enabled = enabled
+		res, err := Run(context.Background(), h.deps, Args{PRURL: testPRURL, Publish: true,
+			Findings: []SuppliedFinding{supplied("pkg/a.go", 2, 2, "H", "C")}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := llmrun.ImpactOff
+		if enabled {
+			want = llmrun.ImpactSkippedClientFindings
+		}
+		if len(ft.queries) != 0 || res.Coverage.Impact.Status != want {
+			t.Fatalf("enabled=%v: status %q, want %q (%d traces)", enabled, res.Coverage.Impact.Status, want, len(ft.queries))
+		}
+		validateResult(t, res)
+	}
 }
 
 func TestValidateImpactPaths(t *testing.T) {

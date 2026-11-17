@@ -102,14 +102,19 @@ func impactScopeSource(args Args, rc *repocfg.Outcome, operator *config.Config) 
 
 // planImpact decides on the trace of a run and runs it once on files (the
 // pull request's files the review covers). It returns nil when the trace
-// is not wanted; a run with supplied findings traces nothing.
+// is not wanted. A run with supplied findings traces nothing: its status
+// says so (skipped_client_findings), never off (review DQ-1 of WP-20b).
 func (pl *Plan) planImpact(ctx context.Context, cfg *config.Config, args Args, operator *config.Config,
 	rcs *repoctx.Session, files []provider.FilePatch, supplied bool) *impactRun {
-	if !wantImpact(cfg, args) || supplied {
+	if !wantImpact(cfg, args) {
 		return nil
 	}
 	ir := &impactRun{scopeSource: impactScopeSource(args, pl.repo, operator),
 		set: repoctx.ImpactSettingsFrom(cfg.Context.Impact, args.ImpactPaths)}
+	if supplied {
+		ir.status = llmrun.ImpactSkippedClientFindings
+		return ir
+	}
 	if rcs == nil {
 		ir.status = llmrun.ImpactRepoContextOff
 		return ir

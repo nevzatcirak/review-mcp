@@ -135,6 +135,9 @@ const (
 	// ImpactRepoContextOff: enabled (or impact_paths given), but
 	// context.repo.enabled is off.
 	ImpactRepoContextOff = "repo_context_off"
+	// ImpactSkippedClientFindings: enabled, but the call supplied its own
+	// findings, so no prompt is built and nothing is traced.
+	ImpactSkippedClientFindings = "skipped_client_findings"
 )
 
 // Values of Impact.ScopeSource.
@@ -190,8 +193,8 @@ func ImpactSchema(desc string) map[string]any {
 		"required": []any{"status", "seeds", "links", "depth_reached", "not_followed", "entry_points_reached",
 			"scope_source", "truncated", "max_tokens"},
 		"properties": map[string]any{
-			"status": map[string]any{"type": "string", "enum": []any{ImpactOn, ImpactOff, ImpactNoSymbols, ImpactFailed, ImpactRepoContextOff},
-				"description": "on: the trace ran; off: not enabled (context.impact.enabled false and no impact_paths); skipped_no_symbols: the diff gave nothing to trace; failed: the head could not be read or searched; repo_context_off: enabled or impact_paths given, but context.repo.enabled is off"},
+			"status": map[string]any{"type": "string", "enum": []any{ImpactOn, ImpactOff, ImpactNoSymbols, ImpactFailed, ImpactRepoContextOff, ImpactSkippedClientFindings},
+				"description": "on: the trace ran; off: not enabled (context.impact.enabled false and no impact_paths); skipped_no_symbols: the diff gave nothing to trace; failed: the head could not be read or searched; repo_context_off: enabled or impact_paths given, but context.repo.enabled is off; skipped_client_findings: enabled, but the call supplied its own findings, so nothing was traced"},
 			"seeds":         integer("changed symbols traced from, body-only changes included"),
 			"links":         integer("callers and implementations found, seeds not counted"),
 			"depth_reached": integer("the largest number of hops reached"),

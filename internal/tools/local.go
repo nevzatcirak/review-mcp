@@ -29,6 +29,9 @@ type LocalReviewArgs struct {
 	OutputLanguage     string
 	MaxFindings        *int
 	IssueContext       []issuectx.Input
+	// ImpactPaths is the impact_paths argument (X-50, v2.10 spec V-18 §6
+	// item 3); nil when not given.
+	ImpactPaths []string
 }
 
 // localURL is the one value the local resolver answers: no provider
@@ -65,7 +68,8 @@ type LocalReviewCall struct {
 // the network. The error, if any, is classified; use UserMessage for its
 // text.
 func PrepareLocalReview(ctx context.Context, deps ReviewDeps, a LocalReviewArgs) (*LocalReviewCall, error) {
-	if err := (PRReviewArgs{OutputLanguage: a.OutputLanguage, MaxFindings: a.MaxFindings, IssueContext: a.IssueContext}).Validate(); err != nil {
+	if err := (PRReviewArgs{OutputLanguage: a.OutputLanguage, MaxFindings: a.MaxFindings, IssueContext: a.IssueContext,
+		ImpactPaths: a.ImpactPaths}).Validate(); err != nil {
 		return nil, err
 	}
 	args := review.Args{
@@ -74,6 +78,7 @@ func PrepareLocalReview(ctx context.Context, deps ReviewDeps, a LocalReviewArgs)
 		OutputLanguage:    a.OutputLanguage,
 		Focus:             a.Focus,
 		Local:             true,
+		ImpactPaths:       a.ImpactPaths,
 	}
 	if a.MaxFindings != nil {
 		args.MaxFindings = *a.MaxFindings

@@ -261,3 +261,21 @@ func TestPromptFocusesArgumentAcceptsCustomNames(t *testing.T) {
 		t.Errorf("a built-in value read the pull request %d times", f.prCalls)
 	}
 }
+
+// TestPromptRuleMayNameImpact (V-18 §6 item 4): a focus rule may name the
+// built-in impact focus; the prompt lists it like any built-in focus a rule
+// selects. impact is not in the default list.
+func TestPromptRuleMayNameImpact(t *testing.T) {
+	f := &promptFake{file: "[[review.focus_rules]]\npaths = [\"src/**\"]\nfocus = \"impact\"\n", changed: []string{"src/Main.java"}}
+	text := promptText(t, promptSession(t, f), map[string]string{"pr_url": promptPR})
+	if got, want := gotFocuses(text), wantFocuses("security", "architecture", "performance", "tests", "impact"); got != want {
+		t.Fatalf("focuses = %s, want %s", got, want)
+	}
+	if !slices.Contains(whyLines(text), "- impact — rule 1 matched 1 file") {
+		t.Errorf("why lines: %q", whyLines(text))
+	}
+	f2 := &promptFake{changed: []string{"src/Main.java"}}
+	if got := gotFocuses(promptText(t, promptSession(t, f2), map[string]string{"pr_url": promptPR})); strings.Contains(got, "impact") {
+		t.Errorf("impact is in the default list: %s", got)
+	}
+}

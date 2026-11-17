@@ -354,6 +354,12 @@ context.repo.enabled: repository context is not available in serve mode (cached 
 
 Use stdio mode (one user, one cache) if you want it.
 
+The [impact trace](repo-context.md#impact-trace) runs on repository context,
+so it is not available either. Its `context.impact.*` keys are accepted and
+have no effect, and `server_info` warns: "context.impact.enabled has no effect
+in serve mode: the impact trace needs repository context, which serve mode
+does not offer".
+
 ## Pull request lists
 
 [`pr_list_review_requests` and `pr_list_authored`](pr-lists.md) work in serve

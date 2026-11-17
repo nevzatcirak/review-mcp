@@ -61,11 +61,12 @@ type localReviewInput struct {
 	Base               string             `json:"base,omitempty" jsonschema:"the branch, tag or commit to compare with; the review covers the commits after the merge base with it. Default: the current branch's upstream, else origin/HEAD, origin/main, origin/master, main, master. Nothing is fetched: a remote-tracking base is the local copy"`
 	IncludeUncommitted *bool              `json:"include_uncommitted,omitempty" jsonschema:"also review the uncommitted changes to tracked files, staged and unstaged (default true)"`
 	IncludeUntracked   *bool              `json:"include_untracked,omitempty" jsonschema:"also review untracked files that no ignore rule excludes (default false); files whose names suggest secrets (.env, *.pem, *.key and the like) are always left out and counted"`
-	Focus              string             `json:"focus,omitempty" jsonschema:"review only one area: security, architecture, performance, ux, tests, docs, the name of a custom focus defined in the configuration, or a description of at most 200 characters"`
+	Focus              string             `json:"focus,omitempty" jsonschema:"review only one area: security, architecture, performance, ux, tests, docs, impact (effects on callers along the impact chains), the name of a custom focus defined in the configuration, or a description of at most 200 characters"`
 	ExtraInstructions  string             `json:"extra_instructions,omitempty" jsonschema:"extra review instructions for the model; replaces review.extra_instructions for this call"`
 	OutputLanguage     string             `json:"output_language,omitempty" jsonschema:"locale code for the review text, for example en-US or tr-TR; replaces output.language for this call"`
 	MaxFindings        *int               `json:"max_findings,omitempty" jsonschema:"most key issues to return, 1 to 20; replaces review.max_findings for this call"`
 	IssueContext       []issueContextItem `json:"issue_context,omitempty" jsonschema:"The issue or ticket this work implements, for example fetched from a tracker MCP server. Used to check that the change does what the issue asks. 1 to 3 issues. Ignored with focus"`
+	ImpactPaths        []string           `json:"impact_paths,omitempty" jsonschema:"Up to 10 repository-relative directory prefixes (each at most 200 bytes) to which the impact trace is limited for this call; they replace context.impact.paths and turn the trace on for this call. Needs context.repo.enabled (stdio only); ignored with a note when it is off."`
 	WaitSeconds        *int               `json:"wait_seconds,omitempty" jsonschema:"seconds to wait for the result before answering with a job_id for job_result, 0 to 600; replaces llm.wait_seconds (default 45) for this call"`
 }
 
@@ -99,6 +100,7 @@ func registerLocalReview(s *mcp.Server, deps Deps) {
 				RepoPath: in.RepoPath, Base: in.Base, IncludeUncommitted: in.IncludeUncommitted,
 				IncludeUntracked: in.IncludeUntracked, Focus: in.Focus, ExtraInstructions: in.ExtraInstructions,
 				OutputLanguage: in.OutputLanguage, MaxFindings: in.MaxFindings, IssueContext: issueContext(in.IssueContext),
+				ImpactPaths: in.ImpactPaths,
 			})
 		wait := 0
 		if err == nil && deps.background() {

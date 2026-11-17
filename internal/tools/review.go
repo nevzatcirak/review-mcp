@@ -59,6 +59,8 @@ type PRReviewArgs struct {
 	// Related is the related argument (X-41): related pull request URLs as
 	// given; nil or empty when not given.
 	Related []string
+	// ImpactPaths is the impact_paths argument (X-50); nil when not given.
+	ImpactPaths []string
 }
 
 // Validate checks the optional arguments before any network call. It returns
@@ -75,6 +77,9 @@ func (a PRReviewArgs) Validate() error {
 	}
 	if _, err := related.Validate(a.Related, a.Focus != "" || a.Findings != nil); err != nil {
 		return &ArgumentError{err.Error()}
+	}
+	if err := review.ValidateImpactPaths(a.ImpactPaths); err != nil {
+		return err
 	}
 	return nil
 }
@@ -120,6 +125,7 @@ func PreparePRReview(deps ReviewDeps, a PRReviewArgs) (*ReviewCall, error) {
 		SecurityConcerns:    a.SecurityConcerns,
 		PerformanceConcerns: a.PerformanceConcerns,
 		Incremental:         a.Incremental,
+		ImpactPaths:         a.ImpactPaths,
 	}
 	if a.MaxFindings != nil {
 		args.MaxFindings = *a.MaxFindings

@@ -314,7 +314,33 @@ type Improve struct {
 
 // Context configures the context added to prompts beyond the diff.
 type Context struct {
-	Repo ContextRepo `toml:"repo" json:"repo"`
+	Repo   ContextRepo   `toml:"repo" json:"repo"`
+	Impact ContextImpact `toml:"impact" json:"impact"`
+}
+
+// ContextImpact configures the impact trace (X-50, v2.10 spec V-18 §2.1):
+// chains of uses from the changed symbols, found by name matching on the
+// cached head commit of repository context. It needs context.repo.enabled
+// and is inert in serve mode.
+type ContextImpact struct {
+	// Enabled turns the trace on; off by default (§0 item 2).
+	Enabled bool `toml:"enabled" json:"enabled"`
+	// Depth is the number of hops, 1 to 3.
+	Depth int `toml:"depth" json:"depth"`
+	// MaxCallersPerNode caps the uses kept per node, 1 to 20.
+	MaxCallersPerNode int `toml:"max_callers_per_node" json:"max_callers_per_node"`
+	// MaxLinks caps the nodes of a trace, seeds not counted, 1 to 200.
+	MaxLinks int `toml:"max_links" json:"max_links"`
+	// MaxTokens is the token budget of the impact block of the prompt,
+	// separate from context.repo.max_tokens (§0 item 3).
+	MaxTokens int `toml:"max_tokens" json:"max_tokens"`
+	// Paths and ExcludePaths are repository-relative directory prefixes:
+	// where uses are traced, and where they are not.
+	Paths        []string `toml:"paths" json:"paths"`
+	ExcludePaths []string `toml:"exclude_paths" json:"exclude_paths"`
+	// EntryPoints are globs (ignore.glob syntax) of the files where users
+	// or other systems reach the code; the prompt marks them.
+	EntryPoints []string `toml:"entry_points" json:"entry_points"`
 }
 
 // ContextRepo configures repository context (X-22, RC-1 to RC-10): a cached
@@ -480,6 +506,14 @@ func Defaults() *Config {
 			MaxHitsPerSymbol:    5,
 			MaxTokens:           2000,
 			MaxToolTokens:       6000,
+		}, Impact: ContextImpact{
+			Depth:             2,
+			MaxCallersPerNode: 5,
+			MaxLinks:          40,
+			MaxTokens:         4000,
+			Paths:             []string{},
+			ExcludePaths:      []string{},
+			EntryPoints:       []string{},
 		}},
 		RepoConfig: RepoConfig{Enabled: true, Path: DefaultRepoConfigPath},
 		Related:    Related{MaxTokens: 8000, ContractGlobs: []string{}, MaxIdentifiers: DefaultRelatedIdentifiers},

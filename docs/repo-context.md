@@ -11,7 +11,8 @@ It is **opt-in** (off by default) and **stdio only**: it is a startup error in
 [serve mode](serve.md#repository-context-is-not-available). It needs the
 system `git`. Nothing in this guide is needed for a review without it. On top
 of it, the model can be allowed to read the head commit itself:
-[Repository tools](#repository-tools).
+[Repository tools](#repository-tools), and the chains of callers of a change
+can be traced a few hops further: [Impact trace](#impact-trace).
 
 ## What it does
 
@@ -406,6 +407,290 @@ rounds.
 - The diff is shortened to make room for a tool result.
 - A secret-pattern scan of the repository is made (backlog).
 
+## Impact trace
+
+The block of [What it does](#what-it-does) shows the direct uses of a changed
+symbol. A change often breaks code one or two calls further away: `persist`
+calls the changed `save`, and `submit` calls `persist`. The **impact trace**
+(2.11, X-50) follows those chains and shows them to the model in a second
+block. It runs in the reviews that have repository context: `pr_review` (also
+through `review-mcp ci` and `diag review`) and `local_review` (also through
+`review-mcp local review`), on the checkout repository context reads; not in
+`pr_ask`, `pr_improve` or `pr_describe`. It is **off by default**, needs
+`context.repo.enabled`, and like repository context it is stdio only.
+
+### How the trace works
+
+1. **Seeds.** The trace starts from the symbols of step 1 above that existed
+   before the pull request: removed or renamed definitions first, then changed
+   signatures. A hunk that defines no symbol (a change inside a method body)
+   seeds the trace with the definition that encloses its first changed line
+   (at most 20 such seeds); these come next, and then the other changed
+   definitions. Both of the last two are shown as `body changed`. New symbols and the symbols of test
+   files are not traced: nothing can call them yet. A new overload of an
+   existing name counts as new.
+2. **Uses.** Each name is searched in the head commit with the same `git
+   grep`, filter, pathspecs and output caps as the uses of step 3. A use on a
+   line that the pull request adds is dropped (the diff shows it); a use in a
+   changed file outside those lines is kept and marked `[changed file]`.
+   Import lines (`import`, `from … import`, `export … from`, `using`,
+   `package` and `require`) are dropped: they name a symbol but do not call
+   it.
+3. **Enclosing definitions.** For each use, the definition that encloses it
+   is found by indentation (the nearest `func`, `def`, method or class header
+   above the use and less indented than it). That definition is the next link of the
+   chain, and its own uses are searched in turn, up to
+   `context.impact.depth` hops. A visited set stops cycles. A use on a line
+   that declares a type extending or implementing the parent, or that
+   defines a method of the same name (an override), is marked
+   `[extends, implements or overrides]`; a use outside every definition is
+   marked `[file level]` and is not followed.
+4. **What is not followed.** A caller in a test file is shown, marked
+   `[test]`, but not followed: a test is not something other code depends on.
+   A name whose search returns more than three times
+   `context.impact.max_callers_per_node` uses is **widely used**: its uses are
+   counted, not followed. At most `context.impact.max_callers_per_node` uses
+   are kept per node (files outside tests first, then distinct files and the
+   definition's language) and
+   `context.impact.max_links` links per review; the rest is counted.
+
+The trace reads repository text only. Nothing is built, run or loaded as code,
+no language server is started, and no network is used: every read is an
+offline `git grep` or `git cat-file` on the cached head commit (in a local
+review, on the local repository's read view). It shares the 60-second time
+limit of the symbol search; a trace cut by it says so (`truncated`).
+
+### Limits of name matching
+
+The trace matches **names, not types**. Expect both missing and wrong links:
+
+- calls through reflection, dependency injection, events, callbacks or
+  dynamic dispatch are missed;
+- generated code is missed: the files the ignore rules leave out are not
+  searched, and code generated at build time is not in the repository;
+- two methods with the same name (overloads, or the same name in unrelated
+  classes) are not told apart: a use of either links to both;
+- an unnamed block, such as a Kotlin `companion object` or a Java
+  `static {}` initializer, has no name of its own; a use inside it is
+  attributed to the member above it;
+- node names are not qualified: the block shows `place`, not
+  `OrderService.place`, with the file and line that tell them apart.
+
+The header of the block tells the model so, and the coverage line ends with
+"found by name matching".
+
+### Impact settings
+
+| Setting | Env | Default | Effect |
+|---|---|---|---|
+| `context.impact.enabled` | `REVIEW_MCP_CONTEXT_IMPACT_ENABLED` | `false` | turns the trace on; needs `context.repo.enabled` |
+| `context.impact.depth` | `REVIEW_MCP_CONTEXT_IMPACT_DEPTH` | `2` | hops from a changed symbol, 1 to 3 |
+| `context.impact.max_callers_per_node` | `REVIEW_MCP_CONTEXT_IMPACT_MAX_CALLERS_PER_NODE` | `5` | uses kept per node, 1 to 20 |
+| `context.impact.max_links` | `REVIEW_MCP_CONTEXT_IMPACT_MAX_LINKS` | `40` | links per review, seeds not counted, 1 to 200 |
+| `context.impact.max_tokens` | `REVIEW_MCP_CONTEXT_IMPACT_MAX_TOKENS` | `4000` | token budget of the block, 500 to 20000 |
+| `context.impact.paths` | `REVIEW_MCP_CONTEXT_IMPACT_PATHS` | empty | at most 20 directory prefixes; when set, only uses below them are kept |
+| `context.impact.exclude_paths` | `REVIEW_MCP_CONTEXT_IMPACT_EXCLUDE_PATHS` | empty | at most 20 directory prefixes whose uses are dropped |
+| `context.impact.entry_points` | `REVIEW_MCP_CONTEXT_IMPACT_ENTRY_POINTS` | empty | at most 20 globs of the files where users or other systems reach the code |
+
+```json
+"environment": {
+  "REVIEW_MCP_CONTEXT_REPO_ENABLED": "true",
+  "REVIEW_MCP_CONTEXT_IMPACT_ENABLED": "true"
+}
+```
+
+Prefixes are repository-relative: no leading `/`, no `\`, no `.` or `..`
+segment, not `.git`. Entry-point globs use the syntax of `ignore.glob`; a node
+in such a file is marked `[entry point]` and is still followed.
+`context.impact.enabled` without `context.repo.enabled` is not an error; the
+server starts with the warning "context.impact.enabled is set but
+context.repo.enabled is off, so no impact trace runs". In
+[serve mode](#why-not-in-serve-mode) the keys are accepted and have no effect,
+and `server_info` warns: "context.impact.enabled has no effect in serve mode:
+the impact trace needs repository context, which serve mode does not offer".
+
+### Scopes and precedence
+
+The scope of a run (`paths`, `exclude_paths`, `entry_points`) comes from, in
+order:
+
+1. the `impact_paths` argument of the call (below), which replaces
+   `context.impact.paths` for that call;
+2. the [repository config](repo-config.md#allowed-keys), read at the base
+   revision, so a pull request cannot change its own scope: its `paths` and
+   `entry_points` replace the operator's, its `exclude_paths` are added to
+   them;
+3. the operator configuration.
+
+The repository file may also turn the trace **off** and lower `depth`,
+`max_callers_per_node` and `max_links`; it can never turn the trace on or
+raise a number, because the trace costs the operator's search time and prompt
+tokens. `coverage.impact.scope_source` says which source set the scope:
+`tool`, `repo_config`, `operator` or `none`.
+
+### The `impact_paths` argument
+
+`pr_review` and `local_review` take `impact_paths`: 1 to 10
+repository-relative directory prefixes of at most 200 bytes each, with the
+rules above. For that call they replace `context.impact.paths`, and they turn
+the trace on even when `context.impact.enabled` is false, as long as
+repository context is on. Without repository context the trace does not run
+and the result carries the note "impact_paths was ignored: the impact trace
+needs repository context (context.repo.enabled), which is off." Combined with
+`findings` (a publish of supplied findings) the call is refused before
+anything is sent: "impact_paths cannot be combined with findings: a publish
+of supplied findings calls no model and traces nothing". On the command line
+the argument is `--impact-paths=a,b` of `diag review` and `local review`;
+`--impact=on|off` overrides `context.impact.enabled` for one run.
+
+### The block
+
+The chains follow the repository-context block in the user prompt, fenced as
+untrusted text under this fixed header:
+
+```text
+Impact chains of symbols changed in this pull request (read-only context, found by name matching: a link may be wrong, and calls through reflection, dependency injection, events or dynamic dispatch are missing). For each chain, check whether the change breaks or silently alters what the callers rely on (arguments, return values, null or error cases, units, ordering, side effects). Report a problem in a caller only when this pull request causes it, and name the caller's file and line. Lines marked [entry point] are where users or other systems reach the code.
+```
+
+One tree per changed symbol, in rank order:
+
+```text
+save  (signature changed)  src/store/OrderRepository.java:23
+  ← persist  src/service/OrderService.java:51
+      public void persist(Order order) {
+      uses at :58:
+        56:         validate(order);
+        57:         order.stamp(clock.now());
+        58:         repository.save(order);
+        59:         events.publish(order);
+        60:     }
+    ← submit  src/web/CheckoutController.java:40  [entry point]
+        public Response submit(Cart cart) {
+        uses at :43:         orderService.persist(cart.toOrder());
+  ⋯ 7 more uses of save not followed (widely used)
+```
+
+- The seed line names its rank in words: `removed or renamed`,
+  `signature changed` or `body changed`.
+- A first-hop link shows its definition line and the use with two lines
+  around it; a deeper link shows its definition line and the use line only.
+- Code lines keep their indentation (tabs as they are); control characters
+  are dropped and each line is cut at 400 bytes. The fence is chosen so that
+  no line can close it, and the text is never written to a log.
+- A changed symbol without any link is not shown.
+- Trees are taken **whole**, in rank order, until `context.impact.max_tokens`;
+  the links of the trees that do not fit are counted as `budget`. **The diff
+  wins**: the block gets only the room the diff and the repository-context
+  block leave, and a block that would make the diff shorter is left out.
+- In a [review in parts](#reviews-in-parts) the trace runs once; each part
+  gets the trees whose changed symbol is defined in one of its files, in the
+  room that part leaves (nothing is reserved for the block up front).
+- An [incremental review](review.md#incremental-review) traces the symbols of
+  the reduced diff.
+
+### Findings in a caller
+
+A finding whose file is not in the pull request and is a link of the trace is
+a finding in a caller. It is **listed in the overview only**, never as an
+inline comment, with the mark "(in a caller of the change, listed here only)"
+and a link to its line at the head commit. A provider without file-line links,
+and a [local review](local-review.md#the-local_review-tool), show the path
+and line as text. The structured finding has `caller: true`.
+
+### Impact in the result
+
+The coverage section gains a line:
+
+```text
+- Impact: 6 symbols traced, 23 links to depth 2 (3 not followed: widely used); found by name matching.
+- Impact: no changed symbol to trace.
+- Impact: not traced, repository context is off.
+- Impact: the trace could not run.
+```
+
+The structured result of `pr_review` and `local_review` always has
+`coverage.impact`:
+
+```json
+{"status": "on", "seeds": 6, "links": 23, "depth_reached": 2,
+ "not_followed": {"widely_used": 3, "depth": 4, "budget": 0, "out_of_scope": 1, "test": 2},
+ "entry_points_reached": 1, "scope_source": "operator", "truncated": false,
+ "max_tokens": 4000}
+```
+
+| `status` | Meaning |
+|---|---|
+| `on` | The trace ran (also when it found no link). |
+| `off` | The trace is not enabled: `context.impact.enabled` is false and no `impact_paths` was given. |
+| `skipped_no_symbols` | The diff changed nothing that can be traced. |
+| `failed` | The head commit could not be read or searched. |
+| `repo_context_off` | The trace was enabled (or `impact_paths` given), but `context.repo.enabled` is off. |
+| `skipped_client_findings` | The trace was enabled, but the call published findings supplied by the client: no prompt is sent, so nothing is traced. |
+
+- `seeds` counts the changed symbols traced from (body-only changes
+  included), `links` the callers and implementations found, and
+  `depth_reached` the largest hop.
+- `not_followed`: `widely_used` (names with too many uses), `depth` (links
+  at the last hop, and uses outside every definition), `budget`
+  (`max_links`, the time limit or `max_tokens`), `out_of_scope` (uses dropped
+  by the scope) and `test` (callers in test files, shown but not followed).
+- `entry_points_reached` counts the links in entry-point files.
+- `truncated` is true when the time limit stopped the trace or a search was
+  cut at its output cap.
+- `max_tokens` is the effective `context.impact.max_tokens`, after the
+  repository config; `coverage.repo_context.max_tokens` is the effective
+  budget of the repository-context block.
+
+When the budget or the time limit cut the trace, the result carries the note
+"The impact trace was cut by its budget (context.impact.max_links,
+context.impact.max_tokens or the time limit); some callers are not shown."
+The logs carry counts only: never a name, a path or a line of code.
+
+### The `impact` focus
+
+`focus=impact` reviews the effects of the change on the rest of the code only
+([Focused reviews](review.md#focus)). It is meant for a run with the trace on;
+without it, the review uses the repository context only and adds the note
+"The impact focus ran without the impact trace (it is off or could not run),
+so effects on callers were judged from the repository context only."
+
+### Cost of the trace
+
+The trace makes no model call. It adds one `git grep` per node it follows (at
+most the seeds plus `max_links`), within the 60-second limit of the search,
+and up to `context.impact.max_tokens` prompt tokens (4000 by default) to each
+call that gets the block.
+
+### Comparing with and without it
+
+`diag review --impact=on|off` overrides `context.impact.enabled` for one run;
+with `--dry-run` the JSON report carries `coverage.impact`, and
+`--show-prompt` prints the block:
+
+```sh
+review-mcp diag review <PR_URL> --repo-context=on --impact=off
+review-mcp diag review <PR_URL> --repo-context=on --impact=on
+review-mcp diag review <PR_URL> --repo-context=on --impact=on --dry-run --show-prompt
+```
+
+The evaluation set (`tools/evalset`) has the variants `impact`
+(`--repo-context=on --impact=on`) and `impact-10k` (the same with
+`REVIEW_MCP_CONTEXT_REPO_MAX_TOKENS=10000`); in `-mode local` they set
+`REVIEW_MCP_CONTEXT_REPO_ENABLED=true` and
+`REVIEW_MCP_CONTEXT_IMPACT_ENABLED=true`. A run whose `coverage.impact.status`
+does not say the trace ran, or whose echoed budget is not the variant's, is
+recorded as failed, so a comparison never counts a run that did not apply its
+variant. A binary before 2.11 reports neither the budget nor `coverage.impact`,
+and one version of the tool scores both: a missing budget is not a failure but
+is recorded as `budget_verified: false` in `run.json` and `metrics.json`, and
+`report.md` marks the variant "budget not verified (the binary does not report
+it)"; a missing `coverage.impact` fails an `impact` variant with "trace not
+available in this binary":
+
+```sh
+go run ./tools/evalset run -bin ./review-mcp -prs DIR/prs.json -variants off,on,impact,impact-10k -repeat 3 -out DIR2
+```
+
 ## Why not in serve mode
 
 A shared server would hold code fetched with one user's token, and another user
@@ -576,7 +861,10 @@ ratings show a clear gain on at least **20 pull requests**.
 ## Backlog
 
 - Evaluation of `pr_ask` with context (`tools/evalrepo` reviews only in v1.1).
-- A real code graph (stage 2), only after the rule above is met.
+- A real code graph (stage 2), only after the rule above is met and the
+  [impact trace](#impact-trace) still leaves cascade misses that name
+  matching cannot close.
+- The impact trace for `pr_ask` and through related repositories.
 - Repository tools in a review in parts.
 - Repository tools for `pr_describe` and `pr_improve`.
 - Deterministic secret-pattern scanning.

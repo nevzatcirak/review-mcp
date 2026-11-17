@@ -256,6 +256,10 @@ func TestDiagReviewUsageErrorsSendNothing(t *testing.T) {
 		{"review", prURLOf(g, 8), prURLOf(g, 7)},
 		{"review", prURLOf(g, 8), "--dry-run", "--publish"},
 		{"review", prURLOf(g, 8), "--bogus"},
+		{"review", prURLOf(g, 8), "--impact=maybe"},
+		{"review", prURLOf(g, 8), "--impact-paths=/abs"},
+		{"review", prURLOf(g, 8), "--impact-paths="},
+		{"review", prURLOf(g, 8), "--impact-paths=a/../b"},
 	} {
 		code, out, errs := diag(env, args...)
 		if code != 2 || out != "" || !strings.Contains(errs, "usage:") {

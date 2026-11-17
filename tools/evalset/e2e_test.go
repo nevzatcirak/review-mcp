@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -47,10 +48,13 @@ func fakeReviewMCP(args []string) int {
 		fmt.Printf("{\"cache_dir\": %q}\n", os.Getenv("FAKE_CACHE_DIR"))
 		return 0
 	case "diag review --help":
-		if os.Getenv("FAKE_HELP") == "old" {
+		switch os.Getenv("FAKE_HELP") {
+		case "old":
 			fmt.Fprintln(os.Stderr, "review-mcp diag review <PR_URL> [--dry-run] [--json]")
-		} else {
+		case "2.10":
 			fmt.Fprintln(os.Stderr, "review-mcp diag review <PR_URL> [--dry-run] [--json] [--repo-context on|off]")
+		default:
+			fmt.Fprintln(os.Stderr, "review-mcp diag review <PR_URL> [--dry-run] [--json] [--repo-context on|off] [--impact on|off]")
 		}
 		return 2
 	case "local review --help":
@@ -62,7 +66,7 @@ func fakeReviewMCP(args []string) int {
 		fmt.Fprintln(os.Stderr, "fake review-mcp: no FAKE_PRS")
 		return 9
 	}
-	repoContext := "used"
+	repoContext, impact := "used", false
 	var id string
 	switch {
 	case len(args) >= 4 && args[0] == "diag" && args[1] == "review" && args[2] == "--json":
@@ -74,6 +78,7 @@ func fakeReviewMCP(args []string) int {
 		if slices.Contains(args, "--repo-context=off") {
 			repoContext = "off"
 		}
+		impact = slices.Contains(args, "--impact=on")
 	case len(args) >= 7 && args[0] == "local" && args[1] == "review" && args[2] == "--json" && args[3] == "--base" && args[4] == "main" && args[5] == "--path":
 		for _, e := range prs.Cases {
 			if e.Path == args[6] {
@@ -83,6 +88,7 @@ func fakeReviewMCP(args []string) int {
 		if os.Getenv("REVIEW_MCP_CONTEXT_REPO_ENABLED") == "false" {
 			repoContext = "off"
 		}
+		impact = os.Getenv("REVIEW_MCP_CONTEXT_IMPACT_ENABLED") == "true"
 	}
 	if id == "" {
 		fmt.Fprintln(os.Stderr, "fake review-mcp: unknown arguments")
@@ -121,10 +127,38 @@ func fakeReviewMCP(args []string) int {
 		}
 	}
 	findings = append(findings, finding{File: changed, Start: 1, End: 1, Header: "Naming", Content: "A clearer name would help."})
+	// The impact trace and the budgets as a 2.11 binary echoes them;
+	// FAKE_IMPACT overrides the status, FAKE_REPO_MAX_TOKENS the echoed
+	// repository-context budget (a binary that ignored a setting), and
+	// FAKE_RESULT=2.10 gives a 2.10 result: no budget, no coverage.impact.
+	status := "off"
+	switch {
+	case impact && repoContext == "off":
+		status = "repo_context_off"
+	case impact:
+		status = "on"
+	}
+	if f := os.Getenv("FAKE_IMPACT"); f != "" {
+		status = f
+	}
+	repoMax := 2000
+	if n, err := strconv.Atoi(os.Getenv("REVIEW_MCP_CONTEXT_REPO_MAX_TOKENS")); err == nil {
+		repoMax = n
+	}
+	if n, err := strconv.Atoi(os.Getenv("FAKE_REPO_MAX_TOKENS")); err == nil {
+		repoMax = n
+	}
 	res := map[string]any{
-		"review":   map[string]any{"key_issues_to_review": findings},
-		"coverage": map[string]any{"model_calls": 1, "repo_context": map[string]any{"status": repoContext, "symbols": 3, "references": 2, "files": 1}},
+		"review": map[string]any{"key_issues_to_review": findings},
+		"coverage": map[string]any{"model_calls": 1,
+			"repo_context": map[string]any{"status": repoContext, "symbols": 3, "references": 2, "files": 1, "max_tokens": repoMax},
+			"impact":       map[string]any{"status": status, "seeds": 2, "links": 3, "max_tokens": 4000}},
 		"metadata": map[string]any{"model": fakeModel, "models_used": []string{fakeModel}, "llm_calls": 1, "request_tokens": 1234, "tool_rounds": 0},
+	}
+	if os.Getenv("FAKE_RESULT") == "2.10" {
+		cov := res["coverage"].(map[string]any)
+		delete(cov, "impact")
+		delete(cov["repo_context"].(map[string]any), "max_tokens")
 	}
 	b, _ := json.Marshal(res)
 	fmt.Println(string(b))
@@ -146,6 +180,10 @@ func fakeEnv(t *testing.T, prs string, secrets ...string) {
 	t.Setenv("FAKE_FAIL_CASE", "")
 	t.Setenv("FAKE_HELP", "")
 	t.Setenv("FAKE_LOG", "")
+	t.Setenv("FAKE_IMPACT", "")
+	t.Setenv("FAKE_REPO_MAX_TOKENS", "")
+	t.Setenv("FAKE_RESULT", "")
+	t.Setenv("REVIEW_MCP_CONTEXT_IMPACT_ENABLED", "")
 	for i := 0; i+1 < len(secrets); i += 2 {
 		t.Setenv(secrets[i], secrets[i+1])
 	}
@@ -314,7 +352,7 @@ func TestEndToEndGitea(t *testing.T) {
 }
 
 // TestEndToEndLocal runs the local mode (setup -local, run -mode local)
-// with all three variants; it needs no git http-backend, so it runs on
+// with all five variants; it needs no git http-backend, so it runs on
 // every OS.
 func TestEndToEndLocal(t *testing.T) {
 	needGit(t)
@@ -326,7 +364,7 @@ func TestEndToEndLocal(t *testing.T) {
 	var output strings.Builder
 	for _, args := range [][]string{
 		{"setup", "-local", clones, "-corpus", corpusDir, "-cases", e2eCases, "-cache-dir", cache, "-out", setupOut},
-		{"run", "-bin", os.Args[0], "-prs", filepath.Join(setupOut, "prs.json"), "-mode", "local", "-variants", "off,on,on-10k", "-cache-dir", cache, "-out", runOut},
+		{"run", "-bin", os.Args[0], "-prs", filepath.Join(setupOut, "prs.json"), "-mode", "local", "-variants", "off,on,on-10k,impact,impact-10k", "-cache-dir", cache, "-out", runOut},
 		{"score", "-runs", runOut, "-corpus", corpusDir, "-judge", "-out", scoreOut},
 	} {
 		code, stdout, stderr := evalset(t, env, args...)
@@ -335,13 +373,25 @@ func TestEndToEndLocal(t *testing.T) {
 			t.Fatalf("%s: exit %d: %s%s", args[0], code, stdout, stderr)
 		}
 	}
-	checkScored(t, scoreOut, 3)
+	checkScored(t, scoreOut, 5)
 	var rf runFile
 	if err := readJSON(filepath.Join(runOut, "run.json"), &rf); err != nil {
 		t.Fatal(err)
 	}
-	if rf.Mode != "local" || len(rf.Runs) != 9 || !slices.Contains(rf.Variants[2].Env, "REVIEW_MCP_CONTEXT_REPO_MAX_TOKENS=10000") {
+	if rf.Mode != "local" || len(rf.Runs) != 15 || !slices.Contains(rf.Variants[2].Env, "REVIEW_MCP_CONTEXT_REPO_MAX_TOKENS=10000") ||
+		!slices.Contains(rf.Variants[3].Env, "REVIEW_MCP_CONTEXT_IMPACT_ENABLED=true") || !rf.Variants[4].Impact {
 		t.Errorf("run.json: mode %s, %d runs, variants %+v", rf.Mode, len(rf.Runs), rf.Variants)
+	}
+	for _, r := range rf.Runs {
+		wantImpact := "off"
+		if strings.HasPrefix(r.Variant, "impact") {
+			wantImpact = "on"
+		}
+		budget := r.RepoContext.MaxTokens != nil && *r.RepoContext.MaxTokens == 10000
+		verified := r.BudgetVerified != nil && *r.BudgetVerified
+		if !r.OK || r.Impact.Status != wantImpact || strings.HasSuffix(r.Variant, "-10k") != budget || strings.HasSuffix(r.Variant, "-10k") != verified {
+			t.Errorf("run %s/%s: ok %v, impact %q, repo budget %v, verified %v", r.Case, r.Variant, r.OK, r.Impact.Status, budget, r.BudgetVerified)
+		}
 	}
 	noSecret(t, []string{key}, output.String(), setupOut, runOut, scoreOut)
 }
@@ -362,8 +412,13 @@ func TestRunRefusesUnsupportedVariants(t *testing.T) {
 	if code != 2 || !strings.Contains(stderr, "the binary does not support diag review (--repo-context is not in `diag review --help`)") {
 		t.Errorf("old binary: exit %d, stderr %q", code, stderr)
 	}
+	t.Setenv("FAKE_HELP", "2.10")
 	code, _, stderr = evalset(t, nil, "run", "-bin", os.Args[0], "-prs", prs, "-variants", "off,impact", "-cache-dir", t.TempDir(), "-out", out)
-	if code != 2 || !strings.Contains(stderr, `unknown variant "impact"; the built-in variants are off, on and on-10k`) {
+	if code != 2 || !strings.Contains(stderr, "the binary does not support the variant impact (--impact is not in `diag review --help`)") {
+		t.Errorf("old binary, impact: exit %d, stderr %q", code, stderr)
+	}
+	code, _, stderr = evalset(t, nil, "run", "-bin", os.Args[0], "-prs", prs, "-variants", "off,impact-20k", "-cache-dir", t.TempDir(), "-out", out)
+	if code != 2 || !strings.Contains(stderr, `unknown variant "impact-20k"; the built-in variants are off, on, on-10k, impact and impact-10k`) {
 		t.Errorf("unknown variant: exit %d, stderr %q", code, stderr)
 	}
 	calls, _ := os.ReadFile(log) //nolint:gosec // G304: a test file
@@ -434,5 +489,141 @@ func TestBuiltinVariantsCarryNoSecret(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// TestImpactVariantChecksTheTrace is canary (s3) of WP-20c (V-18 spec §6
+// item 6): a run of the impact variant whose coverage says the trace was
+// off fails, in both modes; so does a run whose echoed budget is not the
+// variant's (WP-21b DQ-2), and a run without the trace whose trace ran.
+// A result without coverage.impact fails an impact variant with
+// failNoTrace (the WP-20c review, DQ-4).
+func TestImpactVariantChecksTheTrace(t *testing.T) {
+	result := func(repo, impact string, repoMax int) reviewResult {
+		var r reviewResult
+		r.Coverage.RepoContext.Status, r.Coverage.RepoContext.MaxTokens = repo, &repoMax
+		if impact != absent {
+			r.Coverage.Impact = &impactCoverage{Status: impact}
+		}
+		return r
+	}
+	for _, mode := range []string{"gitea", "local"} {
+		vs := builtinVariants(mode)
+		for _, c := range []struct {
+			variant string
+			res     reviewResult
+			want    string
+		}{
+			{"impact", result("used", "off", 2000), "the variant was not applied: the impact trace is off"},
+			{"impact", result("used", "repo_context_off", 2000), "the variant was not applied: the impact trace is repo_context_off"},
+			{"impact", result("used", "failed", 2000), "the variant was not applied: the impact trace is failed"},
+			{"impact", result("used", "", 2000), "the variant was not applied: the impact trace is missing"},
+			{"impact", result("used", absent, 2000), "trace not available in this binary"},
+			{"impact-10k", result("used", absent, 10000), "trace not available in this binary"},
+			{"impact", result("used", "on", 2000), ""},
+			{"impact", result("used", "skipped_no_symbols", 2000), ""},
+			{"impact-10k", result("used", "on", 10000), ""},
+			{"impact-10k", result("used", "on", 2000), "the variant was not applied: coverage.repo_context.max_tokens is 2000, not 10000"},
+			{"on-10k", result("used", absent, 0), "the variant was not applied: coverage.repo_context.max_tokens is 0, not 10000"},
+			{"on-10k", result("used", absent, 2000), "the variant was not applied: coverage.repo_context.max_tokens is 2000, not 10000"},
+			{"on", result("used", "on", 2000), "the variant was not applied: the impact trace ran"},
+			{"on", result("used", absent, 0), ""},
+			{"off", result("off", "off", 2000), ""},
+		} {
+			if got, unverified := variantProblem(vs[c.variant], c.res); got != c.want || unverified != nil {
+				impact := absent
+				if c.res.Coverage.Impact != nil {
+					impact = c.res.Coverage.Impact.Status
+				}
+				t.Errorf("%s %s (repo %s, max_tokens %d, impact %s): got %q (unverified %v), want %q", mode, c.variant,
+					c.res.Coverage.RepoContext.Status, *c.res.Coverage.RepoContext.MaxTokens, impact, got, unverified, c.want)
+			}
+		}
+	}
+	// End to end: a binary that ignores the impact flag fails the run.
+	clones, setupOut, runOut, cache := t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
+	needGit(t)
+	fakeEnv(t, filepath.Join(setupOut, "prs.json"))
+	if code, _, stderr := evalset(t, nil, "setup", "-local", clones, "-corpus", corpusDir, "-cases", e2eCases, "-cache-dir", cache, "-out", setupOut); code != 0 {
+		t.Fatal(stderr)
+	}
+	t.Setenv("FAKE_IMPACT", "off")
+	code, stdout, _ := evalset(t, nil, "run", "-bin", os.Args[0], "-prs", filepath.Join(setupOut, "prs.json"), "-variants", "impact", "-cache-dir", cache, "-out", runOut)
+	if code != 1 || !strings.Contains(stdout, "evalset run: 3 runs, 3 failed") {
+		t.Errorf("run: exit %d, %q", code, stdout)
+	}
+	var rf runFile
+	if err := readJSON(filepath.Join(runOut, "run.json"), &rf); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rf.Runs {
+		if r.OK || r.Failure != "the variant was not applied: the impact trace is off" {
+			t.Errorf("run %s: ok %v, failure %q", r.Case, r.OK, r.Failure)
+		}
+	}
+}
+
+// absent marks a missing coverage.impact in the canary tables.
+const absent = "<absent>"
+
+// TestUnverifiedBudgetIsNotAFailure is canary (s4) of WP-20c (the WP-20c
+// review, DQ-4): a result without coverage.repo_context.max_tokens leaves
+// the budget of on-10k unverified, recorded as budget_verified false with
+// the reason, listed in report.md and metrics.json; the run does not fail.
+// A reported budget that differs still fails (TestImpactVariantChecksTheTrace).
+func TestUnverifiedBudgetIsNotAFailure(t *testing.T) {
+	for _, mode := range []string{"gitea", "local"} {
+		var r reviewResult
+		r.Coverage.RepoContext.Status = "used"
+		got, unverified := variantProblem(builtinVariants(mode)["on-10k"], r)
+		if got != "" || !slices.Equal(unverified, []string{"coverage.repo_context.max_tokens"}) {
+			t.Errorf("%s on-10k without max_tokens: got %q, unverified %v; want \"\", [coverage.repo_context.max_tokens]", mode, got, unverified)
+		}
+	}
+	// End to end against a 2.10 result.
+	needGit(t)
+	clones, setupOut, runOut, scoreOut, cache := t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
+	fakeEnv(t, filepath.Join(setupOut, "prs.json"))
+	if code, _, stderr := evalset(t, nil, "setup", "-local", clones, "-corpus", corpusDir, "-cases", e2eCases, "-cache-dir", cache, "-out", setupOut); code != 0 {
+		t.Fatal(stderr)
+	}
+	t.Setenv("FAKE_RESULT", "2.10")
+	t.Setenv("FAKE_HELP", "2.10")
+	code, stdout, _ := evalset(t, nil, "run", "-bin", os.Args[0], "-prs", filepath.Join(setupOut, "prs.json"), "-variants", "off,on-10k", "-cache-dir", cache, "-out", runOut)
+	if code != 0 || !strings.Contains(stdout, "evalset run: 6 runs, 0 failed") {
+		t.Errorf("run: exit %d, %q", code, stdout)
+	}
+	var rf runFile
+	if err := readJSON(filepath.Join(runOut, "run.json"), &rf); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rf.Runs {
+		want := r.Variant == "on-10k"
+		if !r.OK || (r.BudgetVerified != nil) != want || (want && (*r.BudgetVerified ||
+			r.BudgetNote != "the binary does not report coverage.repo_context.max_tokens")) {
+			t.Errorf("run %s/%s: ok %v, failure %q, budget_verified %v, note %q", r.Case, r.Variant, r.OK, r.Failure, r.BudgetVerified, r.BudgetNote)
+		}
+	}
+	if code, _, stderr := evalset(t, nil, "score", "-runs", runOut, "-corpus", corpusDir, "-out", scoreOut); code != 0 {
+		t.Fatal(stderr)
+	}
+	var rep report
+	if err := readJSON(filepath.Join(scoreOut, "metrics.json"), &rep); err != nil {
+		t.Fatal(err)
+	}
+	if verified, ok := rep.BudgetVerified["on-10k"]; !ok || verified || len(rep.BudgetVerified) != 1 {
+		t.Errorf("metrics.json budget_verified %v, want {on-10k: false}", rep.BudgetVerified)
+	}
+	for id, byVariant := range rep.Cases {
+		for _, cr := range byVariant["on-10k"] {
+			if cr.Failed || cr.BudgetVerified == nil || *cr.BudgetVerified {
+				t.Errorf("metrics.json case %s on-10k: failed %v, budget_verified %v", id, cr.Failed, cr.BudgetVerified)
+			}
+		}
+	}
+	md, _ := os.ReadFile(filepath.Join(scoreOut, "report.md")) //nolint:gosec // G304: a test file
+	if n := strings.Count(string(md), "; budget not verified (the binary does not report it)\n"); n != 1 ||
+		!strings.Contains(string(md), "REVIEW_MCP_CONTEXT_REPO_MAX_TOKENS=10000`; budget not verified (the binary does not report it)") {
+		t.Errorf("report.md marks %d variants as not verified:\n%s", n, md)
 	}
 }

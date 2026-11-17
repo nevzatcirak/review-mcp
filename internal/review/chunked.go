@@ -147,11 +147,19 @@ func (pl *Plan) planParts(ctx context.Context, dIn diffpipe.Input, in PromptInpu
 			var o repoctx.Outcome
 			own := diffFiles(dIn.Files, concat(prep.Included, prep.DeletedListed), prep.Clipped)
 			sc := &repoctx.Scope{Exclude: gitctxPaths(own), Marks: marks}
-			_, fit, o = placeRepo(ctx, rcs, pin, diffFiles(dIn.Files, prep.Included, prep.Clipped), sc, prep.Text, fit, budget)
+			pin, fit, o = placeRepo(ctx, rcs, pin, diffFiles(dIn.Files, prep.Included, prep.Clipped), sc, prep.Text, fit, budget)
 			repos = append(repos, o)
 			pl.seen.Add(o.Paths...)
 			log.Debug("review: repository context", "part", i+1, "status", o.Status, "reason", o.Reason,
 				"symbols", o.Symbols, "references", o.References, "files", o.Files, "omitted", o.Omitted)
+		}
+		// The trace ran once; each part shows the chains whose seeds are
+		// defined in its own files (X-50, §2.5).
+		own := concat(prep.Included, prep.Clipped, prep.DeletedListed)
+		if _, pfit, err := pl.placeImpact(pl.impact, pin, prep.Text, fit, budget, seedsIn(own)); err != nil {
+			return false, err
+		} else {
+			fit = pfit
 		}
 		pt := &part{prep: prep, fit: fit, cov: Coverage{
 			Included:      llmrun.NonNil(append([]string(nil), prep.Included...)),
@@ -195,6 +203,7 @@ func (pl *Plan) planParts(ctx context.Context, dIn diffpipe.Input, in PromptInpu
 	reached := n == maxChunks && leftOut(ch.Omitted)
 	res.Notes = append(res.Notes, llmrun.ChunkedPartialNotes(&res.Coverage, budget, reached)...)
 	res.Notes = append(res.Notes, repoNotes...)
+	res.Notes = append(res.Notes, pl.impactNotes()...)
 	log.Debug("review: diff prepared in parts", "parts", n, "max_chunks", maxChunks, "too_large", len(ch.TooLarge),
 		"left_out", len(ch.Omitted.Added)+len(ch.Omitted.Modified)+len(ch.Omitted.Deleted),
 		"prompt_tokens", promptTokens, "diff_tokens", diffTokens)
@@ -220,6 +229,7 @@ func (pl *Plan) partsCoverage(failed []bool) Coverage {
 	}
 	c.Guidelines, c.FileTree = pl.proj.Coverage()
 	c.DocsStyle = pl.style
+	pl.stampCoverage(&c)
 	return c
 }
 

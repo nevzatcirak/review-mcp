@@ -18,10 +18,11 @@ edit in place, and an inline comment on each changed line a finding is about
 | `publish` | no | `true` also posts the review: the overview comment and, unless `inline_findings` is false, inline comments. Default `false`. |
 | `inline_findings` | no | With `publish`, post each finding that falls on a changed line as an inline comment. Replaces `review.inline_findings` (default `true`) for this call. |
 | `wait_seconds` | no | How long the call waits for the review before it answers with a `job_id`, 0 to 600; replaces `llm.wait_seconds` (default 45). stdio only; see [Slow endpoints](#slow-endpoints). |
-| `focus` | no | Review one area only: `security`, `architecture`, `performance`, `ux`, `tests`, `docs`, the name of a [custom focus](#custom-focuses) defined in the configuration, or a description of 1 to 200 characters. A focused review never publishes; see [Focused reviews and the merged publish](#focused-reviews-and-the-merged-publish). |
+| `focus` | no | Review one area only: `security`, `architecture`, `performance`, `ux`, `tests`, `docs`, `impact`, the name of a [custom focus](#custom-focuses) defined in the configuration, or a description of 1 to 200 characters. A focused review never publishes; see [Focused reviews and the merged publish](#focused-reviews-and-the-merged-publish). |
 | `findings` | no | Findings to publish instead of calling the model: the merged findings of several focused reviews. Needs `publish=true` and no `focus`; at most twice `review.max_total_findings` items. |
 | `security_concerns`, `performance_concerns` | no | With `findings`, the overview's security and performance texts (at most 5000 characters each). |
 | `incremental` | no | `true` reviews only the files whose content changed since the last review review-mcp published on this pull request; `false` reviews all of them. Replaces `review.incremental` (default `false`) for this call; ignored with `findings`. See [Incremental review](#incremental-review). |
+| `impact_paths` | no | 1 to 10 repository-relative directory prefixes (at most 200 bytes each) that limit the [impact trace](repo-context.md#impact-trace) for this call. They replace `context.impact.paths` and turn the trace on for this call, even when `context.impact.enabled` is false; repository context must be on (otherwise the argument is ignored with a note). Refused with `findings`. |
 | `issue_context` | no | The issue or ticket the pull request implements, for example fetched from a tracker MCP server: 1 to 3 items with `key` and `title` (required), and `description`, `acceptance_criteria` (a string or a list) and `url`. When given, no issue is looked up on the provider. Ignored with `focus` or `findings`. See [Issue compliance](#issue-compliance). |
 
 Invalid `output_language`, `max_findings` or `wait_seconds` values, and
@@ -236,6 +237,12 @@ did **not** see. Every changed file appears in exactly one group:
   `N symbols, M references from K files` (with ", J of them in changed files
   outside the diff" when J > 0) or `skipped: <reason>` (see
   [Repository context](#repository-context)).
+- **Impact**: a line, only when the [impact trace](repo-context.md#impact-in-the-result)
+  was enabled for a run that called the model, such as
+  `Impact: 6 symbols traced, 23 links to depth 2 (3 not followed: widely used); found by name matching.`
+  The structured `coverage.impact` is always present, with its `status`
+  (`off` when the trace is not enabled, `skipped_client_findings` for a
+  publish of supplied findings) and counts.
 - **Repository tools**: a line right after it, only when
   `context.repo.max_tool_rounds` is above 0, with `N calls in M rounds` (and
   `; K <status>` for the calls that did not succeed), `allowed, not used`,
@@ -630,9 +637,29 @@ files and its own block; reserving room for it can add a part, counted in
 `coverage.model_calls`. The coverage section says
 `Repository context: N symbols, M references from K files`, or
 `skipped: <reason>`, and the structured `coverage.repo_context` has the
-status, the reason and the counts. A failure of any kind is a note, never a
-failed review. See [Repository context](repo-context.md) for the settings, the
+status, the reason, the counts and the effective `max_tokens`. A failure of
+any kind is a note, never a failed review. See [Repository context](repo-context.md) for the settings, the
 cache, the security properties and every reason.
+
+### Impact trace
+
+With `context.impact.enabled` (or the `impact_paths` argument) and repository
+context on, the prompt also carries the **impact chains** of the changed
+symbols: their callers, the callers of those callers, up to
+`context.impact.depth` hops (default 2), found by name matching. The block
+follows the repository-context block and yields to the diff. See
+[Impact trace](repo-context.md#impact-trace) for what it does, its limits, the
+settings and scopes, and `coverage.impact`.
+
+**A finding in a caller** (its file is not in the pull request and is a link
+of the trace) is listed in the overview only, never as an inline comment. It
+shows "(in a caller of the change, listed here only)" and links to its line
+at the head commit; a provider without file-line links shows the path and
+line as text. `key_issues_to_review[].caller` is `true`. With `focus=impact`
+the review covers these effects only (see [`focus`](#focus)).
+
+`diag review --impact=on|off` overrides `context.impact.enabled` for one run,
+and `--impact-paths=a,b` gives the `impact_paths` argument.
 
 ## CI results
 
@@ -897,7 +924,7 @@ if it can.
 ### `focus`
 
 `focus` is one of `security`, `architecture`, `performance`, `ux`, `tests`,
-`docs` (not case-sensitive), the name of a [custom focus](#custom-focuses)
+`docs`, `impact` (not case-sensitive), the name of a [custom focus](#custom-focuses)
 (not case-sensitive), or a free-text description of 1 to 200 characters
 without line breaks or control characters. A built-in value is matched first,
 then a custom name, then the text is a free-text description.
@@ -991,6 +1018,25 @@ Its sentence in the review instructions is:
   diff changes documentation files only, the result says "Repository context
   is off, so documentation was checked against the code in this pull request
   only."
+
+### The `impact` focus
+
+`focus=impact` reviews the effects of the change on the rest of the code,
+along the [impact chains](repo-context.md#impact-trace) and the repository
+context. Its sentence is "This review covers the effects of this change on the
+rest of the code only: callers and implementations that the change breaks or
+silently alters (arguments, return values, null or error cases, units,
+ordering, side effects, overridden behaviour), shown in the impact chains and
+the repository context. Report a problem only when this pull request causes
+it, and name the affected file and line."
+
+Run it with the trace on (`context.impact.enabled`, or `impact_paths`). When
+the trace is off, repository context is off, or the trace failed, the review
+still runs, with the repository context only, and adds the note "The impact
+focus ran without the impact trace (it is off or could not run), so effects on
+callers were judged from the repository context only." `impact` is not in the
+prompt's default list; `review.focuses` and a [focus rule](#focus-rules) may
+name it.
 
 ### Custom focuses
 
@@ -1314,7 +1360,7 @@ These are checked in this order, before any request:
 
 | Message | When |
 |---|---|
-| "focus must be one of security, architecture, performance, ux, tests or docs, the name of a custom focus, or a description of 1 to 200 characters without line breaks or control characters" | `focus` is neither a known value nor usable free text |
+| "focus must be one of security, architecture, performance, ux, tests, docs or impact, the name of a custom focus, or a description of 1 to 200 characters without line breaks or control characters" | `focus` is neither a known value nor usable free text |
 | "findings cannot be combined with focus; call pr_review with findings and publish=true, without focus" | `findings` and `focus` together |
 | "a focused review does not publish; merge the findings and call pr_review with findings and publish=true" | `focus` with `publish=true` |
 | "findings are only used to publish; call pr_review with findings and publish=true" | `findings` (also `[]`) without `publish=true` |

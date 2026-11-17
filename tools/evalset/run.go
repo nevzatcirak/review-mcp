@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -25,27 +26,44 @@ type variant struct {
 	// RepoContext is whether the variant turns repository context on; the
 	// result's coverage.repo_context.status must agree (off ⇔ "off").
 	RepoContext bool `json:"repo_context"`
+	// Impact is whether the variant turns the impact trace on (X-50); the
+	// result's coverage.impact.status must say it ran (V-18 spec §6
+	// item 6).
+	Impact bool `json:"impact"`
 }
 
-const maxTokensEnv = "REVIEW_MCP_CONTEXT_REPO_MAX_TOKENS" //nolint:gosec // G101: a token budget, not a credential
+const (
+	maxTokensEnv       = "REVIEW_MCP_CONTEXT_REPO_MAX_TOKENS"   //nolint:gosec // G101: a token budget, not a credential
+	impactMaxTokensEnv = "REVIEW_MCP_CONTEXT_IMPACT_MAX_TOKENS" //nolint:gosec // G101: a token budget, not a credential
+)
+
+// variantNames lists the built-in variants for messages, in order.
+const variantNames = "off, on, on-10k, impact and impact-10k"
 
 // builtinVariants are the variants of each mode. In gitea mode they are
 // flags of `diag review`. `local review` has no --repo-context flag, so in
-// local mode the same switch is the configuration variable
-// REVIEW_MCP_CONTEXT_REPO_ENABLED.
+// local mode the same switches are the configuration variables
+// REVIEW_MCP_CONTEXT_REPO_ENABLED and REVIEW_MCP_CONTEXT_IMPACT_ENABLED
+// (V-18 spec §6 item 6).
 func builtinVariants(mode string) map[string]variant {
 	if mode == "local" {
-		const enabled = "REVIEW_MCP_CONTEXT_REPO_ENABLED"
+		const enabled, impact = "REVIEW_MCP_CONTEXT_REPO_ENABLED", "REVIEW_MCP_CONTEXT_IMPACT_ENABLED"
 		return map[string]variant{
 			"off":    {Name: "off", Env: []string{enabled + "=false"}},
 			"on":     {Name: "on", Env: []string{enabled + "=true"}, RepoContext: true},
 			"on-10k": {Name: "on-10k", Env: []string{enabled + "=true", maxTokensEnv + "=10000"}, RepoContext: true},
+			"impact": {Name: "impact", Env: []string{enabled + "=true", impact + "=true"}, RepoContext: true, Impact: true},
+			"impact-10k": {Name: "impact-10k", Env: []string{enabled + "=true", impact + "=true", maxTokensEnv + "=10000"},
+				RepoContext: true, Impact: true},
 		}
 	}
 	return map[string]variant{
 		"off":    {Name: "off", Flags: []string{"--repo-context=off"}},
 		"on":     {Name: "on", Flags: []string{"--repo-context=on"}, RepoContext: true},
 		"on-10k": {Name: "on-10k", Flags: []string{"--repo-context=on"}, Env: []string{maxTokensEnv + "=10000"}, RepoContext: true},
+		"impact": {Name: "impact", Flags: []string{"--repo-context=on", "--impact=on"}, RepoContext: true, Impact: true},
+		"impact-10k": {Name: "impact-10k", Flags: []string{"--repo-context=on", "--impact=on"}, Env: []string{maxTokensEnv + "=10000"},
+			RepoContext: true, Impact: true},
 	}
 }
 
@@ -87,8 +105,28 @@ type runRecord struct {
 		Symbols    int    `json:"symbols"`
 		References int    `json:"references"`
 		Files      int    `json:"files"`
+		MaxTokens  *int   `json:"max_tokens,omitempty"`
 	} `json:"repo_context"`
-	Findings int `json:"findings"`
+	// Impact is coverage.impact of the result; Status is "" for a binary
+	// without the impact trace.
+	Impact impactCoverage `json:"impact"`
+	// BudgetVerified is set on a successful run of a variant that sets a
+	// budget: false when
+	// the result does not report a budget the variant sets (a binary
+	// before 2.11), with the reason in BudgetNote. A run with an
+	// unverified budget is scored; a reported budget that differs fails
+	// the run.
+	BudgetVerified *bool  `json:"budget_verified,omitempty"`
+	BudgetNote     string `json:"budget_note,omitempty"`
+	Findings       int    `json:"findings"`
+}
+
+// impactCoverage is the part of coverage.impact evalset reads.
+type impactCoverage struct {
+	Status    string `json:"status"`
+	Seeds     int    `json:"seeds"`
+	Links     int    `json:"links"`
+	MaxTokens *int   `json:"max_tokens,omitempty"`
 }
 
 // finding is one key issue of a result.
@@ -113,7 +151,11 @@ type reviewResult struct {
 			Symbols    int    `json:"symbols"`
 			References int    `json:"references"`
 			Files      int    `json:"files"`
+			MaxTokens  *int   `json:"max_tokens"`
 		} `json:"repo_context"`
+		// Impact is nil when the result has no coverage.impact (a binary
+		// before V-18).
+		Impact *impactCoverage `json:"impact"`
 	} `json:"coverage"`
 	Metadata struct {
 		Model         string   `json:"model"`
@@ -129,7 +171,7 @@ func cmdRun(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	bin := fs.String("bin", "review-mcp", "the review-mcp `binary`")
 	prsPath := fs.String("prs", "", "the prs.json `file` of evalset setup")
-	variantsFlag := fs.String("variants", "off,on", "comma-separated `variants`: off, on, on-10k")
+	variantsFlag := fs.String("variants", "off,on", "comma-separated `variants`: off, on, on-10k, impact, impact-10k")
 	repeat := fs.Int("repeat", 1, "runs per case and variant")
 	mode := fs.String("mode", "", "gitea or local (default: the mode of prs.json)")
 	out := fs.String("out", "", "`directory` for the results (required; new or empty)")
@@ -229,7 +271,7 @@ func pickVariants(mode, list string) ([]variant, error) {
 		}
 		v, ok := known[name]
 		if !ok {
-			return nil, fmt.Errorf("unknown variant %q; the built-in variants are off, on and on-10k", name)
+			return nil, fmt.Errorf("unknown variant %q; the built-in variants are %s", name, variantNames)
 		}
 		if !seen[name] {
 			seen[name] = true
@@ -245,7 +287,8 @@ func pickVariants(mode, list string) ([]variant, error) {
 // probe refuses a variant the binary does not support: every flag it
 // passes, and the command's own flags, must appear in the command's help.
 // Environment settings cannot be probed this way; run checks them against
-// each result's coverage instead (repository context on or off).
+// each result's coverage instead (repository context, the impact trace and
+// the budgets: variantProblem).
 func probe(ctx context.Context, bin, mode string, variants []variant) error {
 	cmd, need := []string{"diag", "review", "--help"}, []string{"--json", "--repo-context"}
 	if mode == "local" {
@@ -320,16 +363,109 @@ func reviewOnce(ctx context.Context, bin, mode string, e prEntry, v variant, n i
 	rec.RequestTokens, rec.ToolRounds = res.Metadata.RequestTokens, res.Metadata.ToolRounds
 	rc := res.Coverage.RepoContext
 	rec.RepoContext.Status, rec.RepoContext.Symbols, rec.RepoContext.References, rec.RepoContext.Files = rc.Status, rc.Symbols, rc.References, rc.Files
+	rec.RepoContext.MaxTokens = rc.MaxTokens
+	if res.Coverage.Impact != nil {
+		rec.Impact = *res.Coverage.Impact
+	}
+	p, unverified := variantProblem(v, res)
 	switch {
 	case res.Review == nil:
 		rec.Failure = "the result has no review"
-	case (rc.Status == "off") == v.RepoContext:
-		rec.Failure = "the variant was not applied: repository context is " + rc.Status
+	case p != "":
+		rec.Failure = p
 	default:
 		rec.OK = true
 		rec.Findings = len(res.Review.Issues)
 	}
+	if rec.OK && setsBudget(v) {
+		verified := len(unverified) == 0
+		rec.BudgetVerified = &verified
+		if !verified {
+			rec.BudgetNote = "the binary does not report " + strings.Join(unverified, " or ")
+		}
+	}
 	return rec
+}
+
+// failNoTrace is the failure of a variant with the impact trace when the
+// result has no coverage.impact at all: the binary predates the trace.
+const failNoTrace = "trace not available in this binary"
+
+// budgets are the budget settings a variant can set, with the coverage
+// field that echoes each.
+var budgets = []struct{ env, field string }{
+	{maxTokensEnv, "coverage.repo_context.max_tokens"},
+	{impactMaxTokensEnv, "coverage.impact.max_tokens"},
+}
+
+// setsBudget reports whether the variant sets any budget.
+func setsBudget(v variant) bool {
+	for _, b := range budgets {
+		if _, ok := envInt(v.Env, b.env); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// variantProblem checks that a result shows its variant applied, and
+// returns a fixed sentence when it does not ("" when it does):
+//   - repository context is on exactly when the variant turns it on;
+//   - in a variant with the impact trace, coverage.impact.status says the
+//     trace ran (on, or skipped_no_symbols when the diff gave nothing to
+//     trace); in a variant without it, the trace did not run (a binary
+//     before V-18 has no status at all);
+//   - a variant with the impact trace fails with failNoTrace when the
+//     result has no coverage.impact (a binary before V-18);
+//   - every budget the variant sets in its environment is the effective
+//     budget the result echoes (coverage.repo_context.max_tokens,
+//     coverage.impact.max_tokens; V-18 spec §6 item 5, WP-21b DQ-2). A
+//     reported budget that differs is a problem; an absent field is not:
+//     it is returned in unverified (the WP-20c review, DQ-4), so one
+//     version of the tool scores binaries before and after 2.11.
+func variantProblem(v variant, res reviewResult) (problem string, unverified []string) {
+	rc := res.Coverage.RepoContext
+	var im impactCoverage
+	if res.Coverage.Impact != nil {
+		im = *res.Coverage.Impact
+	}
+	switch {
+	case (rc.Status == "off") == v.RepoContext:
+		return "the variant was not applied: repository context is " + rc.Status, nil
+	case v.Impact && res.Coverage.Impact == nil:
+		return failNoTrace, nil
+	case v.Impact && im.Status != "on" && im.Status != "skipped_no_symbols":
+		status := im.Status
+		if status == "" {
+			status = "missing"
+		}
+		return "the variant was not applied: the impact trace is " + status, nil
+	case !v.Impact && im.Status == "on":
+		return "the variant was not applied: the impact trace ran", nil
+	}
+	got := []*int{rc.MaxTokens, im.MaxTokens}
+	for i, b := range budgets {
+		want, ok := envInt(v.Env, b.env)
+		switch {
+		case !ok:
+		case got[i] == nil:
+			unverified = append(unverified, b.field)
+		case *got[i] != want:
+			return fmt.Sprintf("the variant was not applied: %s is %d, not %d", b.field, *got[i], want), nil
+		}
+	}
+	return "", unverified
+}
+
+// envInt is the integer value of key in KEY=VALUE settings.
+func envInt(env []string, key string) (int, bool) {
+	for _, kv := range env {
+		if k, val, _ := strings.Cut(kv, "="); k == key {
+			n, err := strconv.Atoi(val)
+			return n, err == nil
+		}
+	}
+	return 0, false
 }
 
 func firstLine(s string) string {

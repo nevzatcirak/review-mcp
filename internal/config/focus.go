@@ -47,13 +47,13 @@ const (
 )
 
 // BuiltinFocusNames are the built-in focus values (X-33), in the order the
-// tools document them. review.FocusValues is the same list; a test keeps
-// the two equal.
-var BuiltinFocusNames = []string{"security", "architecture", "performance", "ux", "tests", "docs"}
+// tools document them; impact is V-18's (X-50). review.FocusValues is the
+// same list; a test keeps the two equal.
+var BuiltinFocusNames = []string{"security", "architecture", "performance", "ux", "tests", "docs", "impact"}
 
 // ReservedFocusNames are the names a custom focus cannot take (§0 item 4):
-// the built-in values and impact, which V-18 adds.
-var ReservedFocusNames = append(slices.Clone(BuiltinFocusNames), "impact")
+// the built-in values, impact among them since V-18.
+var ReservedFocusNames = slices.Clone(BuiltinFocusNames)
 
 // customFocusNameRE is the syntax of a custom focus name (§1.1).
 var customFocusNameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{1,31}$`)

@@ -135,7 +135,7 @@ func TestRepoContextBlockInPrompt(t *testing.T) {
 		t.Errorf("order: description %d, discussion %d, repository context %d, diff %d",
 			idx(descMarker), idx(DiscussionHeader), idx(repoctx.Header), idx("The PR code diff:"))
 	}
-	if got, want := pl.Result.Coverage.RepoContext, (llmrun.RepoContext{Status: "used", Symbols: 2, References: 3, Files: 2}); got != want {
+	if got, want := pl.Result.Coverage.RepoContext, (llmrun.RepoContext{MaxTokens: 2000, Status: "used", Symbols: 2, References: 3, Files: 2}); got != want {
 		t.Errorf("coverage.repo_context = %+v, want %+v", got, want)
 	}
 	if fb.ensures != 1 || len(fb.queries) != 1 {
@@ -181,14 +181,14 @@ func TestRepoContextOffIsUntouched(t *testing.T) {
 	if fb.ensures != 0 || len(fb.queries) != 0 {
 		t.Errorf("git work while disabled: ensure %d, grep %d", fb.ensures, len(fb.queries))
 	}
-	if got := pl.Result.Coverage.RepoContext; got != (llmrun.RepoContext{Status: "off"}) {
+	if got := pl.Result.Coverage.RepoContext; got != (llmrun.RepoContext{MaxTokens: 2000, Status: "off"}) {
 		t.Errorf("coverage.repo_context = %+v", got)
 	}
 	if strings.Contains(pl.Prompts.User, repoctx.Header) {
 		t.Error("the block is in the prompt while disabled")
 	}
 	raw, _ := json.Marshal(pl.Result.Coverage)
-	if !strings.Contains(string(raw), `"repo_context":{"status":"off","reason":"","symbols":0,"references":0,"references_in_changed_files":0,"files":0}`) {
+	if !strings.Contains(string(raw), `"repo_context":{"status":"off","reason":"","symbols":0,"references":0,"references_in_changed_files":0,"files":0,"max_tokens":2000}`) {
 		t.Errorf("coverage JSON = %s", raw)
 	}
 
@@ -198,7 +198,7 @@ func TestRepoContextOffIsUntouched(t *testing.T) {
 	if fb2.ensures != 0 || len(fb2.queries) != 0 {
 		t.Errorf("git work without a symbol: ensure %d, grep %d", fb2.ensures, len(fb2.queries))
 	}
-	if got := pl2.Result.Coverage.RepoContext; got != (llmrun.RepoContext{Status: "used"}) {
+	if got := pl2.Result.Coverage.RepoContext; got != (llmrun.RepoContext{MaxTokens: 2000, Status: "used"}) {
 		t.Errorf("coverage.repo_context = %+v", got)
 	}
 	off := offBaseline(t, h2)
@@ -219,7 +219,7 @@ func TestRepoContextFailureIsANote(t *testing.T) {
 			if err != nil {
 				t.Fatalf("the review failed: %v", err)
 			}
-			if got, want := withoutTools(res.Coverage.RepoContext), (llmrun.RepoContext{Status: "skipped", Reason: reason}); got != want {
+			if got, want := withoutTools(res.Coverage.RepoContext), (llmrun.RepoContext{MaxTokens: 2000, Status: "skipped", Reason: reason}); got != want {
 				t.Errorf("coverage.repo_context = %+v, want %+v", got, want)
 			}
 			if !contains(res.Notes, gitctx.Note(reason)) {
@@ -396,7 +396,7 @@ func TestRepoContextPerPart(t *testing.T) {
 			t.Errorf("part %d: the block must precede the part line (block %d, part line %d)", i+1, block, hdr)
 		}
 	}
-	if got, want := withoutTools(res.Coverage.RepoContext), (llmrun.RepoContext{Status: "used", Symbols: 6, References: 6, Files: 6}); got != want {
+	if got, want := withoutTools(res.Coverage.RepoContext), (llmrun.RepoContext{MaxTokens: 2000, Status: "used", Symbols: 6, References: 6, Files: 6}); got != want {
 		t.Errorf("coverage.repo_context = %+v, want %+v", got, want)
 	}
 
@@ -493,7 +493,7 @@ func TestRepoContextPartsSkipped(t *testing.T) {
 	if len(f.calls) != 3 || fb.ensures != 1 || len(fb.queries) != 0 {
 		t.Errorf("calls %d, ensures %d, greps %d", len(f.calls), fb.ensures, len(fb.queries))
 	}
-	if got, want := withoutTools(res.Coverage.RepoContext), (llmrun.RepoContext{Status: "skipped", Reason: "auth"}); got != want {
+	if got, want := withoutTools(res.Coverage.RepoContext), (llmrun.RepoContext{MaxTokens: 2000, Status: "skipped", Reason: "auth"}); got != want {
 		t.Errorf("coverage.repo_context = %+v, want %+v", got, want)
 	}
 	n := 0
@@ -621,7 +621,7 @@ func TestRepoContextCrossPartUses(t *testing.T) {
 func TestRepoContextEmptyDiff(t *testing.T) {
 	h, fb := repoHarness([]provider.FilePatch{{Path: "vendor/x.go", Type: provider.ChangeAdded, Patch: "@@ -0,0 +1 @@\n+func Vend() {}\n"}}, nil)
 	pl := prepareOK(t, h)
-	if !pl.Empty || pl.Result.Coverage.RepoContext != (llmrun.RepoContext{Status: "skipped", Reason: "nothing_to_review"}) {
+	if !pl.Empty || pl.Result.Coverage.RepoContext != (llmrun.RepoContext{MaxTokens: 2000, Status: "skipped", Reason: "nothing_to_review"}) {
 		t.Errorf("empty %v, coverage.repo_context = %+v", pl.Empty, pl.Result.Coverage.RepoContext)
 	}
 	if fb.ensures != 0 {

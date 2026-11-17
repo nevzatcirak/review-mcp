@@ -24,11 +24,15 @@ const (
 	FocusTests        = "tests"
 	// FocusDocs reviews documentation against the code (v2.1 spec V-5 §3a).
 	FocusDocs = "docs"
+	// FocusImpact reviews the effects of the change along the impact chains
+	// (X-50, v2.10 spec V-18 §2.6). It is not in the default focus list of
+	// multi_perspective_review.
+	FocusImpact = "impact"
 )
 
 // FocusValues are the known focus values, in the order the tool documents
 // them.
-var FocusValues = []string{FocusSecurity, FocusArchitecture, FocusPerformance, FocusUX, FocusTests, FocusDocs}
+var FocusValues = []string{FocusSecurity, FocusArchitecture, FocusPerformance, FocusUX, FocusTests, FocusDocs, FocusImpact}
 
 // MaxFocusRunes is the longest free-text focus, in runes (X-33).
 const MaxFocusRunes = 200
@@ -61,7 +65,18 @@ var focusSentences = map[string]string{
 		"broken links or anchors; steps that are missing or out of order; and wording, terminology and tone that " +
 		"differ from the rest of the documentation or from the documentation style given in the user message. When the code a " +
 		"statement describes is not shown, do not guess: report only contradictions you can see.",
+	// v2.10 spec V-18 §2.6, verbatim.
+	FocusImpact: "This review covers the effects of this change on the rest of the code only: callers and " +
+		"implementations that the change breaks or silently alters (arguments, return values, null or error cases, " +
+		"units, ordering, side effects, overridden behaviour), shown in the impact chains and the repository context. " +
+		"Report a problem only when this pull request causes it, and name the affected file and line.",
 }
+
+// NoteImpactFocusWithoutTrace is the note of a review with focus impact
+// whose impact trace did not run (it is off, repository context is off, or
+// the trace failed): the run proceeds with repository context only (§2.6).
+const NoteImpactFocusWithoutTrace = "The impact focus ran without the impact trace (it is off or could not run), " +
+	"so effects on callers were judged from the repository context only."
 
 // NoteDocsWithoutRepoContext is the note of a review with focus docs whose
 // diff changes documentation files only while repository context is off
@@ -330,7 +345,7 @@ func invalidArgument(msg string) *Error { return &Error{Class: ClassInvalidArgum
 var (
 	// ErrFocusInvalid: the focus is neither a known value nor a usable free
 	// text.
-	ErrFocusInvalid = invalidArgument("focus must be one of security, architecture, performance, ux, tests or docs, " +
+	ErrFocusInvalid = invalidArgument("focus must be one of security, architecture, performance, ux, tests, docs or impact, " +
 		"the name of a custom focus, or a description of 1 to 200 characters without line breaks or control characters")
 	// ErrFocusPublish: a focused run never publishes (spec 2F §4.1,
 	// verbatim).
@@ -394,8 +409,12 @@ func (a Args) Validated(cfg *config.Config) (Args, error) {
 		return a, ErrFocusPublish
 	case a.Findings != nil && !a.Publish:
 		return a, ErrFindingsWithoutPublish
+	case a.Findings != nil && a.ImpactPaths != nil:
+		return a, ErrImpactPathsWithFindings
 	case a.Findings == nil && (a.SecurityConcerns != "" || a.PerformanceConcerns != ""):
 		return a, ErrConcernsWithoutFindings
+	case ValidateImpactPaths(a.ImpactPaths) != nil:
+		return a, ErrImpactPathsInvalid
 	case utf8.RuneCountInString(a.SecurityConcerns) > MaxSuppliedContentRunes ||
 		utf8.RuneCountInString(a.PerformanceConcerns) > MaxSuppliedContentRunes:
 		return a, ErrConcernsTooLong

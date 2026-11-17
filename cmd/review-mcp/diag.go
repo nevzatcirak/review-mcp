@@ -28,7 +28,8 @@ const diagUsageText = `usage:
   review-mcp diag diff <PR_URL> [--mode plain|numbered] [--prompt-tokens N]
                        [--context-window N]
   review-mcp diag review <PR_URL> [--dry-run] [--show-prompt] [--publish] [--json]
-                         [--repo-context on|off]
+                         [--repo-context on|off] [--impact on|off]
+                         [--impact-paths P1,P2]
   review-mcp diag ask <PR_URL> --question <TEXT> [--dry-run] [--show-prompt] [--publish]
   review-mcp diag describe <PR_URL> [--dry-run] [--show-prompt] [--json]
   review-mcp diag improve <PR_URL> [--dry-run] [--show-prompt] [--json]
@@ -66,7 +67,10 @@ diag review   review the pull request with the configured LLM and print the
               (they are never logged). --json prints the pr_review structured
               result as JSON instead of markdown (not with --dry-run).
               --repo-context on|off overrides context.repo.enabled for this
-              run; the coverage line says whether repository context was used
+              run; the coverage line says whether repository context was used.
+              --impact on|off overrides context.impact.enabled (the impact
+              trace, which needs repository context); --impact-paths gives
+              the impact_paths argument (comma-separated directory prefixes)
 diag ask      answer --question (required, at most 8000 characters) about the
               pull request with the configured LLM and print the client
               markdown; --publish also posts the question and answer as a PR

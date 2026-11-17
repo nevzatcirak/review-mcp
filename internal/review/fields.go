@@ -172,6 +172,12 @@ type KeyIssue struct {
 	// without a label or line suffix, in order; the body's last line names
 	// them too. Nil, and omitted, when there is none.
 	UnverifiedPaths []string `json:"unverified_paths,omitempty"`
+	// Caller is set on a finding located in a caller the impact trace
+	// found (X-50, v2.10 spec V-18 §2.5): a file outside the pull request
+	// that is a node of the trace. It is listed in the overview only, with
+	// a link to the line at the head commit, or its path and line as text
+	// where there is no file-line URL (local work).
+	Caller bool `json:"caller,omitempty"`
 }
 
 // InlineStatus values: the counts of InlineSummary, per finding.
@@ -280,6 +286,9 @@ var keyIssueExtraSchema = map[string]map[string]any{
 	"unverified_paths": {"type": "array", "items": map[string]any{"type": "string"}, "description": "repository paths the finding's " +
 		"title or body names in a code span that the review never saw (not in the diff, the context or the files the tools read); " +
 		"issue_content's last line names them too; absent when there is none"},
+	"caller": {"type": "boolean", "description": "true for a finding located in a caller the impact trace found (X-50): a file outside " +
+		"the pull request; it is listed in the overview only, never inline, and its link points at the line at the head commit " +
+		"(no link for local work); absent otherwise"},
 }
 
 // fields is the review descriptor table, in upstream order (X-4), with the

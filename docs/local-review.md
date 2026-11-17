@@ -187,6 +187,22 @@ Repository context searched the last commit (HEAD): uses in files with uncommitt
 The [repository tools](repo-context.md#repository-tools) read the same
 read-only view of `HEAD`, with their usual path rules.
 
+### Impact trace
+
+With `context.impact.enabled` (or the `impact_paths` argument, or
+`--impact=on`) and repository context on, the
+[impact trace](repo-context.md#impact-trace) follows the callers of what you
+changed a few hops further, in the same read-only view of `HEAD`; nothing is
+fetched, built or run. Files with uncommitted changes are left out of the
+trace as they are left out of the search: no use in them is followed, and a
+change inside one of their bodies seeds nothing.
+
+A finding in a caller (a file outside your diff that the trace reached) is
+listed with the other findings, marked "(in a caller of the change)", with
+its path and line as text: there is no host to link to. The structured
+finding has `caller: true`, and `coverage.impact` reports the trace as for a
+pull request.
+
 ## Untracked files and secrets
 
 Untracked files are left out unless you ask for them, so that a file such as
@@ -240,7 +256,11 @@ local review: repo_path is not under a directory of local.allowed_roots
 Arguments: `repo_path` (required: the absolute path of the work tree or a
 directory in it), `base`, `include_uncommitted`, `include_untracked`,
 `focus`, `extra_instructions`, `output_language`, `max_findings`,
-`issue_context` and `wait_seconds`. A slow call answers with a `job_id`, as
+`issue_context`, `impact_paths` and `wait_seconds`. `impact_paths` has the
+rules of [`pr_review`](review.md#calling-the-tool): 1 to 10 directory
+prefixes that limit the [impact trace](repo-context.md#impact-trace) and turn
+it on for the call when repository context is on. `focus` takes the same
+values as for `pr_review`, `impact` included. A slow call answers with a `job_id`, as
 `pr_review` does; fetch the result with `job_result`
 ([Slow endpoints](review.md#slow-endpoints)).
 
@@ -273,6 +293,7 @@ review-mcp local review [--path DIR] [--base REF] [--uncommitted=true|false] [--
                         [--focus NAME] [--max-findings N] [--output-language L]
                         [--issue-context-file PATH] [--json] [--timeout D]
                         [--fail-on security|any|issue-not-compliant]
+                        [--impact on|off] [--impact-paths P1,P2]
 ```
 
 | Flag | Meaning |
@@ -285,6 +306,8 @@ review-mcp local review [--path DIR] [--base REF] [--uncommitted=true|false] [--
 | `--max-findings N` | The `max_findings` argument, 1 to 20. |
 | `--output-language L` | The `output_language` argument, for example `en-US`. |
 | `--issue-context-file PATH` | A JSON file holding the `issue_context` argument (1 to 3 issues), as in [CI mode](ci.md#the-issue-context-file). |
+| `--impact on\|off` | Override `context.impact.enabled` for this run (the [impact trace](repo-context.md#impact-trace); it needs `context.repo.enabled`). |
+| `--impact-paths P1,P2` | The `impact_paths` argument: comma-separated directory prefixes that limit the trace for this run. |
 | `--json` | Print the structured result instead of markdown. |
 | `--timeout D` | Bound the whole run: a Go duration, default `30m`, at least `1m`. |
 | `--fail-on LEVEL` | Exit 3 when the review meets `LEVEL`, with the rules of [CI mode](ci.md#exit-codes): `security` (the security concerns are set, or a finding of a `--focus security` run), `any` (at least one finding) or `issue-not-compliant` (the issue verdict is `not_compliant`). |

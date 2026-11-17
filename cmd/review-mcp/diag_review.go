@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
@@ -17,6 +18,7 @@ import (
 	"github.com/nevzatcirak/review-mcp/internal/repoctx"
 	"github.com/nevzatcirak/review-mcp/internal/review"
 	"github.com/nevzatcirak/review-mcp/internal/review/render"
+	"github.com/nevzatcirak/review-mcp/internal/tools"
 	"github.com/nevzatcirak/review-mcp/internal/wiring"
 )
 
@@ -38,12 +40,25 @@ func runDiagReview(rest []string, stdout, stderr io.Writer, load configLoader) i
 	publish := fs.Bool("publish", false, "also post the review as a PR comment")
 	asJSON := fs.Bool("json", false, "print the review result as JSON (the pr_review structured result) instead of markdown")
 	repoCtx := fs.String("repo-context", "", "`on` or `off`: override context.repo.enabled for this run (repository context, stdio only)")
+	impact := fs.String("impact", "", "`on` or `off`: override context.impact.enabled for this run (the impact trace; needs repository context)")
+	impactPaths := fs.String("impact-paths", "", "comma-separated `prefixes`: the impact_paths argument (limits the impact trace for this run)")
 	prURL, ok := parseDiagArgs(fs, rest, stderr)
 	if !ok {
 		return 2
 	}
 	if *repoCtx != "" && *repoCtx != "on" && *repoCtx != "off" {
 		_, _ = fmt.Fprintln(stderr, "diag review: --repo-context must be on or off")
+		diagUsage(stderr)
+		return 2
+	}
+	if *impact != "" && *impact != "on" && *impact != "off" {
+		_, _ = fmt.Fprintln(stderr, "diag review: --impact must be on or off")
+		diagUsage(stderr)
+		return 2
+	}
+	paths, err := impactPathsFlag(*impactPaths, flagSet(fs, "impact-paths"))
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "diag review: --impact-paths: "+tools.UserMessage(err))
 		diagUsage(stderr)
 		return 2
 	}
@@ -67,12 +82,44 @@ func runDiagReview(rest []string, stdout, stderr io.Writer, load configLoader) i
 	case "off":
 		cfg.Context.Repo.Enabled = false
 	}
+	applyImpactFlag(cfg, *impact)
+	args := review.Args{PRURL: prURL, ImpactPaths: paths}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	if *dryRun {
-		return diagReviewDryRun(ctx, cfg, logger, prURL, *showPrompt, stdout, stderr)
+		return diagReviewDryRun(ctx, cfg, logger, args, *showPrompt, stdout, stderr)
 	}
-	return diagReview(ctx, cfg, logger, prURL, *publish, *showPrompt, *asJSON, stdout, stderr)
+	args.Publish = *publish
+	return diagReview(ctx, cfg, logger, args, *showPrompt, *asJSON, stdout, stderr)
+}
+
+// impactPathsFlag reads --impact-paths: comma-separated prefixes, checked
+// like the impact_paths argument. Not given is nil; given but empty is an
+// error.
+func impactPathsFlag(v string, given bool) ([]string, error) {
+	if !given {
+		return nil, nil
+	}
+	paths := []string{}
+	for _, p := range strings.Split(v, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			paths = append(paths, p)
+		}
+	}
+	if err := review.ValidateImpactPaths(paths); err != nil {
+		return nil, err
+	}
+	return paths, nil
+}
+
+// applyImpactFlag applies --impact on or off to context.impact.enabled.
+func applyImpactFlag(cfg *config.Config, v string) {
+	switch v {
+	case "on":
+		cfg.Context.Impact.Enabled = true
+	case "off":
+		cfg.Context.Impact.Enabled = false
+	}
 }
 
 // dryRunReport is the JSON document of diag review --dry-run. It has no field
@@ -155,7 +202,7 @@ func dryRunLLM(cfg *config.Config, logger *slog.Logger) (c review.Completer, clo
 // diagReviewDryRun runs the review pipeline up to the model call and prints
 // the JSON report. The model is never called; the only LLM request is the
 // context-window probe, and only when llm.context_window is unset.
-func diagReviewDryRun(ctx context.Context, cfg *config.Config, logger *slog.Logger, prURL string, showPrompt bool, stdout, stderr io.Writer) int {
+func diagReviewDryRun(ctx context.Context, cfg *config.Config, logger *slog.Logger, args review.Args, showPrompt bool, stdout, stderr io.Writer) int {
 	start := time.Now()
 	client, closeLLM, err := dryRunLLM(cfg, logger)
 	if err != nil {
@@ -166,7 +213,7 @@ func diagReviewDryRun(ctx context.Context, cfg *config.Config, logger *slog.Logg
 	defer resolver.CloseIdleConnections()
 	pl, err := review.Prepare(ctx, review.Deps{
 		Config: cfg, Logger: logger, Resolver: resolver, LLM: client,
-	}, review.Args{PRURL: prURL})
+	}, args)
 	if err != nil {
 		return reportError(stderr, err)
 	}
@@ -218,7 +265,7 @@ func (r *promptRecorder) ResolveContextWindow(ctx context.Context) (int, string,
 
 // diagReview runs the full review and prints the client markdown; with
 // publish it also posts the provider rendering.
-func diagReview(ctx context.Context, cfg *config.Config, logger *slog.Logger, prURL string, publish, showPrompt, asJSON bool, stdout, stderr io.Writer) int {
+func diagReview(ctx context.Context, cfg *config.Config, logger *slog.Logger, args review.Args, showPrompt, asJSON bool, stdout, stderr io.Writer) int {
 	client, err := wiring.NewLLM(cfg, logger)
 	if err != nil {
 		return reportError(stderr, err)
@@ -230,7 +277,7 @@ func diagReview(ctx context.Context, cfg *config.Config, logger *slog.Logger, pr
 	res, err := review.Run(ctx, review.Deps{
 		Config: cfg, Logger: logger, Resolver: resolver, LLM: rec,
 		RenderProvider: render.Provider, RenderInline: render.Inline,
-	}, review.Args{PRURL: prURL, Publish: publish}.WithConfigDefaults(cfg))
+	}, args.WithConfigDefaults(cfg))
 	if err != nil {
 		return reportError(stderr, err)
 	}

@@ -4,8 +4,9 @@ package repocfg
 // order is that of the applied keys in the result and the note.
 //
 // A key not in this list is ignored, whatever its name or its value: llm.*,
-// the provider sections, context.*, serve.*, log.*, repo_config.*, the other
-// diff.* limits, the *_tokens budgets and every secret-looking key.
+// the provider sections, context.* other than the context.impact keys
+// below, serve.*, log.*, repo_config.*, the other diff.* limits, the
+// *_tokens budgets and every secret-looking key.
 var allowList = []string{
 	"output.language",
 	"ignore.glob",
@@ -36,6 +37,16 @@ var allowList = []string{
 	"review.docs_style_file",
 	"review.issue_compliance",
 	"related.contract_globs",
+	// The impact trace (X-50, v2.10 spec V-18 §2.2): enabled may only turn
+	// it off, the numbers only tighten, paths and entry_points replace the
+	// operator's lists and exclude_paths adds to them.
+	"context.impact.enabled",
+	"context.impact.depth",
+	"context.impact.max_callers_per_node",
+	"context.impact.max_links",
+	"context.impact.paths",
+	"context.impact.exclude_paths",
+	"context.impact.entry_points",
 	// related.repos is [[related.repos]], a list of tables (v2.5 spec V-13b
 	// §3.2), kept only with the operator key related.from_repo_config.
 	"related.repos",

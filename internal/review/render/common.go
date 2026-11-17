@@ -46,6 +46,8 @@ const (
 	textNotes            = llmrender.TextNotes
 	textSnippetNote      = "Snippet note: "
 	textListedHere       = "(listed here only)"
+	textCallerListed     = "(in a caller of the change, listed here only)"
+	textInCaller         = " (in a caller of the change)"
 	textCarriedFrom      = "(from the review of "
 	textCarriedSuffix    = ", listed here only)"
 	textInRelated        = "(in related pull request "
@@ -192,6 +194,9 @@ func listedSuffix(i *review.KeyIssue, gfm bool) string {
 			return textCarriedFrom + "<code>" + sha + "</code>" + textCarriedSuffix
 		}
 		return textCarriedFrom + "`" + sha + "`" + textCarriedSuffix
+	}
+	if i.Caller {
+		return textCallerListed
 	}
 	if listedHereOnly(i) {
 		return textListedHere

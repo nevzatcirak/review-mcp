@@ -5,9 +5,10 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.11.0-rc.1]
 
-Planned as 2.11.0-rc.1 (the npm dist-tag `next`). Impact trace (X-50, V-18):
+The first 2.11 release candidate (the npm dist-tag `next`; `latest` stays on
+2.9.0). Impact trace (X-50, V-18):
 the review follows the callers of a change a few hops further. Off by default;
 nothing in the tools or the configuration of 2.10 is removed or renamed.
 

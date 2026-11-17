@@ -5,6 +5,51 @@ All notable changes to review-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Planned as 2.11.0-rc.1 (the npm dist-tag `next`). Impact trace (X-50, V-18):
+the review follows the callers of a change a few hops further. Off by default;
+nothing in the tools or the configuration of 2.10 is removed or renamed.
+
+### Added
+
+- The impact trace: with repository context on and
+  `context.impact.enabled` (or the new `impact_paths` argument), `pr_review`
+  and `local_review` trace the callers of the changed symbols by name over
+  several hops on the head commit (offline `git grep`; nothing is built or
+  run), including the methods whose body changed. The chains go into the
+  prompt after the repository-context block, under a fixed header, as whole
+  trees within `context.impact.max_tokens`; the diff always wins. Callers in
+  test files are shown and not followed, import lines are dropped, and widely
+  used names are counted, not followed. See
+  [Impact trace](docs/repo-context.md#impact-trace).
+- Configuration: `context.impact.enabled` (default `false`), `depth` (2),
+  `max_callers_per_node` (5), `max_links` (40), `max_tokens` (4000),
+  `paths`, `exclude_paths` and `entry_points`, with their
+  `REVIEW_MCP_CONTEXT_IMPACT_*` variables. A startup warning when the trace is
+  enabled without repository context; inert in serve mode, with a
+  `server_info` warning.
+- Repository config: `context.impact.enabled` (may turn the trace off only),
+  `depth`, `max_callers_per_node` and `max_links` (lower only), `paths` and
+  `entry_points` (replace), `exclude_paths` (added).
+- `impact_paths` on `pr_review` and `local_review` (1 to 10 directory
+  prefixes for the call; refused with `findings`, ignored with a note without
+  repository context); `--impact on|off` and `--impact-paths` on
+  `diag review` and `review-mcp local review`.
+- The `impact` focus, also accepted by `review.focuses` and focus rules.
+- A finding in a caller the trace found is listed in the overview only, with a
+  link to its line at the head commit (path and line text in a local review),
+  and carries `caller: true`.
+- `coverage.impact` in the result of `pr_review` and `local_review` (status,
+  counts, `not_followed`, `scope_source`, `truncated`, `max_tokens`), the
+  coverage line "Impact: …; found by name matching.", and
+  `coverage.repo_context.max_tokens`. The status `skipped_client_findings`
+  marks a publish of supplied findings while the trace is enabled.
+- `tools/evalset`: the variants `impact` and `impact-10k`. Every run is
+  checked against its variant's `coverage.impact.status` and against each
+  budget the variant sets (`coverage.repo_context.max_tokens`,
+  `coverage.impact.max_tokens`).
+
 ## [2.10.0-rc.2]
 
 The second 2.10 release candidate (the npm dist-tag `next`; `latest` stays on

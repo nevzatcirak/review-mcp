@@ -51,7 +51,7 @@ The operator turns it on and off and chooses the path; both settings are
 | `improve.max_suggestions` | an integer in the operator key's range | **tighten only**: the smaller of the two |
 | `improve.min_score` | an integer from 0 to 10 | **tighten only**: the larger of the two |
 | `review.extra_instructions`, `ask.extra_instructions` | text, at most 2,000 bytes (longer text is cut at a character boundary, with a note) | **added** after the operator's instructions, as fenced repository guidance |
-| `review.focuses` | a list out of `security`, `architecture`, `performance`, `ux`, `tests` and `docs`, and the names of custom focuses defined for the repository | the default list of the `multi_perspective_review` prompt only |
+| `review.focuses` | a list out of `security`, `architecture`, `performance`, `ux`, `tests`, `docs` and `impact`, and the names of custom focuses defined for the repository | the default list of the `multi_perspective_review` prompt only |
 | `review.docs_style` | text, at most 1,000 bytes | replaces; used only by a focus that uses the [documentation style](review.md#documentation-style) (`docs`, or a custom focus with `docs_style = true`) |
 | `review.docs_style_file` | a repository-relative path, at most 200 bytes | replaces `review.docs_style` when the file is read; repository config only ([below](#custom-focuses-focus-rules-and-the-style-file)) |
 | `review.custom_focuses` | up to 10 `[[review.custom_focuses]]` tables ([below](#custom-focuses-focus-rules-and-the-style-file)) | **merged** with the operator's; a repository entry replaces an operator entry of the same name |
@@ -59,9 +59,14 @@ The operator turns it on and off and chooses the path; both settings are
 | `review.issue_compliance` | true or false | replaces; false turns [issue compliance](review.md#issue-compliance) off for the repository |
 | `related.contract_globs` | a list of globs, validated as `ignore.glob` | **added** to the operator's list; paths shown first in a [related pull request](review.md#contract-files-first) |
 | `related.repos` | up to 4 `[[related.repos]]` tables ([below](#related-repositories)) | used only with the operator key `related.from_repo_config`; otherwise ignored with a note |
+| `context.impact.enabled` | `false` only ([below](#the-impact-trace)) | turns the [impact trace](repo-context.md#impact-trace) **off** for the repository; `true` is invalid |
+| `context.impact.depth`, `context.impact.max_callers_per_node`, `context.impact.max_links` | an integer in the operator key's range (1 to 3, 1 to 20, 1 to 200) | **tighten only**: the smaller of the two |
+| `context.impact.paths`, `context.impact.entry_points` | a list of at most 20 directory prefixes (`paths`) or globs (`entry_points`) | replaces the operator's list |
+| `context.impact.exclude_paths` | a list of at most 20 directory prefixes | **added** to the operator's list |
 
 Every other key is ignored and named in a note. That covers `llm.*`, the
-provider sections, `context.*`, `serve.*`, `log.*`, `repo_config.*`, the other
+provider sections, `context.*` other than the `context.impact` keys above
+(`context.impact.max_tokens` included), `serve.*`, `log.*`, `repo_config.*`, the other
 `diff.*` limits, the `*_tokens` budgets and any secret-looking key. A note
 names at most 10 ignored keys, then "and N more". An allowed key with an
 invalid value is ignored too, with a note that names the key. **A value of the
@@ -105,6 +110,35 @@ config names related repositories, but reading them is turned off by the
 operator (related.from_repo_config)." `pr_info` reports the declarations
 without reading them ([Pull request status](pr-info.md#related-pull-requests)).
 
+### The impact trace
+
+```toml
+[context.impact]
+exclude_paths = ["legacy/", "vendor-copies/"]
+entry_points = ["src/web/**", "cmd/**"]
+depth = 1
+```
+
+The maintainers know which directories matter and where users reach the code;
+the operator decides whether the trace runs and what it may cost. So the file
+can **narrow** the trace and never widen it:
+
+- `enabled = false` turns it off for the repository; `enabled = true` is
+  invalid (ignored with a note naming the key), because turning it on costs
+  the operator's search time and prompt tokens;
+- `depth`, `max_callers_per_node` and `max_links` can only be lowered; a
+  higher value is capped by the operator's without a note;
+- `paths` and `entry_points` replace the operator's lists, and
+  `exclude_paths` is added to them; prefixes and globs follow the rules of
+  the operator keys (repository-relative, no leading `/`, no `.` or `..`
+  segment), and an invalid list is ignored whole with a note;
+- `max_tokens` is not allowed.
+
+The file is read at the base revision, so a pull request cannot change its own
+scope. A call's `impact_paths` argument still replaces `paths` for that call.
+`coverage.impact.scope_source` is `repo_config` when the file set `paths`,
+`exclude_paths` or `entry_points`.
+
 ### Merge rules
 
 - **Precedence.** Tool argument, then the repository file, then the operator
@@ -113,8 +147,9 @@ without reading them ([Pull request status](pr-info.md#related-pull-requests)).
 - **Ignore lists are added.** The file can exclude more files; it cannot
   bring back a file the operator excluded.
 - **Numbers only tighten.** A file can lower `review.max_findings`,
-  `review.max_total_findings` and `improve.max_suggestions`, and raise
-  `improve.min_score`. A looser value is capped by the operator's without a
+  `review.max_total_findings`, `improve.max_suggestions` and the
+  `context.impact` numbers `depth`, `max_callers_per_node` and `max_links`,
+  and raise `improve.min_score`. A looser value is capped by the operator's without a
   note, and the key is still listed as applied.
 - **Instructions are added, never replacing.** The repository's
   `review.extra_instructions` (for `pr_review`) and `ask.extra_instructions`

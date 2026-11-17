@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/nevzatcirak/review-mcp/internal/gitctx"
 	"github.com/nevzatcirak/review-mcp/internal/provider"
@@ -120,5 +121,47 @@ func TestAddedLines(t *testing.T) {
 	}
 	if _, ok := got["bin.png"]; ok {
 		t.Fatal("a binary file has ranges")
+	}
+}
+
+// TestRenderImpactKeepsIndentation is canary (s2) of WP-20c (review DQ-2
+// of WP-20b): code lines keep their leading whitespace, tabs as they are,
+// so a nested use shows its nesting; control characters are still dropped
+// and a long line is cut at 400 bytes.
+func TestRenderImpactKeepsIndentation(t *testing.T) {
+	long := "\t\t" + strings.Repeat("é", 300)
+	res := gitctx.ImpactResult{Nodes: []gitctx.ImpactNode{
+		{Name: "charge", Path: "pkg/pay.py", DefLine: 3, Parent: -1, Rank: gitctx.RankSignature},
+		{Name: "renew", Path: "pkg/job.py", DefLine: 10, DefText: "    def renew(self):", UseLine: 13,
+			UseText: "        for s in subs:\n            if s.due:\n                charge(s)\x1b[0m\n            log(s)\n" + long, Hop: 1, Parent: 0},
+		{Name: "run", Path: "pkg/main.go", DefLine: 5, DefText: "func run() {", UseLine: 8,
+			UseText: "\tif ok {\n\t\tx()\n\t\tjob.renew()\n\t}\nc", Hop: 2, Parent: 1},
+	}}
+	b := RenderImpact(res, nil, 100000, 1)
+	for _, want := range []string{
+		"\n          def renew(self):\n",
+		"\n        11:         for s in subs:\n",
+		"\n        12:             if s.due:\n",
+		"\n        13:                 charge(s)[0m\n",
+		"\n        uses at :8: \t\tjob.renew()\n",
+	} {
+		if !strings.Contains(b.Text, want) {
+			t.Fatalf("missing %q (indentation lost) in:\n%s", want, b.Text)
+		}
+	}
+	if strings.Contains(b.Text, "\x1b") {
+		t.Fatal("a control character reached the block")
+	}
+	found := false
+	for _, l := range strings.Split(b.Text, "\n") {
+		if code, ok := strings.CutPrefix(l, "        15: "); ok {
+			found = true
+			if len(code) > maxImpactLine || !strings.HasPrefix(code, "\t\t") || !utf8.ValidString(code) {
+				t.Fatalf("the long line is %d bytes, lost its tabs or was cut inside a rune: %q", len(code), code)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("the long line is missing")
 	}
 }

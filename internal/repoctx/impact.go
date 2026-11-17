@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nevzatcirak/review-mcp/internal/config"
 	"github.com/nevzatcirak/review-mcp/internal/gitctx"
@@ -277,7 +278,7 @@ func nodeLines(n gitctx.ImpactNode) []string {
 	detail := pad + "    "
 	out := []string{head}
 	if n.DefText != "" {
-		out = append(out, detail+cleanLine(n.DefText, maxImpactLine))
+		out = append(out, detail+codeLine(n.DefText))
 	}
 	use := strings.Split(strings.ReplaceAll(n.UseText, "\r", ""), "\n")
 	start := max(1, n.UseLine-gitctx.ImpactUseLines)
@@ -287,17 +288,36 @@ func nodeLines(n gitctx.ImpactNode) []string {
 		if at >= 0 && at < len(use) {
 			line = use[at]
 		}
-		return append(out, detail+"uses at :"+strconv.Itoa(n.UseLine)+": "+cleanLine(line, maxImpactLine))
+		return append(out, detail+"uses at :"+strconv.Itoa(n.UseLine)+": "+codeLine(line))
 	}
 	out = append(out, detail+"uses at :"+strconv.Itoa(n.UseLine)+":")
 	for k, l := range use {
-		out = append(out, detail+"  "+strconv.Itoa(start+k)+": "+cleanLine(l, maxImpactLine))
+		out = append(out, detail+"  "+strconv.Itoa(start+k)+": "+codeLine(l))
 	}
 	return out
 }
 
-// maxImpactLine cuts one line of repository text in the block.
+// maxImpactLine cuts one line of repository text in the block, in bytes.
 const maxImpactLine = 400
+
+// codeLine sanitizes one line of code for the block (review DQ-2 of
+// WP-20b): its leading whitespace stays as it is (tabs included), so a
+// nested use keeps its indentation; invalid UTF-8 is replaced, control
+// characters other than tab are dropped, a stray line break becomes a
+// space, trailing whitespace is trimmed, and the line is cut at
+// maxImpactLine bytes on a rune boundary. The fence around the block is
+// chosen after the text (mdutil.WriteFenced), so the line cannot close it.
+func codeLine(s string) string {
+	s = strings.ReplaceAll(cleanText(s), "\n", " ")
+	if len(s) > maxImpactLine {
+		cut := maxImpactLine
+		for cut > 0 && !utf8.RuneStart(s[cut]) {
+			cut--
+		}
+		s = strings.TrimRight(s[:cut], " \t")
+	}
+	return s
+}
 
 // nodeMarks are the bracketed marks of a link.
 func nodeMarks(n gitctx.ImpactNode) []string {

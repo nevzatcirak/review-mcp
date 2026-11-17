@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -25,27 +26,44 @@ type variant struct {
 	// RepoContext is whether the variant turns repository context on; the
 	// result's coverage.repo_context.status must agree (off ⇔ "off").
 	RepoContext bool `json:"repo_context"`
+	// Impact is whether the variant turns the impact trace on (X-50); the
+	// result's coverage.impact.status must say it ran (V-18 spec §6
+	// item 6).
+	Impact bool `json:"impact"`
 }
 
-const maxTokensEnv = "REVIEW_MCP_CONTEXT_REPO_MAX_TOKENS" //nolint:gosec // G101: a token budget, not a credential
+const (
+	maxTokensEnv       = "REVIEW_MCP_CONTEXT_REPO_MAX_TOKENS"   //nolint:gosec // G101: a token budget, not a credential
+	impactMaxTokensEnv = "REVIEW_MCP_CONTEXT_IMPACT_MAX_TOKENS" //nolint:gosec // G101: a token budget, not a credential
+)
+
+// variantNames lists the built-in variants for messages, in order.
+const variantNames = "off, on, on-10k, impact and impact-10k"
 
 // builtinVariants are the variants of each mode. In gitea mode they are
 // flags of `diag review`. `local review` has no --repo-context flag, so in
-// local mode the same switch is the configuration variable
-// REVIEW_MCP_CONTEXT_REPO_ENABLED.
+// local mode the same switches are the configuration variables
+// REVIEW_MCP_CONTEXT_REPO_ENABLED and REVIEW_MCP_CONTEXT_IMPACT_ENABLED
+// (V-18 spec §6 item 6).
 func builtinVariants(mode string) map[string]variant {
 	if mode == "local" {
-		const enabled = "REVIEW_MCP_CONTEXT_REPO_ENABLED"
+		const enabled, impact = "REVIEW_MCP_CONTEXT_REPO_ENABLED", "REVIEW_MCP_CONTEXT_IMPACT_ENABLED"
 		return map[string]variant{
 			"off":    {Name: "off", Env: []string{enabled + "=false"}},
 			"on":     {Name: "on", Env: []string{enabled + "=true"}, RepoContext: true},
 			"on-10k": {Name: "on-10k", Env: []string{enabled + "=true", maxTokensEnv + "=10000"}, RepoContext: true},
+			"impact": {Name: "impact", Env: []string{enabled + "=true", impact + "=true"}, RepoContext: true, Impact: true},
+			"impact-10k": {Name: "impact-10k", Env: []string{enabled + "=true", impact + "=true", maxTokensEnv + "=10000"},
+				RepoContext: true, Impact: true},
 		}
 	}
 	return map[string]variant{
 		"off":    {Name: "off", Flags: []string{"--repo-context=off"}},
 		"on":     {Name: "on", Flags: []string{"--repo-context=on"}, RepoContext: true},
 		"on-10k": {Name: "on-10k", Flags: []string{"--repo-context=on"}, Env: []string{maxTokensEnv + "=10000"}, RepoContext: true},
+		"impact": {Name: "impact", Flags: []string{"--repo-context=on", "--impact=on"}, RepoContext: true, Impact: true},
+		"impact-10k": {Name: "impact-10k", Flags: []string{"--repo-context=on", "--impact=on"}, Env: []string{maxTokensEnv + "=10000"},
+			RepoContext: true, Impact: true},
 	}
 }
 
@@ -87,8 +105,20 @@ type runRecord struct {
 		Symbols    int    `json:"symbols"`
 		References int    `json:"references"`
 		Files      int    `json:"files"`
+		MaxTokens  int    `json:"max_tokens,omitempty"`
 	} `json:"repo_context"`
-	Findings int `json:"findings"`
+	// Impact is coverage.impact of the result; Status is "" for a binary
+	// without the impact trace.
+	Impact   impactCoverage `json:"impact"`
+	Findings int            `json:"findings"`
+}
+
+// impactCoverage is the part of coverage.impact evalset reads.
+type impactCoverage struct {
+	Status    string `json:"status"`
+	Seeds     int    `json:"seeds"`
+	Links     int    `json:"links"`
+	MaxTokens int    `json:"max_tokens"`
 }
 
 // finding is one key issue of a result.
@@ -113,7 +143,9 @@ type reviewResult struct {
 			Symbols    int    `json:"symbols"`
 			References int    `json:"references"`
 			Files      int    `json:"files"`
+			MaxTokens  int    `json:"max_tokens"`
 		} `json:"repo_context"`
+		Impact impactCoverage `json:"impact"`
 	} `json:"coverage"`
 	Metadata struct {
 		Model         string   `json:"model"`
@@ -129,7 +161,7 @@ func cmdRun(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	bin := fs.String("bin", "review-mcp", "the review-mcp `binary`")
 	prsPath := fs.String("prs", "", "the prs.json `file` of evalset setup")
-	variantsFlag := fs.String("variants", "off,on", "comma-separated `variants`: off, on, on-10k")
+	variantsFlag := fs.String("variants", "off,on", "comma-separated `variants`: off, on, on-10k, impact, impact-10k")
 	repeat := fs.Int("repeat", 1, "runs per case and variant")
 	mode := fs.String("mode", "", "gitea or local (default: the mode of prs.json)")
 	out := fs.String("out", "", "`directory` for the results (required; new or empty)")
@@ -229,7 +261,7 @@ func pickVariants(mode, list string) ([]variant, error) {
 		}
 		v, ok := known[name]
 		if !ok {
-			return nil, fmt.Errorf("unknown variant %q; the built-in variants are off, on and on-10k", name)
+			return nil, fmt.Errorf("unknown variant %q; the built-in variants are %s", name, variantNames)
 		}
 		if !seen[name] {
 			seen[name] = true
@@ -245,7 +277,8 @@ func pickVariants(mode, list string) ([]variant, error) {
 // probe refuses a variant the binary does not support: every flag it
 // passes, and the command's own flags, must appear in the command's help.
 // Environment settings cannot be probed this way; run checks them against
-// each result's coverage instead (repository context on or off).
+// each result's coverage instead (repository context, the impact trace and
+// the budgets: variantProblem).
 func probe(ctx context.Context, bin, mode string, variants []variant) error {
 	cmd, need := []string{"diag", "review", "--help"}, []string{"--json", "--repo-context"}
 	if mode == "local" {
@@ -320,16 +353,63 @@ func reviewOnce(ctx context.Context, bin, mode string, e prEntry, v variant, n i
 	rec.RequestTokens, rec.ToolRounds = res.Metadata.RequestTokens, res.Metadata.ToolRounds
 	rc := res.Coverage.RepoContext
 	rec.RepoContext.Status, rec.RepoContext.Symbols, rec.RepoContext.References, rec.RepoContext.Files = rc.Status, rc.Symbols, rc.References, rc.Files
-	switch {
-	case res.Review == nil:
+	rec.RepoContext.MaxTokens, rec.Impact = rc.MaxTokens, res.Coverage.Impact
+	if res.Review == nil {
 		rec.Failure = "the result has no review"
-	case (rc.Status == "off") == v.RepoContext:
-		rec.Failure = "the variant was not applied: repository context is " + rc.Status
-	default:
+	} else if p := variantProblem(v, res); p != "" {
+		rec.Failure = p
+	} else {
 		rec.OK = true
 		rec.Findings = len(res.Review.Issues)
 	}
 	return rec
+}
+
+// variantProblem checks that a result shows its variant applied, and
+// returns a fixed sentence when it does not ("" when it does):
+//   - repository context is on exactly when the variant turns it on;
+//   - in a variant with the impact trace, coverage.impact.status says the
+//     trace ran (on, or skipped_no_symbols when the diff gave nothing to
+//     trace); in a variant without it, the trace did not run (a binary
+//     before V-18 has no status at all);
+//   - every budget the variant sets in its environment is the effective
+//     budget the result echoes (coverage.repo_context.max_tokens,
+//     coverage.impact.max_tokens; V-18 spec §6 item 5, WP-21b DQ-2).
+func variantProblem(v variant, res reviewResult) string {
+	rc, im := res.Coverage.RepoContext, res.Coverage.Impact
+	switch {
+	case (rc.Status == "off") == v.RepoContext:
+		return "the variant was not applied: repository context is " + rc.Status
+	case v.Impact && im.Status != "on" && im.Status != "skipped_no_symbols":
+		status := im.Status
+		if status == "" {
+			status = "missing"
+		}
+		return "the variant was not applied: the impact trace is " + status
+	case !v.Impact && im.Status == "on":
+		return "the variant was not applied: the impact trace ran"
+	}
+	for _, b := range []struct {
+		env, field string
+		got        int
+	}{{maxTokensEnv, "coverage.repo_context.max_tokens", rc.MaxTokens}, {impactMaxTokensEnv, "coverage.impact.max_tokens", im.MaxTokens}} {
+		want, ok := envInt(v.Env, b.env)
+		if ok && b.got != want {
+			return fmt.Sprintf("the variant was not applied: %s is %d, not %d", b.field, b.got, want)
+		}
+	}
+	return ""
+}
+
+// envInt is the integer value of key in KEY=VALUE settings.
+func envInt(env []string, key string) (int, bool) {
+	for _, kv := range env {
+		if k, val, _ := strings.Cut(kv, "="); k == key {
+			n, err := strconv.Atoi(val)
+			return n, err == nil
+		}
+	}
+	return 0, false
 }
 
 func firstLine(s string) string {
